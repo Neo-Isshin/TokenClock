@@ -18,6 +18,12 @@ struct RecentEntry: Sendable {
     let tokens: Int
 }
 
+/// 按小时聚合的 token 数据
+struct HourlyUsage: Sendable {
+    var tokens: Int
+    var messages: Int
+}
+
 /// 日期工具
 enum DateHelper: Sendable {
     static func todayKey() -> String {
@@ -27,11 +33,10 @@ enum DateHelper: Sendable {
         return formatter.string(from: Date())
     }
 
-    /// 快速解析 ISO8601 时间戳（避免 NSDateFormatter 开销）
+    /// 解析 ISO8601 UTC 时间戳，返回绝对 Date
     static func parseISO8601(_ s: String) -> Date? {
         let chars = Array(s)
         guard chars.count >= 19 else { return nil }
-        // "2026-04-23T13:32:00.594Z"
         let y = Int(String(chars[0...3])) ?? 0
         let m = Int(String(chars[5...6])) ?? 1
         let d = Int(String(chars[8...9])) ?? 1
@@ -39,17 +44,36 @@ enum DateHelper: Sendable {
         let mn = Int(String(chars[14...15])) ?? 0
         let sc = Int(String(chars[17...18])) ?? 0
         var cal = Calendar(identifier: .gregorian)
-        cal.timeZone = TimeZone.current
+        cal.timeZone = TimeZone(abbreviation: "UTC")!
         var components = DateComponents()
         components.year = y; components.month = m; components.day = d
         components.hour = hr; components.minute = mn; components.second = sc
         return cal.date(from: components)
     }
 
-    /// 从 ISO 字符串提取日期 key
-    static func dateKey(from isoString: String) -> String {
-        let chars = Array(isoString)
-        guard chars.count >= 10 else { return "" }
-        return String(chars[0...9])
+    /// 从 ISO8601 UTC 时间戳提取本地日期 key
+    static func localDateKey(from isoString: String) -> String {
+        guard let date = parseISO8601(isoString) else { return "" }
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        formatter.timeZone = TimeZone.current
+        return formatter.string(from: date)
+    }
+
+    /// 从 ISO8601 UTC 时间戳提取本地小时 key（如 "2026-04-23-22"）
+    static func localHourKey(from isoString: String) -> String {
+        guard let date = parseISO8601(isoString) else { return "" }
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd-HH"
+        formatter.timeZone = TimeZone.current
+        return formatter.string(from: date)
+    }
+
+    /// 当前本地小时 key
+    static func currentHourKey() -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd-HH"
+        formatter.timeZone = TimeZone.current
+        return formatter.string(from: Date())
     }
 }

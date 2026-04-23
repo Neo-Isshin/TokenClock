@@ -17,13 +17,14 @@ enum UsageAggregator {
         tools.filter(\.isActive).prefix(limit).map { $0 }
     }
 
-    /// 根据近10分钟 tokens 判断速率 emoji
+    /// 根据当前小时 token 消耗判断热力 emoji
     static func rateEmoji(_ tools: [ToolUsage]) -> String {
-        let recentTotal = tools.reduce(0) { $0 + $1.recentTokens }
-        if recentTotal > 50_000 { return "💥" }
-        if recentTotal > 10_000 { return "🔥" }
-        if recentTotal > 1_000  { return "🌿" }
-        return "🌙"
+        let hourlyTotal = tools.reduce(0) { $0 + $1.hourlyTokens }
+        if hourlyTotal > 10_000_000 { return "💥" }   // 爆发
+        if hourlyTotal > 2_000_000  { return "🔥" }   // 火热
+        if hourlyTotal > 400_000   { return "🏃‍♂️" }  // 活跃
+        if hourlyTotal > 10_000    { return "☕" }    // 悠闲
+        return "🛌"                              // 休息
     }
 
     /// 重置所有工具的 recentTokens（每10分钟调用一次）

@@ -20,7 +20,8 @@ final class MockUsageService {
                 todayTokens: Int.random(in: 50_000...500_000),
                 todayMessages: Int.random(in: 50...500),
                 isActive: Bool.random(),
-                recentTokens: 0
+                recentTokens: 0,
+                hourlyTokens: 0
             )
         }
     }

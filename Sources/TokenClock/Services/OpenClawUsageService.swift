@@ -4,7 +4,10 @@ import Foundation
 /// 日志位置: ~/.openclaw/agents/*/sessions/
 final class OpenClawUsageService: @unchecked Sendable {
     private(set) var dailyData: [String: DayUsage] = [:]
+    private(set) var hourlyData: [String: HourlyUsage] = [:]  // "2026-04-23-22" → tokens
     private var fileCache: [String: FileMeta] = [:]
+    private var fileDailyContrib: [String: [String: DayUsage]] = [:]      // path → dateKey → DayUsage
+    private var fileHourlyContrib: [String: [String: HourlyUsage]] = [:]  // path → hourKey → HourlyUsage
     private var recentEntries: [RecentEntry] = []
 
     private let fm = FileManager.default
@@ -22,7 +25,10 @@ final class OpenClawUsageService: @unchecked Sendable {
 
     func fullScan() {
         dailyData.removeAll()
+        hourlyData.removeAll()
         fileCache.removeAll()
+        fileDailyContrib.removeAll()
+        fileHourlyContrib.removeAll()
         recentEntries = []
         scanAgentDirectories()
     }
@@ -34,6 +40,12 @@ final class OpenClawUsageService: @unchecked Sendable {
     func todayUsage() -> (tokens: Int, messages: Int) {
         let d = dailyData[DateHelper.todayKey()]
         return (d?.tokens ?? 0, d?.messages ?? 0)
+    }
+
+    /// 当前小时的 token 消耗（用于热力计算）
+    func currentHourTokens() -> Int {
+        let key = DateHelper.currentHourKey()
+        return hourlyData[key]?.tokens ?? 0
     }
 
     func recentUsage(minutes: Int = 10) -> (tokens: Int, messages: Int) {
@@ -66,7 +78,6 @@ final class OpenClawUsageService: @unchecked Sendable {
             guard let files = try? fm.contentsOfDirectory(atPath: sessionsDir) else { continue }
 
             for file in files {
-                // 跳过 checkpoint（冗余快照）、lock、sessions.json
                 if file.contains(".checkpoint.") || file.hasSuffix(".lock") || file == "sessions.json" { continue }
                 guard file.hasSuffix(".jsonl") else { continue }
 
@@ -77,13 +88,49 @@ final class OpenClawUsageService: @unchecked Sendable {
                 let cached = fileCache[fullPath]
                 if cached != nil && cached?.modDate == modDate { continue }
 
-                parseFile(path: fullPath)
+                // 增量：减旧贡献
+                if let oldContrib = fileDailyContrib[fullPath] {
+                    subtractDailyContributions(oldContrib)
+                }
+                if let oldContrib = fileHourlyContrib[fullPath] {
+                    subtractHourlyContributions(oldContrib)
+                }
+
+                parseFile(path: fullPath, isIncremental: fileDailyContrib[fullPath] != nil)
                 fileCache[fullPath] = FileMeta(path: fullPath, modDate: modDate)
             }
         }
     }
 
-    private func parseFile(path: String) {
+    private func subtractDailyContributions(_ contrib: [String: DayUsage]) {
+        for (dateKey, usage) in contrib {
+            if var existing = dailyData[dateKey] {
+                existing.tokens -= usage.tokens
+                existing.messages -= usage.messages
+                if existing.tokens <= 0 && existing.messages <= 0 {
+                    dailyData.removeValue(forKey: dateKey)
+                } else {
+                    dailyData[dateKey] = existing
+                }
+            }
+        }
+    }
+
+    private func subtractHourlyContributions(_ contrib: [String: HourlyUsage]) {
+        for (hourKey, usage) in contrib {
+            if var existing = hourlyData[hourKey] {
+                existing.tokens -= usage.tokens
+                existing.messages -= usage.messages
+                if existing.tokens <= 0 && existing.messages <= 0 {
+                    hourlyData.removeValue(forKey: hourKey)
+                } else {
+                    hourlyData[hourKey] = existing
+                }
+            }
+        }
+    }
+
+    private func parseFile(path: String, isIncremental: Bool = false) {
         guard let stream = InputStream(fileAtPath: path) else { return }
         stream.open()
         defer { stream.close() }
@@ -93,6 +140,9 @@ final class OpenClawUsageService: @unchecked Sendable {
         let buf = UnsafeMutablePointer<UInt8>.allocate(capacity: bufSize)
         defer { buf.deallocate() }
         var lineBuf = Data()
+
+        var newDailyContrib: [String: DayUsage] = [:]
+        var newHourlyContrib: [String: HourlyUsage] = [:]
 
         while stream.hasBytesAvailable {
             let n = stream.read(buf, maxLength: bufSize)
@@ -105,7 +155,11 @@ final class OpenClawUsageService: @unchecked Sendable {
                 guard !lineData.isEmpty else { continue }
                 let line = String(data: lineData, encoding: .utf8) ?? ""
                 if line.contains("\"assistant\"") {
-                    parseAssistantLine(line, today: today)
+                    if let result = parseAssistantLine(line) {
+                        accumulate(result, today: today,
+                                   dailyContrib: &newDailyContrib,
+                                   hourlyContrib: &newHourlyContrib)
+                    }
                 }
             }
         }
@@ -113,36 +167,81 @@ final class OpenClawUsageService: @unchecked Sendable {
         if !lineBuf.isEmpty,
            let line = String(data: lineBuf, encoding: .utf8),
            line.contains("\"assistant\"") {
-            parseAssistantLine(line, today: today)
+            if let result = parseAssistantLine(line) {
+                accumulate(result, today: today,
+                           dailyContrib: &newDailyContrib,
+                           hourlyContrib: &newHourlyContrib)
+            }
         }
+
+        fileDailyContrib[path] = newDailyContrib
+        fileHourlyContrib[path] = newHourlyContrib
     }
 
-    private func parseAssistantLine(_ line: String, today: String) {
-        guard let data = line.data(using: .utf8) else { return }
-        guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
-        guard let msg = obj["message"] as? [String: Any] else { return }
-        guard msg["role"] as? String == "assistant" else { return }
-        guard let usage = msg["usage"] as? [String: Any] else { return }
+    private struct ParseResult {
+        let dateKey: String
+        let hourKey: String
+        let tokens: Int
+        let timestamp: Date?
+    }
+
+    private func parseAssistantLine(_ line: String) -> ParseResult? {
+        guard let data = line.data(using: .utf8) else { return nil }
+        guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+        guard let msg = obj["message"] as? [String: Any] else { return nil }
+        guard msg["role"] as? String == "assistant" else { return nil }
+        guard let usage = msg["usage"] as? [String: Any] else { return nil }
 
         let input = usage["input"] as? Int ?? 0
         let output = usage["output"] as? Int ?? 0
         let tokens = input + output
-        guard tokens > 0 else { return }
+        guard tokens > 0 else { return nil }
 
         let timestamp = obj["timestamp"] as? String ?? ""
-        let dateKey = DateHelper.dateKey(from: timestamp)
-        guard !dateKey.isEmpty else { return }
+        let dateKey = DateHelper.localDateKey(from: timestamp)
+        let hourKey = DateHelper.localHourKey(from: timestamp)
+        guard !dateKey.isEmpty else { return nil }
 
-        if var existing = dailyData[dateKey] {
-            existing.tokens += tokens
+        return ParseResult(dateKey: dateKey, hourKey: hourKey,
+                          tokens: tokens, timestamp: DateHelper.parseISO8601(timestamp))
+    }
+
+    private func accumulate(_ result: ParseResult, today: String,
+                            dailyContrib: inout [String: DayUsage],
+                            hourlyContrib: inout [String: HourlyUsage]) {
+        // daily
+        if var existing = dailyData[result.dateKey] {
+            existing.tokens += result.tokens
             existing.messages += 1
-            dailyData[dateKey] = existing
+            dailyData[result.dateKey] = existing
         } else {
-            dailyData[dateKey] = DayUsage(tokens: tokens, messages: 1)
+            dailyData[result.dateKey] = DayUsage(tokens: result.tokens, messages: 1)
         }
-
-        if dateKey == today, let ts = DateHelper.parseISO8601(timestamp) {
-            recentEntries.append(RecentEntry(timestamp: ts, tokens: tokens))
+        if var existing = dailyContrib[result.dateKey] {
+            existing.tokens += result.tokens
+            existing.messages += 1
+            dailyContrib[result.dateKey] = existing
+        } else {
+            dailyContrib[result.dateKey] = DayUsage(tokens: result.tokens, messages: 1)
+        }
+        // hourly
+        if var existing = hourlyData[result.hourKey] {
+            existing.tokens += result.tokens
+            existing.messages += 1
+            hourlyData[result.hourKey] = existing
+        } else {
+            hourlyData[result.hourKey] = HourlyUsage(tokens: result.tokens, messages: 1)
+        }
+        if var existing = hourlyContrib[result.hourKey] {
+            existing.tokens += result.tokens
+            existing.messages += 1
+            hourlyContrib[result.hourKey] = existing
+        } else {
+            hourlyContrib[result.hourKey] = HourlyUsage(tokens: result.tokens, messages: 1)
+        }
+        // recentEntries（只记录今日）
+        if result.dateKey == today, let ts = result.timestamp {
+            recentEntries.append(RecentEntry(timestamp: ts, tokens: result.tokens))
         }
     }
 }

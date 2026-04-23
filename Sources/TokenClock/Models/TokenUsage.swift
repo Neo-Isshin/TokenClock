@@ -10,8 +10,11 @@ struct ToolUsage: Identifiable, Hashable {
     var todayMessages: Int
     var isActive: Bool
 
-    /// 近10分钟内新增的 tokens（用于速率计算）
+    /// 近10分钟内新增的 tokens（用于活跃度判断）
     var recentTokens: Int
+
+    /// 当前小时 token 消耗（用于热力计算）
+    var hourlyTokens: Int
 
     /// 格式化的 token 数（如 "847.2K"）
     var formattedTokens: String {

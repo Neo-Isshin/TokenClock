@@ -192,37 +192,40 @@ final class ViewModel: ObservableObject {
 
     /// 从真实数据服务刷新所有工具的 token 数据
     private func refreshRealData() {
-        // OpenClaw（聚合所有 agent）
         let oc = openclawService.todayUsage()
         let ocRecent = openclawService.recentUsage()
-        let ocActive = openclawService.isActive()
         updateTool(name: "OpenClaw", tokens: oc.tokens, messages: oc.messages,
-                   recentTokens: ocRecent.tokens, active: ocActive)
+                   recentTokens: ocRecent.tokens, hourlyTokens: openclawService.currentHourTokens(),
+                   active: openclawService.isActive())
 
-        // Claude Code
         let cc = claudeCodeService.todayUsage()
         let ccRecent = claudeCodeService.recentUsage()
-        let ccActive = claudeCodeService.isActive()
         updateTool(name: "Claude Code", tokens: cc.tokens, messages: cc.messages,
-                   recentTokens: ccRecent.tokens, active: ccActive)
+                   recentTokens: ccRecent.tokens, hourlyTokens: claudeCodeService.currentHourTokens(),
+                   active: claudeCodeService.isActive())
 
-        // Gemini CLI
         let gc = geminiService.todayUsage()
         let gcRecent = geminiService.recentUsage()
-        let gcActive = geminiService.isActive()
         updateTool(name: "Gemini CLI", tokens: gc.tokens, messages: gc.messages,
-                   recentTokens: gcRecent.tokens, active: gcActive)
+                   recentTokens: gcRecent.tokens, hourlyTokens: geminiService.currentHourTokens(),
+                   active: geminiService.isActive())
 
         // Hermes 和 Codex 暂时保留上次值（无数据源）
     }
 
     private func updateTool(name: String, tokens: Int, messages: Int,
-                           recentTokens: Int, active: Bool) {
+                           recentTokens: Int, hourlyTokens: Int, active: Bool) {
         guard let idx = tools.firstIndex(where: { $0.name == name }) else { return }
-        tools[idx].todayTokens = tokens
-        tools[idx].todayMessages = messages
-        tools[idx].recentTokens = recentTokens
-        tools[idx].isActive = active
+        tools[idx] = ToolUsage(
+            name: tools[idx].name,
+            abbreviation: tools[idx].abbreviation,
+            emoji: tools[idx].emoji,
+            todayTokens: tokens,
+            todayMessages: messages,
+            isActive: active,
+            recentTokens: recentTokens,
+            hourlyTokens: hourlyTokens
+        )
     }
 
     private func updateMockData() {
