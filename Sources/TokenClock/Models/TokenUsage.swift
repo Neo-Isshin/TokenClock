@@ -34,4 +34,5 @@ struct ToolUsage: Identifiable, Hashable {
 struct WeatherInfo {
     var emoji: String = "☀️"
     var temperature: Int = 28
+    var cityName: String = ""
 }

@@ -71,20 +71,49 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(alwaysOnTopItem)
         menu.addItem(.separator())
 
-        // 城市选择（天气）
+        // 温度/城市选择（天气）
         let cityMenu = NSMenu()
-        let cities = ["Hong Kong", "Shanghai", "Beijing", "Tokyo", "Singapore", "New York"]
+        let cities = ["本地", "Hong Kong", "Shanghai", "Beijing", "Tokyo", "Singapore", "New York"]
         let currentCity = viewModel.weatherCity
+        let cityTitle: String
+        if currentCity == "本地" && !viewModel.weather.cityName.isEmpty {
+            cityTitle = "\(viewModel.weather.emoji) 本地（\(viewModel.weather.cityName)）"
+        } else if currentCity == "本地" {
+            cityTitle = "\(viewModel.weather.emoji) 温度"
+        } else {
+            cityTitle = "\(viewModel.weather.emoji) 温度"
+        }
         for city in cities {
-            let item = NSMenuItem(title: city,
+            let title: String
+            if city == "本地" && !viewModel.weather.cityName.isEmpty {
+                title = "本地（\(viewModel.weather.cityName)）"
+            } else {
+                title = city
+            }
+            let item = NSMenuItem(title: title,
                                   action: #selector(selectCity(_:)), keyEquivalent: "")
             item.representedObject = city
             if city == currentCity { item.state = .on }
             cityMenu.addItem(item)
         }
-        let cityItem = NSMenuItem(title: "\(viewModel.weather.emoji) 城市", action: nil, keyEquivalent: "")
+        let cityItem = NSMenuItem(title: cityTitle, action: nil, keyEquivalent: "")
         cityItem.submenu = cityMenu
         menu.addItem(cityItem)
+        menu.addItem(.separator())
+
+        // 时区选择
+        let tzMenu = NSMenu()
+        let currentTZ = viewModel.selectedTimezone
+        for tz in ViewModel.timezoneOptions {
+            let item = NSMenuItem(title: tz.label,
+                                  action: #selector(selectTimezone(_:)), keyEquivalent: "")
+            item.representedObject = tz.identifier
+            if tz.identifier == currentTZ { item.state = .on }
+            tzMenu.addItem(item)
+        }
+        let tzItem = NSMenuItem(title: "🕐 时区", action: nil, keyEquivalent: "")
+        tzItem.submenu = tzMenu
+        menu.addItem(tzItem)
         menu.addItem(.separator())
 
         // 开机自启
@@ -109,6 +138,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let value = Double(sender.tag) / 100.0
         panel.alphaValue = value
         viewModel.windowOpacity = value
+        // 更新勾选状态
+        if let opacityMenu = panel.menu?.items.first(where: { $0.title == "透明度" })?.submenu {
+            for item in opacityMenu.items {
+                item.state = (item.tag == sender.tag) ? .on : .off
+            }
+        }
     }
 
     @objc private func toggleAlwaysOnTop(_ sender: NSMenuItem) {
@@ -141,8 +176,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func selectCity(_ sender: NSMenuItem) {
         guard let city = sender.representedObject as? String else { return }
-        viewModel.weatherCity = city
+        viewModel.updateWeatherForCity(city)
         // 重新设置菜单以更新勾选状态
+        setupRightClickMenu()
+    }
+
+    @objc private func selectTimezone(_ sender: NSMenuItem) {
+        guard let tz = sender.representedObject as? String else { return }
+        viewModel.selectedTimezone = tz
         setupRightClickMenu()
     }
 

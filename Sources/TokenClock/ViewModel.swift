@@ -10,9 +10,24 @@ final class ViewModel: ObservableObject {
     @Published var alwaysOnTop = true
     @Published var launchAtLogin = false
 
-    /// 天气数据（后续接入 API）
+    /// 天气数据
     @Published var weather = WeatherInfo()
-    @Published var weatherCity = "Hong Kong"
+    @Published var weatherCity = "本地"
+
+    /// 时区设置
+    @Published var selectedTimezone: String = "auto"
+
+    /// 可用时区列表
+    static let timezoneOptions: [(label: String, identifier: String)] = [
+        ("自动", "auto"),
+        ("香港 HKT", "Asia/Hong_Kong"),
+        ("上海 CST", "Asia/Shanghai"),
+        ("东京 JST", "Asia/Tokyo"),
+        ("新加坡 SGT", "Asia/Singapore"),
+        ("纽约 EST", "America/New_York"),
+        ("伦敦 GMT", "Europe/London"),
+        ("洛杉矶 PST", "America/Los_Angeles"),
+    ]
 
     private var clockTimer: Timer?
     private var dataTimer: Timer?
@@ -21,6 +36,7 @@ final class ViewModel: ObservableObject {
     init() {
         self.tools = MockUsageService.generateInitialData()
         startTimers()
+        fetchInitialWeather()
     }
 
     func shutdown() {
@@ -58,22 +74,37 @@ final class ViewModel: ObservableObject {
 
     // MARK: - 时间属性
 
+    /// 当前使用的时区
+    private var effectiveTimezone: TimeZone {
+        if selectedTimezone == "auto" {
+            return TimeZone.current
+        }
+        return TimeZone(identifier: selectedTimezone) ?? TimeZone.current
+    }
+
     var hours: Int {
-        Calendar.current.component(.hour, from: currentTime)
+        var cal = Calendar.current
+        cal.timeZone = effectiveTimezone
+        return cal.component(.hour, from: currentTime)
     }
 
     var minutes: Int {
-        Calendar.current.component(.minute, from: currentTime)
+        var cal = Calendar.current
+        cal.timeZone = effectiveTimezone
+        return cal.component(.minute, from: currentTime)
     }
 
     var seconds: Int {
-        Calendar.current.component(.second, from: currentTime)
+        var cal = Calendar.current
+        cal.timeZone = effectiveTimezone
+        return cal.component(.second, from: currentTime)
     }
 
     var dateString: String {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "zh_CN")
         formatter.dateFormat = "M月d日 EEEE"
+        formatter.timeZone = effectiveTimezone
         return formatter.string(from: currentTime)
     }
 
@@ -81,7 +112,34 @@ final class ViewModel: ObservableObject {
         "\(weather.emoji) \(weather.temperature)°"
     }
 
-    // MARK: - Timers
+    // MARK: - 天气
+
+    private func fetchInitialWeather() {
+        // 监听天气更新通知
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(handleWeatherUpdate(_:)),
+            name: .weatherUpdated, object: nil
+        )
+        // 自动定位获取天气
+        WeatherService.shared.fetchLocalWeather()
+    }
+
+    @objc private func handleWeatherUpdate(_ notification: Notification) {
+        guard let info = notification.object as? WeatherInfo else { return }
+        weather = info
+    }
+
+    /// 手动切换城市天气
+    func updateWeatherForCity(_ city: String) {
+        weatherCity = city
+        if city == "本地" {
+            WeatherService.shared.fetchLocalWeather()
+        } else {
+            WeatherService.shared.fetchWeather(forCity: city) { [weak self] info in
+                self?.weather = info
+            }
+        }
+    }
 
     private func startTimers() {
         // 时钟：每秒更新

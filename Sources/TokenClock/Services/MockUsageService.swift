@@ -5,10 +5,11 @@ final class MockUsageService {
     /// 初始化4个工具的随机数据
     static func generateInitialData() -> [ToolUsage] {
         let tools: [(name: String, abbr: String, emoji: String)] = [
-            ("OpenClaw", "OC", "🔧"),
+            ("OpenClaw", "OC", "🦞"),
             ("Gemini CLI", "GC", "✨"),
-            ("Claude Code", "CC", "🟣"),
-            ("Hermes", "HM", "🪽"),
+            ("Claude Code", "CC", "✳️"),
+            ("Hermes", "HM", "⚕️"),
+            ("Codex", "CX", "🤖"),
         ]
 
         return tools.map { tool in
