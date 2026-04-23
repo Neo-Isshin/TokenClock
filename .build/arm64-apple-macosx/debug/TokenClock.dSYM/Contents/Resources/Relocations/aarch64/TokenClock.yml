@@ -1,5 +1,0 @@
----
-triple:          'arm64-apple-darwin'
-binary-path:     '/Users/neo/Projects/TokenClock/.build/arm64-apple-macosx/debug/TokenClock'
-relocations:     []
-...
