@@ -71,34 +71,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(alwaysOnTopItem)
         menu.addItem(.separator())
 
-        // 温度/城市选择（天气）
-        let cityMenu = NSMenu()
-        let cities = ["本地", "Hong Kong", "Shanghai", "Beijing", "Tokyo", "Singapore", "New York"]
-        let currentCity = viewModel.weatherCity
-        let cityTitle: String
-        if currentCity == "本地" && !viewModel.weather.cityName.isEmpty {
-            cityTitle = "\(viewModel.weather.emoji) 本地（\(viewModel.weather.cityName)）"
-        } else if currentCity == "本地" {
-            cityTitle = "\(viewModel.weather.emoji) 温度"
-        } else {
-            cityTitle = "\(viewModel.weather.emoji) 温度"
-        }
-        for city in cities {
-            let title: String
-            if city == "本地" && !viewModel.weather.cityName.isEmpty {
-                title = "本地（\(viewModel.weather.cityName)）"
-            } else {
-                title = city
-            }
-            let item = NSMenuItem(title: title,
-                                  action: #selector(selectCity(_:)), keyEquivalent: "")
-            item.representedObject = city
-            if city == currentCity { item.state = .on }
-            cityMenu.addItem(item)
-        }
-        let cityItem = NSMenuItem(title: cityTitle, action: nil, keyEquivalent: "")
-        cityItem.submenu = cityMenu
-        menu.addItem(cityItem)
+        // 温度单位切换
+        let tempItem = NSMenuItem(title: "🌡️ 温度", action: nil, keyEquivalent: "")
+        let tempMenu = NSMenu()
+        let celsiusItem = NSMenuItem(title: "摄氏度 °C", action: #selector(setCelsius(_:)), keyEquivalent: "")
+        celsiusItem.state = viewModel.useFahrenheit ? .off : .on
+        let fahrenheitItem = NSMenuItem(title: "华氏度 °F", action: #selector(setFahrenheit(_:)), keyEquivalent: "")
+        fahrenheitItem.state = viewModel.useFahrenheit ? .on : .off
+        tempMenu.addItem(celsiusItem)
+        tempMenu.addItem(fahrenheitItem)
+        tempItem.submenu = tempMenu
+        menu.addItem(tempItem)
         menu.addItem(.separator())
 
         // 时区选择
@@ -174,16 +157,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    @objc private func selectCity(_ sender: NSMenuItem) {
-        guard let city = sender.representedObject as? String else { return }
-        viewModel.updateWeatherForCity(city)
-        // 重新设置菜单以更新勾选状态
-        setupRightClickMenu()
-    }
-
     @objc private func selectTimezone(_ sender: NSMenuItem) {
         guard let tz = sender.representedObject as? String else { return }
         viewModel.selectedTimezone = tz
+        setupRightClickMenu()
+    }
+
+    @objc private func setCelsius(_ sender: NSMenuItem) {
+        viewModel.useFahrenheit = false
+        setupRightClickMenu()
+    }
+
+    @objc private func setFahrenheit(_ sender: NSMenuItem) {
+        viewModel.useFahrenheit = true
         setupRightClickMenu()
     }
 

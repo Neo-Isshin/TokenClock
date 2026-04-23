@@ -12,7 +12,7 @@ final class ViewModel: ObservableObject {
 
     /// 天气数据
     @Published var weather = WeatherInfo()
-    @Published var weatherCity = "本地"
+    @Published var useFahrenheit = false
 
     /// 时区设置
     @Published var selectedTimezone: String = "auto"
@@ -32,6 +32,7 @@ final class ViewModel: ObservableObject {
     private var clockTimer: Timer?
     private var dataTimer: Timer?
     private var recentResetTimer: Timer?
+    private var weatherTimer: Timer?
 
     init() {
         self.tools = MockUsageService.generateInitialData()
@@ -109,36 +110,27 @@ final class ViewModel: ObservableObject {
     }
 
     var weatherString: String {
-        "\(weather.emoji) \(weather.temperature)°"
+        if useFahrenheit {
+            let f = Int(Double(weather.temperature) * 9.0 / 5.0 + 32.0)
+            return "\(weather.emoji) \(f)°F"
+        } else {
+            return "\(weather.emoji) \(weather.temperature)°C"
+        }
     }
 
     // MARK: - 天气
 
     private func fetchInitialWeather() {
-        // 监听天气更新通知
         NotificationCenter.default.addObserver(
             self, selector: #selector(handleWeatherUpdate(_:)),
             name: .weatherUpdated, object: nil
         )
-        // 自动定位获取天气
         WeatherService.shared.fetchLocalWeather()
     }
 
     @objc private func handleWeatherUpdate(_ notification: Notification) {
         guard let info = notification.object as? WeatherInfo else { return }
         weather = info
-    }
-
-    /// 手动切换城市天气
-    func updateWeatherForCity(_ city: String) {
-        weatherCity = city
-        if city == "本地" {
-            WeatherService.shared.fetchLocalWeather()
-        } else {
-            WeatherService.shared.fetchWeather(forCity: city) { [weak self] info in
-                self?.weather = info
-            }
-        }
     }
 
     private func startTimers() {
@@ -165,15 +157,29 @@ final class ViewModel: ObservableObject {
             }
         }
 
+        // 天气刷新：每5分钟
+        weatherTimer = Timer.scheduledTimer(withTimeInterval: 300.0, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                self?.refreshWeather()
+            }
+        }
+
         RunLoop.main.add(clockTimer!, forMode: .common)
         RunLoop.main.add(dataTimer!, forMode: .common)
         RunLoop.main.add(recentResetTimer!, forMode: .common)
+        RunLoop.main.add(weatherTimer!, forMode: .common)
     }
 
     private func stopTimers() {
         clockTimer?.invalidate()
         dataTimer?.invalidate()
         recentResetTimer?.invalidate()
+        weatherTimer?.invalidate()
+    }
+
+    /// 手动刷新天气
+    func refreshWeather() {
+        WeatherService.shared.fetchLocalWeather()
     }
 
     private func updateMockData() {
