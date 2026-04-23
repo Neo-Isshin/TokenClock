@@ -1,0 +1,436 @@
+{
+  "builtTestProducts" : [
+
+  ],
+  "copyCommands" : {
+
+  },
+  "explicitTargetDependencyImportCheckingMode" : {
+    "none" : {
+
+    }
+  },
+  "generatedSourceTargetSet" : [
+
+  ],
+  "pluginDescriptions" : [
+
+  ],
+  "swiftCommands" : {
+    "C.TokenClock-arm64-apple-macosx26.0-debug.module" : {
+      "executable" : "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc",
+      "fileList" : "/Users/neo/Projects/TokenClock/.build/arm64-apple-macosx/debug/TokenClock.build/sources",
+      "importPath" : "/Users/neo/Projects/TokenClock/.build/arm64-apple-macosx/debug/Modules",
+      "inputs" : [
+        {
+          "kind" : "file",
+          "name" : "/Users/neo/Projects/TokenClock/Sources/TokenClock/AppDelegate.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/neo/Projects/TokenClock/Sources/TokenClock/FloatingPanel.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/neo/Projects/TokenClock/Sources/TokenClock/Models/TokenUsage.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/neo/Projects/TokenClock/Sources/TokenClock/Services/MockUsageService.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/neo/Projects/TokenClock/Sources/TokenClock/Services/UsageAggregator.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/neo/Projects/TokenClock/Sources/TokenClock/ViewModel.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/neo/Projects/TokenClock/Sources/TokenClock/Views/ClockContentView.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/neo/Projects/TokenClock/Sources/TokenClock/Views/ClockFaceView.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/neo/Projects/TokenClock/Sources/TokenClock/Views/DetailDropdownView.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/neo/Projects/TokenClock/Sources/TokenClock/main.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/neo/Projects/TokenClock/.build/arm64-apple-macosx/debug/swift-version--58304C5D6DBC2206.txt"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/neo/Projects/TokenClock/.build/arm64-apple-macosx/debug/TokenClock.build/sources"
+        }
+      ],
+      "isLibrary" : false,
+      "moduleName" : "TokenClock",
+      "moduleOutputPath" : "/Users/neo/Projects/TokenClock/.build/arm64-apple-macosx/debug/Modules/TokenClock.swiftmodule",
+      "objects" : [
+        "/Users/neo/Projects/TokenClock/.build/arm64-apple-macosx/debug/TokenClock.build/AppDelegate.swift.o",
+        "/Users/neo/Projects/TokenClock/.build/arm64-apple-macosx/debug/TokenClock.build/FloatingPanel.swift.o",
+        "/Users/neo/Projects/TokenClock/.build/arm64-apple-macosx/debug/TokenClock.build/TokenUsage.swift.o",
+        "/Users/neo/Projects/TokenClock/.build/arm64-apple-macosx/debug/TokenClock.build/MockUsageService.swift.o",
+        "/Users/neo/Projects/TokenClock/.build/arm64-apple-macosx/debug/TokenClock.build/UsageAggregator.swift.o",
+        "/Users/neo/Projects/TokenClock/.build/arm64-apple-macosx/debug/TokenClock.build/ViewModel.swift.o",
+        "/Users/neo/Projects/TokenClock/.build/arm64-apple-macosx/debug/TokenClock.build/ClockContentView.swift.o",
+        "/Users/neo/Projects/TokenClock/.build/arm64-apple-macosx/debug/TokenClock.build/ClockFaceView.swift.o",
+        "/Users/neo/Projects/TokenClock/.build/arm64-apple-macosx/debug/TokenClock.build/DetailDropdownView.swift.o",
+        "/Users/neo/Projects/TokenClock/.build/arm64-apple-macosx/debug/TokenClock.build/main.swift.o"
+      ],
+      "otherArguments" : [
+        "-target",
+        "arm64-apple-macosx15.0",
+        "-incremental",
+        "-enable-batch-mode",
+        "-serialize-diagnostics",
+        "-index-store-path",
+        "/Users/neo/Projects/TokenClock/.build/arm64-apple-macosx/debug/index/store",
+        "-Onone",
+        "-enable-testing",
+        "-j10",
+        "-DSWIFT_PACKAGE",
+        "-DDEBUG",
+        "-DSWIFT_MODULE_RESOURCE_BUNDLE_UNAVAILABLE",
+        "-module-cache-path",
+        "/Users/neo/Projects/TokenClock/.build/arm64-apple-macosx/debug/ModuleCache",
+        "-parseable-output",
+        "-Xfrontend",
+        "-entry-point-function-name",
+        "-Xfrontend",
+        "TokenClock_main",
+        "-swift-version",
+        "6",
+        "-parse-as-library",
+        "-plugin-path",
+        "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing",
+        "-sdk",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.2.sdk",
+        "-F",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+        "-F",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/PrivateFrameworks",
+        "-I",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+        "-L",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+        "-g",
+        "-Xcc",
+        "-isysroot",
+        "-Xcc",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.2.sdk",
+        "-Xcc",
+        "-F",
+        "-Xcc",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+        "-Xcc",
+        "-F",
+        "-Xcc",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/PrivateFrameworks",
+        "-Xcc",
+        "-fPIC",
+        "-Xcc",
+        "-g",
+        "-package-name",
+        "tokenclock"
+      ],
+      "outputFileMapPath" : "/Users/neo/Projects/TokenClock/.build/arm64-apple-macosx/debug/TokenClock.build/output-file-map.json",
+      "outputs" : [
+        {
+          "kind" : "file",
+          "name" : "/Users/neo/Projects/TokenClock/.build/arm64-apple-macosx/debug/TokenClock.build/AppDelegate.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/neo/Projects/TokenClock/.build/arm64-apple-macosx/debug/TokenClock.build/FloatingPanel.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/neo/Projects/TokenClock/.build/arm64-apple-macosx/debug/TokenClock.build/TokenUsage.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/neo/Projects/TokenClock/.build/arm64-apple-macosx/debug/TokenClock.build/MockUsageService.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/neo/Projects/TokenClock/.build/arm64-apple-macosx/debug/TokenClock.build/UsageAggregator.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/neo/Projects/TokenClock/.build/arm64-apple-macosx/debug/TokenClock.build/ViewModel.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/neo/Projects/TokenClock/.build/arm64-apple-macosx/debug/TokenClock.build/ClockContentView.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/neo/Projects/TokenClock/.build/arm64-apple-macosx/debug/TokenClock.build/ClockFaceView.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/neo/Projects/TokenClock/.build/arm64-apple-macosx/debug/TokenClock.build/DetailDropdownView.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/neo/Projects/TokenClock/.build/arm64-apple-macosx/debug/TokenClock.build/main.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/neo/Projects/TokenClock/.build/arm64-apple-macosx/debug/Modules/TokenClock.swiftmodule"
+        }
+      ],
+      "prepareForIndexing" : false,
+      "sources" : [
+        "/Users/neo/Projects/TokenClock/Sources/TokenClock/AppDelegate.swift",
+        "/Users/neo/Projects/TokenClock/Sources/TokenClock/FloatingPanel.swift",
+        "/Users/neo/Projects/TokenClock/Sources/TokenClock/Models/TokenUsage.swift",
+        "/Users/neo/Projects/TokenClock/Sources/TokenClock/Services/MockUsageService.swift",
+        "/Users/neo/Projects/TokenClock/Sources/TokenClock/Services/UsageAggregator.swift",
+        "/Users/neo/Projects/TokenClock/Sources/TokenClock/ViewModel.swift",
+        "/Users/neo/Projects/TokenClock/Sources/TokenClock/Views/ClockContentView.swift",
+        "/Users/neo/Projects/TokenClock/Sources/TokenClock/Views/ClockFaceView.swift",
+        "/Users/neo/Projects/TokenClock/Sources/TokenClock/Views/DetailDropdownView.swift",
+        "/Users/neo/Projects/TokenClock/Sources/TokenClock/main.swift"
+      ],
+      "tempsPath" : "/Users/neo/Projects/TokenClock/.build/arm64-apple-macosx/debug/TokenClock.build",
+      "wholeModuleOptimization" : false
+    }
+  },
+  "swiftFrontendCommands" : {
+
+  },
+  "swiftTargetScanArgs" : {
+    "TokenClock" : [
+      "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc",
+      "-module-name",
+      "TokenClock",
+      "-package-name",
+      "tokenclock",
+      "-c",
+      "/Users/neo/Projects/TokenClock/Sources/TokenClock/AppDelegate.swift",
+      "/Users/neo/Projects/TokenClock/Sources/TokenClock/FloatingPanel.swift",
+      "/Users/neo/Projects/TokenClock/Sources/TokenClock/Models/TokenUsage.swift",
+      "/Users/neo/Projects/TokenClock/Sources/TokenClock/Services/MockUsageService.swift",
+      "/Users/neo/Projects/TokenClock/Sources/TokenClock/Services/UsageAggregator.swift",
+      "/Users/neo/Projects/TokenClock/Sources/TokenClock/ViewModel.swift",
+      "/Users/neo/Projects/TokenClock/Sources/TokenClock/Views/ClockContentView.swift",
+      "/Users/neo/Projects/TokenClock/Sources/TokenClock/Views/ClockFaceView.swift",
+      "/Users/neo/Projects/TokenClock/Sources/TokenClock/Views/DetailDropdownView.swift",
+      "/Users/neo/Projects/TokenClock/Sources/TokenClock/main.swift",
+      "-I",
+      "/Users/neo/Projects/TokenClock/.build/arm64-apple-macosx/debug/Modules",
+      "-target",
+      "arm64-apple-macosx15.0",
+      "-incremental",
+      "-enable-batch-mode",
+      "-serialize-diagnostics",
+      "-index-store-path",
+      "/Users/neo/Projects/TokenClock/.build/arm64-apple-macosx/debug/index/store",
+      "-Onone",
+      "-enable-testing",
+      "-j10",
+      "-DSWIFT_PACKAGE",
+      "-DDEBUG",
+      "-DSWIFT_MODULE_RESOURCE_BUNDLE_UNAVAILABLE",
+      "-module-cache-path",
+      "/Users/neo/Projects/TokenClock/.build/arm64-apple-macosx/debug/ModuleCache",
+      "-parseable-output",
+      "-Xfrontend",
+      "-entry-point-function-name",
+      "-Xfrontend",
+      "TokenClock_main",
+      "-swift-version",
+      "6",
+      "-parse-as-library",
+      "-plugin-path",
+      "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing",
+      "-sdk",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.2.sdk",
+      "-F",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+      "-F",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/PrivateFrameworks",
+      "-I",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+      "-L",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+      "-g",
+      "-Xcc",
+      "-isysroot",
+      "-Xcc",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.2.sdk",
+      "-Xcc",
+      "-F",
+      "-Xcc",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+      "-Xcc",
+      "-F",
+      "-Xcc",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/PrivateFrameworks",
+      "-Xcc",
+      "-fPIC",
+      "-Xcc",
+      "-g",
+      "-package-name",
+      "tokenclock",
+      "-driver-use-frontend-path",
+      "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc"
+    ]
+  },
+  "targetDependencyMap" : {
+    "TokenClock" : [
+
+    ]
+  },
+  "testDiscoveryCommands" : {
+
+  },
+  "testEntryPointCommands" : {
+
+  },
+  "traitConfiguration" : {
+    "default" : {
+
+    }
+  },
+  "writeCommands" : {
+    "/Users/neo/Projects/TokenClock/.build/arm64-apple-macosx/debug/TokenClock-entitlement.plist" : {
+      "alwaysOutOfDate" : false,
+      "inputs" : [
+        {
+          "kind" : "virtual",
+          "name" : "<entitlement-plist>"
+        },
+        {
+          "kind" : "virtual",
+          "name" : "<com.apple.security.get-task-allow>"
+        }
+      ],
+      "outputFilePath" : "/Users/neo/Projects/TokenClock/.build/arm64-apple-macosx/debug/TokenClock-entitlement.plist"
+    },
+    "/Users/neo/Projects/TokenClock/.build/arm64-apple-macosx/debug/TokenClock.build/sources" : {
+      "alwaysOutOfDate" : false,
+      "inputs" : [
+        {
+          "kind" : "virtual",
+          "name" : "<sources-file-list>"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/neo/Projects/TokenClock/Sources/TokenClock/AppDelegate.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/neo/Projects/TokenClock/Sources/TokenClock/FloatingPanel.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/neo/Projects/TokenClock/Sources/TokenClock/Models/TokenUsage.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/neo/Projects/TokenClock/Sources/TokenClock/Services/MockUsageService.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/neo/Projects/TokenClock/Sources/TokenClock/Services/UsageAggregator.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/neo/Projects/TokenClock/Sources/TokenClock/ViewModel.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/neo/Projects/TokenClock/Sources/TokenClock/Views/ClockContentView.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/neo/Projects/TokenClock/Sources/TokenClock/Views/ClockFaceView.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/neo/Projects/TokenClock/Sources/TokenClock/Views/DetailDropdownView.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/neo/Projects/TokenClock/Sources/TokenClock/main.swift"
+        }
+      ],
+      "outputFilePath" : "/Users/neo/Projects/TokenClock/.build/arm64-apple-macosx/debug/TokenClock.build/sources"
+    },
+    "/Users/neo/Projects/TokenClock/.build/arm64-apple-macosx/debug/TokenClock.product/Objects.LinkFileList" : {
+      "alwaysOutOfDate" : false,
+      "inputs" : [
+        {
+          "kind" : "virtual",
+          "name" : "<link-file-list>"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/neo/Projects/TokenClock/.build/arm64-apple-macosx/debug/TokenClock.build/AppDelegate.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/neo/Projects/TokenClock/.build/arm64-apple-macosx/debug/TokenClock.build/ClockContentView.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/neo/Projects/TokenClock/.build/arm64-apple-macosx/debug/TokenClock.build/ClockFaceView.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/neo/Projects/TokenClock/.build/arm64-apple-macosx/debug/TokenClock.build/DetailDropdownView.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/neo/Projects/TokenClock/.build/arm64-apple-macosx/debug/TokenClock.build/FloatingPanel.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/neo/Projects/TokenClock/.build/arm64-apple-macosx/debug/TokenClock.build/MockUsageService.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/neo/Projects/TokenClock/.build/arm64-apple-macosx/debug/TokenClock.build/TokenUsage.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/neo/Projects/TokenClock/.build/arm64-apple-macosx/debug/TokenClock.build/UsageAggregator.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/neo/Projects/TokenClock/.build/arm64-apple-macosx/debug/TokenClock.build/ViewModel.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/neo/Projects/TokenClock/.build/arm64-apple-macosx/debug/TokenClock.build/main.swift.o"
+        }
+      ],
+      "outputFilePath" : "/Users/neo/Projects/TokenClock/.build/arm64-apple-macosx/debug/TokenClock.product/Objects.LinkFileList"
+    },
+    "/Users/neo/Projects/TokenClock/.build/arm64-apple-macosx/debug/swift-version--58304C5D6DBC2206.txt" : {
+      "alwaysOutOfDate" : true,
+      "inputs" : [
+        {
+          "kind" : "virtual",
+          "name" : "<swift-get-version>"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc"
+        }
+      ],
+      "outputFilePath" : "/Users/neo/Projects/TokenClock/.build/arm64-apple-macosx/debug/swift-version--58304C5D6DBC2206.txt"
+    }
+  }
+}
