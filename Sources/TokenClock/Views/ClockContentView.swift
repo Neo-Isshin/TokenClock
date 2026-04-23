@@ -5,8 +5,8 @@ struct ClockContentView: View {
     @ObservedObject var viewModel: ViewModel
 
     /// 叠加文字颜色（浅色表盘上用深色文字）
-    private let textPrimary = Color(red: 0.2, green: 0.2, blue: 0.22)
-    private let textSecondary = Color(red: 0.4, green: 0.4, blue: 0.42)
+    private let textPrimary = Color(red: 0.18, green: 0.18, blue: 0.20)
+    private let textSecondary = Color(red: 0.45, green: 0.45, blue: 0.48)
 
     var body: some View {
         ZStack {
@@ -35,42 +35,39 @@ struct ClockContentView: View {
                 Spacer()
 
                 // 下方：tokens + 消息数（中心到下部中点）
-                VStack(spacing: 3) {
+                VStack(spacing: 2) {
+                    Text("今日Tokens")
+                        .font(.system(size: 9))
+                        .foregroundColor(textSecondary)
                     Text(viewModel.totalTokensFormatted)
-                        .font(.system(size: 22, weight: .bold, design: .rounded))
+                        .font(.system(size: 20, weight: .bold, design: .rounded))
                         .foregroundColor(textPrimary)
-                    Text(viewModel.totalMessagesFormatted)
-                        .font(.system(size: 11))
+                    Text("消息数：\(viewModel.totalMessagesCount)条")
+                        .font(.system(size: 10))
                         .foregroundColor(textSecondary)
                 }
-                .padding(.bottom, 58)
+                .padding(.bottom, 48)
             }
 
-            // 左侧：活跃工具标签（中心到左侧中点）
+            // 左侧：活跃工具标签（中心到左侧中点，无背景）
             HStack {
-                VStack(alignment: .leading, spacing: 5) {
+                VStack(alignment: .leading, spacing: 4) {
                     ForEach(viewModel.activeToolsList) { tool in
                         Text("\(tool.emoji) \(tool.abbreviation)")
-                            .font(.system(size: 9, weight: .semibold, design: .rounded))
-                            .foregroundColor(textPrimary.opacity(0.8))
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(
-                                Capsule()
-                                    .fill(.white.opacity(0.5))
-                            )
+                            .font(.system(size: 13, weight: .semibold, design: .rounded))
+                            .foregroundColor(textPrimary.opacity(0.75))
                     }
                 }
-                .padding(.leading, 30)
+                .padding(.leading, 22)
                 Spacer()
             }
 
-            // 右侧：速率 emoji（中心到右侧中点）
+            // 右侧：速率 emoji（中心到右侧中点，调大）
             HStack {
                 Spacer()
                 Text(viewModel.rateEmoji)
-                    .font(.system(size: 20))
-                    .padding(.trailing, 30)
+                    .font(.system(size: 28))
+                    .padding(.trailing, 22)
             }
         }
         .frame(width: 240, height: 240)

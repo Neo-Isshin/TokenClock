@@ -7,8 +7,8 @@ struct ClockFaceView: View {
     let seconds: Int
     let onTap: () -> Void
 
-    /// 纯灰色表盘
-    private let dialColor = Color(red: 0.75, green: 0.75, blue: 0.77)
+    /// 近白色表盘
+    private let dialColor = Color(red: 0.94, green: 0.94, blue: 0.95)
     /// 时针：深红 #B71C1C
     private let hourHandColor = Color(red: 0.718, green: 0.110, blue: 0.110)
     /// 分针：中红 #E53935
@@ -28,7 +28,7 @@ struct ClockFaceView: View {
 
             // 简洁外环
             let rimPath = circle.strokedPath(StrokeStyle(lineWidth: 2))
-            context.stroke(rimPath, with: .color(Color(white: 0.55)),
+            context.stroke(rimPath, with: .color(Color(white: 0.82)),
                            style: StrokeStyle(lineWidth: 2))
 
             // 画指针：时针→分针→秒针
@@ -42,7 +42,7 @@ struct ClockFaceView: View {
             // 中心圆点
             let dotPath = Path(ellipseIn: CGRect(x: center.x - 3, y: center.y - 3,
                                                   width: 6, height: 6))
-            context.fill(dotPath, with: .color(Color(white: 0.55)))
+            context.fill(dotPath, with: .color(Color(white: 0.82)))
             let innerDot = Path(ellipseIn: CGRect(x: center.x - 1.5, y: center.y - 1.5,
                                                    width: 3, height: 3))
             context.fill(innerDot, with: .color(minuteHandColor))

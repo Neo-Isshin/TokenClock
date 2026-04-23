@@ -44,6 +44,10 @@ final class ViewModel: ObservableObject {
         return "\(total) 条"
     }
 
+    var totalMessagesCount: Int {
+        UsageAggregator.totalMessages(tools)
+    }
+
     var activeToolsList: [ToolUsage] {
         UsageAggregator.activeTools(tools, limit: 2)
     }
