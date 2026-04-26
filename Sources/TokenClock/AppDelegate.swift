@@ -19,13 +19,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let mainView = MainView(viewModel: viewModel)
         let contentView = NSHostingView(rootView: mainView)
-        contentView.frame = NSRect(x: 0, y: 0, width: 260, height: 260)
+        contentView.frame = NSRect(x: 0, y: 0, width: 300, height: 260)
         panel.contentView = contentView
 
         // 监听展开/收起通知
         NotificationCenter.default.addObserver(
             self, selector: #selector(handleToggleExpanded(_:)),
             name: .toggleExpanded, object: nil
+        )
+
+        // 监听天气更新（城市解析后刷新菜单标签）
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(handleWeatherResolved(_:)),
+            name: .weatherUpdated, object: nil
         )
 
         panel.makeKeyAndOrderFront(nil)
@@ -82,6 +88,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         tempMenu.addItem(fahrenheitItem)
         tempItem.submenu = tempMenu
         menu.addItem(tempItem)
+        menu.addItem(.separator())
+
+        // 城市选择（天气）
+        let cityMenu = NSMenu()
+        let currentCity = viewModel.selectedCity
+        for city in ViewModel.cityOptions {
+            let label: String
+            if city == "auto" {
+                let resolved = viewModel.resolvedCityName
+                label = resolved.isEmpty ? "自动(定位中...)" : "自动(\(resolved))"
+            } else {
+                label = ViewModel.cityLabels[city] ?? city
+            }
+            let item = NSMenuItem(title: label,
+                                  action: #selector(selectCity(_:)), keyEquivalent: "")
+            item.representedObject = city
+            if city == currentCity { item.state = .on }
+            cityMenu.addItem(item)
+        }
+        let cityItem = NSMenuItem(title: "🌤️ 城市", action: nil, keyEquivalent: "")
+        cityItem.submenu = cityMenu
+        menu.addItem(cityItem)
         menu.addItem(.separator())
 
         // 时区选择
@@ -163,6 +191,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         setupRightClickMenu()
     }
 
+    @objc private func handleWeatherResolved(_ notification: Notification) {
+        // 城市名解析后重建菜单以更新动态标签
+        setupRightClickMenu()
+    }
+
+    @objc private func selectCity(_ sender: NSMenuItem) {
+        guard let city = sender.representedObject as? String else { return }
+        viewModel.selectedCity = city
+        viewModel.refreshWeather()
+        setupRightClickMenu()
+    }
+
     @objc private func setCelsius(_ sender: NSMenuItem) {
         viewModel.useFahrenheit = false
         setupRightClickMenu()
@@ -188,10 +228,10 @@ struct MainView: View {
             ClockContentView(viewModel: viewModel)
 
             if viewModel.isExpanded {
-                DetailDropdownView(tools: viewModel.tools)
+                DetailDropdownView(tools: viewModel.tools.sorted { $0.todayTokens > $1.todayTokens })
             }
         }
-        .frame(width: 260)
+        .frame(width: 300)
         .onChange(of: viewModel.isExpanded) { _, newValue in
             NotificationCenter.default.post(name: .toggleExpanded, object: newValue)
         }

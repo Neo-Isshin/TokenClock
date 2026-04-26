@@ -4,10 +4,12 @@ import Foundation
 /// 日志位置: ~/.openclaw/agents/*/sessions/
 final class OpenClawUsageService: @unchecked Sendable {
     private(set) var dailyData: [String: DayUsage] = [:]
-    private(set) var hourlyData: [String: HourlyUsage] = [:]  // "2026-04-23-22" → tokens
+    private(set) var hourlyData: [String: HourlyUsage] = [:]
+    private(set) var dailyCache: [String: Int] = [:]
     private var fileCache: [String: FileMeta] = [:]
-    private var fileDailyContrib: [String: [String: DayUsage]] = [:]      // path → dateKey → DayUsage
-    private var fileHourlyContrib: [String: [String: HourlyUsage]] = [:]  // path → hourKey → HourlyUsage
+    private var fileDailyContrib: [String: [String: DayUsage]] = [:]
+    private var fileHourlyContrib: [String: [String: HourlyUsage]] = [:]
+    private var fileCacheContrib: [String: [String: Int]] = [:]
     private var recentEntries: [RecentEntry] = []
 
     private let fm = FileManager.default
@@ -26,9 +28,11 @@ final class OpenClawUsageService: @unchecked Sendable {
     func fullScan() {
         dailyData.removeAll()
         hourlyData.removeAll()
+        dailyCache.removeAll()
         fileCache.removeAll()
         fileDailyContrib.removeAll()
         fileHourlyContrib.removeAll()
+        fileCacheContrib.removeAll()
         recentEntries = []
         scanAgentDirectories()
     }
@@ -37,9 +41,12 @@ final class OpenClawUsageService: @unchecked Sendable {
         scanAgentDirectories()
     }
 
-    func todayUsage() -> (tokens: Int, messages: Int) {
+    func todayUsage() -> (tokens: Int, messages: Int, cacheRate: Double) {
         let d = dailyData[DateHelper.todayKey()]
-        return (d?.tokens ?? 0, d?.messages ?? 0)
+        let total = d?.tokens ?? 0
+        let cache = dailyCache[DateHelper.todayKey()] ?? 0
+        let rate = total > 0 ? Double(cache) / Double(total) : 0
+        return (total, d?.messages ?? 0, rate)
     }
 
     /// 当前小时的 token 消耗（用于热力计算）
@@ -95,9 +102,25 @@ final class OpenClawUsageService: @unchecked Sendable {
                 if let oldContrib = fileHourlyContrib[fullPath] {
                     subtractHourlyContributions(oldContrib)
                 }
+                if let oldContrib = fileCacheContrib[fullPath] {
+                    subtractCacheContributions(oldContrib)
+                }
 
                 parseFile(path: fullPath, isIncremental: fileDailyContrib[fullPath] != nil)
                 fileCache[fullPath] = FileMeta(path: fullPath, modDate: modDate)
+            }
+        }
+    }
+
+    private func subtractCacheContributions(_ contrib: [String: Int]) {
+        for (dateKey, count) in contrib {
+            if var existing = dailyCache[dateKey] {
+                existing -= count
+                if existing <= 0 {
+                    dailyCache.removeValue(forKey: dateKey)
+                } else {
+                    dailyCache[dateKey] = existing
+                }
             }
         }
     }
@@ -143,6 +166,7 @@ final class OpenClawUsageService: @unchecked Sendable {
 
         var newDailyContrib: [String: DayUsage] = [:]
         var newHourlyContrib: [String: HourlyUsage] = [:]
+        var newCacheContrib: [String: Int] = [:]
 
         while stream.hasBytesAvailable {
             let n = stream.read(buf, maxLength: bufSize)
@@ -158,7 +182,8 @@ final class OpenClawUsageService: @unchecked Sendable {
                     if let result = parseAssistantLine(line) {
                         accumulate(result, today: today,
                                    dailyContrib: &newDailyContrib,
-                                   hourlyContrib: &newHourlyContrib)
+                                   hourlyContrib: &newHourlyContrib,
+                                   cacheContrib: &newCacheContrib)
                     }
                 }
             }
@@ -170,18 +195,22 @@ final class OpenClawUsageService: @unchecked Sendable {
             if let result = parseAssistantLine(line) {
                 accumulate(result, today: today,
                            dailyContrib: &newDailyContrib,
-                           hourlyContrib: &newHourlyContrib)
+                           hourlyContrib: &newHourlyContrib,
+                           cacheContrib: &newCacheContrib)
             }
         }
 
         fileDailyContrib[path] = newDailyContrib
         fileHourlyContrib[path] = newHourlyContrib
+        fileCacheContrib[path] = newCacheContrib
+        fileCacheContrib[path] = newCacheContrib
     }
 
     private struct ParseResult {
         let dateKey: String
         let hourKey: String
         let tokens: Int
+        let cacheTokens: Int
         let timestamp: Date?
     }
 
@@ -194,7 +223,10 @@ final class OpenClawUsageService: @unchecked Sendable {
 
         let input = usage["input"] as? Int ?? 0
         let output = usage["output"] as? Int ?? 0
-        let tokens = input + output
+        let cacheRead = usage["cacheRead"] as? Int ?? 0
+        let cacheWrite = usage["cacheWrite"] as? Int ?? 0
+        let tokens = input + output + cacheRead + cacheWrite
+        let cacheTokens = cacheRead + cacheWrite
         guard tokens > 0 else { return nil }
 
         let timestamp = obj["timestamp"] as? String ?? ""
@@ -203,12 +235,14 @@ final class OpenClawUsageService: @unchecked Sendable {
         guard !dateKey.isEmpty else { return nil }
 
         return ParseResult(dateKey: dateKey, hourKey: hourKey,
-                          tokens: tokens, timestamp: DateHelper.parseISO8601(timestamp))
+                          tokens: tokens, cacheTokens: cacheTokens,
+                          timestamp: DateHelper.parseISO8601(timestamp))
     }
 
     private func accumulate(_ result: ParseResult, today: String,
                             dailyContrib: inout [String: DayUsage],
-                            hourlyContrib: inout [String: HourlyUsage]) {
+                            hourlyContrib: inout [String: HourlyUsage],
+                            cacheContrib: inout [String: Int]) {
         // daily
         if var existing = dailyData[result.dateKey] {
             existing.tokens += result.tokens
@@ -239,6 +273,9 @@ final class OpenClawUsageService: @unchecked Sendable {
         } else {
             hourlyContrib[result.hourKey] = HourlyUsage(tokens: result.tokens, messages: 1)
         }
+        // cache
+        dailyCache[result.dateKey, default: 0] += result.cacheTokens
+        cacheContrib[result.dateKey, default: 0] += result.cacheTokens
         // recentEntries（只记录今日）
         if result.dateKey == today, let ts = result.timestamp {
             recentEntries.append(RecentEntry(timestamp: ts, tokens: result.tokens))

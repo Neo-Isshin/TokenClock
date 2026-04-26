@@ -9,6 +9,7 @@ struct ToolUsage: Identifiable, Hashable {
     var todayTokens: Int
     var todayMessages: Int
     var isActive: Bool
+    var cacheRate: Double = 0
 
     /// 近10分钟内新增的 tokens（用于活跃度判断）
     var recentTokens: Int

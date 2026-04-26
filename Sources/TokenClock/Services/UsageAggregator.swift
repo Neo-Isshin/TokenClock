@@ -12,9 +12,9 @@ enum UsageAggregator {
         tools.reduce(0) { $0 + $1.todayMessages }
     }
 
-    /// 获取活跃工具（最多2个）
-    static func activeTools(_ tools: [ToolUsage], limit: Int = 2) -> [ToolUsage] {
-        tools.filter(\.isActive).prefix(limit).map { $0 }
+    /// 获取 token 消耗最高的工具（最多2个）
+    static func topToolsByTokens(_ tools: [ToolUsage], limit: Int = 2) -> [ToolUsage] {
+        tools.sorted { $0.todayTokens > $1.todayTokens }.prefix(limit).map { $0 }
     }
 
     /// 根据当前小时 token 消耗判断热力 emoji

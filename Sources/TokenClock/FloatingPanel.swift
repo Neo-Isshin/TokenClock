@@ -4,7 +4,7 @@ import AppKit
 final class FloatingPanel: NSPanel {
     init(viewModel: ViewModel) {
         super.init(
-            contentRect: NSRect(x: 0, y: 0, width: 260, height: 260),
+            contentRect: NSRect(x: 0, y: 0, width: 300, height: 260),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
@@ -56,7 +56,7 @@ final class FloatingPanel: NSPanel {
             var newFrame = NSRect(
                 x: currentFrame.origin.x,
                 y: topY - targetHeight,
-                width: 240,
+                width: 300,
                 height: targetHeight
             )
             // 确保不超出屏幕底部

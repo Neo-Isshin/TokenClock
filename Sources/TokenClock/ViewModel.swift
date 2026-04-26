@@ -13,6 +13,18 @@ final class ViewModel: ObservableObject {
     /// 天气数据
     @Published var weather = WeatherInfo()
     @Published var useFahrenheit = false
+    @Published var selectedCity: String = "auto"
+    /// IP 定位解析到的城市名（用于菜单动态标签）
+    @Published var resolvedCityName: String = ""
+
+    /// 可选城市列表（auto = 自动定位）
+    static let cityOptions = ["auto", "Hong Kong", "Shanghai", "Beijing", "Tokyo", "Singapore", "New York"]
+    static let cityLabels: [String: String] = [
+        "auto": "自动(城市名)", "Hong Kong": "Hong Kong",
+        "Shanghai": "Shanghai", "Beijing": "Beijing",
+        "Tokyo": "Tokyo", "Singapore": "Singapore",
+        "New York": "New York",
+    ]
 
     /// 时区设置
     @Published var selectedTimezone: String = "auto"
@@ -38,6 +50,8 @@ final class ViewModel: ObservableObject {
     private let openclawService = OpenClawUsageService()
     private let claudeCodeService = ClaudeCodeUsageService()
     private let geminiService = GeminiUsageService()
+    private let codexService = CodexUsageService()
+    private let hermesService = HermesUsageService()
 
     init() {
         // 先生成初始结构，再被真实数据覆盖
@@ -74,7 +88,7 @@ final class ViewModel: ObservableObject {
     }
 
     var activeToolsList: [ToolUsage] {
-        UsageAggregator.activeTools(tools, limit: 2)
+        UsageAggregator.topToolsByTokens(tools, limit: 2)
     }
 
     var rateEmoji: String {
@@ -139,6 +153,9 @@ final class ViewModel: ObservableObject {
     @objc private func handleWeatherUpdate(_ notification: Notification) {
         guard let info = notification.object as? WeatherInfo else { return }
         weather = info
+        if !info.cityName.isEmpty {
+            resolvedCityName = info.cityName
+        }
     }
 
     private func startTimers() {
@@ -187,34 +204,54 @@ final class ViewModel: ObservableObject {
 
     /// 手动刷新天气
     func refreshWeather() {
-        WeatherService.shared.fetchLocalWeather()
+        if selectedCity == "auto" {
+            WeatherService.shared.fetchLocalWeather()
+        } else {
+            WeatherService.shared.fetchWeather(forCity: selectedCity) { [weak self] info in
+                self?.weather = info
+            }
+        }
     }
 
     /// 从真实数据服务刷新所有工具的 token 数据
     private func refreshRealData() {
+
         let oc = openclawService.todayUsage()
         let ocRecent = openclawService.recentUsage()
         updateTool(name: "OpenClaw", tokens: oc.tokens, messages: oc.messages,
                    recentTokens: ocRecent.tokens, hourlyTokens: openclawService.currentHourTokens(),
-                   active: openclawService.isActive())
+                   active: openclawService.isActive(), cacheRate: oc.cacheRate)
 
         let cc = claudeCodeService.todayUsage()
         let ccRecent = claudeCodeService.recentUsage()
         updateTool(name: "Claude Code", tokens: cc.tokens, messages: cc.messages,
                    recentTokens: ccRecent.tokens, hourlyTokens: claudeCodeService.currentHourTokens(),
-                   active: claudeCodeService.isActive())
+                   active: claudeCodeService.isActive(), cacheRate: cc.cacheRate)
 
         let gc = geminiService.todayUsage()
         let gcRecent = geminiService.recentUsage()
         updateTool(name: "Gemini CLI", tokens: gc.tokens, messages: gc.messages,
                    recentTokens: gcRecent.tokens, hourlyTokens: geminiService.currentHourTokens(),
-                   active: geminiService.isActive())
+                   active: geminiService.isActive(), cacheRate: gc.cacheRate)
 
-        // Hermes 和 Codex 暂时保留上次值（无数据源）
+        // Hermes 和 Codex
+        let cx = codexService.todayUsage()
+        let cxRecent = codexService.recentUsage()
+        updateTool(name: "Codex", tokens: cx.tokens, messages: cx.messages,
+                   recentTokens: cxRecent.tokens, hourlyTokens: codexService.currentHourTokens(),
+                   active: codexService.isActive(), cacheRate: cx.cacheRate)
+
+        let hm = hermesService.todayUsage()
+        let hmRecent = hermesService.recentUsage()
+        updateTool(name: "Hermes", tokens: hm.tokens, messages: hm.messages,
+                   recentTokens: hmRecent.tokens, hourlyTokens: hermesService.currentHourTokens(),
+                   active: hermesService.isActive(), cacheRate: hm.cacheRate)
+
+
     }
 
     private func updateTool(name: String, tokens: Int, messages: Int,
-                           recentTokens: Int, hourlyTokens: Int, active: Bool) {
+                           recentTokens: Int, hourlyTokens: Int, active: Bool, cacheRate: Double = 0) {
         guard let idx = tools.firstIndex(where: { $0.name == name }) else { return }
         tools[idx] = ToolUsage(
             name: tools[idx].name,
@@ -223,16 +260,24 @@ final class ViewModel: ObservableObject {
             todayTokens: tokens,
             todayMessages: messages,
             isActive: active,
+            cacheRate: cacheRate,
             recentTokens: recentTokens,
             hourlyTokens: hourlyTokens
         )
     }
 
     private func updateMockData() {
-        // 增量扫描 + 刷新（在主线程执行，增量 IO 很轻量）
+        // 本地服务：主线程（IO 轻量）
         openclawService.incrementalScan()
         claudeCodeService.incrementalScan()
         geminiService.incrementalScan()
+        codexService.incrementalScan()
+        // Hermes：后台线程（SSH IO 可能阻塞数秒）
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            self?.hermesService.incrementalScan()
+            DispatchQueue.main.async { self?.refreshRealData() }
+        }
+        // 先用本地数据刷新一次（不等待 Hermes）
         refreshRealData()
     }
 
@@ -240,6 +285,12 @@ final class ViewModel: ObservableObject {
         openclawService.fullScan()
         claudeCodeService.fullScan()
         geminiService.fullScan()
+        codexService.fullScan()
+        // Hermes 全量扫描也在后台
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            self?.hermesService.fullScan()
+            DispatchQueue.main.async { self?.refreshRealData() }
+        }
         refreshRealData()
     }
 

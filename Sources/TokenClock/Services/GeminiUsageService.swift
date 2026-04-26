@@ -5,9 +5,11 @@ import Foundation
 final class GeminiUsageService: @unchecked Sendable {
     private(set) var dailyData: [String: DayUsage] = [:]
     private(set) var hourlyData: [String: HourlyUsage] = [:]
+    private(set) var dailyCache: [String: Int] = [:]
     private var fileCache: [String: FileMeta] = [:]
     private var fileDailyContrib: [String: [String: DayUsage]] = [:]
     private var fileHourlyContrib: [String: [String: HourlyUsage]] = [:]
+    private var fileCacheContrib: [String: [String: Int]] = [:]
     private var recentEntries: [RecentEntry] = []
 
     private let fm = FileManager.default
@@ -20,18 +22,23 @@ final class GeminiUsageService: @unchecked Sendable {
     func fullScan() {
         dailyData.removeAll()
         hourlyData.removeAll()
+        dailyCache.removeAll()
         fileCache.removeAll()
         fileDailyContrib.removeAll()
         fileHourlyContrib.removeAll()
+        fileCacheContrib.removeAll()
         recentEntries = []
         scanSessionsDir()
     }
 
     func incrementalScan() { scanSessionsDir() }
 
-    func todayUsage() -> (tokens: Int, messages: Int) {
+    func todayUsage() -> (tokens: Int, messages: Int, cacheRate: Double) {
         let d = dailyData[DateHelper.todayKey()]
-        return (d?.tokens ?? 0, d?.messages ?? 0)
+        let total = d?.tokens ?? 0
+        let cache = dailyCache[DateHelper.todayKey()] ?? 0
+        let rate = total > 0 ? Double(cache) / Double(total) : 0
+        return (total, d?.messages ?? 0, rate)
     }
 
     func currentHourTokens() -> Int {
@@ -76,6 +83,7 @@ final class GeminiUsageService: @unchecked Sendable {
 
                 if let old = fileDailyContrib[fullPath] { subtractDaily(old) }
                 if let old = fileHourlyContrib[fullPath] { subtractHourly(old) }
+                if let old = fileCacheContrib[fullPath] { subtractCache(old) }
 
                 parseSessionFile(path: fullPath)
                 fileCache[fullPath] = FileMeta(path: fullPath, modDate: modDate)
@@ -103,6 +111,16 @@ final class GeminiUsageService: @unchecked Sendable {
         }
     }
 
+    private func subtractCache(_ contrib: [String: Int]) {
+        for (k, v) in contrib {
+            if var e = dailyCache[k] {
+                e -= v
+                if e <= 0 { dailyCache.removeValue(forKey: k) }
+                else { dailyCache[k] = e }
+            }
+        }
+    }
+
     private func parseSessionFile(path: String) {
         guard let data = fm.contents(atPath: path),
               let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -111,11 +129,15 @@ final class GeminiUsageService: @unchecked Sendable {
         let today = DateHelper.todayKey()
         var newDaily: [String: DayUsage] = [:]
         var newHourly: [String: HourlyUsage] = [:]
+        var newCache: [String: Int] = [:]
 
         for msg in messages {
             guard msg["type"] as? String == "gemini",
                   let tokens = msg["tokens"] as? [String: Any] else { continue }
-            let total = (tokens["input"] as? Int ?? 0) + (tokens["output"] as? Int ?? 0)
+            let input = tokens["input"] as? Int ?? 0
+            let output = tokens["output"] as? Int ?? 0
+            let cached = tokens["cached"] as? Int ?? 0
+            let total = input + output + cached
             guard total > 0 else { continue }
 
             let timestamp = msg["timestamp"] as? String ?? ""
@@ -134,11 +156,15 @@ final class GeminiUsageService: @unchecked Sendable {
             else { hourlyData[hourKey] = HourlyUsage(tokens: total, messages: 1) }
             if var e = newHourly[hourKey] { e.tokens += total; e.messages += 1; newHourly[hourKey] = e }
             else { newHourly[hourKey] = HourlyUsage(tokens: total, messages: 1) }
+            // cache
+            dailyCache[dateKey, default: 0] += cached
+            newCache[dateKey, default: 0] += cached
             // recent
             if dateKey == today, let ts = ts { recentEntries.append(RecentEntry(timestamp: ts, tokens: total)) }
         }
 
         fileDailyContrib[path] = newDaily
         fileHourlyContrib[path] = newHourly
+        fileCacheContrib[path] = newCache
     }
 }

@@ -1,8 +1,8 @@
 import Foundation
 
-/// 从 Claude Code 本地 JSONL 日志读取 token 使用数据
-/// 日志位置: ~/.claude/projects/*/
-final class ClaudeCodeUsageService: @unchecked Sendable {
+/// 从 Codex CLI 本地 rollout JSONL 读取 token 使用数据
+/// 日志位置: ~/.codex/sessions/rollout-*.jsonl
+final class CodexUsageService: @unchecked Sendable {
     private(set) var dailyData: [String: DayUsage] = [:]
     private(set) var hourlyData: [String: HourlyUsage] = [:]
     private(set) var dailyCache: [String: Int] = [:]
@@ -13,10 +13,10 @@ final class ClaudeCodeUsageService: @unchecked Sendable {
     private var recentEntries: [RecentEntry] = []
 
     private let fm = FileManager.default
-    private let claudeHome: String
+    private let codexHome: String
 
     init() {
-        claudeHome = NSHomeDirectory() + "/.claude"
+        codexHome = NSHomeDirectory() + "/.codex"
     }
 
     func fullScan() {
@@ -28,15 +28,15 @@ final class ClaudeCodeUsageService: @unchecked Sendable {
         fileHourlyContrib.removeAll()
         fileCacheContrib.removeAll()
         recentEntries = []
-        scanProjectsDir()
+        scanSessionsDir()
     }
 
-    func incrementalScan() { scanProjectsDir() }
+    func incrementalScan() { scanSessionsDir() }
 
     func todayUsage() -> (tokens: Int, messages: Int, cacheRate: Double) {
         let d = dailyData[DateHelper.todayKey()]
-        let cache = dailyCache[DateHelper.todayKey()] ?? 0
         let total = d?.tokens ?? 0
+        let cache = dailyCache[DateHelper.todayKey()] ?? 0
         let rate = total > 0 ? Double(cache) / Double(total) : 0
         return (total, d?.messages ?? 0, rate)
     }
@@ -61,36 +61,28 @@ final class ClaudeCodeUsageService: @unchecked Sendable {
 
     // MARK: - 内部
 
-    private func scanProjectsDir() {
-        let projectsDir = claudeHome + "/projects"
-        guard let projects = try? fm.contentsOfDirectory(atPath: projectsDir) else { return }
+    private func scanSessionsDir() {
+        let sessionsDir = codexHome + "/sessions"
+        guard let files = try? fm.contentsOfDirectory(atPath: sessionsDir) else { return }
 
-        for project in projects {
-            let projectPath = projectsDir + "/" + project
+        for file in files {
+            guard file.hasPrefix("rollout-") && file.hasSuffix(".jsonl") else { continue }
+            let fullPath = sessionsDir + "/" + file
             var isDir: ObjCBool = false
-            guard fm.fileExists(atPath: projectPath, isDirectory: &isDir), isDir.boolValue else { continue }
-            guard let contents = try? fm.contentsOfDirectory(atPath: projectPath) else { continue }
+            guard fm.fileExists(atPath: fullPath, isDirectory: &isDir), !isDir.boolValue else { continue }
 
-            for file in contents {
-                guard file.hasSuffix(".jsonl") else { continue }
-                let fullPath = projectPath + "/" + file
-                var fIsDir: ObjCBool = false
-                guard fm.fileExists(atPath: fullPath, isDirectory: &fIsDir), !fIsDir.boolValue else { continue }
+            guard let attrs = try? fm.attributesOfItem(atPath: fullPath),
+                  let modDate = attrs[.modificationDate] as? Date else { continue }
 
-                guard let attrs = try? fm.attributesOfItem(atPath: fullPath),
-                      let modDate = attrs[.modificationDate] as? Date else { continue }
+            let cached = fileCache[fullPath]
+            if cached != nil && cached?.modDate == modDate { continue }
 
-                let cached = fileCache[fullPath]
-                if cached != nil && cached?.modDate == modDate { continue }
+            if let old = fileDailyContrib[fullPath] { subtractDaily(old) }
+            if let old = fileHourlyContrib[fullPath] { subtractHourly(old) }
+            if let old = fileCacheContrib[fullPath] { subtractCache(old) }
 
-                // 撤销旧贡献
-                if let old = fileDailyContrib[fullPath] { subtractDaily(old) }
-                if let old = fileHourlyContrib[fullPath] { subtractHourly(old) }
-                if let old = fileCacheContrib[fullPath] { subtractCache(old) }
-
-                parseFile(path: fullPath)
-                fileCache[fullPath] = FileMeta(path: fullPath, modDate: modDate)
-            }
+            parseFile(path: fullPath)
+            fileCache[fullPath] = FileMeta(path: fullPath, modDate: modDate)
         }
     }
 
@@ -147,14 +139,14 @@ final class ClaudeCodeUsageService: @unchecked Sendable {
                 lineBuf = lineBuf[nlRange.upperBound...]
                 guard !lineData.isEmpty else { continue }
                 let line = String(data: lineData, encoding: .utf8) ?? ""
-                if line.contains("\"assistant\""), let r = parseLine(line) {
+                if line.contains("turn.completed"), let r = parseLine(line) {
                     accumulate(r, today: today, daily: &newDaily, hourly: &newHourly, cache: &newCache)
                 }
             }
         }
         if !lineBuf.isEmpty,
            let line = String(data: lineBuf, encoding: .utf8),
-           line.contains("\"assistant\""), let r = parseLine(line) {
+           line.contains("turn.completed"), let r = parseLine(line) {
             accumulate(r, today: today, daily: &newDaily, hourly: &newHourly, cache: &newCache)
         }
 
@@ -168,21 +160,19 @@ final class ClaudeCodeUsageService: @unchecked Sendable {
     private func parseLine(_ line: String) -> R? {
         guard let data = line.data(using: .utf8) else { return nil }
         guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
-        guard obj["type"] as? String == "assistant",
-              let msg = obj["message"] as? [String: Any],
-              let usage = msg["usage"] as? [String: Any] else { return nil }
+        // Codex rollout 事件: type == "turn.completed", usage 在顶层
+        guard obj["type"] as? String == "turn.completed",
+              let usage = obj["usage"] as? [String: Any] else { return nil }
         let inputTokens = usage["input_tokens"] as? Int ?? 0
         let outputTokens = usage["output_tokens"] as? Int ?? 0
-        let cacheRead = usage["cache_read_input_tokens"] as? Int ?? 0
-        let cacheCreation = usage["cache_creation_input_tokens"] as? Int ?? 0
-        let tokens = inputTokens + outputTokens + cacheRead + cacheCreation
+        let cachedTokens = usage["cached_input_tokens"] as? Int ?? 0
+        let tokens = inputTokens + outputTokens + cachedTokens
         guard tokens > 0 else { return nil }
         let timestamp = obj["timestamp"] as? String ?? ""
         let dateKey = DateHelper.localDateKey(from: timestamp)
         guard dateKey.count == 10 else { return nil }
         return R(dateKey: dateKey, hourKey: DateHelper.localHourKey(from: timestamp),
-                 tokens: tokens, cacheTokens: cacheRead + cacheCreation,
-                 ts: DateHelper.parseISO8601(timestamp))
+                 tokens: tokens, cacheTokens: cachedTokens, ts: DateHelper.parseISO8601(timestamp))
     }
 
     private func accumulate(_ r: R, today: String, daily: inout [String: DayUsage],
@@ -195,10 +185,8 @@ final class ClaudeCodeUsageService: @unchecked Sendable {
         else { hourlyData[r.hourKey] = HourlyUsage(tokens: r.tokens, messages: 1) }
         if var e = hourly[r.hourKey] { e.tokens += r.tokens; e.messages += 1; hourly[r.hourKey] = e }
         else { hourly[r.hourKey] = HourlyUsage(tokens: r.tokens, messages: 1) }
-        // cache tokens
         dailyCache[r.dateKey, default: 0] += r.cacheTokens
         cache[r.dateKey, default: 0] += r.cacheTokens
-        // recent
         if r.dateKey == today, let ts = r.ts { recentEntries.append(RecentEntry(timestamp: ts, tokens: r.tokens)) }
     }
 }

@@ -4,17 +4,29 @@ import SwiftUI
 struct DetailDropdownView: View {
     let tools: [ToolUsage]
 
-    /// 与表盘一致的背景色
     private let bgColor = Color(red: 0.94, green: 0.94, blue: 0.95)
+    private let headerColor = Color(red: 0.55, green: 0.55, blue: 0.58)
+    private let textColor = Color(red: 0.18, green: 0.18, blue: 0.20)
+    private let subtextColor = Color(red: 0.45, green: 0.45, blue: 0.48)
 
     var body: some View {
         VStack(spacing: 0) {
-            // 标题
-            Text("今日消耗")
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundColor(Color(red: 0.45, green: 0.45, blue: 0.48))
-                .padding(.top, 8)
-                .padding(.bottom, 6)
+            // 表头
+            HStack(spacing: 0) {
+                Text("实例")
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                Text("今日消耗")
+                    .frame(width: 68, alignment: .trailing)
+                Text("消息数")
+                    .frame(width: 40, alignment: .trailing)
+                Text("缓存率")
+                    .frame(width: 44, alignment: .trailing)
+            }
+            .font(.system(size: 9, weight: .medium))
+            .foregroundColor(headerColor)
+            .padding(.horizontal, 16)
+            .padding(.top, 8)
+            .padding(.bottom, 4)
 
             // 工具列表
             ForEach(Array(tools.enumerated()), id: \.element.id) { index, tool in
@@ -23,27 +35,28 @@ struct DetailDropdownView: View {
                         .background(Color(white: 0.85))
                 }
 
-                HStack {
-                    // 工具名
+                HStack(spacing: 0) {
                     Text("\(tool.emoji) \(tool.name)")
                         .font(.system(size: 12, weight: .medium))
-                        .foregroundColor(Color(red: 0.18, green: 0.18, blue: 0.20))
+                        .foregroundColor(textColor)
+                        .frame(maxWidth: .infinity, alignment: .leading)
 
-                    Spacer()
-
-                    // Token 数
                     Text(tool.formattedTokens)
                         .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                        .foregroundColor(Color(red: 0.18, green: 0.18, blue: 0.20))
-                        .frame(width: 60, alignment: .trailing)
+                        .foregroundColor(textColor)
+                        .frame(width: 68, alignment: .trailing)
 
-                    // 消息数
                     Text("\(tool.todayMessages)")
                         .font(.system(size: 10, design: .monospaced))
-                        .foregroundColor(Color(red: 0.45, green: 0.45, blue: 0.48))
+                        .foregroundColor(subtextColor)
                         .frame(width: 40, alignment: .trailing)
+
+                    Text(formatCacheRate(tool.cacheRate))
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundColor(subtextColor)
+                        .frame(width: 44, alignment: .trailing)
                 }
-                .padding(.horizontal, 14)
+                .padding(.horizontal, 16)
                 .padding(.vertical, 8)
             }
         }
@@ -57,5 +70,10 @@ struct DetailDropdownView: View {
         )
         .padding(.horizontal, 8)
         .padding(.bottom, 10)
+    }
+
+    private func formatCacheRate(_ rate: Double) -> String {
+        if rate <= 0 { return "-" }
+        return String(format: "%.0f%%", rate * 100)
     }
 }
