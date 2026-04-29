@@ -16,7 +16,7 @@ final class ClaudeCodeUsageService: @unchecked Sendable {
     private let claudeHome: String
 
     init() {
-        claudeHome = NSHomeDirectory() + "/.claude"
+        claudeHome = PathConfig.claudeCodeHome()
     }
 
     func fullScan() {

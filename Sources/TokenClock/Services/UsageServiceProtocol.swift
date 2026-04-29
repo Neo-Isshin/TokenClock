@@ -69,6 +69,22 @@ enum DateHelper: Sendable {
         return formatter.string(from: date)
     }
 
+    /// 从 Date 提取本地日期 key
+    static func dateKey(from date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        formatter.timeZone = TimeZone.current
+        return formatter.string(from: date)
+    }
+
+    /// 从 Date 提取本地小时 key
+    static func hourKey(from date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd-HH"
+        formatter.timeZone = TimeZone.current
+        return formatter.string(from: date)
+    }
+
     /// 当前本地小时 key
     static func currentHourKey() -> String {
         let formatter = DateFormatter()

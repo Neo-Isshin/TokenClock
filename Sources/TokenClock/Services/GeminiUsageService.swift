@@ -16,7 +16,7 @@ final class GeminiUsageService: @unchecked Sendable {
     private let geminiHome: String
 
     init() {
-        geminiHome = NSHomeDirectory() + "/.gemini"
+        geminiHome = PathConfig.geminiHome()
     }
 
     func fullScan() {

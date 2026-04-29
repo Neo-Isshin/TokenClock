@@ -1,13 +1,9 @@
 import SwiftUI
 
-/// 展开态详情列表
+/// 展开态详情列表（主题感知）
 struct DetailDropdownView: View {
     let tools: [ToolUsage]
-
-    private let bgColor = Color(red: 0.94, green: 0.94, blue: 0.95)
-    private let headerColor = Color(red: 0.55, green: 0.55, blue: 0.58)
-    private let textColor = Color(red: 0.18, green: 0.18, blue: 0.20)
-    private let subtextColor = Color(red: 0.45, green: 0.45, blue: 0.48)
+    var theme: ClockFaceTheme = .classic
 
     var body: some View {
         VStack(spacing: 0) {
@@ -23,7 +19,7 @@ struct DetailDropdownView: View {
                     .frame(width: 44, alignment: .trailing)
             }
             .font(.system(size: 9, weight: .medium))
-            .foregroundColor(headerColor)
+            .foregroundColor(theme.dropdownHeaderColor)
             .padding(.horizontal, 16)
             .padding(.top, 8)
             .padding(.bottom, 4)
@@ -32,28 +28,28 @@ struct DetailDropdownView: View {
             ForEach(Array(tools.enumerated()), id: \.element.id) { index, tool in
                 if index > 0 {
                     Divider()
-                        .background(Color(white: 0.85))
+                        .background(theme.dropdownDividerColor)
                 }
 
                 HStack(spacing: 0) {
                     Text("\(tool.emoji) \(tool.name)")
                         .font(.system(size: 12, weight: .medium))
-                        .foregroundColor(textColor)
+                        .foregroundColor(theme.dropdownTextColor)
                         .frame(maxWidth: .infinity, alignment: .leading)
 
                     Text(tool.formattedTokens)
                         .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                        .foregroundColor(textColor)
+                        .foregroundColor(theme.dropdownTextColor)
                         .frame(width: 68, alignment: .trailing)
 
                     Text("\(tool.todayMessages)")
                         .font(.system(size: 10, design: .monospaced))
-                        .foregroundColor(subtextColor)
+                        .foregroundColor(theme.dropdownSubtextColor)
                         .frame(width: 40, alignment: .trailing)
 
                     Text(formatCacheRate(tool.cacheRate))
                         .font(.system(size: 10, design: .monospaced))
-                        .foregroundColor(subtextColor)
+                        .foregroundColor(theme.dropdownSubtextColor)
                         .frame(width: 44, alignment: .trailing)
                 }
                 .padding(.horizontal, 16)
@@ -62,11 +58,11 @@ struct DetailDropdownView: View {
         }
         .background(
             RoundedRectangle(cornerRadius: 12)
-                .fill(bgColor)
+                .fill(theme.dropdownBgColor)
         )
         .overlay(
             RoundedRectangle(cornerRadius: 12)
-                .stroke(Color(white: 0.82), lineWidth: 1.5)
+                .stroke(theme.dropdownBorderColor, lineWidth: 1.5)
         )
         .padding(.horizontal, 8)
         .padding(.bottom, 10)

@@ -19,7 +19,7 @@ final class OpenClawUsageService: @unchecked Sendable {
         if let xdg = ProcessInfo.processInfo.environment["OPENCLAW_HOME"] {
             openclawHome = xdg
         } else {
-            openclawHome = NSHomeDirectory() + "/.openclaw"
+            openclawHome = PathConfig.openclawHome()
         }
     }
 

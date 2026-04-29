@@ -6,6 +6,9 @@ import ServiceManagement
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var panel: FloatingPanel!
     private var viewModel: ViewModel!
+    private var settingsWindow: NSPanel?
+    private var themePickerPanel: NSPanel?
+    private var themePickerEventMonitor: Any?
 
     nonisolated func applicationDidFinishLaunching(_ notification: Notification) {
         Task { @MainActor in
@@ -41,6 +44,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     nonisolated func applicationWillTerminate(_ notification: Notification) {
         Task { @MainActor in
             panel?.savePosition()
+            removeThemePickerMonitor()
         }
     }
 
@@ -55,6 +59,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func setupRightClickMenu() {
         let menu = NSMenu()
+
+        // 表盘选择（直接弹出预览面板）
+        let themeItem = NSMenuItem(title: "🎨 表盘",
+                                  action: #selector(openThemePicker(_:)), keyEquivalent: "")
+        menu.addItem(themeItem)
+        menu.addItem(.separator())
 
         // 透明度子菜单
         let opacityMenu = NSMenu()
@@ -127,6 +137,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(tzItem)
         menu.addItem(.separator())
 
+        // 设置
+        let settingsItem = NSMenuItem(title: "⚙️ 设置",
+                                      action: #selector(openSettings(_:)), keyEquivalent: ",")
+        menu.addItem(settingsItem)
+        menu.addItem(.separator())
+
         // 开机自启
         let launchItem = NSMenuItem(title: "开机自启",
                                     action: #selector(toggleLaunchAtLogin(_:)), keyEquivalent: "")
@@ -145,11 +161,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - 菜单 Actions
 
+    @objc private func openThemePicker(_ sender: NSMenuItem) {
+        showThemePicker()
+    }
+
     @objc private func setOpacity(_ sender: NSMenuItem) {
         let value = Double(sender.tag) / 100.0
         panel.alphaValue = value
         viewModel.windowOpacity = value
-        // 更新勾选状态
         if let opacityMenu = panel.menu?.items.first(where: { $0.title == "透明度" })?.submenu {
             for item in opacityMenu.items {
                 item.state = (item.tag == sender.tag) ? .on : .off
@@ -192,7 +211,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func handleWeatherResolved(_ notification: Notification) {
-        // 城市名解析后重建菜单以更新动态标签
         setupRightClickMenu()
     }
 
@@ -213,8 +231,101 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         setupRightClickMenu()
     }
 
+    @objc private func openSettings(_ sender: NSMenuItem) {
+        showSettingsWindow()
+    }
+
     @objc private func quitApp(_ sender: NSMenuItem) {
         NSApplication.shared.terminate(sender)
+    }
+
+    // MARK: - 设置窗口
+
+    private func showSettingsWindow() {
+        if let window = settingsWindow {
+            window.makeKeyAndOrderFront(nil)
+            return
+        }
+
+        let settingsView = SettingsView(onDone: { [weak self] in
+            self?.settingsWindow?.close()
+            self?.settingsWindow = nil
+        })
+        let hostingView = NSHostingView(rootView: settingsView)
+
+        // 用 NSPanel 而非 NSWindow，确保能显示在 non-activating 应用之上
+        let panel = NSPanel(
+            contentRect: NSRect(x: 0, y: 0, width: 520, height: 460),
+            styleMask: [.titled, .closable, .nonactivatingPanel],
+            backing: .buffered,
+            defer: false
+        )
+        panel.title = "TokenClock 设置"
+        panel.contentView = hostingView
+        panel.level = .floating
+        panel.center()
+        panel.makeKeyAndOrderFront(nil)
+
+        self.settingsWindow = panel
+    }
+
+    // MARK: - 表盘预览面板
+
+    private func showThemePicker() {
+        hideThemePicker()
+
+        let themeView = ThemePickerView(viewModel: viewModel) { [weak self] in
+            self?.hideThemePicker()
+        }
+        let hostingView = NSHostingView(rootView: themeView)
+
+        let pickerPanel = NSPanel(
+            contentRect: NSRect(x: 0, y: 0, width: 300, height: 250),
+            styleMask: [.borderless, .nonactivatingPanel],
+            backing: .buffered,
+            defer: false
+        )
+        pickerPanel.backgroundColor = .clear
+        pickerPanel.isOpaque = false
+        pickerPanel.hasShadow = true
+        pickerPanel.level = .floating
+        pickerPanel.contentView = hostingView
+
+        // 定位到时钟面板下方
+        if let panelFrame = panel?.frame {
+            var origin = panelFrame.origin
+            origin.y -= 170  // 面板下方
+            origin.x += 10   // 稍微右移
+            pickerPanel.setFrameOrigin(origin)
+        }
+
+        pickerPanel.orderFront(nil)
+        self.themePickerPanel = pickerPanel
+
+        // 点击外部关闭
+        installThemePickerMonitor()
+    }
+
+    private func hideThemePicker() {
+        themePickerPanel?.orderOut(nil)
+        themePickerPanel = nil
+        removeThemePickerMonitor()
+    }
+
+    private func installThemePickerMonitor() {
+        removeThemePickerMonitor()
+        themePickerEventMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
+            DispatchQueue.main.async {
+                self?.hideThemePicker()
+            }
+        }
+    }
+
+    private func removeThemePickerMonitor() {
+        if let monitor = themePickerEventMonitor {
+            NSEvent.removeMonitor(monitor)
+            themePickerEventMonitor = nil
+        }
     }
 }
 
@@ -228,7 +339,10 @@ struct MainView: View {
             ClockContentView(viewModel: viewModel)
 
             if viewModel.isExpanded {
-                DetailDropdownView(tools: viewModel.tools.sorted { $0.todayTokens > $1.todayTokens })
+                DetailDropdownView(
+                    tools: viewModel.tools.sorted { $0.todayTokens > $1.todayTokens },
+                    theme: viewModel.selectedTheme
+                )
             }
         }
         .frame(width: 300)

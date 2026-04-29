@@ -16,7 +16,7 @@ final class CodexUsageService: @unchecked Sendable {
     private let codexHome: String
 
     init() {
-        codexHome = NSHomeDirectory() + "/.codex"
+        codexHome = PathConfig.codexHome()
     }
 
     func fullScan() {
@@ -63,26 +63,39 @@ final class CodexUsageService: @unchecked Sendable {
 
     private func scanSessionsDir() {
         let sessionsDir = codexHome + "/sessions"
-        guard let files = try? fm.contentsOfDirectory(atPath: sessionsDir) else { return }
+        var isDir: ObjCBool = false
+        guard fm.fileExists(atPath: sessionsDir, isDirectory: &isDir), isDir.boolValue else { return }
 
-        for file in files {
-            guard file.hasPrefix("rollout-") && file.hasSuffix(".jsonl") else { continue }
-            let fullPath = sessionsDir + "/" + file
+        // 新版 Codex 按 YYYY/MM/DD 分层存储，递归扫描所有子目录
+        scanDirectoryRecursive(sessionsDir)
+    }
+
+    /// 递归扫描目录中的 rollout-*.jsonl 文件
+    private func scanDirectoryRecursive(_ dirPath: String) {
+        guard let contents = try? fm.contentsOfDirectory(atPath: dirPath) else { return }
+
+        for item in contents {
+            let fullPath = dirPath + "/" + item
             var isDir: ObjCBool = false
-            guard fm.fileExists(atPath: fullPath, isDirectory: &isDir), !isDir.boolValue else { continue }
+            guard fm.fileExists(atPath: fullPath, isDirectory: &isDir) else { continue }
 
-            guard let attrs = try? fm.attributesOfItem(atPath: fullPath),
-                  let modDate = attrs[.modificationDate] as? Date else { continue }
+            if isDir.boolValue {
+                // 递归子目录
+                scanDirectoryRecursive(fullPath)
+            } else if item.hasPrefix("rollout-") && item.hasSuffix(".jsonl") {
+                guard let attrs = try? fm.attributesOfItem(atPath: fullPath),
+                      let modDate = attrs[.modificationDate] as? Date else { continue }
 
-            let cached = fileCache[fullPath]
-            if cached != nil && cached?.modDate == modDate { continue }
+                let cached = fileCache[fullPath]
+                if cached != nil && cached?.modDate == modDate { continue }
 
-            if let old = fileDailyContrib[fullPath] { subtractDaily(old) }
-            if let old = fileHourlyContrib[fullPath] { subtractHourly(old) }
-            if let old = fileCacheContrib[fullPath] { subtractCache(old) }
+                if let old = fileDailyContrib[fullPath] { subtractDaily(old) }
+                if let old = fileHourlyContrib[fullPath] { subtractHourly(old) }
+                if let old = fileCacheContrib[fullPath] { subtractCache(old) }
 
-            parseFile(path: fullPath)
-            fileCache[fullPath] = FileMeta(path: fullPath, modDate: modDate)
+                parseFile(path: fullPath)
+                fileCache[fullPath] = FileMeta(path: fullPath, modDate: modDate)
+            }
         }
     }
 

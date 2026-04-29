@@ -4,10 +4,6 @@ import SwiftUI
 struct ClockContentView: View {
     @ObservedObject var viewModel: ViewModel
 
-    /// 叠加文字颜色（浅色表盘上用深色文字）
-    private let textPrimary = Color(red: 0.18, green: 0.18, blue: 0.20)
-    private let textSecondary = Color(red: 0.45, green: 0.45, blue: 0.48)
-
     var body: some View {
         ZStack {
             // 表盘
@@ -15,6 +11,7 @@ struct ClockContentView: View {
                 hours: viewModel.hours,
                 minutes: viewModel.minutes,
                 seconds: viewModel.seconds,
+                theme: viewModel.selectedTheme,
                 onTap: { viewModel.isExpanded.toggle() }
             )
             .frame(width: 240, height: 240)
@@ -25,10 +22,10 @@ struct ClockContentView: View {
                 VStack(spacing: 3) {
                     Text(viewModel.dateString)
                         .font(.system(size: 11, weight: .medium))
-                        .foregroundColor(textSecondary)
+                        .foregroundColor(viewModel.selectedTheme.textSecondaryColor)
                     Text(viewModel.weatherString)
                         .font(.system(size: 13))
-                        .foregroundColor(textPrimary)
+                        .foregroundColor(viewModel.selectedTheme.textPrimaryColor)
                 }
                 .padding(.top, 55)
 
@@ -38,31 +35,31 @@ struct ClockContentView: View {
                 VStack(spacing: 2) {
                     Text("今日Tokens")
                         .font(.system(size: 9))
-                        .foregroundColor(textSecondary)
+                        .foregroundColor(viewModel.selectedTheme.textSecondaryColor)
                     Text(viewModel.totalTokensFormatted)
                         .font(.system(size: 20, weight: .bold, design: .rounded))
-                        .foregroundColor(textPrimary)
+                        .foregroundColor(viewModel.selectedTheme.textPrimaryColor)
                     Text("消息数：\(viewModel.totalMessagesCount)条")
                         .font(.system(size: 10))
-                        .foregroundColor(textSecondary)
+                        .foregroundColor(viewModel.selectedTheme.textSecondaryColor)
                 }
                 .padding(.bottom, 48)
             }
 
-            // 左侧：活跃工具标签（中心到左侧中点，无背景）
+            // 左侧：活跃工具标签
             HStack {
                 VStack(alignment: .leading, spacing: 4) {
                     ForEach(viewModel.activeToolsList) { tool in
                         Text("\(tool.emoji) \(tool.abbreviation)")
                             .font(.system(size: 13, weight: .semibold, design: .rounded))
-                            .foregroundColor(textPrimary.opacity(0.75))
+                            .foregroundColor(viewModel.selectedTheme.textPrimaryColor.opacity(0.75))
                     }
                 }
                 .padding(.leading, 22)
                 Spacer()
             }
 
-            // 右侧：速率 emoji（中心到右侧中点，调大）
+            // 右侧：速率 emoji
             HStack {
                 Spacer()
                 Text(viewModel.rateEmoji)

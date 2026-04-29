@@ -1,42 +1,37 @@
 import Foundation
+import SQLite3
 
-/// 从远程 Hermes agent (OpenClaw on Debian) 读取 token 使用数据
-/// Hermes 是 OpenClaw agent "main"，运行在 Debian 小主机上
-/// 数据格式与 OpenClaw 相同，通过 SSH 读取
+/// 从 Hermes Agent 本地 SQLite 数据库读取 token 使用数据
+/// 数据库位置: ~/.hermes/state.db
+/// 表结构: sessions (input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, started_at, message_count)
 final class HermesUsageService: @unchecked Sendable {
     private(set) var dailyData: [String: DayUsage] = [:]
     private(set) var hourlyData: [String: HourlyUsage] = [:]
     private(set) var dailyCache: [String: Int] = [:]
-    private var fileCache: [String: FileMeta] = [:]
-    private var fileDailyContrib: [String: [String: DayUsage]] = [:]
-    private var fileHourlyContrib: [String: [String: HourlyUsage]] = [:]
-    private var fileCacheContrib: [String: [String: Int]] = [:]
     private var recentEntries: [RecentEntry] = []
 
-    private let fm = FileManager.default
+    private let hermesHome: String
+    private var lastScanTime: Date = .distantPast
 
-    /// SSH 配置：使用本地已配置的 ssh alias "debian"
-    private let sshHost = "debian"
-    private let remoteBase = "~/.openclaw/agents/main/sessions"
+    init() {
+        hermesHome = PathConfig.hermesHome()
+    }
 
     func fullScan() {
         dailyData.removeAll()
         hourlyData.removeAll()
         dailyCache.removeAll()
-        fileCache.removeAll()
-        fileDailyContrib.removeAll()
-        fileHourlyContrib.removeAll()
-        fileCacheContrib.removeAll()
         recentEntries = []
-        scanRemoteSessions()
+        lastScanTime = .distantPast
+        scanDatabase()
     }
 
-    func incrementalScan() { scanRemoteSessions() }
+    func incrementalScan() { scanDatabase() }
 
     func todayUsage() -> (tokens: Int, messages: Int, cacheRate: Double) {
         let d = dailyData[DateHelper.todayKey()]
-        let total = d?.tokens ?? 0
         let cache = dailyCache[DateHelper.todayKey()] ?? 0
+        let total = d?.tokens ?? 0
         let rate = total > 0 ? Double(cache) / Double(total) : 0
         return (total, d?.messages ?? 0, rate)
     }
@@ -61,142 +56,96 @@ final class HermesUsageService: @unchecked Sendable {
 
     // MARK: - 内部
 
-    private func scanRemoteSessions() {
-        // 1. 获取远程文件列表及修改时间
-        let listCmd = "ssh -o ConnectTimeout=5 \(sshHost) " +
-            "'ls -lT --time-style=+%s \(remoteBase)/*.jsonl 2>/dev/null " +
-            "| grep -v \"\\.checkpoint\\.\" | grep -v \"\\.lock\" | grep -v \"sessions\\.json\" " +
-            "| grep -v \"\\.deleted\\.\" | grep -v \"\\.reset\\.\"'"
-
-        guard let listOutput = try? Shell.run(listCmd) else { return }
-        let lines = listOutput.components(separatedBy: "\n").filter { !$0.isEmpty }
-
-        for line in lines {
-            let parts = line.split(separator: " ", maxSplits: 6)
-            guard parts.count >= 7 else { continue }
-            let modTimestamp = Int(parts[5]) ?? 0
-            let modDate = Date(timeIntervalSince1970: Double(modTimestamp))
-            let remotePath = String(parts[6])
-
-            let cached = fileCache[remotePath]
-            if cached != nil && cached?.modDate == modDate { continue }
-
-            // 2. 撤销旧贡献
-            if let old = fileDailyContrib[remotePath] { subtractDaily(old) }
-            if let old = fileHourlyContrib[remotePath] { subtractHourly(old) }
-            if let old = fileCacheContrib[remotePath] { subtractCache(old) }
-
-            // 3. 通过 SSH 读取文件内容
-            let catCmd = "ssh -o ConnectTimeout=5 \(sshHost) 'cat \"\(remotePath)\"'"
-            guard let content = try? Shell.run(catCmd) else {
-                fileCache[remotePath] = FileMeta(path: remotePath, modDate: modDate)
-                continue
-            }
-
-            parseContent(content, remotePath: remotePath)
-            fileCache[remotePath] = FileMeta(path: remotePath, modDate: modDate)
-        }
+    private var dbPath: String {
+        hermesHome + "/state.db"
     }
 
-    private func parseContent(_ content: String, remotePath: String) {
+    private func scanDatabase() {
+        let dbFile = dbPath
+        let walFile = dbFile + "-wal"
+        var db: OpaquePointer?
+
+        // SQLite WAL 模式下，新数据可能写入 -wal 文件而非主 db
+        // 检查两者中较新的修改时间
+        let fm = FileManager.default
+        var newestMod: Date?
+        for path in [dbFile, walFile] {
+            if let attrs = try? fm.attributesOfItem(atPath: path),
+               let modDate = attrs[.modificationDate] as? Date {
+                if newestMod == nil || modDate > newestMod! { newestMod = modDate }
+            }
+        }
+        if let newest = newestMod, newest <= lastScanTime { return }
+
+        guard sqlite3_open(dbFile, &db) == SQLITE_OK else { return }
+        defer { sqlite3_close(db) }
+
+        // 从 sessions 表读取所有 token 数据
+        // started_at 是 Unix timestamp (REAL)
+        let query = """
+        SELECT started_at,
+               input_tokens,
+               output_tokens,
+               cache_read_tokens,
+               cache_write_tokens,
+               message_count
+        FROM sessions
+        WHERE input_tokens > 0 OR output_tokens > 0
+        ORDER BY started_at ASC
+        """
+
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, query, -1, &stmt, nil) == SQLITE_OK else { return }
+        defer { sqlite3_finalize(stmt) }
+
         let today = DateHelper.todayKey()
-        var newDaily: [String: DayUsage] = [:]
-        var newHourly: [String: HourlyUsage] = [:]
-        var newCache: [String: Int] = [:]
+        let now = Date()
 
-        for line in content.components(separatedBy: "\n") {
-            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !trimmed.isEmpty, trimmed.contains("\"assistant\""), let r = parseLine(trimmed) else { continue }
-            accumulate(r, today: today, daily: &newDaily, hourly: &newHourly, cache: &newCache)
-        }
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            let startedAt = sqlite3_column_double(stmt, 0)
+            let inputTokens = sqlite3_column_int(stmt, 1)
+            let outputTokens = sqlite3_column_int(stmt, 2)
+            let cacheRead = sqlite3_column_int(stmt, 3)
+            let cacheWrite = sqlite3_column_int(stmt, 4)
+            let msgCount = sqlite3_column_int(stmt, 5)
 
-        fileDailyContrib[remotePath] = newDaily
-        fileHourlyContrib[remotePath] = newHourly
-        fileCacheContrib[remotePath] = newCache
-    }
+            let tokens = Int(inputTokens) + Int(outputTokens) + Int(cacheRead) + Int(cacheWrite)
+            guard tokens > 0 else { continue }
 
-    private func subtractDaily(_ contrib: [String: DayUsage]) {
-        for (k, u) in contrib {
-            if var e = dailyData[k] {
-                e.tokens -= u.tokens; e.messages -= u.messages
-                if e.tokens <= 0 && e.messages <= 0 { dailyData.removeValue(forKey: k) }
-                else { dailyData[k] = e }
+            let date = Date(timeIntervalSince1970: startedAt)
+            let dateKey = DateHelper.dateKey(from: date)
+            let hourKey = DateHelper.hourKey(from: date)
+
+            // 每条 session 算 1 条消息（代表一次会话的 token 消耗）
+            // 但如果 message_count > 0，用实际的 assistant 回复数
+            let effectiveMessages = msgCount > 0 ? Int(msgCount) : 1
+
+            // Daily
+            if var e = dailyData[dateKey] {
+                e.tokens += tokens; e.messages += effectiveMessages
+                dailyData[dateKey] = e
+            } else {
+                dailyData[dateKey] = DayUsage(tokens: tokens, messages: effectiveMessages)
+            }
+
+            // Hourly
+            if var e = hourlyData[hourKey] {
+                e.tokens += tokens; e.messages += effectiveMessages
+                hourlyData[hourKey] = e
+            } else {
+                hourlyData[hourKey] = HourlyUsage(tokens: tokens, messages: effectiveMessages)
+            }
+
+            // Cache
+            let cacheTokens = Int(cacheRead) + Int(cacheWrite)
+            dailyCache[dateKey, default: 0] += cacheTokens
+
+            // Recent (今天内的 session)
+            if dateKey == today && date >= now.addingTimeInterval(-86400) {
+                recentEntries.append(RecentEntry(timestamp: date, tokens: tokens))
             }
         }
-    }
 
-    private func subtractHourly(_ contrib: [String: HourlyUsage]) {
-        for (k, u) in contrib {
-            if var e = hourlyData[k] {
-                e.tokens -= u.tokens; e.messages -= u.messages
-                if e.tokens <= 0 && e.messages <= 0 { hourlyData.removeValue(forKey: k) }
-                else { hourlyData[k] = e }
-            }
-        }
-    }
-
-    private func subtractCache(_ contrib: [String: Int]) {
-        for (k, v) in contrib {
-            if var e = dailyCache[k] {
-                e -= v
-                if e <= 0 { dailyCache.removeValue(forKey: k) }
-                else { dailyCache[k] = e }
-            }
-        }
-    }
-
-    private struct R { let dateKey: String; let hourKey: String; let tokens: Int; let cacheTokens: Int; let ts: Date? }
-
-    private func parseLine(_ line: String) -> R? {
-        guard let data = line.data(using: .utf8) else { return nil }
-        guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
-        guard let msg = obj["message"] as? [String: Any],
-              msg["role"] as? String == "assistant",
-              let usage = msg["usage"] as? [String: Any] else { return nil }
-        let input = usage["input"] as? Int ?? 0
-        let output = usage["output"] as? Int ?? 0
-        let cacheRead = usage["cacheRead"] as? Int ?? 0
-        let cacheWrite = usage["cacheWrite"] as? Int ?? 0
-        let tokens = input + output + cacheRead + cacheWrite
-        let cacheTokens = cacheRead + cacheWrite
-        guard tokens > 0 else { return nil }
-        let timestamp = obj["timestamp"] as? String ?? ""
-        let dateKey = DateHelper.localDateKey(from: timestamp)
-        let hourKey = DateHelper.localHourKey(from: timestamp)
-        guard !dateKey.isEmpty else { return nil }
-        return R(dateKey: dateKey, hourKey: hourKey,
-                 tokens: tokens, cacheTokens: cacheTokens,
-                 ts: DateHelper.parseISO8601(timestamp))
-    }
-
-    private func accumulate(_ r: R, today: String, daily: inout [String: DayUsage],
-                            hourly: inout [String: HourlyUsage], cache: inout [String: Int]) {
-        if var e = dailyData[r.dateKey] { e.tokens += r.tokens; e.messages += 1; dailyData[r.dateKey] = e }
-        else { dailyData[r.dateKey] = DayUsage(tokens: r.tokens, messages: 1) }
-        if var e = daily[r.dateKey] { e.tokens += r.tokens; e.messages += 1; daily[r.dateKey] = e }
-        else { daily[r.dateKey] = DayUsage(tokens: r.tokens, messages: 1) }
-        if var e = hourlyData[r.hourKey] { e.tokens += r.tokens; e.messages += 1; hourlyData[r.hourKey] = e }
-        else { hourlyData[r.hourKey] = HourlyUsage(tokens: r.tokens, messages: 1) }
-        if var e = hourly[r.hourKey] { e.tokens += r.tokens; e.messages += 1; hourly[r.hourKey] = e }
-        else { hourly[r.hourKey] = HourlyUsage(tokens: r.tokens, messages: 1) }
-        dailyCache[r.dateKey, default: 0] += r.cacheTokens
-        cache[r.dateKey, default: 0] += r.cacheTokens
-        if r.dateKey == today, let ts = r.ts { recentEntries.append(RecentEntry(timestamp: ts, tokens: r.tokens)) }
-    }
-}
-
-/// Shell 命令执行工具
-private enum Shell {
-    static func run(_ command: String) throws -> String {
-        let process = Process()
-        let pipe = Pipe()
-        process.executableURL = URL(fileURLWithPath: "/bin/zsh")
-        process.arguments = ["-c", command]
-        process.standardOutput = pipe
-        process.standardError = Pipe()
-        try process.run()
-        process.waitUntilExit()
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        return String(data: data, encoding: .utf8) ?? ""
+        lastScanTime = Date()
     }
 }

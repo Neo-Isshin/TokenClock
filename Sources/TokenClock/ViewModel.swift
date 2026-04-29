@@ -10,6 +10,9 @@ final class ViewModel: ObservableObject {
     @Published var alwaysOnTop = true
     @Published var launchAtLogin = false
 
+    /// 表盘主题
+    @Published var selectedTheme: ClockFaceTheme = .classic
+
     /// 天气数据
     @Published var weather = WeatherInfo()
     @Published var useFahrenheit = false
@@ -56,6 +59,7 @@ final class ViewModel: ObservableObject {
     init() {
         // 先生成初始结构，再被真实数据覆盖
         self.tools = MockUsageService.generateInitialData()
+        loadTheme()
         startTimers()
         fetchInitialWeather()
         // 首次全量扫描
@@ -64,6 +68,19 @@ final class ViewModel: ObservableObject {
 
     func shutdown() {
         stopTimers()
+    }
+
+    // MARK: - 主题持久化
+
+    func saveTheme() {
+        UserDefaults.standard.set(selectedTheme.rawValue, forKey: "TC_selectedTheme")
+    }
+
+    private func loadTheme() {
+        if let saved = UserDefaults.standard.string(forKey: "TC_selectedTheme"),
+           let theme = ClockFaceTheme(rawValue: saved) {
+            selectedTheme = theme
+        }
     }
 
     // MARK: - 聚合属性
@@ -234,7 +251,7 @@ final class ViewModel: ObservableObject {
                    recentTokens: gcRecent.tokens, hourlyTokens: geminiService.currentHourTokens(),
                    active: geminiService.isActive(), cacheRate: gc.cacheRate)
 
-        // Hermes 和 Codex
+        // Hermes：本地扫描（与其他服务一致）
         let cx = codexService.todayUsage()
         let cxRecent = codexService.recentUsage()
         updateTool(name: "Codex", tokens: cx.tokens, messages: cx.messages,
@@ -267,17 +284,11 @@ final class ViewModel: ObservableObject {
     }
 
     private func updateMockData() {
-        // 本地服务：主线程（IO 轻量）
         openclawService.incrementalScan()
         claudeCodeService.incrementalScan()
         geminiService.incrementalScan()
         codexService.incrementalScan()
-        // Hermes：后台线程（SSH IO 可能阻塞数秒）
-        DispatchQueue.global(qos: .utility).async { [weak self] in
-            self?.hermesService.incrementalScan()
-            DispatchQueue.main.async { self?.refreshRealData() }
-        }
-        // 先用本地数据刷新一次（不等待 Hermes）
+        hermesService.incrementalScan()
         refreshRealData()
     }
 
@@ -286,11 +297,7 @@ final class ViewModel: ObservableObject {
         claudeCodeService.fullScan()
         geminiService.fullScan()
         codexService.fullScan()
-        // Hermes 全量扫描也在后台
-        DispatchQueue.global(qos: .utility).async { [weak self] in
-            self?.hermesService.fullScan()
-            DispatchQueue.main.async { self?.refreshRealData() }
-        }
+        hermesService.fullScan()
         refreshRealData()
     }
 
