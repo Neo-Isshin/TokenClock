@@ -10,6 +10,7 @@ struct SettingsView: View {
     @State private var codexPath: String = ""
     @State private var hermesPath: String = ""
     @State private var detectResults: [PathDetector.DetectionResult] = []
+    @State private var detectionSummary: String = ""
 
     var body: some View {
         VStack(spacing: 0) {
@@ -27,6 +28,9 @@ struct SettingsView: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
+                    // 自动探测按钮
+                    autoDetectSection()
+
                     // 数据源路径
                     sectionHeader("📁 数据源路径")
 
@@ -83,9 +87,45 @@ struct SettingsView: View {
                 .padding(.vertical, 12)
             }
         }
-        .frame(width: 520, height: 460)
+        .frame(width: 520, height: 520)
         .onAppear {
             loadCurrentPaths()
+            runAutoDetection()
+        }
+    }
+
+    // MARK: - 自动探测区域
+
+    private func autoDetectSection() -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("🔍 自动探测")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(.secondary)
+                Spacer()
+                Button("重新探测") {
+                    runAutoDetection()
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .font(.system(size: 11))
+            }
+
+            if !detectionSummary.isEmpty {
+                HStack(spacing: 6) {
+                    Image(systemName: detectionSummary.hasPrefix("✅") ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
+                        .font(.system(size: 11))
+                        .foregroundColor(detectionSummary.hasPrefix("✅") ? .green : .orange)
+                    Text(detectionSummary)
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
+                        .lineLimit(2)
+                    Spacer()
+                }
+                .padding(8)
+                .background(Color.secondary.opacity(0.08))
+                .cornerRadius(6)
+            }
         }
     }
 
@@ -136,9 +176,10 @@ struct SettingsView: View {
                     Image(systemName: result.exists ? "checkmark.circle.fill" : "xmark.circle.fill")
                         .font(.system(size: 10))
                         .foregroundColor(result.exists ? .green : .red)
-                    Text(result.exists ? "路径有效，已找到日志文件" : "未找到有效的日志文件")
+                    Text(result.exists ? "\(result.detail) — \(result.detectedPath)" : result.detail)
                         .font(.system(size: 10))
                         .foregroundColor(.secondary)
+                        .lineLimit(1)
                 }
             }
         }
@@ -177,9 +218,10 @@ struct SettingsView: View {
                     Image(systemName: result.exists ? "checkmark.circle.fill" : "xmark.circle.fill")
                         .font(.system(size: 10))
                         .foregroundColor(result.exists ? .green : .red)
-                    Text(result.exists ? "路径有效，已找到日志文件" : "未找到有效的日志文件")
+                    Text(result.exists ? "\(result.detail) — \(result.detectedPath)" : result.detail)
                         .font(.system(size: 10))
                         .foregroundColor(.secondary)
+                        .lineLimit(1)
                 }
             }
         }
@@ -188,13 +230,25 @@ struct SettingsView: View {
     // MARK: - Hint
 
     private func hintText() -> some View {
-        HStack(spacing: 6) {
-            Image(systemName: "lightbulb.fill")
-                .font(.system(size: 10))
-                .foregroundColor(.yellow)
-            Text("留空则使用默认路径。修改路径后需重启应用生效。")
-                .font(.system(size: 10))
-                .foregroundColor(.secondary)
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 6) {
+                Image(systemName: "lightbulb.fill")
+                    .font(.system(size: 10))
+                    .foregroundColor(.yellow)
+                Text("留空则使用默认路径。修改路径后需重启应用生效。")
+                    .font(.system(size: 10))
+                    .foregroundColor(.secondary)
+            }
+
+            HStack(spacing: 6) {
+                Image(systemName: "info.circle.fill")
+                    .font(.system(size: 10))
+                    .foregroundColor(.blue)
+                Text("支持环境变量覆盖：OPENCLAW_HOME、CLAUDE_CONFIG_DIR、GEMINI_HOME、CODEX_HOME、HERMES_HOME")
+                    .font(.system(size: 10))
+                    .foregroundColor(.secondary)
+                    .lineLimit(2)
+            }
         }
         .padding(.top, 4)
     }
@@ -225,49 +279,55 @@ struct SettingsView: View {
         }
     }
 
-    private func detectPath(for service: String) {
-        let defaultPath: String
-        var currentPath: String
+    /// 运行自动探测并更新 UI
+    private func runAutoDetection() {
+        let summary = PathDetector.runFullDetection()
+        detectResults = summary.results
 
-        switch service {
-        case "openclaw":
-            defaultPath = PathConfig.defaultOpenclawHome()
-            currentPath = openclawPath
-        case "claudeCode":
-            defaultPath = PathConfig.defaultClaudeCodeHome()
-            currentPath = claudeCodePath
-        case "gemini":
-            defaultPath = PathConfig.defaultGeminiHome()
-            currentPath = geminiPath
-        case "codex":
-            defaultPath = PathConfig.defaultCodexHome()
-            currentPath = codexPath
-        case "hermes":
-            defaultPath = PathConfig.defaultHermesHome()
-            currentPath = hermesPath
-        default: return
+        // 自动填充探测到的路径
+        for result in summary.results where result.exists {
+            switch result.service {
+            case "openclaw":
+                if openclawPath.isEmpty { openclawPath = result.detectedPath }
+            case "claudeCode":
+                if claudeCodePath.isEmpty { claudeCodePath = result.detectedPath }
+            case "gemini":
+                if geminiPath.isEmpty { geminiPath = result.detectedPath }
+            case "codex":
+                if codexPath.isEmpty { codexPath = result.detectedPath }
+            case "hermes":
+                if hermesPath.isEmpty { hermesPath = result.detectedPath }
+            default:
+                break
+            }
         }
 
-        let checkPath = currentPath.isEmpty ? defaultPath : currentPath
-        let exists = hasValidLogFiles(service: service, basePath: checkPath)
+        if summary.allFound {
+            detectionSummary = "✅ 已探测到全部 \(summary.totalCount) 个数据源"
+        } else {
+            detectionSummary = "⚠️ 已探测到 \(summary.foundCount)/\(summary.totalCount) 个数据源，未找到的可在下方手动配置"
+        }
 
-        detectResults.removeAll { $0.service == service }
-        detectResults.append(PathDetector.DetectionResult(
-            service: service, emoji: "",
-            detectedPath: exists ? checkPath : "",
-            isDefault: currentPath.isEmpty, exists: exists
-        ))
+        // 保存探测结果到 UserDefaults
+        savePaths()
+    }
 
-        if exists && currentPath.isEmpty {
-            switch service {
-            case "openclaw": openclawPath = checkPath
-            case "claudeCode": claudeCodePath = checkPath
-            case "gemini": geminiPath = checkPath
-            case "codex": codexPath = checkPath
-            case "hermes": hermesPath = checkPath
-            default: break
+    private func detectPath(for service: String) {
+        let summary = PathDetector.runFullDetection()
+        detectResults = summary.results
+
+        if let result = summary.results.first(where: { $0.service == service }) {
+            if result.exists {
+                switch service {
+                case "openclaw": openclawPath = result.detectedPath
+                case "claudeCode": claudeCodePath = result.detectedPath
+                case "gemini": geminiPath = result.detectedPath
+                case "codex": codexPath = result.detectedPath
+                case "hermes": hermesPath = result.detectedPath
+                default: break
+                }
+                savePaths()
             }
-            savePaths()
         }
     }
 
@@ -283,7 +343,10 @@ struct SettingsView: View {
         case "codex":
             return PathDetector.findRolloutJSONLFiles(in: basePath, subpath: "sessions")
         case "hermes":
-            return PathDetector.findJSONLFiles(in: basePath, subpath: "agents/main/sessions", recursive: true)
+            let dbPath = basePath + "/state.db"
+            let fm = FileManager.default
+            var isDir: ObjCBool = false
+            return fm.fileExists(atPath: dbPath, isDirectory: &isDir) && !isDir.boolValue
         default:
             return false
         }
@@ -313,5 +376,16 @@ struct SettingsView: View {
         default: break
         }
         savePaths()
+
+        // 重新检测当前服务
+        let exists = hasValidLogFiles(service: service, basePath: selectedPath)
+        detectResults.removeAll { $0.service == service }
+        detectResults.append(PathDetector.DetectionResult(
+            service: service, emoji: "",
+            detectedPath: exists ? selectedPath : "",
+            isDefault: false, exists: exists,
+            source: exists ? .userDefaults : .notFound,
+            detail: exists ? "用户自定义路径有效" : "所选路径未找到有效日志文件"
+        ))
     }
 }

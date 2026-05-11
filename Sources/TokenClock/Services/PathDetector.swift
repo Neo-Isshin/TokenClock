@@ -1,6 +1,7 @@
 import Foundation
 
 /// 自动检索本地环境中各数据源的正确日志路径
+/// 支持：环境变量、官方默认路径、备选路径、用户自定义路径
 enum PathDetector {
     struct DetectionResult {
         let service: String
@@ -8,79 +9,258 @@ enum PathDetector {
         let detectedPath: String
         let isDefault: Bool
         let exists: Bool
+        let source: PathSource
+        let detail: String
+
+        enum PathSource: String {
+            case userDefaults = "用户自定义"
+            case envVariable = "环境变量"
+            case officialDefault = "官方默认"
+            case alternate = "备选路径"
+            case notFound = "未找到"
+        }
     }
 
-    /// 自动检测所有数据源路径
+    struct DetectionSummary {
+        let results: [DetectionResult]
+        let foundCount: Int
+        let totalCount: Int
+        var allFound: Bool { foundCount == totalCount }
+    }
+
+    // MARK: - 主入口：自动探测所有数据源
+
+    /// 运行完整探测，返回摘要。首次启动时调用。
+    static func runFullDetection() -> DetectionSummary {
+        let results = [
+            detectOpenClaw(),
+            detectClaudeCode(),
+            detectGemini(),
+            detectCodex(),
+            detectHermes(),
+        ]
+        let found = results.filter(\.exists).count
+        return DetectionSummary(results: results, foundCount: found, totalCount: results.count)
+    }
+
+    /// 自动检测所有数据源路径（兼容旧接口）
     static func detectAll() -> [DetectionResult] {
-        var results: [DetectionResult] = []
-        results.append(detectOpenClaw())
-        results.append(detectClaudeCode())
-        results.append(detectGemini())
-        results.append(detectCodex())
-        results.append(detectHermes())
-        return results
+        runFullDetection().results
     }
 
-    // MARK: - 逐项检测（以存在有效日志文件为准）
+    // MARK: - 逐项检测
 
     private static func detectOpenClaw() -> DetectionResult {
-        let ocCustom = UserDefaults.standard.string(forKey: "TC_openclawPath")
-        let basePath = ocCustom ?? PathConfig.defaultOpenclawHome()
-        // 检查 ~/.openclaw/agents/*/sessions/ 下是否有 .jsonl 文件
-        let hasFiles = findJSONLFiles(in: basePath, subpath: "agents", recursive: true)
-        return DetectionResult(
+        let custom = UserDefaults.standard.string(forKey: "TC_openclawPath")
+        let candidates = buildCandidates(
+            custom: custom,
+            envName: PathConfig.openclawCandidates(),
+            defaults: [PathConfig.defaultOpenclawHome()],
+            alternates: [NSHomeDirectory() + "/Library/Logs/OpenClaw"]
+        )
+        let match = findFirstValid(
+            candidates: candidates,
+            validator: { path in
+                findJSONLFiles(in: path, subpath: "agents", recursive: true)
+                || findJSONLFiles(in: path, subpath: "sessions", recursive: true)
+            }
+        )
+        return buildResult(
             service: "openclaw", emoji: "⚡",
-            detectedPath: hasFiles ? basePath : "",
-            isDefault: ocCustom == nil, exists: hasFiles
+            match: match, custom: custom,
+            defaultPath: PathConfig.defaultOpenclawHome()
         )
     }
 
     private static func detectClaudeCode() -> DetectionResult {
-        let ccCustom = UserDefaults.standard.string(forKey: "TC_claudeCodePath")
-        let basePath = ccCustom ?? PathConfig.defaultClaudeCodeHome()
-        // 检查 ~/.claude/projects/ 下是否有 .jsonl 文件
-        let hasFiles = findJSONLFiles(in: basePath, subpath: "projects", recursive: true)
-        return DetectionResult(
+        let custom = UserDefaults.standard.string(forKey: "TC_claudeCodePath")
+        let candidates = buildCandidates(
+            custom: custom,
+            envName: PathConfig.claudeCodeCandidates(),
+            defaults: [PathConfig.defaultClaudeCodeHome()],
+            alternates: [NSHomeDirectory() + "/Library/Application Support/Claude"]
+        )
+        let match = findFirstValid(
+            candidates: candidates,
+            validator: { path in
+                // Claude Code: ~/.claude/projects/** 下有 .jsonl
+                findJSONLFiles(in: path, subpath: "projects", recursive: true)
+                // 或 Claude Desktop 的 session 目录
+                || findJSONLFiles(in: path, subpath: "claude-code-sessions", recursive: true)
+            }
+        )
+        return buildResult(
             service: "claudeCode", emoji: "🧠",
-            detectedPath: hasFiles ? basePath : "",
-            isDefault: ccCustom == nil, exists: hasFiles
+            match: match, custom: custom,
+            defaultPath: PathConfig.defaultClaudeCodeHome()
         )
     }
 
     private static func detectGemini() -> DetectionResult {
-        let gemCustom = UserDefaults.standard.string(forKey: "TC_geminiPath")
-        let basePath = gemCustom ?? PathConfig.defaultGeminiHome()
-        // 检查 ~/.gemini/tmp/*/chats/ 下是否有 .json 文件
-        let hasFiles = findJSONFiles(in: basePath, subpath: "tmp", recursive: true)
-        return DetectionResult(
+        let custom = UserDefaults.standard.string(forKey: "TC_geminiPath")
+        let candidates = buildCandidates(
+            custom: custom,
+            envName: PathConfig.geminiCandidates(),
+            defaults: [PathConfig.defaultGeminiHome()],
+            alternates: []
+        )
+        let match = findFirstValid(
+            candidates: candidates,
+            validator: { path in
+                // Gemini: ~/.gemini/tmp/*/chats/*.json
+                findJSONFiles(in: path, subpath: "tmp", recursive: true)
+            }
+        )
+        return buildResult(
             service: "gemini", emoji: "💎",
-            detectedPath: hasFiles ? basePath : "",
-            isDefault: gemCustom == nil, exists: hasFiles
+            match: match, custom: custom,
+            defaultPath: PathConfig.defaultGeminiHome()
         )
     }
 
     private static func detectCodex() -> DetectionResult {
-        let cxCustom = UserDefaults.standard.string(forKey: "TC_codexPath")
-        let basePath = cxCustom ?? PathConfig.defaultCodexHome()
-        // 新版 Codex 按 YYYY/MM/DD 分层，递归查找 rollout-*.jsonl
-        let hasFiles = findRolloutJSONLFiles(in: basePath, subpath: "sessions")
-        return DetectionResult(
+        let custom = UserDefaults.standard.string(forKey: "TC_codexPath")
+        let candidates = buildCandidates(
+            custom: custom,
+            envName: PathConfig.codexCandidates(),
+            defaults: [PathConfig.defaultCodexHome()],
+            alternates: [NSHomeDirectory() + "/.config/codex"]
+        )
+        let match = findFirstValid(
+            candidates: candidates,
+            validator: { path in
+                // Codex: ~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl
+                findRolloutJSONLFiles(in: path, subpath: "sessions")
+                // 或历史格式
+                || findJSONLFiles(in: path, subpath: "sessions", recursive: true)
+            }
+        )
+        return buildResult(
             service: "codex", emoji: "🤖",
-            detectedPath: hasFiles ? basePath : "",
-            isDefault: cxCustom == nil, exists: hasFiles
+            match: match, custom: custom,
+            defaultPath: PathConfig.defaultCodexHome()
         )
     }
 
     private static func detectHermes() -> DetectionResult {
-        let hermesCustom = UserDefaults.standard.string(forKey: "TC_hermesPath")
-        let basePath = hermesCustom ?? PathConfig.defaultHermesHome()
-        // 检查 ~/.openclaw-hermes/agents/main/sessions/ 下是否有 .jsonl 文件
-        let hasFiles = findJSONLFiles(in: basePath, subpath: "agents/main/sessions", recursive: true)
-        return DetectionResult(
-            service: "hermes", emoji: "🏔️",
-            detectedPath: hasFiles ? basePath : "",
-            isDefault: hermesCustom == nil, exists: hasFiles
+        let custom = UserDefaults.standard.string(forKey: "TC_hermesPath")
+        let candidates = buildCandidates(
+            custom: custom,
+            envName: PathConfig.hermesCandidates(),
+            defaults: [PathConfig.defaultHermesHome()],
+            alternates: []
         )
+        let match = findFirstValid(
+            candidates: candidates,
+            validator: { path in
+                // Hermes: ~/.hermes/state.db (SQLite)
+                let dbPath = path + "/state.db"
+                let fm = FileManager.default
+                var isDir: ObjCBool = false
+                return fm.fileExists(atPath: dbPath, isDirectory: &isDir) && !isDir.boolValue
+            }
+        )
+        return buildResult(
+            service: "hermes", emoji: "🏔️",
+            match: match, custom: custom,
+            defaultPath: PathConfig.defaultHermesHome()
+        )
+    }
+
+    // MARK: - 候选路径构建
+
+    private struct Candidate {
+        let path: String
+        let source: DetectionResult.PathSource
+    }
+
+    /// 按优先级构建候选路径列表（去重）
+    private static func buildCandidates(
+        custom: String?,
+        envName: [String],
+        defaults: [String],
+        alternates: [String]
+    ) -> [Candidate] {
+        var candidates: [Candidate] = []
+        var seen = Set<String>()
+
+        func append(_ path: String, _ source: DetectionResult.PathSource) {
+            let resolved = (path as NSString).standardizingPath
+            guard !seen.contains(resolved) else { return }
+            seen.insert(resolved)
+            candidates.append(Candidate(path: resolved, source: source))
+        }
+
+        if let custom = custom, !custom.isEmpty {
+            append(custom, .userDefaults)
+        }
+        for path in envName where !path.isEmpty {
+            append(path, .envVariable)
+        }
+        for path in defaults where !path.isEmpty {
+            append(path, .officialDefault)
+        }
+        for path in alternates where !path.isEmpty {
+            append(path, .alternate)
+        }
+
+        return candidates
+    }
+
+    /// 找到第一个通过验证的候选路径
+    private static func findFirstValid(
+        candidates: [Candidate],
+        validator: (String) -> Bool
+    ) -> (path: String, source: DetectionResult.PathSource)? {
+        for candidate in candidates {
+            if validator(candidate.path) {
+                return (candidate.path, candidate.source)
+            }
+        }
+        return nil
+    }
+
+    /// 构建探测结果
+    private static func buildResult(
+        service: String,
+        emoji: String,
+        match: (path: String, source: DetectionResult.PathSource)?,
+        custom: String?,
+        defaultPath: String
+    ) -> DetectionResult {
+        if let match = match {
+            let isDefault = custom == nil && match.source != .userDefaults
+            let detail: String
+            switch match.source {
+            case .userDefaults:
+                detail = "使用用户自定义路径"
+            case .envVariable:
+                detail = "从环境变量探测到"
+            case .officialDefault:
+                detail = "使用官方默认路径"
+            case .alternate:
+                detail = "从备选路径探测到"
+            case .notFound:
+                detail = "未找到"
+            }
+            return DetectionResult(
+                service: service, emoji: emoji,
+                detectedPath: match.path,
+                isDefault: isDefault,
+                exists: true,
+                source: match.source,
+                detail: detail
+            )
+        } else {
+            return DetectionResult(
+                service: service, emoji: emoji,
+                detectedPath: defaultPath,
+                isDefault: true,
+                exists: false,
+                source: .notFound,
+                detail: "未找到有效日志文件，将使用默认路径"
+            )
+        }
     }
 
     // MARK: - 文件搜索工具
@@ -104,7 +284,7 @@ enum PathDetector {
             if recursive {
                 var fIsDir: ObjCBool = false
                 if fm.fileExists(atPath: fullPath, isDirectory: &fIsDir), fIsDir.boolValue {
-                    if findJSONLFiles(in: fullPath) { return true }
+                    if findJSONLFiles(in: fullPath, recursive: true) { return true }
                 }
             }
         }
@@ -130,20 +310,19 @@ enum PathDetector {
             if recursive {
                 var fIsDir: ObjCBool = false
                 if fm.fileExists(atPath: fullPath, isDirectory: &fIsDir), fIsDir.boolValue {
-                    if findJSONFiles(in: fullPath) { return true }
+                    if findJSONFiles(in: fullPath, recursive: true) { return true }
                 }
             }
         }
         return false
     }
 
-    /// 在 basePath/subpath 下递归查找 rollout-*.jsonl 文件（Codex 专用，新版按日期分层）
+    /// 在 basePath/subpath 下递归查找 rollout-*.jsonl 文件（Codex 专用）
     static func findRolloutJSONLFiles(in basePath: String, subpath: String) -> Bool {
         let searchDir = basePath + "/" + subpath
         return findRolloutJSONLRecursive(in: searchDir)
     }
 
-    /// 递归查找 rollout-*.jsonl
     private static func findRolloutJSONLRecursive(in dir: String) -> Bool {
         let fm = FileManager.default
         var isDir: ObjCBool = false

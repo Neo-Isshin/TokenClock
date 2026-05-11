@@ -63,7 +63,12 @@ final class FloatingPanel: NSPanel {
             if newFrame.minY < screenFrame.minY {
                 newFrame.origin.y = screenFrame.minY
             }
-            self.setFrame(newFrame, display: true, animate: true)
+            // 使用更短的动画时长，与 SwiftUI 过渡同步
+            NSAnimationContext.runAnimationGroup({ context in
+                context.duration = 0.18
+                context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+                self.animator().setFrame(newFrame, display: true)
+            })
         } else {
             self.setFrame(NSRect(origin: self.frame.origin, size: NSSize(width: 240, height: targetHeight)), display: true)
         }

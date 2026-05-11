@@ -3,9 +3,24 @@ import Combine
 
 @MainActor
 final class ViewModel: ObservableObject {
-    @Published var tools: [ToolUsage]
+    @Published var tools: [ToolUsage] {
+        didSet { updateSortedTools() }
+    }
+
+    /// 预计算排序后的工具列表，避免每次展开时重新排序
+    @Published private(set) var sortedTools: [ToolUsage] = []
+
     @Published var currentTime = Date()
-    @Published var isExpanded = false
+    @Published var isExpanded = false {
+        didSet {
+            // 直接触发面板大小调整，跳过 NotificationCenter 绕路
+            onExpandChanged?(isExpanded)
+        }
+    }
+
+    /// 展开状态变化时的回调（由 AppDelegate 设置）
+    var onExpandChanged: ((Bool) -> Void)?
+
     @Published var windowOpacity: Double = 1.0
     @Published var alwaysOnTop = true
     @Published var launchAtLogin = false
@@ -59,7 +74,10 @@ final class ViewModel: ObservableObject {
     init() {
         // 先生成初始结构，再被真实数据覆盖
         self.tools = MockUsageService.generateInitialData()
+        updateSortedTools()
         loadTheme()
+        // 首次启动时自动探测各工具日志路径
+        runInitialPathDetection()
         startTimers()
         fetchInitialWeather()
         // 首次全量扫描
@@ -68,6 +86,62 @@ final class ViewModel: ObservableObject {
 
     func shutdown() {
         stopTimers()
+    }
+
+    // MARK: - 首次启动路径探测
+
+    /// 应用首次启动时自动探测各工具日志路径
+    private func runInitialPathDetection() {
+        guard !PathConfig.hasRunInitialDetection else { return }
+        PathConfig.hasRunInitialDetection = true
+
+        let summary = PathDetector.runFullDetection()
+        var savedPaths: [String] = []
+
+        for result in summary.results where result.exists {
+            switch result.service {
+            case "openclaw":
+                PathConfig.setOpenclawPath(result.detectedPath)
+                savedPaths.append("⚡ OpenClaw: \(result.detail)")
+            case "claudeCode":
+                PathConfig.setClaudeCodePath(result.detectedPath)
+                savedPaths.append("🧠 Claude Code: \(result.detail)")
+            case "gemini":
+                PathConfig.setGeminiPath(result.detectedPath)
+                savedPaths.append("💎 Gemini CLI: \(result.detail)")
+            case "codex":
+                PathConfig.setCodexPath(result.detectedPath)
+                savedPaths.append("🤖 Codex: \(result.detail)")
+            case "hermes":
+                PathConfig.setHermesPath(result.detectedPath)
+                savedPaths.append("🏔️ Hermes: \(result.detail)")
+            default:
+                break
+            }
+        }
+
+        // 如果探测到至少一个路径，打印摘要到控制台
+        if !savedPaths.isEmpty {
+            print("[TokenClock] 自动探测到 \(savedPaths.count) 个数据源路径:")
+            for path in savedPaths {
+                print("  - \(path)")
+            }
+        }
+
+        // 如果有未探测到的，也记录下来
+        let notFound = summary.results.filter { !$0.exists }
+        if !notFound.isEmpty {
+            print("[TokenClock] 未探测到的数据源（可在设置中手动配置）:")
+            for result in notFound {
+                print("  - \(result.emoji) \(result.service): \(result.detail)")
+            }
+        }
+    }
+
+    // MARK: - 预排序
+
+    private func updateSortedTools() {
+        sortedTools = tools.sorted { $0.todayTokens > $1.todayTokens }
     }
 
     // MARK: - 主题持久化

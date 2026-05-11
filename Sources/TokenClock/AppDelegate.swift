@@ -25,11 +25,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         contentView.frame = NSRect(x: 0, y: 0, width: 300, height: 260)
         panel.contentView = contentView
 
-        // 监听展开/收起通知
-        NotificationCenter.default.addObserver(
-            self, selector: #selector(handleToggleExpanded(_:)),
-            name: .toggleExpanded, object: nil
-        )
+        // 绑定展开/收起直接回调，绕过 NotificationCenter 延迟
+        viewModel.onExpandChanged = { [weak self] expanded in
+            self?.panel?.updateSize(expanded: expanded)
+        }
 
         // 监听天气更新（城市解析后刷新菜单标签）
         NotificationCenter.default.addObserver(
@@ -46,13 +45,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             panel?.savePosition()
             removeThemePickerMonitor()
         }
-    }
-
-    // MARK: - 展开/收起
-
-    @objc private func handleToggleExpanded(_ notification: Notification) {
-        guard let expanded = notification.object as? Bool else { return }
-        panel?.updateSize(expanded: expanded)
     }
 
     // MARK: - 右键菜单
@@ -340,18 +332,16 @@ struct MainView: View {
 
             if viewModel.isExpanded {
                 DetailDropdownView(
-                    tools: viewModel.tools.sorted { $0.todayTokens > $1.todayTokens },
+                    tools: viewModel.sortedTools,
                     theme: viewModel.selectedTheme
                 )
+                .transition(.asymmetric(
+                    insertion: .move(edge: .top).combined(with: .opacity),
+                    removal: .opacity
+                ))
             }
         }
         .frame(width: 300)
-        .onChange(of: viewModel.isExpanded) { _, newValue in
-            NotificationCenter.default.post(name: .toggleExpanded, object: newValue)
-        }
+        .animation(.easeOut(duration: 0.18), value: viewModel.isExpanded)
     }
-}
-
-extension Notification.Name {
-    static let toggleExpanded = Notification.Name("toggleExpanded")
 }
