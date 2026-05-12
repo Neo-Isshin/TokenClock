@@ -148,4 +148,66 @@ final class HermesUsageService: @unchecked Sendable {
 
         lastScanTime = Date()
     }
+
+    // MARK: - 今日活跃 Session 列表
+
+    /// Hermes session 数据存储在 SQLite 的 sessions 表中
+    func todaySessions() -> [SessionInfo] {
+        let dbFile = dbPath
+        var db: OpaquePointer?
+        guard sqlite3_open(dbFile, &db) == SQLITE_OK else { return [] }
+        defer { sqlite3_close(db) }
+
+        let todayStart = Date().addingTimeInterval(-86400)
+        let query = """
+        SELECT session_id, started_at,
+               input_tokens, output_tokens,
+               cache_read_tokens, cache_write_tokens,
+               message_count
+        FROM sessions
+        WHERE started_at >= ?
+          AND (input_tokens > 0 OR output_tokens > 0)
+        ORDER BY started_at DESC
+        """
+
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, query, -1, &stmt, nil) == SQLITE_OK else { return [] }
+        defer { sqlite3_finalize(stmt) }
+
+        sqlite3_bind_double(stmt, 1, todayStart.timeIntervalSince1970)
+
+        var results: [SessionInfo] = []
+
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            let sessionIdPtr = sqlite3_column_text(stmt, 0)
+            let sessionId = sessionIdPtr != nil ? String(cString: sessionIdPtr!) : ""
+            let startedAt = sqlite3_column_double(stmt, 1)
+            let inputTokens = sqlite3_column_int(stmt, 2)
+            let outputTokens = sqlite3_column_int(stmt, 3)
+            let cacheRead = sqlite3_column_int(stmt, 4)
+            let cacheWrite = sqlite3_column_int(stmt, 5)
+            let msgCount = sqlite3_column_int(stmt, 6)
+
+            let tokens = Int(inputTokens) + Int(outputTokens) + Int(cacheRead) + Int(cacheWrite)
+            guard tokens > 0 else { continue }
+
+            let date = Date(timeIntervalSince1970: startedAt)
+            let dateKey = DateHelper.dateKey(from: date)
+            guard dateKey == DateHelper.todayKey() else { continue }
+
+            let displayId = sessionId.isEmpty ? "unknown" : String(sessionId.prefix(7))
+            let effectiveMessages = msgCount > 0 ? Int(msgCount) : 1
+
+            results.append(SessionInfo(
+                rawId: sessionId,
+                displayName: displayId,
+                detail: nil,
+                todayTokens: tokens,
+                todayMessages: effectiveMessages,
+                isActive: true
+            ))
+        }
+
+        return results
+    }
 }

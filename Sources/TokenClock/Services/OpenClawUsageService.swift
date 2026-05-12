@@ -106,6 +106,15 @@ final class OpenClawUsageService: @unchecked Sendable {
                     subtractCacheContributions(oldContrib)
                 }
 
+                // 跳过 cron 触发的 session
+                if isCronSession(path: fullPath) {
+                    fileDailyContrib.removeValue(forKey: fullPath)
+                    fileHourlyContrib.removeValue(forKey: fullPath)
+                    fileCacheContrib.removeValue(forKey: fullPath)
+                    fileCache[fullPath] = FileMeta(path: fullPath, modDate: modDate)
+                    continue
+                }
+
                 parseFile(path: fullPath, isIncremental: fileDailyContrib[fullPath] != nil)
                 fileCache[fullPath] = FileMeta(path: fullPath, modDate: modDate)
             }
@@ -280,5 +289,149 @@ final class OpenClawUsageService: @unchecked Sendable {
         if result.dateKey == today, let ts = result.timestamp {
             recentEntries.append(RecentEntry(timestamp: ts, tokens: result.tokens))
         }
+    }
+
+    // MARK: - 今日活跃 Agent 列表
+
+    /// 返回今日每个活跃 agent 的数据（用于展开展示）
+    func todaySessions() -> [SessionInfo] {
+        let agentsDir = openclawHome + "/agents"
+        let fm = FileManager.default
+        var isDir: ObjCBool = false
+        guard fm.fileExists(atPath: agentsDir, isDirectory: &isDir), isDir.boolValue else { return [] }
+        guard let agentNames = try? fm.contentsOfDirectory(atPath: agentsDir) else { return [] }
+
+        let today = DateHelper.todayKey()
+        var results: [SessionInfo] = []
+
+        for agentName in agentNames {
+            let sessionsDir = agentsDir + "/" + agentName + "/sessions"
+            var sIsDir: ObjCBool = false
+            guard fm.fileExists(atPath: sessionsDir, isDirectory: &sIsDir), sIsDir.boolValue else { continue }
+            guard let files = try? fm.contentsOfDirectory(atPath: sessionsDir) else { continue }
+
+            var agentTokens = 0
+            var agentMessages = 0
+
+            for file in files {
+                // 过滤掉 trajectory 和 checkpoint 文件，只保留主 session 日志
+                guard file.hasSuffix(".jsonl"),
+                      !file.contains(".checkpoint."),
+                      !file.contains(".trajectory.") else { continue }
+                let fullPath = sessionsDir + "/" + file
+
+                // 跳过 cron 触发的 session
+                if isCronSession(path: fullPath) { continue }
+
+                // 解析该文件今日数据（以实际内容为准，不以文件修改时间为准）
+                let (tokens, messages) = parseSessionFileToday(path: fullPath, today: today)
+                agentTokens += tokens
+                agentMessages += messages
+            }
+
+            if agentTokens > 0 {
+                results.append(SessionInfo(
+                    rawId: agentName,
+                    displayName: agentName,
+                    detail: nil,
+                    todayTokens: agentTokens,
+                    todayMessages: agentMessages,
+                    isActive: true
+                ))
+            }
+        }
+
+        return results.sorted { $0.todayTokens > $1.todayTokens }
+    }
+
+    /// 检测 session 是否由 cron 触发
+    /// OpenClaw 的 cron 任务会在 session 开始时注入一条用户消息，text 以 `[cron:<UUID> <task_name>]` 开头
+    private func isCronSession(path: String) -> Bool {
+        guard let stream = InputStream(fileAtPath: path) else { return false }
+        stream.open()
+        defer { stream.close() }
+
+        let bufSize = 65536
+        let buf = UnsafeMutablePointer<UInt8>.allocate(capacity: bufSize)
+        defer { buf.deallocate() }
+        var lineBuf = Data()
+
+        while stream.hasBytesAvailable {
+            let n = stream.read(buf, maxLength: bufSize)
+            if n <= 0 { break }
+            lineBuf.append(buf, count: n)
+
+            while let nlRange = lineBuf.range(of: Data([0x0A])) {
+                let lineData = lineBuf[lineBuf.startIndex..<nlRange.lowerBound]
+                lineBuf = lineBuf[nlRange.upperBound...]
+                guard !lineData.isEmpty else { continue }
+                if let line = String(data: lineData, encoding: .utf8),
+                   line.contains("\"user\""),
+                   let data = line.data(using: .utf8),
+                   let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                   let msg = obj["message"] as? [String: Any],
+                   msg["role"] as? String == "user",
+                   let content = msg["content"] as? [[String: Any]],
+                   let firstText = content.first?["text"] as? String {
+                    return firstText.hasPrefix("[cron:")
+                }
+            }
+        }
+
+        if !lineBuf.isEmpty,
+           let line = String(data: lineBuf, encoding: .utf8),
+           line.contains("\"user\""),
+           let data = line.data(using: .utf8),
+           let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           let msg = obj["message"] as? [String: Any],
+           msg["role"] as? String == "user",
+           let content = msg["content"] as? [[String: Any]],
+           let firstText = content.first?["text"] as? String {
+            return firstText.hasPrefix("[cron:")
+        }
+
+        return false
+    }
+
+    /// 解析单个 session 文件的今日数据
+    private func parseSessionFileToday(path: String, today: String) -> (tokens: Int, messages: Int) {
+        guard let stream = InputStream(fileAtPath: path) else { return (0, 0) }
+        stream.open()
+        defer { stream.close() }
+
+        let bufSize = 65536
+        let buf = UnsafeMutablePointer<UInt8>.allocate(capacity: bufSize)
+        defer { buf.deallocate() }
+        var lineBuf = Data()
+        var tokens = 0, messages = 0
+
+        while stream.hasBytesAvailable {
+            let n = stream.read(buf, maxLength: bufSize)
+            if n <= 0 { break }
+            lineBuf.append(buf, count: n)
+
+            while let nlRange = lineBuf.range(of: Data([0x0A])) {
+                let lineData = lineBuf[lineBuf.startIndex..<nlRange.lowerBound]
+                lineBuf = lineBuf[nlRange.upperBound...]
+                guard !lineData.isEmpty else { continue }
+                let line = String(data: lineData, encoding: .utf8) ?? ""
+                if line.contains("\"assistant\""), let result = parseAssistantLine(line) {
+                    if result.dateKey == today {
+                        tokens += result.tokens
+                        messages += 1
+                    }
+                }
+            }
+        }
+
+        if !lineBuf.isEmpty,
+           let line = String(data: lineBuf, encoding: .utf8),
+           line.contains("\"assistant\""),
+           let result = parseAssistantLine(line), result.dateKey == today {
+            tokens += result.tokens
+            messages += 1
+        }
+
+        return (tokens, messages)
     }
 }

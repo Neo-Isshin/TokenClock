@@ -306,43 +306,45 @@ final class ViewModel: ObservableObject {
 
     /// 从真实数据服务刷新所有工具的 token 数据
     private func refreshRealData() {
-
         let oc = openclawService.todayUsage()
         let ocRecent = openclawService.recentUsage()
         updateTool(name: "OpenClaw", tokens: oc.tokens, messages: oc.messages,
                    recentTokens: ocRecent.tokens, hourlyTokens: openclawService.currentHourTokens(),
-                   active: openclawService.isActive(), cacheRate: oc.cacheRate)
+                   active: openclawService.isActive(), cacheRate: oc.cacheRate,
+                   sessions: openclawService.todaySessions())
 
         let cc = claudeCodeService.todayUsage()
         let ccRecent = claudeCodeService.recentUsage()
         updateTool(name: "Claude Code", tokens: cc.tokens, messages: cc.messages,
                    recentTokens: ccRecent.tokens, hourlyTokens: claudeCodeService.currentHourTokens(),
-                   active: claudeCodeService.isActive(), cacheRate: cc.cacheRate)
+                   active: claudeCodeService.isActive(), cacheRate: cc.cacheRate,
+                   sessions: claudeCodeService.todaySessions())
 
         let gc = geminiService.todayUsage()
         let gcRecent = geminiService.recentUsage()
         updateTool(name: "Gemini CLI", tokens: gc.tokens, messages: gc.messages,
                    recentTokens: gcRecent.tokens, hourlyTokens: geminiService.currentHourTokens(),
-                   active: geminiService.isActive(), cacheRate: gc.cacheRate)
+                   active: geminiService.isActive(), cacheRate: gc.cacheRate,
+                   sessions: geminiService.todaySessions())
 
-        // Hermes：本地扫描（与其他服务一致）
         let cx = codexService.todayUsage()
         let cxRecent = codexService.recentUsage()
         updateTool(name: "Codex", tokens: cx.tokens, messages: cx.messages,
                    recentTokens: cxRecent.tokens, hourlyTokens: codexService.currentHourTokens(),
-                   active: codexService.isActive(), cacheRate: cx.cacheRate)
+                   active: codexService.isActive(), cacheRate: cx.cacheRate,
+                   sessions: codexService.todaySessions())
 
         let hm = hermesService.todayUsage()
         let hmRecent = hermesService.recentUsage()
         updateTool(name: "Hermes", tokens: hm.tokens, messages: hm.messages,
                    recentTokens: hmRecent.tokens, hourlyTokens: hermesService.currentHourTokens(),
-                   active: hermesService.isActive(), cacheRate: hm.cacheRate)
-
-
+                   active: hermesService.isActive(), cacheRate: hm.cacheRate,
+                   sessions: hermesService.todaySessions())
     }
 
     private func updateTool(name: String, tokens: Int, messages: Int,
-                           recentTokens: Int, hourlyTokens: Int, active: Bool, cacheRate: Double = 0) {
+                           recentTokens: Int, hourlyTokens: Int, active: Bool,
+                           cacheRate: Double = 0, sessions: [SessionInfo] = []) {
         guard let idx = tools.firstIndex(where: { $0.name == name }) else { return }
         tools[idx] = ToolUsage(
             name: tools[idx].name,
@@ -353,7 +355,8 @@ final class ViewModel: ObservableObject {
             isActive: active,
             cacheRate: cacheRate,
             recentTokens: recentTokens,
-            hourlyTokens: hourlyTokens
+            hourlyTokens: hourlyTokens,
+            sessions: sessions
         )
     }
 

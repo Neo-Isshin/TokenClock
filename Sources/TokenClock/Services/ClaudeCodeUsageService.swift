@@ -201,4 +201,131 @@ final class ClaudeCodeUsageService: @unchecked Sendable {
         // recent
         if r.dateKey == today, let ts = r.ts { recentEntries.append(RecentEntry(timestamp: ts, tokens: r.tokens)) }
     }
+
+    // MARK: - 今日活跃 Session 列表
+
+    /// Claude Code session 存储十分零碎：session 元数据在 ~/.claude/sessions/*.json 中，
+    /// 实际对话记录在 ~/.claude/projects/<path>/<sessionId>.jsonl 中。
+    /// 需要先读取 sessions 目录获取 sessionId，再在 projects 中定位对应文件。
+    func todaySessions() -> [SessionInfo] {
+        let sessionsDir = claudeHome + "/sessions"
+        var isDir: ObjCBool = false
+        guard fm.fileExists(atPath: sessionsDir, isDirectory: &isDir), isDir.boolValue else { return [] }
+        guard let sessionFiles = try? fm.contentsOfDirectory(atPath: sessionsDir) else { return [] }
+
+        let today = DateHelper.todayKey()
+        var results: [SessionInfo] = []
+
+        for file in sessionFiles where file.hasSuffix(".json") {
+            let metaPath = sessionsDir + "/" + file
+            guard let metaData = fm.contents(atPath: metaPath),
+                  let meta = try? JSONSerialization.jsonObject(with: metaData) as? [String: Any],
+                  let sessionId = meta["sessionId"] as? String else { continue }
+
+            // 在 projects 目录中定位该 session 的对话记录
+            let (tokens, messages) = findSessionTokens(sessionId: sessionId, today: today)
+            guard tokens > 0 || messages > 0 else { continue }
+
+            let displayId = String(sessionId.prefix(7))
+            let cwd = meta["cwd"] as? String ?? ""
+            let detail = cwd.isEmpty ? nil : cwd
+
+            results.append(SessionInfo(
+                rawId: sessionId,
+                displayName: displayId,
+                detail: detail,
+                todayTokens: tokens,
+                todayMessages: messages,
+                isActive: true
+            ))
+        }
+
+        return results.sorted { $0.todayTokens > $1.todayTokens }
+    }
+
+    /// 在 projects 目录中递归查找指定 sessionId 的 .jsonl 文件，并计算今日 token
+    private func findSessionTokens(sessionId: String, today: String) -> (tokens: Int, messages: Int) {
+        let projectsDir = claudeHome + "/projects"
+        var isDir: ObjCBool = false
+        guard fm.fileExists(atPath: projectsDir, isDirectory: &isDir), isDir.boolValue else { return (0, 0) }
+
+        // session 文件名就是 sessionId + ".jsonl"
+        let targetFile = sessionId + ".jsonl"
+
+        // 递归查找
+        guard let projects = try? fm.contentsOfDirectory(atPath: projectsDir) else { return (0, 0) }
+        for project in projects {
+            let projectPath = projectsDir + "/" + project
+            var pIsDir: ObjCBool = false
+            guard fm.fileExists(atPath: projectPath, isDirectory: &pIsDir), pIsDir.boolValue else { continue }
+
+            // 检查当前目录
+            let filePath = projectPath + "/" + targetFile
+            var fIsDir: ObjCBool = false
+            if fm.fileExists(atPath: filePath, isDirectory: &fIsDir), !fIsDir.boolValue {
+                return parseSessionFileToday(path: filePath, today: today)
+            }
+
+            // 深度递归（Claude projects 可能有子目录）
+            if let found = findSessionFileRecursive(dir: projectPath, targetFile: targetFile, today: today) {
+                return found
+            }
+        }
+        return (0, 0)
+    }
+
+    private func findSessionFileRecursive(dir: String, targetFile: String, today: String) -> (tokens: Int, messages: Int)? {
+        guard let contents = try? fm.contentsOfDirectory(atPath: dir) else { return nil }
+        for item in contents {
+            let fullPath = dir + "/" + item
+            var isDir: ObjCBool = false
+            guard fm.fileExists(atPath: fullPath, isDirectory: &isDir) else { continue }
+            if isDir.boolValue {
+                if let found = findSessionFileRecursive(dir: fullPath, targetFile: targetFile, today: today) {
+                    return found
+                }
+            } else if item == targetFile {
+                return parseSessionFileToday(path: fullPath, today: today)
+            }
+        }
+        return nil
+    }
+
+    /// 解析单个 session 文件的今日数据（复用现有解析逻辑）
+    private func parseSessionFileToday(path: String, today: String) -> (tokens: Int, messages: Int) {
+        guard let stream = InputStream(fileAtPath: path) else { return (0, 0) }
+        stream.open()
+        defer { stream.close() }
+
+        let bufSize = 65536
+        let buf = UnsafeMutablePointer<UInt8>.allocate(capacity: bufSize)
+        defer { buf.deallocate() }
+        var lineBuf = Data()
+        var tokens = 0, messages = 0
+
+        while stream.hasBytesAvailable {
+            let n = stream.read(buf, maxLength: bufSize)
+            if n <= 0 { break }
+            lineBuf.append(buf, count: n)
+            while let nlRange = lineBuf.range(of: Data([0x0A])) {
+                let lineData = lineBuf[lineBuf.startIndex..<nlRange.lowerBound]
+                lineBuf = lineBuf[nlRange.upperBound...]
+                guard !lineData.isEmpty else { continue }
+                let line = String(data: lineData, encoding: .utf8) ?? ""
+                if line.contains("\"assistant\""), let r = parseLine(line), r.dateKey == today {
+                    tokens += r.tokens
+                    messages += 1
+                }
+            }
+        }
+
+        if !lineBuf.isEmpty,
+           let line = String(data: lineBuf, encoding: .utf8),
+           line.contains("\"assistant\""), let r = parseLine(line), r.dateKey == today {
+            tokens += r.tokens
+            messages += 1
+        }
+
+        return (tokens, messages)
+    }
 }

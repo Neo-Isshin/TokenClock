@@ -167,4 +167,75 @@ final class GeminiUsageService: @unchecked Sendable {
         fileHourlyContrib[path] = newHourly
         fileCacheContrib[path] = newCache
     }
+
+    // MARK: - 今日活跃 Session 列表
+
+    /// Gemini CLI session 位于 ~/.gemini/tmp/<project>/chats/session-*.json
+    func todaySessions() -> [SessionInfo] {
+        let tmpDir = geminiHome + "/tmp"
+        guard let projectDirs = try? fm.contentsOfDirectory(atPath: tmpDir) else { return [] }
+
+        let today = DateHelper.todayKey()
+        var results: [SessionInfo] = []
+
+        for project in projectDirs {
+            let chatsDir = tmpDir + "/" + project + "/chats"
+            var isDir: ObjCBool = false
+            guard fm.fileExists(atPath: chatsDir, isDirectory: &isDir), isDir.boolValue else { continue }
+            guard let files = try? fm.contentsOfDirectory(atPath: chatsDir) else { continue }
+
+            for file in files where file.hasSuffix(".json") {
+                let fullPath = chatsDir + "/" + file
+                guard let attrs = try? fm.attributesOfItem(atPath: fullPath),
+                      let modDate = attrs[.modificationDate] as? Date else { continue }
+                // 只处理今日修改的文件
+                guard DateHelper.dateKey(from: modDate) == today else { continue }
+
+                let (tokens, messages, sessionId) = parseSessionFile(path: fullPath, today: today)
+                guard tokens > 0 else { continue }
+
+                let displayId = String(sessionId.prefix(7))
+                results.append(SessionInfo(
+                    rawId: sessionId,
+                    displayName: displayId,
+                    detail: project,
+                    todayTokens: tokens,
+                    todayMessages: messages,
+                    isActive: true
+                ))
+            }
+        }
+
+        return results.sorted { $0.todayTokens > $1.todayTokens }
+    }
+
+    private func parseSessionFile(path: String, today: String) -> (tokens: Int, messages: Int, sessionId: String) {
+        guard let data = fm.contents(atPath: path),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return (0, 0, "") }
+
+        let sessionId = (obj["sessionId"] as? String) ?? (obj["id"] as? String) ?? ""
+        guard let messages = obj["messages"] as? [[String: Any]] else { return (0, 0, sessionId) }
+
+        var totalTokens = 0
+        var msgCount = 0
+
+        for msg in messages {
+            guard msg["type"] as? String == "gemini",
+                  let tokens = msg["tokens"] as? [String: Any] else { continue }
+            let input = tokens["input"] as? Int ?? 0
+            let output = tokens["output"] as? Int ?? 0
+            let cached = tokens["cached"] as? Int ?? 0
+            let total = input + output + cached
+            guard total > 0 else { continue }
+
+            let timestamp = msg["timestamp"] as? String ?? ""
+            let dateKey = DateHelper.localDateKey(from: timestamp)
+            guard dateKey == today else { continue }
+
+            totalTokens += total
+            msgCount += 1
+        }
+
+        return (totalTokens, msgCount, sessionId)
+    }
 }

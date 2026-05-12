@@ -202,4 +202,136 @@ final class CodexUsageService: @unchecked Sendable {
         cache[r.dateKey, default: 0] += r.cacheTokens
         if r.dateKey == today, let ts = r.ts { recentEntries.append(RecentEntry(timestamp: ts, tokens: r.tokens)) }
     }
+
+    // MARK: - 今日活跃 Session 列表
+
+    /// Codex session 位于 ~/.codex/sessions/YYYY/MM/DD/rollout-*-<id>.jsonl
+    func todaySessions() -> [SessionInfo] {
+        let sessionsDir = codexHome + "/sessions"
+        var isDir: ObjCBool = false
+        guard fm.fileExists(atPath: sessionsDir, isDirectory: &isDir), isDir.boolValue else { return [] }
+
+        let today = DateHelper.todayKey()
+        let todayDir = sessionsDir + "/" + today.replacingOccurrences(of: "-", with: "/")
+        var results: [SessionInfo] = []
+
+        // 如果今日目录存在，直接扫描
+        var tIsDir: ObjCBool = false
+        if fm.fileExists(atPath: todayDir, isDirectory: &tIsDir), tIsDir.boolValue {
+            results = scanSessionsDir(todayDir, today: today)
+        } else {
+            // 回退：递归扫描所有子目录找今日文件
+            results = scanAllSessionsForToday(dir: sessionsDir, today: today)
+        }
+
+        return results.sorted { $0.todayTokens > $1.todayTokens }
+    }
+
+    private func scanSessionsDir(_ dir: String, today: String) -> [SessionInfo] {
+        guard let contents = try? fm.contentsOfDirectory(atPath: dir) else { return [] }
+        var results: [SessionInfo] = []
+
+        for item in contents where item.hasPrefix("rollout-") && item.hasSuffix(".jsonl") {
+            let fullPath = dir + "/" + item
+            var fIsDir: ObjCBool = false
+            guard fm.fileExists(atPath: fullPath, isDirectory: &fIsDir), !fIsDir.boolValue else { continue }
+
+            // 从文件名提取 session ID：rollout-<timestamp>-<id>.jsonl
+            let id = extractSessionId(from: item)
+            let displayId = String(id.prefix(7))
+            let (tokens, messages) = parseSessionFileToday(path: fullPath, today: today)
+            guard tokens > 0 else { continue }
+
+            results.append(SessionInfo(
+                rawId: id,
+                displayName: displayId,
+                detail: nil,
+                todayTokens: tokens,
+                todayMessages: messages,
+                isActive: true
+            ))
+        }
+        return results
+    }
+
+    private func scanAllSessionsForToday(dir: String, today: String) -> [SessionInfo] {
+        guard let contents = try? fm.contentsOfDirectory(atPath: dir) else { return [] }
+        var results: [SessionInfo] = []
+
+        for item in contents {
+            let fullPath = dir + "/" + item
+            var isDir: ObjCBool = false
+            guard fm.fileExists(atPath: fullPath, isDirectory: &isDir) else { continue }
+            if isDir.boolValue {
+                let sub = scanAllSessionsForToday(dir: fullPath, today: today)
+                results.append(contentsOf: sub)
+            } else if item.hasPrefix("rollout-") && item.hasSuffix(".jsonl") {
+                guard let attrs = try? fm.attributesOfItem(atPath: fullPath),
+                      let modDate = attrs[.modificationDate] as? Date,
+                      DateHelper.dateKey(from: modDate) == today else { continue }
+
+                let id = extractSessionId(from: item)
+                let displayId = String(id.prefix(7))
+                let (tokens, messages) = parseSessionFileToday(path: fullPath, today: today)
+                guard tokens > 0 else { continue }
+
+                results.append(SessionInfo(
+                    rawId: id,
+                    displayName: displayId,
+                    detail: nil,
+                    todayTokens: tokens,
+                    todayMessages: messages,
+                    isActive: true
+                ))
+            }
+        }
+        return results
+    }
+
+    /// 从 rollout 文件名提取 session ID
+    private func extractSessionId(from filename: String) -> String {
+        // rollout-YYYY-MM-DDTHH-MM-SS-<id>.jsonl
+        let base = filename.dropFirst("rollout-".count).dropLast(".jsonl".count)
+        // 去掉时间戳部分（前 19 字符 "YYYY-MM-DDTHH-MM-SS"）
+        let idPart = base.dropFirst(20)
+        return String(idPart)
+    }
+
+    /// 解析单个 rollout 文件的今日数据
+    private func parseSessionFileToday(path: String, today: String) -> (tokens: Int, messages: Int) {
+        guard let stream = InputStream(fileAtPath: path) else { return (0, 0) }
+        stream.open()
+        defer { stream.close() }
+
+        let bufSize = 65536
+        let buf = UnsafeMutablePointer<UInt8>.allocate(capacity: bufSize)
+        defer { buf.deallocate() }
+        var lineBuf = Data()
+        var tokens = 0, messages = 0
+
+        while stream.hasBytesAvailable {
+            let n = stream.read(buf, maxLength: bufSize)
+            if n <= 0 { break }
+            lineBuf.append(buf, count: n)
+            while let nlRange = lineBuf.range(of: Data([0x0A])) {
+                let lineData = lineBuf[lineBuf.startIndex..<nlRange.lowerBound]
+                lineBuf = lineBuf[nlRange.upperBound...]
+                guard !lineData.isEmpty else { continue }
+                let line = String(data: lineData, encoding: .utf8) ?? ""
+                if line.contains("turn.completed"), let r = parseLine(line), r.dateKey == today {
+                    tokens += r.tokens
+                    messages += 1
+                }
+            }
+        }
+
+        if !lineBuf.isEmpty,
+           let line = String(data: lineBuf, encoding: .utf8),
+           line.contains("turn.completed"), let r = parseLine(line), r.dateKey == today {
+            tokens += r.tokens
+            messages += 1
+        }
+
+        return (tokens, messages)
+    }
 }
