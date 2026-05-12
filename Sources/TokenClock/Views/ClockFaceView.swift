@@ -49,10 +49,11 @@ struct ClockFaceView: View {
         ))
         context.fill(circle, with: .color(theme.dialColor))
 
-        // 外环
+        // 外环（直接描边，避免 strokedPath 导致的双层叠加）
         context.stroke(
-            circle.strokedPath(StrokeStyle(lineWidth: theme.dialRimWidth)),
-            with: .color(theme.dialRimColor)
+            circle,
+            with: .color(theme.dialRimColor),
+            style: StrokeStyle(lineWidth: theme.dialRimWidth, lineCap: .round, lineJoin: .round)
         )
     }
 

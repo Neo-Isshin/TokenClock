@@ -20,7 +20,7 @@ final class FloatingPanel: NSPanel {
         // 无标题栏，背景透明
         self.isOpaque = false
         self.backgroundColor = .clear
-        self.hasShadow = true
+        self.hasShadow = false
         self.isMovableByWindowBackground = true
 
         // 不拦截其他应用的激活事件

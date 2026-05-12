@@ -36,7 +36,7 @@ enum ClockFaceTheme: String, CaseIterable, Identifiable {
 
     var dialColor: Color {
         switch self {
-        case .classic: return Color(red: 0.94, green: 0.94, blue: 0.95)
+        case .classic: return Color(red: 0.97, green: 0.97, blue: 0.98)
         case .midnight: return Color(red: 0.106, green: 0.157, blue: 0.220)
         case .luxe: return Color(red: 0.102, green: 0.102, blue: 0.180)
         case .gufeng: return Color(red: 0.925, green: 0.886, blue: 0.812)
@@ -58,7 +58,7 @@ enum ClockFaceTheme: String, CaseIterable, Identifiable {
 
     var dialRimWidth: CGFloat {
         switch self {
-        case .classic: return 2
+        case .classic: return 6
         case .midnight: return 2.5
         case .luxe: return 2
         case .gufeng: return 3
