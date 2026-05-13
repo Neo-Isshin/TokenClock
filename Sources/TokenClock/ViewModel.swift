@@ -47,6 +47,9 @@ final class ViewModel: ObservableObject {
     /// 时区设置
     @Published var selectedTimezone: String = "auto"
 
+    /// 热力统计周期（分钟）
+    @Published var rateWindowMinutes: Int = 10
+
     /// 可用时区列表
     static let timezoneOptions: [(label: String, identifier: String)] = [
         ("自动", "auto"),
@@ -76,6 +79,7 @@ final class ViewModel: ObservableObject {
         self.tools = MockUsageService.generateInitialData()
         updateSortedTools()
         loadTheme()
+        loadRateWindow()
         // 首次启动时自动探测各工具日志路径
         runInitialPathDetection()
         startTimers()
@@ -155,6 +159,11 @@ final class ViewModel: ObservableObject {
            let theme = ClockFaceTheme(rawValue: saved) {
             selectedTheme = theme
         }
+    }
+
+    private func loadRateWindow() {
+        let saved = UserDefaults.standard.integer(forKey: "TC_rateWindow")
+        rateWindowMinutes = saved > 0 ? saved : 10
     }
 
     // MARK: - 聚合属性
@@ -307,35 +316,35 @@ final class ViewModel: ObservableObject {
     /// 从真实数据服务刷新所有工具的 token 数据
     private func refreshRealData() {
         let oc = openclawService.todayUsage()
-        let ocRecent = openclawService.recentUsage()
+        let ocRecent = openclawService.recentUsage(minutes: rateWindowMinutes)
         updateTool(name: "OpenClaw", tokens: oc.tokens, messages: oc.messages,
                    recentTokens: ocRecent.tokens, hourlyTokens: openclawService.currentHourTokens(),
                    active: openclawService.isActive(), cacheRate: oc.cacheRate,
                    sessions: openclawService.todaySessions())
 
         let cc = claudeCodeService.todayUsage()
-        let ccRecent = claudeCodeService.recentUsage()
+        let ccRecent = claudeCodeService.recentUsage(minutes: rateWindowMinutes)
         updateTool(name: "Claude Code", tokens: cc.tokens, messages: cc.messages,
                    recentTokens: ccRecent.tokens, hourlyTokens: claudeCodeService.currentHourTokens(),
                    active: claudeCodeService.isActive(), cacheRate: cc.cacheRate,
                    sessions: claudeCodeService.todaySessions())
 
         let gc = geminiService.todayUsage()
-        let gcRecent = geminiService.recentUsage()
+        let gcRecent = geminiService.recentUsage(minutes: rateWindowMinutes)
         updateTool(name: "Gemini CLI", tokens: gc.tokens, messages: gc.messages,
                    recentTokens: gcRecent.tokens, hourlyTokens: geminiService.currentHourTokens(),
                    active: geminiService.isActive(), cacheRate: gc.cacheRate,
                    sessions: geminiService.todaySessions())
 
         let cx = codexService.todayUsage()
-        let cxRecent = codexService.recentUsage()
+        let cxRecent = codexService.recentUsage(minutes: rateWindowMinutes)
         updateTool(name: "Codex", tokens: cx.tokens, messages: cx.messages,
                    recentTokens: cxRecent.tokens, hourlyTokens: codexService.currentHourTokens(),
                    active: codexService.isActive(), cacheRate: cx.cacheRate,
                    sessions: codexService.todaySessions())
 
         let hm = hermesService.todayUsage()
-        let hmRecent = hermesService.recentUsage()
+        let hmRecent = hermesService.recentUsage(minutes: rateWindowMinutes)
         updateTool(name: "Hermes", tokens: hm.tokens, messages: hm.messages,
                    recentTokens: hmRecent.tokens, hourlyTokens: hermesService.currentHourTokens(),
                    active: hermesService.isActive(), cacheRate: hm.cacheRate,

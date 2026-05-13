@@ -12,6 +12,20 @@ struct SettingsView: View {
     @State private var detectResults: [PathDetector.DetectionResult] = []
     @State private var detectionSummary: String = ""
 
+    // MARK: - 热力阈值
+    @State private var burstValue: String = "500"
+    @State private var burstUnit: String = "K"
+    @State private var hotValue: String = "100"
+    @State private var hotUnit: String = "K"
+    @State private var activeValue: String = "20"
+    @State private var activeUnit: String = "K"
+    @State private var calmValue: String = "2"
+    @State private var calmUnit: String = "K"
+    @State private var rateWindow: Int = 10
+
+    let rateUnits = ["", "K", "M", "B"]
+    let rateWindowOptions = [10, 30, 60]
+
     var body: some View {
         VStack(spacing: 0) {
             // 标题栏
@@ -67,6 +81,10 @@ struct SettingsView: View {
 
                     // 提示
                     hintText()
+
+                    // 热力图标阈值
+                    sectionHeader("🔥 热力图标阈值")
+                    rateThresholdSection()
                 }
                 .padding(20)
             }
@@ -78,6 +96,7 @@ struct SettingsView: View {
                 Spacer()
                 Button("完成") {
                     savePaths()
+                    saveRateSettings()
                     onDone?()
                 }
                 .buttonStyle(.borderedProminent)
@@ -90,6 +109,7 @@ struct SettingsView: View {
         .frame(width: 520, height: 520)
         .onAppear {
             loadCurrentPaths()
+            loadRateSettings()
             runAutoDetection()
         }
     }
@@ -251,6 +271,176 @@ struct SettingsView: View {
             }
         }
         .padding(.top, 4)
+    }
+
+    // MARK: - 热力阈值设置
+
+    private func rateThresholdSection() -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            // 统计周期选择
+            HStack(spacing: 8) {
+                Text("统计周期")
+                    .font(.system(size: 12))
+                    .foregroundColor(.secondary)
+                Picker("", selection: $rateWindow) {
+                    Text("10分钟").tag(10)
+                    Text("30分钟").tag(30)
+                    Text("1小时").tag(60)
+                }
+                .pickerStyle(.segmented)
+                .frame(width: 220)
+                .onChange(of: rateWindow) {
+                    saveRateSettings()
+                }
+                Spacer()
+            }
+
+            Divider()
+
+            // 阈值输入行
+            thresholdRow(emoji: "💥", label: "爆发", value: $burstValue, unit: $burstUnit)
+            thresholdRow(emoji: "🔥", label: "火热", value: $hotValue, unit: $hotUnit)
+            thresholdRow(emoji: "🏃‍♂️", label: "活跃", value: $activeValue, unit: $activeUnit)
+            thresholdRow(emoji: "☕", label: "悠闲", value: $calmValue, unit: $calmUnit)
+
+            Text("🛌 休息：低于悠闲阈值")
+                .font(.system(size: 11))
+                .foregroundColor(.secondary)
+                .padding(.top, 2)
+
+            if !rateThresholdsValid {
+                HStack(spacing: 4) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 10))
+                        .foregroundColor(.orange)
+                    Text("阈值已自动调整为递减顺序")
+                        .font(.system(size: 10))
+                        .foregroundColor(.orange)
+                }
+                .padding(.top, 2)
+            }
+        }
+        .padding(12)
+        .background(Color.secondary.opacity(0.06))
+        .cornerRadius(8)
+    }
+
+    private func thresholdRow(emoji: String, label: String, value: Binding<String>, unit: Binding<String>) -> some View {
+        HStack(spacing: 8) {
+            Text("\(emoji) \(label)")
+                .font(.system(size: 12))
+                .frame(width: 60, alignment: .leading)
+
+            TextField("数值", text: value)
+                .textFieldStyle(.roundedBorder)
+                .font(.system(size: 12, design: .monospaced))
+                .frame(width: 80)
+                .onSubmit { saveRateSettings() }
+
+            Picker("", selection: unit) {
+                ForEach(rateUnits, id: \.self) { u in
+                    Text(u.isEmpty ? "—" : u).tag(u)
+                }
+            }
+            .pickerStyle(.segmented)
+            .frame(width: 120)
+            .onChange(of: unit.wrappedValue) {
+                saveRateSettings()
+            }
+
+            Text("以上")
+                .font(.system(size: 11))
+                .foregroundColor(.secondary)
+
+            Spacer()
+        }
+    }
+
+    // MARK: - 阈值读写
+
+    private func loadRateSettings() {
+        let burst = UserDefaults.standard.integer(forKey: "TC_rateBurst")
+        let hot = UserDefaults.standard.integer(forKey: "TC_rateHot")
+        let active = UserDefaults.standard.integer(forKey: "TC_rateActive")
+        let calm = UserDefaults.standard.integer(forKey: "TC_rateCalm")
+        let window = UserDefaults.standard.integer(forKey: "TC_rateWindow")
+
+        let b = decomposeTokens(burst > 0 ? burst : 500_000)
+        let h = decomposeTokens(hot > 0 ? hot : 100_000)
+        let a = decomposeTokens(active > 0 ? active : 20_000)
+        let c = decomposeTokens(calm > 0 ? calm : 2_000)
+
+        burstValue = b.value; burstUnit = b.unit
+        hotValue = h.value; hotUnit = h.unit
+        activeValue = a.value; activeUnit = a.unit
+        calmValue = c.value; calmUnit = c.unit
+        rateWindow = window > 0 ? window : 10
+    }
+
+    private func saveRateSettings() {
+        var b = composeTokens(value: burstValue, unit: burstUnit)
+        var h = composeTokens(value: hotValue, unit: hotUnit)
+        var a = composeTokens(value: activeValue, unit: activeUnit)
+        var c = composeTokens(value: calmValue, unit: calmUnit)
+
+        // 强制严格递减：b > h > a > c >= 0
+        // 先自上而下压平超限值
+        if h >= b { h = max(0, b - 1) }
+        if a >= h { a = max(0, h - 1) }
+        if c >= a { c = max(0, a - 1) }
+        // 再自下而上托底
+        if a <= c { a = c + 1 }
+        if h <= a { h = a + 1 }
+        if b <= h { b = h + 1 }
+
+        UserDefaults.standard.set(b, forKey: "TC_rateBurst")
+        UserDefaults.standard.set(h, forKey: "TC_rateHot")
+        UserDefaults.standard.set(a, forKey: "TC_rateActive")
+        UserDefaults.standard.set(c, forKey: "TC_rateCalm")
+        UserDefaults.standard.set(rateWindow, forKey: "TC_rateWindow")
+
+        // 如果发生了调整，回写 UI 让用户看见
+        let bNew = decomposeTokens(b)
+        let hNew = decomposeTokens(h)
+        let aNew = decomposeTokens(a)
+        let cNew = decomposeTokens(c)
+        burstValue = bNew.value; burstUnit = bNew.unit
+        hotValue = hNew.value; hotUnit = hNew.unit
+        activeValue = aNew.value; activeUnit = aNew.unit
+        calmValue = cNew.value; calmUnit = cNew.unit
+    }
+
+    /// 检查当前输入值是否已满足严格递减
+    private var rateThresholdsValid: Bool {
+        let b = composeTokens(value: burstValue, unit: burstUnit)
+        let h = composeTokens(value: hotValue, unit: hotUnit)
+        let a = composeTokens(value: activeValue, unit: activeUnit)
+        let c = composeTokens(value: calmValue, unit: calmUnit)
+        return b > h && h > a && a > c && c >= 0
+    }
+
+    /// 将 token 整数分解为 (数字字符串, 单位)
+    private func decomposeTokens(_ tokens: Int) -> (value: String, unit: String) {
+        if tokens >= 1_000_000_000 {
+            return (String(format: "%.1f", Double(tokens) / 1_000_000_000), "B")
+        } else if tokens >= 1_000_000 {
+            return (String(format: "%.1f", Double(tokens) / 1_000_000), "M")
+        } else if tokens >= 1_000 {
+            return (String(format: "%.0f", Double(tokens) / 1_000), "K")
+        } else {
+            return ("\(tokens)", "")
+        }
+    }
+
+    /// 将 (数字字符串, 单位) 组合为 token 整数
+    private func composeTokens(value: String, unit: String) -> Int {
+        let num = Double(value) ?? 0
+        switch unit {
+        case "B": return Int(num * 1_000_000_000)
+        case "M": return Int(num * 1_000_000)
+        case "K": return Int(num * 1_000)
+        default:  return Int(num)
+        }
     }
 
     // MARK: - Actions
