@@ -70,4 +70,6 @@ struct WeatherInfo {
     var emoji: String = "☀️"
     var temperature: Int = 28
     var cityName: String = ""
+    /// 逐 3 小时预报（用于展开面板展示趋势）
+    var forecast: [HourlyForecast] = []
 }

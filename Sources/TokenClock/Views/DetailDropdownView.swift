@@ -4,9 +4,23 @@ import SwiftUI
 struct DetailDropdownView: View {
     let tools: [ToolUsage]
     var theme: ClockFaceTheme = .classic
+    var weather: WeatherInfo = WeatherInfo()
+
+    /// 过滤掉今日消耗为 0 的工具
+    private var activeTools: [ToolUsage] {
+        tools.filter { $0.todayTokens > 0 }
+    }
 
     var body: some View {
         VStack(spacing: 0) {
+            // 天气趋势条（只要有城市名就显示，forecast 为空时只显示当前天气）
+            if !weather.cityName.isEmpty {
+                forecastBar()
+                Divider()
+                    .background(theme.dropdownDividerColor)
+                    .padding(.horizontal, 8)
+            }
+
             // 表头
             HStack(spacing: 0) {
                 Text("实例")
@@ -24,8 +38,8 @@ struct DetailDropdownView: View {
             .padding(.top, 8)
             .padding(.bottom, 4)
 
-            // 工具列表
-            ForEach(Array(tools.enumerated()), id: \.element.id) { index, tool in
+            // 工具列表（过滤消耗为 0 的）
+            ForEach(Array(activeTools.enumerated()), id: \.element.id) { index, tool in
                 if index > 0 {
                     Divider()
                         .background(theme.dropdownDividerColor)
@@ -44,6 +58,98 @@ struct DetailDropdownView: View {
         )
         .padding(.horizontal, 8)
         .padding(.bottom, 10)
+    }
+    // MARK: - 天气趋势条
+
+    private func forecastBar() -> some View {
+        let now = Calendar.current.component(.hour, from: Date())
+        let slots = selectForecastSlots(currentHour: now)
+        let hasForecast = !slots.isEmpty
+
+        return VStack(spacing: 4) {
+            HStack(spacing: 0) {
+                Text("\(weather.emoji) \(weather.cityName) \(weather.temperature)°C")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundColor(theme.dropdownTextColor)
+                Spacer()
+                if hasForecast {
+                    Text("未来趋势")
+                        .font(.system(size: 11))
+                        .foregroundColor(theme.dropdownSubtextColor)
+                }
+            }
+            .padding(.horizontal, 12)
+
+            if hasForecast {
+                HStack(spacing: 0) {
+                    ForEach(Array(slots.enumerated()), id: \.offset) { idx, slot in
+                        if idx > 0 {
+                            Spacer()
+                        }
+                        VStack(spacing: 2) {
+                            Text(formatForecastTime(slot.time))
+                                .font(.system(size: 10, design: .monospaced))
+                                .foregroundColor(theme.dropdownSubtextColor)
+                            Text(slot.emoji)
+                                .font(.system(size: 16))
+                            Text("\(slot.tempC)°")
+                                .font(.system(size: 11, weight: .medium, design: .monospaced))
+                                .foregroundColor(theme.dropdownTextColor)
+                        }
+                        .frame(minWidth: 44)
+                    }
+                }
+                .padding(.horizontal, 12)
+                .padding(.bottom, 4)
+            }
+        }
+        .padding(.top, 8)
+    }
+
+    /// 选取当前 3 小时槽 + 接下来 3 个槽（共 4 个，覆盖 12 小时）
+    private func selectForecastSlots(currentHour: Int) -> [HourlyForecast] {
+        guard !weather.forecast.isEmpty else { return [] }
+
+        // 计算每个槽对应的小时数
+        func slotHour(_ time: String) -> Int {
+            if time.count <= 2 { return Int(time) ?? 0 }
+            if time.count == 3 { return Int(time.prefix(1)) ?? 0 }
+            return Int(time.prefix(2)) ?? 0
+        }
+
+        // 找当前小时所在的槽（最大的 <= currentHour 的槽）
+        var currentIndex = 0
+        for (i, slot) in weather.forecast.enumerated() {
+            let h = slotHour(slot.time)
+            if h <= currentHour {
+                currentIndex = i
+            } else {
+                break
+            }
+        }
+
+        // 取当前槽 + 接下来 3 个槽
+        var result: [HourlyForecast] = []
+        for i in 0..<4 {
+            let idx = currentIndex + i
+            if idx < weather.forecast.count {
+                result.append(weather.forecast[idx])
+            }
+        }
+        return result
+    }
+
+    /// 将 wttr.in 时间字符串格式化为 "HH:00"
+    private func formatForecastTime(_ time: String) -> String {
+        let h: Int
+        if time.count <= 2 {
+            h = Int(time) ?? 0
+        } else if time.count == 3 {
+            h = Int(time.prefix(1)) ?? 0
+        } else {
+            h = Int(time.prefix(2)) ?? 0
+        }
+        return String(format: "%02d:00", h)
     }
 }
 

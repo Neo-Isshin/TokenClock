@@ -45,11 +45,12 @@ final class FloatingPanel: NSPanel {
     }
 
     /// 更新窗口大小（收起/展开）
+    /// 展开高度固定 600px（足够容纳表盘 + 天气条 + 5 个工具展开态），收起 260px
     func updateSize(expanded: Bool) {
-        let targetHeight: CGFloat = expanded ? 440 : 260
+        let targetHeight: CGFloat = expanded ? 600 : 260
         let currentFrame = self.frame
 
-        // 保存位置（基于底部）
+        // 保存位置（基于底部，topY 不变）
         if let screen = NSScreen.main {
             let screenFrame = screen.visibleFrame
             let topY = currentFrame.maxY
@@ -62,15 +63,15 @@ final class FloatingPanel: NSPanel {
             // 确保不超出屏幕底部
             if newFrame.minY < screenFrame.minY {
                 newFrame.origin.y = screenFrame.minY
+                newFrame.size.height = topY - screenFrame.minY
             }
-            // 使用更短的动画时长，与 SwiftUI 过渡同步
             NSAnimationContext.runAnimationGroup({ context in
                 context.duration = 0.18
                 context.timingFunction = CAMediaTimingFunction(name: .easeOut)
                 self.animator().setFrame(newFrame, display: true)
             })
         } else {
-            self.setFrame(NSRect(origin: self.frame.origin, size: NSSize(width: 240, height: targetHeight)), display: true)
+            self.setFrame(NSRect(origin: self.frame.origin, size: NSSize(width: 300, height: targetHeight)), display: true)
         }
     }
 

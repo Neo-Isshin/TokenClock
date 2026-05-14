@@ -23,6 +23,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let mainView = MainView(viewModel: viewModel)
         let contentView = NSHostingView(rootView: mainView)
         contentView.frame = NSRect(x: 0, y: 0, width: 300, height: 260)
+        contentView.autoresizingMask = [.width, .height]
         panel.contentView = contentView
 
         // 绑定展开/收起直接回调，绕过 NotificationCenter 延迟
@@ -36,12 +37,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             name: .weatherUpdated, object: nil
         )
 
+        // 启动本地 API 服务器
+        UsageAPIServer.shared.bind(viewModel: viewModel)
+        UsageAPIServer.shared.start()
+
         panel.makeKeyAndOrderFront(nil)
         setupRightClickMenu()
     }
 
     nonisolated func applicationWillTerminate(_ notification: Notification) {
         Task { @MainActor in
+            UsageAPIServer.shared.stop()
             panel?.savePosition()
             removeThemePickerMonitor()
         }
@@ -56,6 +62,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let themeItem = NSMenuItem(title: "🎨 表盘",
                                   action: #selector(openThemePicker(_:)), keyEquivalent: "")
         menu.addItem(themeItem)
+
+        // API 端点信息
+        let apiItem = NSMenuItem(title: "🔌 API: localhost:9988/api/usage",
+                                 action: #selector(copyAPIEndpoint(_:)), keyEquivalent: "")
+        menu.addItem(apiItem)
         menu.addItem(.separator())
 
         // 透明度子菜单
@@ -227,6 +238,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         showSettingsWindow()
     }
 
+    @objc private func copyAPIEndpoint(_ sender: NSMenuItem) {
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString("http://localhost:9988/api/usage", forType: .string)
+    }
+
     @objc private func quitApp(_ sender: NSMenuItem) {
         NSApplication.shared.terminate(sender)
     }
@@ -333,7 +350,8 @@ struct MainView: View {
             if viewModel.isExpanded {
                 DetailDropdownView(
                     tools: viewModel.sortedTools,
-                    theme: viewModel.selectedTheme
+                    theme: viewModel.selectedTheme,
+                    weather: viewModel.weather
                 )
                 .transition(.asymmetric(
                     insertion: .move(edge: .top).combined(with: .opacity),

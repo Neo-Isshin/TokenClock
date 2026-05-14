@@ -1,14 +1,23 @@
 import Foundation
 import CoreLocation
 
+/// 逐小时预报（3小时间隔）
+struct HourlyForecast: Sendable {
+    let time: String
+    let tempC: Int
+    let emoji: String
+    let description: String
+}
+
 /// 天气服务：支持自动定位 + wttr.in 免费天气 API
+/// 使用 JSON 格式解析，支持 weatherCode 精确映射 + 逐小时预报
 @MainActor
 final class WeatherService: NSObject, CLLocationManagerDelegate {
     static let shared = WeatherService()
 
     private let locationManager = CLLocationManager()
 
-    /// 城市名 → 坐标映射（wttr.in 城市名查询不稳定，改用坐标）
+    /// 城市名 → 坐标映射
     private static let cityCoordinates: [String: (lat: Double, lon: Double)] = [
         "Hong Kong":    (22.3193, 114.1694),
         "Shanghai":     (31.2304, 121.4737),
@@ -24,7 +33,8 @@ final class WeatherService: NSObject, CLLocationManagerDelegate {
         locationManager.desiredAccuracy = kCLLocationAccuracyThreeKilometers
     }
 
-    /// 请求定位权限并获取天气
+    // MARK: - 定位
+
     func fetchLocalWeather() {
         let status = locationManager.authorizationStatus
         switch status {
@@ -33,15 +43,12 @@ final class WeatherService: NSObject, CLLocationManagerDelegate {
         case .notDetermined:
             locationManager.requestWhenInUseAuthorization()
         default:
-            // 定位不可用，用 IP 定位作为 fallback
             print("Location not available (status: \(status.rawValue)), using IP geolocation")
             Task { @MainActor in
                 await self.fetchWeatherByIP()
             }
         }
     }
-
-    // MARK: - CLLocationManagerDelegate
 
     nonisolated func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
         guard let location = locations.last else { return }
@@ -63,31 +70,20 @@ final class WeatherService: NSObject, CLLocationManagerDelegate {
         }
     }
 
-    // MARK: - Public: 按城市名获取天气（使用坐标，更可靠）
+    // MARK: - 按城市名获取天气
 
     func fetchWeather(forCity city: String, completion: @escaping @MainActor (WeatherInfo) -> Void) {
-        // 优先用坐标查询（wttr.in 城市名经常 500）
         if let coords = Self.cityCoordinates[city] {
             fetchWeatherFromAPI(lat: coords.lat, lon: coords.lon, cityName: city) { info in
                 completion(info)
             }
         } else {
-            // fallback: 用城市名查询
             let encoded = city.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? city
-            let urlString = "https://wttr.in/\(encoded)?format=%C+%t"
+            let urlString = "https://wttr.in/\(encoded)?format=j1"
             guard let url = URL(string: urlString) else { return }
 
             URLSession.shared.dataTask(with: url) { data, _, _ in
-                guard let data = data,
-                      let text = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines),
-                      Self.isValidWeatherResponse(text) else {
-                    // 城市名也失败，返回默认值
-                    Task { @MainActor in
-                        completion(WeatherInfo(emoji: "🌤️", temperature: 0, cityName: city))
-                    }
-                    return
-                }
-                let info = Self.parseWeatherText(text, cityName: city)
+                let info = Self.parseJSON(data: data, fallbackCity: city)
                 Task { @MainActor in
                     completion(info)
                 }
@@ -95,148 +91,187 @@ final class WeatherService: NSObject, CLLocationManagerDelegate {
         }
     }
 
-    // MARK: - wttr.in API
+    // MARK: - wttr.in JSON API
 
-    /// 用坐标获取天气（通知方式，用于自动定位）
     private func fetchWeatherFromAPI(lat: Double, lon: Double, cityName: String) async {
-        // 用 + 分隔坐标，比逗号更稳定
-        let urlString = "https://wttr.in/\(lat)+\(lon)?format=%C+%t"
+        let urlString = "https://wttr.in/\(lat)+\(lon)?format=j1"
         guard let url = URL(string: urlString) else { return }
-
         do {
             let (data, _) = try await URLSession.shared.data(from: url)
-            if let text = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines),
-               Self.isValidWeatherResponse(text) {
-                let info = Self.parseWeatherText(text, cityName: cityName)
-                NotificationCenter.default.post(name: .weatherUpdated, object: info)
-            } else {
-                print("Weather API returned invalid response for \(cityName): \(String(data: data, encoding: .utf8) ?? "nil")")
-            }
+            let info = Self.parseJSON(data: data, fallbackCity: cityName)
+            NotificationCenter.default.post(name: .weatherUpdated, object: info)
         } catch {
             print("Weather fetch error: \(error)")
         }
     }
 
-    /// 用坐标获取天气（回调方式，用于城市选择）
     private func fetchWeatherFromAPI(lat: Double, lon: Double, cityName: String, completion: @escaping @MainActor (WeatherInfo) -> Void) {
-        let urlString = "https://wttr.in/\(lat)+\(lon)?format=%C+%t"
+        let urlString = "https://wttr.in/\(lat)+\(lon)?format=j1"
         guard let url = URL(string: urlString) else { return }
-
         URLSession.shared.dataTask(with: url) { data, _, _ in
-            guard let data = data,
-                  let text = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines),
-                  Self.isValidWeatherResponse(text) else {
-                print("Weather API returned invalid response for \(cityName)")
-                Task { @MainActor in
-                    completion(WeatherInfo(emoji: "🌤️", temperature: 0, cityName: cityName))
-                }
-                return
-            }
-            let info = Self.parseWeatherText(text, cityName: cityName)
+            let info = Self.parseJSON(data: data, fallbackCity: cityName)
             Task { @MainActor in
                 completion(info)
             }
         }.resume()
     }
 
-    // MARK: - Validation & Parsing
+    // MARK: - JSON 解析
 
-    /// 检查响应是否为有效天气数据（排除 "weather data source not available" 等错误）
-    nonisolated private static func isValidWeatherResponse(_ text: String) -> Bool {
-        let lower = text.lowercased()
-        return !lower.contains("not available") && !lower.contains("error") && !lower.contains("unknown")
-    }
-
-    /// 解析 wttr.in 返回的天气文本
-    nonisolated private static func parseWeatherText(_ text: String, cityName: String) -> WeatherInfo {
-        let parts = text.split(separator: " ", maxSplits: 1)
-        var conditionEmoji = "🌤️"
-        var tempStr = "--"
-
-        if parts.count == 2 {
-            conditionEmoji = mapCondition(String(parts[0]))
-            tempStr = String(parts[1]).replacingOccurrences(of: "+", with: "").replacingOccurrences(of: "°C", with: "").replacingOccurrences(of: "°F", with: "")
+    /// 解析 wttr.in JSON 响应
+    nonisolated private static func parseJSON(data: Data?, fallbackCity: String) -> WeatherInfo {
+        guard let data = data,
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return WeatherInfo(emoji: "🌤️", temperature: 0, cityName: fallbackCity)
         }
 
-        let temp = Int(tempStr) ?? 0
-        return WeatherInfo(emoji: conditionEmoji, temperature: temp, cityName: cityName)
+        // 当前天气
+        let current = (json["current_condition"] as? [[String: Any]])?.first ?? [:]
+        let tempC = Int(current["temp_C"] as? String ?? "") ?? 0
+        let code = Int(current["weatherCode"] as? String ?? "") ?? 0
+        let emoji = mapWeatherCode(code)
+
+        // 城市名修正（优先用 nearest_area）
+        var cityName = fallbackCity
+        if let nearest = (json["nearest_area"] as? [[String: Any]])?.first,
+           let areaNames = nearest["areaName"] as? [[String: Any]],
+           let name = areaNames.first?["value"] as? String {
+            cityName = name
+        }
+
+        // 逐小时预报（合并所有可用天数，支持深夜显示次日数据）
+        var forecast: [HourlyForecast] = []
+        if let weatherDays = json["weather"] as? [[String: Any]] {
+            for day in weatherDays {
+                guard let hourly = day["hourly"] as? [[String: Any]] else { continue }
+                for h in hourly {
+                    let time = h["time"] as? String ?? ""
+                    let hTemp = Int(h["tempC"] as? String ?? "") ?? 0
+                    let hCode = Int(h["weatherCode"] as? String ?? "") ?? 0
+                    let hDesc = (h["weatherDesc"] as? [[String: Any]])?.first?["value"] as? String ?? ""
+                    forecast.append(HourlyForecast(
+                        time: time,
+                        tempC: hTemp,
+                        emoji: mapWeatherCode(hCode),
+                        description: hDesc
+                    ))
+                }
+            }
+        }
+
+        return WeatherInfo(
+            emoji: emoji,
+            temperature: tempC,
+            cityName: cityName,
+            forecast: forecast
+        )
     }
 
-    /// 天气描述 → emoji
-    nonisolated private static func mapCondition(_ condition: String) -> String {
-        switch condition.lowercased() {
-        case let c where c.contains("clear"): return "☀️"
-        case let c where c.contains("sunny"): return "☀️"
-        case let c where c.contains("partly cloudy"): return "⛅"
-        case let c where c.contains("cloudy"): return "☁️"
-        case let c where c.contains("overcast"): return "☁️"
-        case let c where c.contains("fog"): return "🌫️"
-        case let c where c.contains("rain"): return "🌧️"
-        case let c where c.contains("drizzle"): return "🌦️"
-        case let c where c.contains("thunder"): return "⛈️"
-        case let c where c.contains("snow"): return "❄️"
-        case let c where c.contains("sleet"): return "🌨️"
-        default: return "🌤️"
+    // MARK: - weatherCode → emoji
+
+    /// WorldWeatherOnline weatherCode → emoji 映射（覆盖全部 48 种代码）
+    nonisolated private static func mapWeatherCode(_ code: Int) -> String {
+        switch code {
+        case 113: return "☀️"   // Clear, Sunny
+        case 116: return "⛅"   // Partly cloudy
+        case 119: return "☁️"   // Cloudy
+        case 122: return "☁️"   // Overcast
+        case 143: return "🌫️"   // Mist
+        case 176: return "🌦️"   // Patchy rain nearby
+        case 179: return "🌨️"   // Patchy snow nearby
+        case 182: return "🌨️"   // Patchy sleet nearby
+        case 185: return "🌨️"   // Patchy freezing drizzle nearby
+        case 200: return "⛈️"   // Thundery outbreaks in nearby
+        case 227: return "❄️"   // Blowing snow
+        case 230: return "❄️"   // Blizzard
+        case 248: return "🌫️"   // Fog
+        case 260: return "🌫️"   // Freezing fog
+        case 263: return "🌦️"   // Patchy light drizzle
+        case 266: return "🌦️"   // Light drizzle
+        case 269: return "🌦️"   // Freezing drizzle
+        case 281: return "🌦️"   // Heavy freezing drizzle
+        case 284: return "🌦️"   // Heavy freezing drizzle
+        case 293: return "🌦️"   // Patchy light rain
+        case 296: return "🌧️"   // Light rain
+        case 299: return "🌧️"   // Moderate rain at times
+        case 302: return "🌧️"   // Moderate rain
+        case 305: return "🌧️"   // Heavy rain at times
+        case 308: return "🌧️"   // Heavy rain
+        case 311: return "🌨️"   // Light freezing rain
+        case 314: return "🌨️"   // Moderate or heavy freezing rain
+        case 317: return "🌨️"   // Light sleet
+        case 320: return "🌨️"   // Moderate or heavy sleet
+        case 323: return "❄️"   // Patchy light snow
+        case 326: return "❄️"   // Light snow
+        case 329: return "❄️"   // Patchy moderate snow
+        case 332: return "❄️"   // Moderate snow
+        case 335: return "❄️"   // Patchy heavy snow
+        case 338: return "❄️"   // Heavy snow
+        case 350: return "🌨️"   // Ice pellets
+        case 353: return "🌦️"   // Light rain shower
+        case 356: return "🌧️"   // Moderate or heavy rain shower
+        case 359: return "🌧️"   // Torrential rain shower
+        case 362: return "🌨️"   // Light sleet showers
+        case 365: return "🌨️"   // Moderate or heavy sleet showers
+        case 368: return "❄️"   // Light snow showers
+        case 371: return "❄️"   // Moderate or heavy snow showers
+        case 374: return "🌨️"   // Light showers of ice pellets
+        case 377: return "🌨️"   // Moderate or heavy showers of ice pellets
+        case 386: return "⛈️"   // Patchy light rain with thunder
+        case 389: return "⛈️"   // Moderate or heavy rain with thunder
+        case 392: return "⛈️"   // Patchy light snow with thunder
+        case 395: return "⛈️"   // Moderate or heavy snow with thunder
+        default:  return "🌤️"   // Unknown
         }
     }
 
-    // MARK: - IP Geolocation Fallback
+    // MARK: - IP 定位 Fallback
 
-    /// 通过 IP 定位获取天气（无需位置权限，使用国内 IP 定位服务）
+    /// 通过 IP 定位获取天气（使用国内 pconline 接口，绕过代理影响）
     private func fetchWeatherByIP() async {
-        // ip.plyz.net 返回格式: IP|国家 省份 城市 运营商
-        guard let url = URL(string: "http://ip.plyz.net/ip.ashx") else { return }
+        guard let url = URL(string: "http://whois.pconline.com.cn/ipJson.jsp?json=true") else { return }
         do {
             let (data, _) = try await URLSession.shared.data(from: url)
-            guard let text = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) else { return }
-            // 解析: "171.116.82.78|中国 山西省 太原市 联通" → 提取城市名
-            let parts = text.split(separator: "|", maxSplits: 1)
-            guard parts.count == 2 else {
-                print("IP geolocation: unexpected format: \(text)")
-                return
+            // 响应为 JSONP: var ipJsonCallBackResult = {...};
+            guard var text = String(data: data, encoding: .utf8) else { return }
+            // 去掉 JSONP 包装，提取 {} 内 JSON
+            if let start = text.range(of: "{")?.lowerBound,
+               let end = text.range(of: "}", options: .backwards)?.upperBound {
+                text = String(text[start..<end])
             }
-            let locationStr = String(parts[1])
-            // 提取城市：取空格分隔的第三段（如 "中国 山西省 太原市 联通"）
-            let segments = locationStr.split(separator: " ")
-            var cityName = ""
-            if segments.count >= 3 {
-                cityName = String(segments[2]).replacingOccurrences(of: "市", with: "")
-            } else if segments.count >= 2 {
-                cityName = String(segments[1]).replacingOccurrences(of: "省", with: "").replacingOccurrences(of: "市", with: "")
+            guard let jsonData = text.data(using: .utf8),
+                  let json = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any] else { return }
+
+            // pconline 返回: {"ip":"...","pro":"山西省","city":"太原市","addr":"..."}
+            var cityName = json["city"] as? String ?? ""
+            if cityName.isEmpty {
+                cityName = json["pro"] as? String ?? ""
             }
-            guard !cityName.isEmpty else {
-                print("IP geolocation: could not extract city from: \(locationStr)")
-                return
-            }
-            // 用城市名查询 wttr.in
+            cityName = cityName.replacingOccurrences(of: "省", with: "")
+                               .replacingOccurrences(of: "市", with: "")
+                               .replacingOccurrences(of: "自治区", with: "")
+            guard !cityName.isEmpty else { return }
             await self.fetchWeatherByCityName(cityName)
         } catch {
             print("IP geolocation error: \(error)")
         }
     }
 
-    /// 用城市名查询 wttr.in 天气（IP 定位 fallback 用）
     private func fetchWeatherByCityName(_ cityName: String) async {
         let encoded = cityName.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? cityName
-        let urlString = "https://wttr.in/\(encoded)?format=%C+%t"
+        let urlString = "https://wttr.in/\(encoded)?format=j1"
         guard let url = URL(string: urlString) else { return }
         do {
             let (data, _) = try await URLSession.shared.data(from: url)
-            if let text = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines),
-               Self.isValidWeatherResponse(text) {
-                let info = Self.parseWeatherText(text, cityName: cityName)
-                NotificationCenter.default.post(name: .weatherUpdated, object: info)
-            } else {
-                print("Weather API failed for city \(cityName)")
-            }
+            let info = Self.parseJSON(data: data, fallbackCity: cityName)
+            NotificationCenter.default.post(name: .weatherUpdated, object: info)
         } catch {
             print("Weather fetch error for city \(cityName): \(error)")
         }
     }
 
-    // MARK: - Geocoding
+    // MARK: - 反向地理编码
 
-    /// 反向地理编码：坐标 → 城市名
     private func reverseGeocode(lat: Double, lon: Double) async -> String {
         let location = CLLocation(latitude: lat, longitude: lon)
         let geocoder = CLGeocoder()

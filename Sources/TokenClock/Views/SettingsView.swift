@@ -26,6 +26,10 @@ struct SettingsView: View {
     let rateUnits = ["", "K", "M", "B"]
     let rateWindowOptions = [10, 30, 60]
 
+    // MARK: - 自定义主题
+    @State private var customConfig = CustomThemeConfig()
+    @State private var showCustomTheme = false
+
     var body: some View {
         VStack(spacing: 0) {
             // 标题栏
@@ -85,6 +89,10 @@ struct SettingsView: View {
                     // 热力图标阈值
                     sectionHeader("🔥 热力图标阈值")
                     rateThresholdSection()
+
+                    // 自定义表盘
+                    sectionHeader("🎨 自定义表盘")
+                    customThemeSection()
                 }
                 .padding(20)
             }
@@ -97,6 +105,7 @@ struct SettingsView: View {
                 Button("完成") {
                     savePaths()
                     saveRateSettings()
+                    saveCustomTheme()
                     onDone?()
                 }
                 .buttonStyle(.borderedProminent)
@@ -110,6 +119,7 @@ struct SettingsView: View {
         .onAppear {
             loadCurrentPaths()
             loadRateSettings()
+            loadCustomTheme()
             runAutoDetection()
         }
     }
@@ -441,6 +451,210 @@ struct SettingsView: View {
         case "K": return Int(num * 1_000)
         default:  return Int(num)
         }
+    }
+
+    // MARK: - 自定义主题
+
+    private func customThemeSection() -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Toggle("启用自定义表盘", isOn: $showCustomTheme)
+                    .font(.system(size: 12))
+                    .onChange(of: showCustomTheme) {
+                        if showCustomTheme {
+                            saveCustomTheme()
+                        }
+                    }
+                Spacer()
+                Button("重置默认") {
+                    customConfig = CustomThemeConfig()
+                    saveCustomTheme()
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .font(.system(size: 11))
+            }
+
+            if showCustomTheme {
+                customThemeEditor()
+                    .onChange(of: customConfig) {
+                        saveCustomTheme()
+                    }
+            }
+        }
+        .padding(12)
+        .background(Color.secondary.opacity(0.06))
+        .cornerRadius(8)
+    }
+
+    @ViewBuilder
+    private func customThemeEditor() -> some View {
+        // 表盘
+        colorRow(label: "表盘底色", color: Binding(
+            get: { customConfig.dialColor.swiftUIColor },
+            set: { customConfig.dialColor = CodableColor(color: $0) }
+        ))
+        colorRow(label: "表盘边框", color: Binding(
+            get: { customConfig.dialRimColor.swiftUIColor },
+            set: { customConfig.dialRimColor = CodableColor(color: $0) }
+        ))
+        sliderRow(label: "边框宽度", value: $customConfig.dialRimWidth, range: 0...20, step: 0.5)
+
+        Divider()
+
+        // 指针颜色
+        colorRow(label: "时针颜色", color: Binding(
+            get: { customConfig.hourHandColor.swiftUIColor },
+            set: { customConfig.hourHandColor = CodableColor(color: $0) }
+        ))
+        colorRow(label: "分针颜色", color: Binding(
+            get: { customConfig.minuteHandColor.swiftUIColor },
+            set: { customConfig.minuteHandColor = CodableColor(color: $0) }
+        ))
+        colorRow(label: "秒针颜色", color: Binding(
+            get: { customConfig.secondHandColor.swiftUIColor },
+            set: { customConfig.secondHandColor = CodableColor(color: $0) }
+        ))
+
+        // 指针样式
+        pickerRow(label: "指针样式", selection: $customConfig.handStyleRaw, options: [
+            ("round", "圆形"), ("tapered", "锥形"), ("lance", "枪尖"), ("sword", "剑形")
+        ])
+
+        // 指针宽度
+        sliderRow(label: "时针宽度", value: $customConfig.hourHandWidth, range: 1...10, step: 0.5)
+        sliderRow(label: "分针宽度", value: $customConfig.minuteHandWidth, range: 1...8, step: 0.5)
+        sliderRow(label: "秒针宽度", value: $customConfig.secondHandWidth, range: 0.5...5, step: 0.5)
+
+        Divider()
+
+        // 中心点
+        colorRow(label: "中心外圈", color: Binding(
+            get: { customConfig.centerDotOuterColor.swiftUIColor },
+            set: { customConfig.centerDotOuterColor = CodableColor(color: $0) }
+        ))
+        colorRow(label: "中心内圈", color: Binding(
+            get: { customConfig.centerDotInnerColor.swiftUIColor },
+            set: { customConfig.centerDotInnerColor = CodableColor(color: $0) }
+        ))
+
+        Divider()
+
+        // 刻度与数字
+        HStack {
+            Toggle("显示刻度", isOn: $customConfig.hasTickMarks)
+                .font(.system(size: 12))
+            Toggle("显示数字", isOn: $customConfig.showNumbers)
+                .font(.system(size: 12))
+            Toggle("表盘装饰", isOn: $customConfig.hasDialDecoration)
+                .font(.system(size: 12))
+        }
+        colorRow(label: "刻度颜色", color: Binding(
+            get: { customConfig.tickMarkColor.swiftUIColor },
+            set: { customConfig.tickMarkColor = CodableColor(color: $0) }
+        ))
+        colorRow(label: "主刻度颜色", color: Binding(
+            get: { customConfig.majorTickMarkColor.swiftUIColor },
+            set: { customConfig.majorTickMarkColor = CodableColor(color: $0) }
+        ))
+        colorRow(label: "数字颜色", color: Binding(
+            get: { customConfig.numberColor.swiftUIColor },
+            set: { customConfig.numberColor = CodableColor(color: $0) }
+        ))
+        pickerRow(label: "数字样式", selection: $customConfig.numberStyleRaw, options: [
+            ("arabic", "阿拉伯数字"), ("chinese", "中文数字")
+        ])
+        pickerRow(label: "数字字体", selection: $customConfig.numberFontDesignRaw, options: [
+            ("rounded", "圆体"), ("serif", "衬线"), ("monospaced", "等宽"), ("default", "默认")
+        ])
+
+        Divider()
+
+        // 下拉面板颜色
+        colorRow(label: "面板背景", color: Binding(
+            get: { customConfig.dropdownBgColor.swiftUIColor },
+            set: { customConfig.dropdownBgColor = CodableColor(color: $0) }
+        ))
+        colorRow(label: "面板文字", color: Binding(
+            get: { customConfig.dropdownTextColor.swiftUIColor },
+            set: { customConfig.dropdownTextColor = CodableColor(color: $0) }
+        ))
+        colorRow(label: "面板副文字", color: Binding(
+            get: { customConfig.dropdownSubtextColor.swiftUIColor },
+            set: { customConfig.dropdownSubtextColor = CodableColor(color: $0) }
+        ))
+        colorRow(label: "面板边框", color: Binding(
+            get: { customConfig.dropdownBorderColor.swiftUIColor },
+            set: { customConfig.dropdownBorderColor = CodableColor(color: $0) }
+        ))
+        colorRow(label: "面板分割线", color: Binding(
+            get: { customConfig.dropdownDividerColor.swiftUIColor },
+            set: { customConfig.dropdownDividerColor = CodableColor(color: $0) }
+        ))
+
+        Divider()
+
+        // 叠加文字颜色
+        colorRow(label: "主文字颜色", color: Binding(
+            get: { customConfig.textPrimaryColor.swiftUIColor },
+            set: { customConfig.textPrimaryColor = CodableColor(color: $0) }
+        ))
+        colorRow(label: "副文字颜色", color: Binding(
+            get: { customConfig.textSecondaryColor.swiftUIColor },
+            set: { customConfig.textSecondaryColor = CodableColor(color: $0) }
+        ))
+    }
+
+    private func colorRow(label: String, color: Binding<Color>) -> some View {
+        HStack {
+            Text(label)
+                .font(.system(size: 12))
+                .frame(width: 80, alignment: .leading)
+            ColorPicker("", selection: color)
+                .frame(width: 40)
+            Spacer()
+        }
+        .frame(height: 24)
+    }
+
+    private func sliderRow(label: String, value: Binding<CGFloat>, range: ClosedRange<CGFloat>, step: CGFloat) -> some View {
+        HStack {
+            Text(label)
+                .font(.system(size: 12))
+                .frame(width: 80, alignment: .leading)
+            Slider(value: value, in: range, step: step)
+            Text(String(format: "%.1f", value.wrappedValue))
+                .font(.system(size: 11, design: .monospaced))
+                .frame(width: 36, alignment: .trailing)
+        }
+        .frame(height: 24)
+    }
+
+    private func pickerRow(label: String, selection: Binding<String>, options: [(String, String)]) -> some View {
+        HStack {
+            Text(label)
+                .font(.system(size: 12))
+                .frame(width: 80, alignment: .leading)
+            Picker("", selection: selection) {
+                ForEach(options, id: \.0) { key, title in
+                    Text(title).tag(key)
+                }
+            }
+            .pickerStyle(.segmented)
+            .onChange(of: selection.wrappedValue) { saveCustomTheme() }
+            Spacer()
+        }
+        .frame(height: 24)
+    }
+
+    private func loadCustomTheme() {
+        customConfig = CustomThemeConfig.load()
+        showCustomTheme = UserDefaults.standard.bool(forKey: "TC_showCustomTheme")
+    }
+
+    private func saveCustomTheme() {
+        customConfig.save()
+        UserDefaults.standard.set(showCustomTheme, forKey: "TC_showCustomTheme")
     }
 
     // MARK: - Actions
