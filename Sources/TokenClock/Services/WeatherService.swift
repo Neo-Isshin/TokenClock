@@ -313,4 +313,5 @@ final class WeatherService: NSObject, CLLocationManagerDelegate {
 
 extension Notification.Name {
     static let weatherUpdated = Notification.Name("weatherUpdated")
+    static let customThemeApplied = Notification.Name("customThemeApplied")
 }

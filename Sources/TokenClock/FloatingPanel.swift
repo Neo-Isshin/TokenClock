@@ -14,8 +14,8 @@ final class FloatingPanel: NSPanel {
     }
 
     private func setupWindow(viewModel: ViewModel) {
-        // 窗口级别：始终置顶
-        self.level = .floating
+        // 窗口级别：默认 normal（不置顶），不进入全屏 Space
+        self.level = .normal
 
         // 无标题栏，背景透明
         self.isOpaque = false
@@ -25,7 +25,8 @@ final class FloatingPanel: NSPanel {
 
         // 不拦截其他应用的激活事件
         self.becomesKeyOnlyIfNeeded = true
-        self.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        // 默认只在普通桌面 Space 显示，全屏 Space 中隐藏
+        self.collectionBehavior = [.canJoinAllSpaces]
 
         // 默认位置
         if let screen = NSScreen.main {

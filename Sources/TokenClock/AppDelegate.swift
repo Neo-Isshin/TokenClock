@@ -58,10 +58,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func setupRightClickMenu() {
         let menu = NSMenu()
 
-        // 表盘选择（直接弹出预览面板）
+        // 表盘选择（弹出带缩略图的预览面板）
         let themeItem = NSMenuItem(title: "🎨 表盘",
                                   action: #selector(openThemePicker(_:)), keyEquivalent: "")
         menu.addItem(themeItem)
+
+        // 已保存自定义主题快捷切换（非空时显示）
+        if !viewModel.savedCustomThemes.isEmpty {
+            let savedMenu = NSMenu()
+            for saved in viewModel.savedCustomThemes {
+                let item = NSMenuItem(title: saved.name,
+                                      action: #selector(selectCustomTheme(_:)), keyEquivalent: "")
+                item.representedObject = saved.id.uuidString
+                if viewModel.selectedTheme == .custom && viewModel.activeCustomThemeId == saved.id {
+                    item.state = .on
+                }
+                savedMenu.addItem(item)
+            }
+            let savedItem = NSMenuItem(title: "✏️ 我的表盘", action: nil, keyEquivalent: "")
+            savedItem.submenu = savedMenu
+            menu.addItem(savedItem)
+        }
 
         // API 端点信息
         let apiItem = NSMenuItem(title: "🔌 API: localhost:9988/api/usage",
@@ -168,6 +185,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         showThemePicker()
     }
 
+    @objc private func selectCustomTheme(_ sender: NSMenuItem) {
+        guard let idString = sender.representedObject as? String,
+              let id = UUID(uuidString: idString) else { return }
+        viewModel.applyCustomTheme(id: id)
+        viewModel.selectedTheme = .custom
+        viewModel.saveTheme()
+        setupRightClickMenu()
+    }
+
     @objc private func setOpacity(_ sender: NSMenuItem) {
         let value = Double(sender.tag) / 100.0
         panel.alphaValue = value
@@ -181,12 +207,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func toggleAlwaysOnTop(_ sender: NSMenuItem) {
         if sender.state == .on {
+            // 关闭置顶：隐藏在全屏 Space 中，级别降为 normal
             sender.state = .off
             panel.level = .normal
+            panel.collectionBehavior = [.canJoinAllSpaces]
             viewModel.alwaysOnTop = false
         } else {
+            // 开启置顶：进入全屏 Space，级别升为 statusBar
             sender.state = .on
-            panel.level = .floating
+            panel.level = .statusBar
+            panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
             viewModel.alwaysOnTop = true
         }
     }

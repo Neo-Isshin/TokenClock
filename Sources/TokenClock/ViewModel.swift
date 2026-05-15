@@ -50,6 +50,11 @@ final class ViewModel: ObservableObject {
     /// 热力统计周期（分钟）
     @Published var rateWindowMinutes: Int = 10
 
+    /// 已保存的自定义主题列表
+    @Published var savedCustomThemes: [SavedCustomTheme] = []
+    /// 当前激活的自定义主题 ID（nil 表示使用默认未命名配置）
+    @Published var activeCustomThemeId: UUID? = nil
+
     /// 可用时区列表
     static let timezoneOptions: [(label: String, identifier: String)] = [
         ("自动", "auto"),
@@ -80,6 +85,7 @@ final class ViewModel: ObservableObject {
         updateSortedTools()
         loadTheme()
         loadRateWindow()
+        loadSavedCustomThemes()
         // 首次启动时自动探测各工具日志路径
         runInitialPathDetection()
         startTimers()
@@ -164,6 +170,39 @@ final class ViewModel: ObservableObject {
     private func loadRateWindow() {
         let saved = UserDefaults.standard.integer(forKey: "TC_rateWindow")
         rateWindowMinutes = saved > 0 ? saved : 10
+    }
+
+    // MARK: - 自定义主题管理
+
+    private func loadSavedCustomThemes() {
+        savedCustomThemes = SavedCustomTheme.loadAll()
+        if let savedIdString = UserDefaults.standard.string(forKey: "TC_activeCustomThemeId"),
+           let savedId = UUID(uuidString: savedIdString) {
+            activeCustomThemeId = savedId
+        }
+    }
+
+    func saveNewCustomTheme(name: String, config: CustomThemeConfig) {
+        let newTheme = SavedCustomTheme(name: name, config: config)
+        savedCustomThemes.append(newTheme)
+        SavedCustomTheme.saveAll(savedCustomThemes)
+    }
+
+    func deleteCustomTheme(id: UUID) {
+        savedCustomThemes.removeAll { $0.id == id }
+        SavedCustomTheme.saveAll(savedCustomThemes)
+        if activeCustomThemeId == id {
+            activeCustomThemeId = nil
+            UserDefaults.standard.removeObject(forKey: "TC_activeCustomThemeId")
+        }
+    }
+
+    func applyCustomTheme(id: UUID) {
+        guard let theme = savedCustomThemes.first(where: { $0.id == id }) else { return }
+        activeCustomThemeId = id
+        UserDefaults.standard.set(id.uuidString, forKey: "TC_activeCustomThemeId")
+        // 将配置同步到 CustomThemeConfig 的默认存储，供 ClockFaceTheme.custom 读取
+        theme.config.save()
     }
 
     // MARK: - 聚合属性

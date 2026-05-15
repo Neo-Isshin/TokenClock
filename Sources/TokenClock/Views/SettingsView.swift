@@ -29,6 +29,14 @@ struct SettingsView: View {
     // MARK: - 自定义主题
     @State private var customConfig = CustomThemeConfig()
     @State private var showCustomTheme = false
+    @State private var newThemeName: String = ""
+    @State private var savedThemes: [SavedCustomTheme] = []
+
+    // MARK: - 折叠状态
+    @State private var autoDetectExpanded = false
+    @State private var pathsExpanded = true
+    @State private var rateThresholdExpanded = false
+    @State private var customThemeExpanded = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -45,54 +53,57 @@ struct SettingsView: View {
             Divider()
 
             ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    // 自动探测按钮
-                    autoDetectSection()
+                VStack(alignment: .leading, spacing: 12) {
+                    // 自动探测
+                    collapsibleSection(title: "🔍 自动探测", isExpanded: $autoDetectExpanded) {
+                        autoDetectSection()
+                    }
 
                     // 数据源路径
-                    sectionHeader("📁 数据源路径")
+                    collapsibleSection(title: "📁 数据源路径", isExpanded: $pathsExpanded) {
+                        VStack(alignment: .leading, spacing: 10) {
+                            pathRow(
+                                emoji: "⚡", name: "OpenClaw",
+                                path: $openclawPath,
+                                service: "openclaw",
+                                browseTitle: "选择 OpenClaw 目录"
+                            )
 
-                    pathRow(
-                        emoji: "⚡", name: "OpenClaw",
-                        path: $openclawPath,
-                        service: "openclaw",
-                        browseTitle: "选择 OpenClaw 目录"
-                    )
+                            pathRow(
+                                emoji: "🧠", name: "Claude Code",
+                                path: $claudeCodePath,
+                                service: "claudeCode",
+                                browseTitle: "选择 Claude Code 目录"
+                            )
 
-                    pathRow(
-                        emoji: "🧠", name: "Claude Code",
-                        path: $claudeCodePath,
-                        service: "claudeCode",
-                        browseTitle: "选择 Claude Code 目录"
-                    )
+                            pathRow(
+                                emoji: "💎", name: "Gemini CLI",
+                                path: $geminiPath,
+                                service: "gemini",
+                                browseTitle: "选择 Gemini CLI 目录"
+                            )
 
-                    pathRow(
-                        emoji: "💎", name: "Gemini CLI",
-                        path: $geminiPath,
-                        service: "gemini",
-                        browseTitle: "选择 Gemini CLI 目录"
-                    )
+                            pathRow(
+                                emoji: "🤖", name: "Codex",
+                                path: $codexPath,
+                                service: "codex",
+                                browseTitle: "选择 Codex 目录"
+                            )
 
-                    pathRow(
-                        emoji: "🤖", name: "Codex",
-                        path: $codexPath,
-                        service: "codex",
-                        browseTitle: "选择 Codex 目录"
-                    )
-
-                    // Hermes (本地)
-                    hermesPathRow()
-
-                    // 提示
-                    hintText()
+                            hermesPathRow()
+                            hintText()
+                        }
+                    }
 
                     // 热力图标阈值
-                    sectionHeader("🔥 热力图标阈值")
-                    rateThresholdSection()
+                    collapsibleSection(title: "🔥 热力图标阈值", isExpanded: $rateThresholdExpanded) {
+                        rateThresholdSection()
+                    }
 
                     // 自定义表盘
-                    sectionHeader("🎨 自定义表盘")
-                    customThemeSection()
+                    collapsibleSection(title: "🎨 自定义表盘", isExpanded: $customThemeExpanded) {
+                        customThemeSection()
+                    }
                 }
                 .padding(20)
             }
@@ -159,13 +170,36 @@ struct SettingsView: View {
         }
     }
 
-    // MARK: - Section Header
+    // MARK: - 可折叠 Section
 
-    private func sectionHeader(_ text: String) -> some View {
-        Text(text)
-            .font(.system(size: 13, weight: .semibold))
-            .foregroundColor(.secondary)
-            .padding(.bottom, 4)
+    private func collapsibleSection<Content: View>(title: String, isExpanded: Binding<Bool>, @ViewBuilder content: @escaping () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Button(action: {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    isExpanded.wrappedValue.toggle()
+                }
+            }) {
+                HStack {
+                    Text(title)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(.secondary)
+                    Spacer()
+                    Image(systemName: isExpanded.wrappedValue ? "chevron.down" : "chevron.right")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundColor(.secondary)
+                        .rotationEffect(.degrees(isExpanded.wrappedValue ? 0 : 0))
+                }
+                .padding(.vertical, 6)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            if isExpanded.wrappedValue {
+                content()
+                    .padding(.top, 8)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+        }
     }
 
     // MARK: - Path Row
@@ -476,6 +510,76 @@ struct SettingsView: View {
             }
 
             if showCustomTheme {
+                // 保存为新表盘
+                HStack(spacing: 8) {
+                    TextField("输入表盘名称", text: $newThemeName)
+                        .textFieldStyle(.roundedBorder)
+                        .font(.system(size: 12))
+
+                    Button("保存为新表盘") {
+                        guard !newThemeName.trimmingCharacters(in: .whitespaces).isEmpty else { return }
+                        let newTheme = SavedCustomTheme(
+                            name: newThemeName.trimmingCharacters(in: .whitespaces),
+                            config: customConfig
+                        )
+                        savedThemes.append(newTheme)
+                        SavedCustomTheme.saveAll(savedThemes)
+                        newThemeName = ""
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                    .font(.system(size: 11))
+                    .disabled(newThemeName.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
+
+                // 已保存表盘列表
+                if !savedThemes.isEmpty {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("已保存的表盘")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundColor(.secondary)
+
+                        ForEach(savedThemes) { theme in
+                            HStack(spacing: 8) {
+                                Image(systemName: "paintpalette")
+                                    .font(.system(size: 10))
+                                    .foregroundColor(.secondary)
+
+                                Text(theme.name)
+                                    .font(.system(size: 12))
+
+                                Spacer()
+
+                                Button("应用") {
+                                    customConfig = theme.config
+                                    saveCustomTheme()
+                                    // 通知外部应用此自定义主题
+                                    NotificationCenter.default.post(
+                                        name: .customThemeApplied,
+                                        object: theme.id
+                                    )
+                                }
+                                .buttonStyle(.borderless)
+                                .controlSize(.small)
+                                .font(.system(size: 11))
+
+                                Button("删除") {
+                                    savedThemes.removeAll { $0.id == theme.id }
+                                    SavedCustomTheme.saveAll(savedThemes)
+                                }
+                                .buttonStyle(.borderless)
+                                .controlSize(.small)
+                                .font(.system(size: 11))
+                                .foregroundColor(.red)
+                            }
+                            .padding(.vertical, 2)
+                        }
+                    }
+                    .padding(8)
+                    .background(Color.secondary.opacity(0.05))
+                    .cornerRadius(6)
+                }
+
                 customThemeEditor()
                     .onChange(of: customConfig) {
                         saveCustomTheme()
@@ -650,6 +754,7 @@ struct SettingsView: View {
     private func loadCustomTheme() {
         customConfig = CustomThemeConfig.load()
         showCustomTheme = UserDefaults.standard.bool(forKey: "TC_showCustomTheme")
+        savedThemes = SavedCustomTheme.loadAll()
     }
 
     private func saveCustomTheme() {

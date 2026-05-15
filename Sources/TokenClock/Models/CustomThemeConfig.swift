@@ -94,6 +94,37 @@ struct CodableColor: Codable, Equatable {
     }
 }
 
+/// 已保存的自定义主题
+struct SavedCustomTheme: Codable, Identifiable, Equatable {
+    let id: UUID
+    var name: String
+    var config: CustomThemeConfig
+
+    init(id: UUID = UUID(), name: String, config: CustomThemeConfig) {
+        self.id = id
+        self.name = name
+        self.config = config
+    }
+}
+
+extension SavedCustomTheme {
+    static let userDefaultsKey = "TC_savedCustomThemes"
+
+    static func loadAll() -> [SavedCustomTheme] {
+        guard let data = UserDefaults.standard.data(forKey: userDefaultsKey),
+              let themes = try? JSONDecoder().decode([SavedCustomTheme].self, from: data) else {
+            return []
+        }
+        return themes
+    }
+
+    static func saveAll(_ themes: [SavedCustomTheme]) {
+        if let data = try? JSONEncoder().encode(themes) {
+            UserDefaults.standard.set(data, forKey: Self.userDefaultsKey)
+        }
+    }
+}
+
 extension CustomThemeConfig {
     static let userDefaultsKey = "TC_customThemeConfig"
 
