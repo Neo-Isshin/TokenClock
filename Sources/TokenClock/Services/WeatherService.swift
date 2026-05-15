@@ -38,12 +38,15 @@ final class WeatherService: NSObject, CLLocationManagerDelegate {
     func fetchLocalWeather() {
         let status = locationManager.authorizationStatus
         switch status {
-        case .authorized:
+        case .authorizedAlways, .authorizedWhenInUse:
             locationManager.requestLocation()
         case .notDetermined:
             locationManager.requestWhenInUseAuthorization()
+            // 同时用 IP 定位作为备用，避免用户未授权时无数据
+            Task { @MainActor in
+                await self.fetchWeatherByIP()
+            }
         default:
-            print("Location not available (status: \(status.rawValue)), using IP geolocation")
             Task { @MainActor in
                 await self.fetchWeatherByIP()
             }
@@ -79,7 +82,7 @@ final class WeatherService: NSObject, CLLocationManagerDelegate {
             }
         } else {
             let encoded = city.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? city
-            let urlString = "https://wttr.in/\(encoded)?format=j1"
+            let urlString = "https://wttr.in/\(encoded)?format=j1&m"
             guard let url = URL(string: urlString) else { return }
 
             URLSession.shared.dataTask(with: url) { data, _, _ in
@@ -94,7 +97,7 @@ final class WeatherService: NSObject, CLLocationManagerDelegate {
     // MARK: - wttr.in JSON API
 
     private func fetchWeatherFromAPI(lat: Double, lon: Double, cityName: String) async {
-        let urlString = "https://wttr.in/\(lat)+\(lon)?format=j1"
+        let urlString = "https://wttr.in/\(lat)+\(lon)?format=j1&m"
         guard let url = URL(string: urlString) else { return }
         do {
             let (data, _) = try await URLSession.shared.data(from: url)
@@ -106,7 +109,7 @@ final class WeatherService: NSObject, CLLocationManagerDelegate {
     }
 
     private func fetchWeatherFromAPI(lat: Double, lon: Double, cityName: String, completion: @escaping @MainActor (WeatherInfo) -> Void) {
-        let urlString = "https://wttr.in/\(lat)+\(lon)?format=j1"
+        let urlString = "https://wttr.in/\(lat)+\(lon)?format=j1&m"
         guard let url = URL(string: urlString) else { return }
         URLSession.shared.dataTask(with: url) { data, _, _ in
             let info = Self.parseJSON(data: data, fallbackCity: cityName)
@@ -131,9 +134,10 @@ final class WeatherService: NSObject, CLLocationManagerDelegate {
         let code = Int(current["weatherCode"] as? String ?? "") ?? 0
         let emoji = mapWeatherCode(code)
 
-        // 城市名修正（优先用 nearest_area）
+        // 城市名：优先用传入的 fallback，空时才用 wttr.in 返回的 nearest_area
         var cityName = fallbackCity
-        if let nearest = (json["nearest_area"] as? [[String: Any]])?.first,
+        if cityName.isEmpty,
+           let nearest = (json["nearest_area"] as? [[String: Any]])?.first,
            let areaNames = nearest["areaName"] as? [[String: Any]],
            let name = areaNames.first?["value"] as? String {
             cityName = name
@@ -227,39 +231,59 @@ final class WeatherService: NSObject, CLLocationManagerDelegate {
 
     // MARK: - IP 定位 Fallback
 
-    /// 通过 IP 定位获取天气（使用国内 pconline 接口，绕过代理影响）
+    /// 通过 IP 定位获取天气（IPIP.net 国内服务为主，失败时用 wttr.in 自动定位）
     private func fetchWeatherByIP() async {
-        guard let url = URL(string: "http://whois.pconline.com.cn/ipJson.jsp?json=true") else { return }
+        // 先尝试 IPIP.net IP 定位（国内服务，绕过代理）
+        if let cityName = await fetchCityFromIPService(), !cityName.isEmpty {
+            await self.fetchWeatherByCityName(cityName)
+            return
+        }
+        // 失败时回退到 wttr.in 自动定位（根据 IP 自动识别城市）
+        await self.fetchWeatherByAutoLocation()
+    }
+
+    private func fetchCityFromIPService() async -> String? {
+        // 使用 IPIP.net 获取国内真实 IP 位置（绕过代理）
+        guard let url = URL(string: "http://myip.ipip.net/") else { return nil }
         do {
             let (data, _) = try await URLSession.shared.data(from: url)
-            // 响应为 JSONP: var ipJsonCallBackResult = {...};
-            guard var text = String(data: data, encoding: .utf8) else { return }
-            // 去掉 JSONP 包装，提取 {} 内 JSON
-            if let start = text.range(of: "{")?.lowerBound,
-               let end = text.range(of: "}", options: .backwards)?.upperBound {
-                text = String(text[start..<end])
-            }
-            guard let jsonData = text.data(using: .utf8),
-                  let json = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any] else { return }
-
-            // pconline 返回: {"ip":"...","pro":"山西省","city":"太原市","addr":"..."}
-            var cityName = json["city"] as? String ?? ""
-            if cityName.isEmpty {
-                cityName = json["pro"] as? String ?? ""
-            }
+            guard let text = String(data: data, encoding: .utf8) else { return nil }
+            // 响应格式: "当前 IP：183.191.125.191  来自于：中国 山西 太原  联通"
+            let components = text.components(separatedBy: "来自于：")
+            guard components.count >= 2 else { return nil }
+            let locationPart = components[1].trimmingCharacters(in: .whitespacesAndNewlines)
+            // 按空格拆分，取城市部分（格式: 中国 省 市）
+            let parts = locationPart.components(separatedBy: .whitespaces)
+                .map { $0.trimmingCharacters(in: .whitespaces) }
+                .filter { !$0.isEmpty }
+            // parts 示例: ["中国", "山西", "太原", "联通"]
+            guard parts.count >= 3 else { return nil }
+            var cityName = parts[2] // 市名
             cityName = cityName.replacingOccurrences(of: "省", with: "")
                                .replacingOccurrences(of: "市", with: "")
                                .replacingOccurrences(of: "自治区", with: "")
-            guard !cityName.isEmpty else { return }
-            await self.fetchWeatherByCityName(cityName)
+            return cityName.isEmpty ? nil : cityName
         } catch {
             print("IP geolocation error: \(error)")
+            return nil
+        }
+    }
+
+    private func fetchWeatherByAutoLocation() async {
+        let urlString = "https://wttr.in/?format=j1&m"
+        guard let url = URL(string: urlString) else { return }
+        do {
+            let (data, _) = try await URLSession.shared.data(from: url)
+            let info = Self.parseJSON(data: data, fallbackCity: "")
+            NotificationCenter.default.post(name: .weatherUpdated, object: info)
+        } catch {
+            print("Auto-location weather fetch error: \(error)")
         }
     }
 
     private func fetchWeatherByCityName(_ cityName: String) async {
         let encoded = cityName.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? cityName
-        let urlString = "https://wttr.in/\(encoded)?format=j1"
+        let urlString = "https://wttr.in/\(encoded)?format=j1&m"
         guard let url = URL(string: urlString) else { return }
         do {
             let (data, _) = try await URLSession.shared.data(from: url)
