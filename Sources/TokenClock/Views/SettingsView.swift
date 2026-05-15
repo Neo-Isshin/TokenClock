@@ -3,6 +3,7 @@ import AppKit
 
 /// 设置窗口主视图
 struct SettingsView: View {
+    @ObservedObject var viewModel: ViewModel
     var onDone: (() -> Void)? = nil
     @State private var openclawPath: String = ""
     @State private var claudeCodePath: String = ""
@@ -26,15 +27,16 @@ struct SettingsView: View {
     let rateUnits = ["", "K", "M", "B"]
     let rateWindowOptions = [10, 30, 60]
 
-    // MARK: - 自定义主题
-    @State private var customConfig = CustomThemeConfig()
-    @State private var showCustomTheme = false
-    @State private var newThemeName: String = ""
-    @State private var savedThemes: [SavedCustomTheme] = []
+    // MARK: - 自定义主题编辑状态
+    @State private var isEditingCustomTheme = false
+    @State private var editingConfig = CustomThemeConfig()
+    @State private var editingThemeName: String = ""
+    @State private var themeBeforeEdit: ClockFaceTheme = .classic
+    @State private var expandedColorRow: String? = nil
 
     // MARK: - 折叠状态
     @State private var autoDetectExpanded = false
-    @State private var pathsExpanded = true
+    @State private var pathsExpanded = false
     @State private var rateThresholdExpanded = false
     @State private var customThemeExpanded = false
 
@@ -130,7 +132,6 @@ struct SettingsView: View {
         .onAppear {
             loadCurrentPaths()
             loadRateSettings()
-            loadCustomTheme()
             runAutoDetection()
         }
     }
@@ -140,9 +141,6 @@ struct SettingsView: View {
     private func autoDetectSection() -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text("🔍 自动探测")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundColor(.secondary)
                 Spacer()
                 Button("重新探测") {
                     runAutoDetection()
@@ -491,99 +489,90 @@ struct SettingsView: View {
 
     private func customThemeSection() -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Toggle("启用自定义表盘", isOn: $showCustomTheme)
-                    .font(.system(size: 12))
-                    .onChange(of: showCustomTheme) {
-                        if showCustomTheme {
-                            saveCustomTheme()
+            // 已保存表盘列表（始终可见）
+            if !viewModel.savedCustomThemes.isEmpty {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("已保存的表盘")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundColor(.secondary)
+
+                    ForEach(viewModel.savedCustomThemes) { theme in
+                        HStack(spacing: 8) {
+                            Image(systemName: "paintpalette")
+                                .font(.system(size: 10))
+                                .foregroundColor(.secondary)
+
+                            Text(theme.name)
+                                .font(.system(size: 12))
+
+                            Spacer()
+
+                            Button("应用") {
+                                viewModel.applyCustomTheme(id: theme.id)
+                                viewModel.selectedTheme = .custom
+                                viewModel.saveTheme()
+                            }
+                            .buttonStyle(.borderless)
+                            .controlSize(.small)
+                            .font(.system(size: 11))
+
+                            Button("删除") {
+                                viewModel.deleteCustomTheme(id: theme.id)
+                            }
+                            .buttonStyle(.borderless)
+                            .controlSize(.small)
+                            .font(.system(size: 11))
+                            .foregroundColor(.red)
                         }
+                        .padding(.vertical, 2)
                     }
-                Spacer()
-                Button("重置默认") {
-                    customConfig = CustomThemeConfig()
-                    saveCustomTheme()
                 }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                .font(.system(size: 11))
+                .padding(8)
+                .background(Color.secondary.opacity(0.05))
+                .cornerRadius(6)
             }
 
-            if showCustomTheme {
-                // 保存为新表盘
-                HStack(spacing: 8) {
-                    TextField("输入表盘名称", text: $newThemeName)
+            if !isEditingCustomTheme {
+                // 未编辑状态：显示新建按钮
+                Button("新建自定义表盘") {
+                    startEditingCustomTheme()
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.regular)
+                .font(.system(size: 12))
+            } else {
+                // 编辑状态：显示编辑器 + 取消/保存
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Text("编辑中 — 表盘实时预览")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundColor(.secondary)
+                        Spacer()
+                        Button("取消") {
+                            cancelEditingCustomTheme()
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .font(.system(size: 11))
+
+                        Button("保存") {
+                            saveEditingCustomTheme()
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.small)
+                        .font(.system(size: 11))
+                        .disabled(editingThemeName.trimmingCharacters(in: .whitespaces).isEmpty)
+                    }
+
+                    TextField("输入表盘名称", text: $editingThemeName)
                         .textFieldStyle(.roundedBorder)
                         .font(.system(size: 12))
 
-                    Button("保存为新表盘") {
-                        guard !newThemeName.trimmingCharacters(in: .whitespaces).isEmpty else { return }
-                        let newTheme = SavedCustomTheme(
-                            name: newThemeName.trimmingCharacters(in: .whitespaces),
-                            config: customConfig
-                        )
-                        savedThemes.append(newTheme)
-                        SavedCustomTheme.saveAll(savedThemes)
-                        newThemeName = ""
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.small)
-                    .font(.system(size: 11))
-                    .disabled(newThemeName.trimmingCharacters(in: .whitespaces).isEmpty)
-                }
-
-                // 已保存表盘列表
-                if !savedThemes.isEmpty {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("已保存的表盘")
-                            .font(.system(size: 11, weight: .semibold))
-                            .foregroundColor(.secondary)
-
-                        ForEach(savedThemes) { theme in
-                            HStack(spacing: 8) {
-                                Image(systemName: "paintpalette")
-                                    .font(.system(size: 10))
-                                    .foregroundColor(.secondary)
-
-                                Text(theme.name)
-                                    .font(.system(size: 12))
-
-                                Spacer()
-
-                                Button("应用") {
-                                    customConfig = theme.config
-                                    saveCustomTheme()
-                                    // 通知外部应用此自定义主题
-                                    NotificationCenter.default.post(
-                                        name: .customThemeApplied,
-                                        object: theme.id
-                                    )
-                                }
-                                .buttonStyle(.borderless)
-                                .controlSize(.small)
-                                .font(.system(size: 11))
-
-                                Button("删除") {
-                                    savedThemes.removeAll { $0.id == theme.id }
-                                    SavedCustomTheme.saveAll(savedThemes)
-                                }
-                                .buttonStyle(.borderless)
-                                .controlSize(.small)
-                                .font(.system(size: 11))
-                                .foregroundColor(.red)
-                            }
-                            .padding(.vertical, 2)
+                    customThemeEditor()
+                        .onChange(of: editingConfig) {
+                            editingConfig.save()
                         }
-                    }
-                    .padding(8)
-                    .background(Color.secondary.opacity(0.05))
-                    .cornerRadius(6)
                 }
-
-                customThemeEditor()
-                    .onChange(of: customConfig) {
-                        saveCustomTheme()
-                    }
             }
         }
         .padding(12)
@@ -591,84 +580,106 @@ struct SettingsView: View {
         .cornerRadius(8)
     }
 
+    private func startEditingCustomTheme() {
+        themeBeforeEdit = viewModel.selectedTheme
+        editingConfig = CustomThemeConfig.load()
+        editingThemeName = ""
+        isEditingCustomTheme = true
+        viewModel.selectedTheme = .custom
+        editingConfig.save()
+    }
+
+    private func cancelEditingCustomTheme() {
+        isEditingCustomTheme = false
+        viewModel.selectedTheme = themeBeforeEdit
+        viewModel.saveTheme()
+    }
+
+    private func saveEditingCustomTheme() {
+        let name = editingThemeName.trimmingCharacters(in: .whitespaces)
+        guard !name.isEmpty else { return }
+        viewModel.saveNewCustomTheme(name: name, config: editingConfig)
+        isEditingCustomTheme = false
+    }
+
     @ViewBuilder
     private func customThemeEditor() -> some View {
         // 表盘
         colorRow(label: "表盘底色", color: Binding(
-            get: { customConfig.dialColor.swiftUIColor },
-            set: { customConfig.dialColor = CodableColor(color: $0) }
+            get: { editingConfig.dialColor.swiftUIColor },
+            set: { editingConfig.dialColor = CodableColor(color: $0) }
         ))
         colorRow(label: "表盘边框", color: Binding(
-            get: { customConfig.dialRimColor.swiftUIColor },
-            set: { customConfig.dialRimColor = CodableColor(color: $0) }
+            get: { editingConfig.dialRimColor.swiftUIColor },
+            set: { editingConfig.dialRimColor = CodableColor(color: $0) }
         ))
-        sliderRow(label: "边框宽度", value: $customConfig.dialRimWidth, range: 0...20, step: 0.5)
+        sliderRow(label: "边框宽度", value: $editingConfig.dialRimWidth, range: 0...20, step: 0.5)
 
         Divider()
 
         // 指针颜色
         colorRow(label: "时针颜色", color: Binding(
-            get: { customConfig.hourHandColor.swiftUIColor },
-            set: { customConfig.hourHandColor = CodableColor(color: $0) }
+            get: { editingConfig.hourHandColor.swiftUIColor },
+            set: { editingConfig.hourHandColor = CodableColor(color: $0) }
         ))
         colorRow(label: "分针颜色", color: Binding(
-            get: { customConfig.minuteHandColor.swiftUIColor },
-            set: { customConfig.minuteHandColor = CodableColor(color: $0) }
+            get: { editingConfig.minuteHandColor.swiftUIColor },
+            set: { editingConfig.minuteHandColor = CodableColor(color: $0) }
         ))
         colorRow(label: "秒针颜色", color: Binding(
-            get: { customConfig.secondHandColor.swiftUIColor },
-            set: { customConfig.secondHandColor = CodableColor(color: $0) }
+            get: { editingConfig.secondHandColor.swiftUIColor },
+            set: { editingConfig.secondHandColor = CodableColor(color: $0) }
         ))
 
         // 指针样式
-        pickerRow(label: "指针样式", selection: $customConfig.handStyleRaw, options: [
+        pickerRow(label: "指针样式", selection: $editingConfig.handStyleRaw, options: [
             ("round", "圆形"), ("tapered", "锥形"), ("lance", "枪尖"), ("sword", "剑形")
         ])
 
         // 指针宽度
-        sliderRow(label: "时针宽度", value: $customConfig.hourHandWidth, range: 1...10, step: 0.5)
-        sliderRow(label: "分针宽度", value: $customConfig.minuteHandWidth, range: 1...8, step: 0.5)
-        sliderRow(label: "秒针宽度", value: $customConfig.secondHandWidth, range: 0.5...5, step: 0.5)
+        sliderRow(label: "时针宽度", value: $editingConfig.hourHandWidth, range: 1...10, step: 0.5)
+        sliderRow(label: "分针宽度", value: $editingConfig.minuteHandWidth, range: 1...8, step: 0.5)
+        sliderRow(label: "秒针宽度", value: $editingConfig.secondHandWidth, range: 0.5...5, step: 0.5)
 
         Divider()
 
         // 中心点
         colorRow(label: "中心外圈", color: Binding(
-            get: { customConfig.centerDotOuterColor.swiftUIColor },
-            set: { customConfig.centerDotOuterColor = CodableColor(color: $0) }
+            get: { editingConfig.centerDotOuterColor.swiftUIColor },
+            set: { editingConfig.centerDotOuterColor = CodableColor(color: $0) }
         ))
         colorRow(label: "中心内圈", color: Binding(
-            get: { customConfig.centerDotInnerColor.swiftUIColor },
-            set: { customConfig.centerDotInnerColor = CodableColor(color: $0) }
+            get: { editingConfig.centerDotInnerColor.swiftUIColor },
+            set: { editingConfig.centerDotInnerColor = CodableColor(color: $0) }
         ))
 
         Divider()
 
         // 刻度与数字
         HStack {
-            Toggle("显示刻度", isOn: $customConfig.hasTickMarks)
+            Toggle("显示刻度", isOn: $editingConfig.hasTickMarks)
                 .font(.system(size: 12))
-            Toggle("显示数字", isOn: $customConfig.showNumbers)
+            Toggle("显示数字", isOn: $editingConfig.showNumbers)
                 .font(.system(size: 12))
-            Toggle("表盘装饰", isOn: $customConfig.hasDialDecoration)
+            Toggle("表盘装饰", isOn: $editingConfig.hasDialDecoration)
                 .font(.system(size: 12))
         }
         colorRow(label: "刻度颜色", color: Binding(
-            get: { customConfig.tickMarkColor.swiftUIColor },
-            set: { customConfig.tickMarkColor = CodableColor(color: $0) }
+            get: { editingConfig.tickMarkColor.swiftUIColor },
+            set: { editingConfig.tickMarkColor = CodableColor(color: $0) }
         ))
         colorRow(label: "主刻度颜色", color: Binding(
-            get: { customConfig.majorTickMarkColor.swiftUIColor },
-            set: { customConfig.majorTickMarkColor = CodableColor(color: $0) }
+            get: { editingConfig.majorTickMarkColor.swiftUIColor },
+            set: { editingConfig.majorTickMarkColor = CodableColor(color: $0) }
         ))
         colorRow(label: "数字颜色", color: Binding(
-            get: { customConfig.numberColor.swiftUIColor },
-            set: { customConfig.numberColor = CodableColor(color: $0) }
+            get: { editingConfig.numberColor.swiftUIColor },
+            set: { editingConfig.numberColor = CodableColor(color: $0) }
         ))
-        pickerRow(label: "数字样式", selection: $customConfig.numberStyleRaw, options: [
+        pickerRow(label: "数字样式", selection: $editingConfig.numberStyleRaw, options: [
             ("arabic", "阿拉伯数字"), ("chinese", "中文数字")
         ])
-        pickerRow(label: "数字字体", selection: $customConfig.numberFontDesignRaw, options: [
+        pickerRow(label: "数字字体", selection: $editingConfig.numberFontDesignRaw, options: [
             ("rounded", "圆体"), ("serif", "衬线"), ("monospaced", "等宽"), ("default", "默认")
         ])
 
@@ -676,49 +687,118 @@ struct SettingsView: View {
 
         // 下拉面板颜色
         colorRow(label: "面板背景", color: Binding(
-            get: { customConfig.dropdownBgColor.swiftUIColor },
-            set: { customConfig.dropdownBgColor = CodableColor(color: $0) }
+            get: { editingConfig.dropdownBgColor.swiftUIColor },
+            set: { editingConfig.dropdownBgColor = CodableColor(color: $0) }
         ))
         colorRow(label: "面板文字", color: Binding(
-            get: { customConfig.dropdownTextColor.swiftUIColor },
-            set: { customConfig.dropdownTextColor = CodableColor(color: $0) }
+            get: { editingConfig.dropdownTextColor.swiftUIColor },
+            set: { editingConfig.dropdownTextColor = CodableColor(color: $0) }
         ))
         colorRow(label: "面板副文字", color: Binding(
-            get: { customConfig.dropdownSubtextColor.swiftUIColor },
-            set: { customConfig.dropdownSubtextColor = CodableColor(color: $0) }
+            get: { editingConfig.dropdownSubtextColor.swiftUIColor },
+            set: { editingConfig.dropdownSubtextColor = CodableColor(color: $0) }
         ))
         colorRow(label: "面板边框", color: Binding(
-            get: { customConfig.dropdownBorderColor.swiftUIColor },
-            set: { customConfig.dropdownBorderColor = CodableColor(color: $0) }
+            get: { editingConfig.dropdownBorderColor.swiftUIColor },
+            set: { editingConfig.dropdownBorderColor = CodableColor(color: $0) }
         ))
         colorRow(label: "面板分割线", color: Binding(
-            get: { customConfig.dropdownDividerColor.swiftUIColor },
-            set: { customConfig.dropdownDividerColor = CodableColor(color: $0) }
+            get: { editingConfig.dropdownDividerColor.swiftUIColor },
+            set: { editingConfig.dropdownDividerColor = CodableColor(color: $0) }
         ))
 
         Divider()
 
         // 叠加文字颜色
         colorRow(label: "主文字颜色", color: Binding(
-            get: { customConfig.textPrimaryColor.swiftUIColor },
-            set: { customConfig.textPrimaryColor = CodableColor(color: $0) }
+            get: { editingConfig.textPrimaryColor.swiftUIColor },
+            set: { editingConfig.textPrimaryColor = CodableColor(color: $0) }
         ))
         colorRow(label: "副文字颜色", color: Binding(
-            get: { customConfig.textSecondaryColor.swiftUIColor },
-            set: { customConfig.textSecondaryColor = CodableColor(color: $0) }
+            get: { editingConfig.textSecondaryColor.swiftUIColor },
+            set: { editingConfig.textSecondaryColor = CodableColor(color: $0) }
         ))
     }
 
     private func colorRow(label: String, color: Binding<Color>) -> some View {
-        HStack {
-            Text(label)
-                .font(.system(size: 12))
-                .frame(width: 80, alignment: .leading)
-            ColorPicker("", selection: color)
-                .frame(width: 40)
-            Spacer()
+        let isExpanded = expandedColorRow == label
+        let nsColor = NSColor(color.wrappedValue)
+        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        nsColor.getRed(&r, green: &g, blue: &b, alpha: &a)
+
+        return VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text(label)
+                    .font(.system(size: 12))
+                    .frame(width: 80, alignment: .leading)
+                Button(action: {
+                    withAnimation(.easeInOut(duration: 0.15)) {
+                        expandedColorRow = isExpanded ? nil : label
+                    }
+                }) {
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(color.wrappedValue)
+                        .frame(width: 32, height: 20)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 4)
+                                .stroke(Color.primary.opacity(0.2), lineWidth: 0.5)
+                        )
+                }
+                .buttonStyle(.plain)
+                Spacer()
+            }
+            .frame(height: 24)
+
+            if isExpanded {
+                VStack(spacing: 4) {
+                    HStack(spacing: 4) {
+                        colorSlider(label: "R", value: .init(
+                            get: { Double(r) },
+                            set: { newR in color.wrappedValue = Color(red: newR, green: Double(g), blue: Double(b)).opacity(Double(a)) }
+                        ), tint: .red)
+                        colorSlider(label: "G", value: .init(
+                            get: { Double(g) },
+                            set: { newG in color.wrappedValue = Color(red: Double(r), green: newG, blue: Double(b)).opacity(Double(a)) }
+                        ), tint: .green)
+                        colorSlider(label: "B", value: .init(
+                            get: { Double(b) },
+                            set: { newB in color.wrappedValue = Color(red: Double(r), green: Double(g), blue: newB).opacity(Double(a)) }
+                        ), tint: .blue)
+                    }
+                    HStack(spacing: 8) {
+                        Text("A")
+                            .font(.system(size: 10, weight: .medium, design: .monospaced))
+                            .frame(width: 12)
+                        Slider(value: .init(
+                            get: { Double(a) },
+                            set: { newA in color.wrappedValue = Color(red: Double(r), green: Double(g), blue: Double(b)).opacity(newA) }
+                        ), in: 0...1)
+                        Text(String(format: "%.0f%%", a * 100))
+                            .font(.system(size: 10, design: .monospaced))
+                            .frame(width: 32, alignment: .trailing)
+                    }
+                    .frame(height: 18)
+                }
+                .padding(6)
+                .background(Color.secondary.opacity(0.06))
+                .cornerRadius(6)
+                .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .top)))
+            }
         }
-        .frame(height: 24)
+    }
+
+    private func colorSlider(label: String, value: Binding<Double>, tint: Color) -> some View {
+        HStack(spacing: 4) {
+            Text(label)
+                .font(.system(size: 10, weight: .medium, design: .monospaced))
+                .frame(width: 12)
+            Slider(value: value, in: 0...1)
+                .tint(tint)
+            Text(String(format: "%.0f", value.wrappedValue * 255))
+                .font(.system(size: 10, design: .monospaced))
+                .frame(width: 24, alignment: .trailing)
+        }
+        .frame(height: 18)
     }
 
     private func sliderRow(label: String, value: Binding<CGFloat>, range: ClosedRange<CGFloat>, step: CGFloat) -> some View {
@@ -752,14 +832,12 @@ struct SettingsView: View {
     }
 
     private func loadCustomTheme() {
-        customConfig = CustomThemeConfig.load()
-        showCustomTheme = UserDefaults.standard.bool(forKey: "TC_showCustomTheme")
-        savedThemes = SavedCustomTheme.loadAll()
+        // 从 viewModel 加载已保存主题，编辑状态在点击新建时初始化
     }
 
     private func saveCustomTheme() {
-        customConfig.save()
-        UserDefaults.standard.set(showCustomTheme, forKey: "TC_showCustomTheme")
+        // 自定义主题在编辑过程中通过 editingConfig.save() 实时保存到 UserDefaults
+        // 最终保存通过 viewModel.saveNewCustomTheme() 完成
     }
 
     // MARK: - Actions

@@ -286,7 +286,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
-        let settingsView = SettingsView(onDone: { [weak self] in
+        let settingsView = SettingsView(viewModel: viewModel, onDone: { [weak self] in
             self?.settingsWindow?.close()
             self?.settingsWindow = nil
         })
