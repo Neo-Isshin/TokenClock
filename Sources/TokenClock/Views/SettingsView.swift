@@ -35,7 +35,6 @@ struct SettingsView: View {
     @State private var expandedColorRow: String? = nil
 
     // MARK: - 折叠状态
-    @State private var autoDetectExpanded = false
     @State private var pathsExpanded = false
     @State private var rateThresholdExpanded = false
     @State private var customThemeExpanded = false
@@ -56,30 +55,28 @@ struct SettingsView: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
-                    // 自动探测
-                    collapsibleSection(title: "🔍 自动探测", isExpanded: $autoDetectExpanded) {
-                        autoDetectSection()
-                    }
+                    // 自动探测（始终可见）
+                    autoDetectSection()
 
                     // 数据源路径
                     collapsibleSection(title: "📁 数据源路径", isExpanded: $pathsExpanded) {
                         VStack(alignment: .leading, spacing: 10) {
                             pathRow(
-                                emoji: "⚡", name: "OpenClaw",
+                                emoji: "🦞", name: "OpenClaw",
                                 path: $openclawPath,
                                 service: "openclaw",
                                 browseTitle: "选择 OpenClaw 目录"
                             )
 
                             pathRow(
-                                emoji: "🧠", name: "Claude Code",
+                                emoji: "✳️", name: "Claude Code",
                                 path: $claudeCodePath,
                                 service: "claudeCode",
                                 browseTitle: "选择 Claude Code 目录"
                             )
 
                             pathRow(
-                                emoji: "💎", name: "Gemini CLI",
+                                emoji: "✨", name: "Gemini CLI",
                                 path: $geminiPath,
                                 service: "gemini",
                                 browseTitle: "选择 Gemini CLI 目录"
@@ -141,6 +138,9 @@ struct SettingsView: View {
     private func autoDetectSection() -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
+                Text("🔍 自动探测")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(.secondary)
                 Spacer()
                 Button("重新探测") {
                     runAutoDetection()
@@ -251,7 +251,7 @@ struct SettingsView: View {
 
     private func hermesPathRow() -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("🏔️ Hermes")
+            Text("⚕️ Hermes")
                 .font(.system(size: 12, weight: .medium))
 
             HStack(spacing: 8) {
@@ -871,37 +871,41 @@ struct SettingsView: View {
         let summary = PathDetector.runFullDetection()
         detectResults = summary.results
 
-        // 自动填充探测到的路径
+        // 强制更新所有探测到的路径
         for result in summary.results where result.exists {
             switch result.service {
-            case "openclaw":
-                if openclawPath.isEmpty { openclawPath = result.detectedPath }
-            case "claudeCode":
-                if claudeCodePath.isEmpty { claudeCodePath = result.detectedPath }
-            case "gemini":
-                if geminiPath.isEmpty { geminiPath = result.detectedPath }
-            case "codex":
-                if codexPath.isEmpty { codexPath = result.detectedPath }
-            case "hermes":
-                if hermesPath.isEmpty { hermesPath = result.detectedPath }
-            default:
-                break
+            case "openclaw": openclawPath = result.detectedPath
+            case "claudeCode": claudeCodePath = result.detectedPath
+            case "gemini": geminiPath = result.detectedPath
+            case "codex": codexPath = result.detectedPath
+            case "hermes": hermesPath = result.detectedPath
+            default: break
             }
         }
 
+        let timeStr = DateFormatter.localizedString(from: Date(), dateStyle: .none, timeStyle: .medium)
         if summary.allFound {
-            detectionSummary = "✅ 已探测到全部 \(summary.totalCount) 个数据源"
+            detectionSummary = "✅ 已探测到全部 \(summary.totalCount) 个数据源（\(timeStr)）"
         } else {
-            detectionSummary = "⚠️ 已探测到 \(summary.foundCount)/\(summary.totalCount) 个数据源，未找到的可在下方手动配置"
+            detectionSummary = "⚠️ 已探测到 \(summary.foundCount)/\(summary.totalCount) 个数据源（\(timeStr)）"
         }
 
-        // 保存探测结果到 UserDefaults
         savePaths()
     }
 
     private func detectPath(for service: String) {
         let summary = PathDetector.runFullDetection()
         detectResults = summary.results
+
+        let timeStr = DateFormatter.localizedString(from: Date(), dateStyle: .none, timeStyle: .medium)
+        let toolLabels: [String: (emoji: String, name: String)] = [
+            "openclaw":   ("🦞", "OpenClaw"),
+            "claudeCode": ("✳️", "Claude Code"),
+            "gemini":     ("✨", "Gemini CLI"),
+            "codex":      ("🤖", "Codex"),
+            "hermes":     ("⚕️", "Hermes"),
+        ]
+        let label = toolLabels[service] ?? ("", service)
 
         if let result = summary.results.first(where: { $0.service == service }) {
             if result.exists {
@@ -913,8 +917,11 @@ struct SettingsView: View {
                 case "hermes": hermesPath = result.detectedPath
                 default: break
                 }
-                savePaths()
+                detectionSummary = "✅ \(label.emoji) \(label.name) 路径已更新（\(timeStr)）"
+            } else {
+                detectionSummary = "❌ \(label.emoji) \(label.name) 未找到有效数据目录"
             }
+            savePaths()
         }
     }
 
@@ -951,6 +958,8 @@ struct SettingsView: View {
             panel.directoryURL = URL(fileURLWithPath: currentPath)
         }
 
+        // 确保应用处于激活状态，否则 NSOpenPanel 会立即关闭
+        NSApp.activate(ignoringOtherApps: true)
         guard panel.runModal() == .OK, let url = panel.url else { return }
 
         let selectedPath = url.path

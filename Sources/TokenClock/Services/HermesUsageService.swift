@@ -77,6 +77,12 @@ final class HermesUsageService: @unchecked Sendable {
         }
         if let newest = newestMod, newest <= lastScanTime { return }
 
+        // DB 有修改，需要先清空再重读（避免叠加重复计数）
+        dailyData.removeAll()
+        hourlyData.removeAll()
+        dailyCache.removeAll()
+        recentEntries = []
+
         guard sqlite3_open(dbFile, &db) == SQLITE_OK else { return }
         defer { sqlite3_close(db) }
 

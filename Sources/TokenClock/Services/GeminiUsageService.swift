@@ -1,7 +1,9 @@
 import Foundation
 
-/// 从 Gemini CLI 本地 session JSON 读取 token 使用数据
-/// 日志位置: ~/.gemini/tmp/*/chats/session-*.json
+/// 从 Gemini CLI 本地 session 文件读取 token 使用数据
+/// 支持两种格式：
+/// - JSON 格式: ~/.gemini/tmp/*/chats/session-*.json （旧版）
+/// - JSONL 格式: ~/.gemini/tmp/*/chats/session-*.jsonl （新版，优先）
 final class GeminiUsageService: @unchecked Sendable {
     private(set) var dailyData: [String: DayUsage] = [:]
     private(set) var hourlyData: [String: HourlyUsage] = [:]
@@ -71,8 +73,24 @@ final class GeminiUsageService: @unchecked Sendable {
             guard fm.fileExists(atPath: chatsDir, isDirectory: &isDir), isDir.boolValue else { continue }
             guard let files = try? fm.contentsOfDirectory(atPath: chatsDir) else { continue }
 
+            // 记录有 JSONL 版本的 session，优先使用 JSONL 以避免重复计数
+            var jsonlSessions = Set<String>()
+            for file in files where file.hasPrefix("session-") && file.hasSuffix(".jsonl") {
+                jsonlSessions.insert(String(file.dropLast(".jsonl".count)))
+            }
+
             for file in files {
-                guard file.hasSuffix(".json") else { continue }
+                guard file.hasPrefix("session-") else { continue }
+                let isJSON = file.hasSuffix(".json")
+                let isJSONL = file.hasSuffix(".jsonl")
+                guard isJSON || isJSONL else { continue }
+
+                // JSONL 优先：如果同 session 有 JSONL 版本，跳过 JSON
+                if isJSON {
+                    let base = String(file.dropLast(".json".count))
+                    if jsonlSessions.contains(base) { continue }
+                }
+
                 let fullPath = chatsDir + "/" + file
 
                 guard let attrs = try? fm.attributesOfItem(atPath: fullPath),
@@ -85,7 +103,11 @@ final class GeminiUsageService: @unchecked Sendable {
                 if let old = fileHourlyContrib[fullPath] { subtractHourly(old) }
                 if let old = fileCacheContrib[fullPath] { subtractCache(old) }
 
-                parseSessionFile(path: fullPath)
+                if isJSONL {
+                    parseSessionFileJSONL(path: fullPath)
+                } else {
+                    parseSessionFile(path: fullPath)
+                }
                 fileCache[fullPath] = FileMeta(path: fullPath, modDate: modDate)
             }
         }
@@ -121,6 +143,8 @@ final class GeminiUsageService: @unchecked Sendable {
         }
     }
 
+    // MARK: - JSON 格式解析（旧版）
+
     private func parseSessionFile(path: String) {
         guard let data = fm.contents(atPath: path),
               let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -132,35 +156,9 @@ final class GeminiUsageService: @unchecked Sendable {
         var newCache: [String: Int] = [:]
 
         for msg in messages {
-            guard msg["type"] as? String == "gemini",
-                  let tokens = msg["tokens"] as? [String: Any] else { continue }
-            let input = tokens["input"] as? Int ?? 0
-            let output = tokens["output"] as? Int ?? 0
-            let cached = tokens["cached"] as? Int ?? 0
-            let total = input + output + cached
-            guard total > 0 else { continue }
-
-            let timestamp = msg["timestamp"] as? String ?? ""
-            let dateKey = DateHelper.localDateKey(from: timestamp)
-            let hourKey = DateHelper.localHourKey(from: timestamp)
-            guard dateKey.count == 10 else { continue }
-            let ts = DateHelper.parseISO8601(timestamp)
-
-            // daily
-            if var e = dailyData[dateKey] { e.tokens += total; e.messages += 1; dailyData[dateKey] = e }
-            else { dailyData[dateKey] = DayUsage(tokens: total, messages: 1) }
-            if var e = newDaily[dateKey] { e.tokens += total; e.messages += 1; newDaily[dateKey] = e }
-            else { newDaily[dateKey] = DayUsage(tokens: total, messages: 1) }
-            // hourly
-            if var e = hourlyData[hourKey] { e.tokens += total; e.messages += 1; hourlyData[hourKey] = e }
-            else { hourlyData[hourKey] = HourlyUsage(tokens: total, messages: 1) }
-            if var e = newHourly[hourKey] { e.tokens += total; e.messages += 1; newHourly[hourKey] = e }
-            else { newHourly[hourKey] = HourlyUsage(tokens: total, messages: 1) }
-            // cache
-            dailyCache[dateKey, default: 0] += cached
-            newCache[dateKey, default: 0] += cached
-            // recent
-            if dateKey == today, let ts = ts { recentEntries.append(RecentEntry(timestamp: ts, tokens: total)) }
+            guard let result = parseGeminiEvent(msg) else { continue }
+            accumulateResult(result, today: today,
+                             daily: &newDaily, hourly: &newHourly, cache: &newCache)
         }
 
         fileDailyContrib[path] = newDaily
@@ -168,9 +166,107 @@ final class GeminiUsageService: @unchecked Sendable {
         fileCacheContrib[path] = newCache
     }
 
+    // MARK: - JSONL 格式解析（新版）
+
+    private func parseSessionFileJSONL(path: String) {
+        guard let stream = InputStream(fileAtPath: path) else { return }
+        stream.open()
+        defer { stream.close() }
+
+        let today = DateHelper.todayKey()
+        let bufSize = 65536
+        let buf = UnsafeMutablePointer<UInt8>.allocate(capacity: bufSize)
+        defer { buf.deallocate() }
+        var lineBuf = Data()
+        var newDaily: [String: DayUsage] = [:]
+        var newHourly: [String: HourlyUsage] = [:]
+        var newCache: [String: Int] = [:]
+
+        while stream.hasBytesAvailable {
+            let n = stream.read(buf, maxLength: bufSize)
+            if n <= 0 { break }
+            lineBuf.append(buf, count: n)
+            while let nlRange = lineBuf.range(of: Data([0x0A])) {
+                let lineData = lineBuf[lineBuf.startIndex..<nlRange.lowerBound]
+                lineBuf = lineBuf[nlRange.upperBound...]
+                guard !lineData.isEmpty else { continue }
+                let line = String(data: lineData, encoding: .utf8) ?? ""
+                if line.contains("\"gemini\""),
+                   let obj = try? JSONSerialization.jsonObject(with: line.data(using: .utf8) ?? Data()) as? [String: Any],
+                   let result = parseGeminiEvent(obj) {
+                    accumulateResult(result, today: today,
+                                     daily: &newDaily, hourly: &newHourly, cache: &newCache)
+                }
+            }
+        }
+        if !lineBuf.isEmpty,
+           let line = String(data: lineBuf, encoding: .utf8),
+           line.contains("\"gemini\""),
+           let obj = try? JSONSerialization.jsonObject(with: line.data(using: .utf8) ?? Data()) as? [String: Any],
+           let result = parseGeminiEvent(obj) {
+            accumulateResult(result, today: today,
+                             daily: &newDaily, hourly: &newHourly, cache: &newCache)
+        }
+
+        fileDailyContrib[path] = newDaily
+        fileHourlyContrib[path] = newHourly
+        fileCacheContrib[path] = newCache
+    }
+
+    // MARK: - 共享解析与累加
+
+    /// 从 gemini 事件中提取 token 数据
+    private struct GeminiEvent {
+        let tokens: Int
+        let cachedTokens: Int
+        let dateKey: String
+        let hourKey: String
+        let timestamp: Date?
+    }
+
+    private func parseGeminiEvent(_ msg: [String: Any]) -> GeminiEvent? {
+        guard msg["type"] as? String == "gemini",
+              let tokens = msg["tokens"] as? [String: Any] else { return nil }
+        let input = tokens["input"] as? Int ?? 0
+        let output = tokens["output"] as? Int ?? 0
+        let cached = tokens["cached"] as? Int ?? 0
+        let total = input + output + cached
+        guard total > 0 else { return nil }
+
+        let timestamp = msg["timestamp"] as? String ?? ""
+        let dateKey = DateHelper.localDateKey(from: timestamp)
+        let hourKey = DateHelper.localHourKey(from: timestamp)
+        guard dateKey.count == 10 else { return nil }
+
+        return GeminiEvent(tokens: total, cachedTokens: cached,
+                           dateKey: dateKey, hourKey: hourKey,
+                           timestamp: DateHelper.parseISO8601(timestamp))
+    }
+
+    private func accumulateResult(_ r: GeminiEvent, today: String,
+                                  daily: inout [String: DayUsage],
+                                  hourly: inout [String: HourlyUsage],
+                                  cache: inout [String: Int]) {
+        // daily
+        if var e = dailyData[r.dateKey] { e.tokens += r.tokens; e.messages += 1; dailyData[r.dateKey] = e }
+        else { dailyData[r.dateKey] = DayUsage(tokens: r.tokens, messages: 1) }
+        if var e = daily[r.dateKey] { e.tokens += r.tokens; e.messages += 1; daily[r.dateKey] = e }
+        else { daily[r.dateKey] = DayUsage(tokens: r.tokens, messages: 1) }
+        // hourly
+        if var e = hourlyData[r.hourKey] { e.tokens += r.tokens; e.messages += 1; hourlyData[r.hourKey] = e }
+        else { hourlyData[r.hourKey] = HourlyUsage(tokens: r.tokens, messages: 1) }
+        if var e = hourly[r.hourKey] { e.tokens += r.tokens; e.messages += 1; hourly[r.hourKey] = e }
+        else { hourly[r.hourKey] = HourlyUsage(tokens: r.tokens, messages: 1) }
+        // cache
+        dailyCache[r.dateKey, default: 0] += r.cachedTokens
+        cache[r.dateKey, default: 0] += r.cachedTokens
+        // recent
+        if r.dateKey == today, let ts = r.timestamp { recentEntries.append(RecentEntry(timestamp: ts, tokens: r.tokens)) }
+    }
+
     // MARK: - 今日活跃 Session 列表
 
-    /// Gemini CLI session 位于 ~/.gemini/tmp/<project>/chats/session-*.json
+    /// Gemini CLI session 位于 ~/.gemini/tmp/<project>/chats/session-*.json(l)
     func todaySessions() -> [SessionInfo] {
         let tmpDir = geminiHome + "/tmp"
         guard let projectDirs = try? fm.contentsOfDirectory(atPath: tmpDir) else { return [] }
@@ -184,17 +280,37 @@ final class GeminiUsageService: @unchecked Sendable {
             guard fm.fileExists(atPath: chatsDir, isDirectory: &isDir), isDir.boolValue else { continue }
             guard let files = try? fm.contentsOfDirectory(atPath: chatsDir) else { continue }
 
-            for file in files where file.hasSuffix(".json") {
+            // JSONL 优先
+            var jsonlSessions = Set<String>()
+            for file in files where file.hasPrefix("session-") && file.hasSuffix(".jsonl") {
+                jsonlSessions.insert(String(file.dropLast(".jsonl".count)))
+            }
+
+            for file in files {
+                guard file.hasPrefix("session-") else { continue }
+                let isJSON = file.hasSuffix(".json")
+                let isJSONL = file.hasSuffix(".jsonl")
+                guard isJSON || isJSONL else { continue }
+
+                if isJSON {
+                    let base = String(file.dropLast(".json".count))
+                    if jsonlSessions.contains(base) { continue }
+                }
+
                 let fullPath = chatsDir + "/" + file
                 guard let attrs = try? fm.attributesOfItem(atPath: fullPath),
                       let modDate = attrs[.modificationDate] as? Date else { continue }
-                // 只处理今日修改的文件
                 guard DateHelper.dateKey(from: modDate) == today else { continue }
 
-                let (tokens, messages, sessionId) = parseSessionFile(path: fullPath, today: today)
+                let (tokens, messages, sessionId): (Int, Int, String)
+                if isJSONL {
+                    (tokens, messages, sessionId) = parseSessionFileJSONLToday(path: fullPath, today: today)
+                } else {
+                    (tokens, messages, sessionId) = parseSessionFileJSONToday(path: fullPath, today: today)
+                }
                 guard tokens > 0 else { continue }
 
-                let displayId = String(sessionId.prefix(7))
+                let displayId = sessionId.isEmpty ? String(file.dropFirst("session-".count).prefix(7)) : String(sessionId.prefix(7))
                 results.append(SessionInfo(
                     rawId: sessionId,
                     displayName: displayId,
@@ -209,7 +325,9 @@ final class GeminiUsageService: @unchecked Sendable {
         return results.sorted { $0.todayTokens > $1.todayTokens }
     }
 
-    private func parseSessionFile(path: String, today: String) -> (tokens: Int, messages: Int, sessionId: String) {
+    // MARK: - Session 详情解析
+
+    private func parseSessionFileJSONToday(path: String, today: String) -> (tokens: Int, messages: Int, sessionId: String) {
         guard let data = fm.contents(atPath: path),
               let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return (0, 0, "") }
 
@@ -220,20 +338,58 @@ final class GeminiUsageService: @unchecked Sendable {
         var msgCount = 0
 
         for msg in messages {
-            guard msg["type"] as? String == "gemini",
-                  let tokens = msg["tokens"] as? [String: Any] else { continue }
-            let input = tokens["input"] as? Int ?? 0
-            let output = tokens["output"] as? Int ?? 0
-            let cached = tokens["cached"] as? Int ?? 0
-            let total = input + output + cached
-            guard total > 0 else { continue }
-
-            let timestamp = msg["timestamp"] as? String ?? ""
-            let dateKey = DateHelper.localDateKey(from: timestamp)
-            guard dateKey == today else { continue }
-
-            totalTokens += total
+            guard let result = parseGeminiEvent(msg), result.dateKey == today else { continue }
+            totalTokens += result.tokens
             msgCount += 1
+        }
+
+        return (totalTokens, msgCount, sessionId)
+    }
+
+    private func parseSessionFileJSONLToday(path: String, today: String) -> (tokens: Int, messages: Int, sessionId: String) {
+        guard let stream = InputStream(fileAtPath: path) else { return (0, 0, "") }
+        stream.open()
+        defer { stream.close() }
+
+        let bufSize = 65536
+        let buf = UnsafeMutablePointer<UInt8>.allocate(capacity: bufSize)
+        defer { buf.deallocate() }
+        var lineBuf = Data()
+        var totalTokens = 0
+        var msgCount = 0
+        var sessionId = ""
+
+        while stream.hasBytesAvailable {
+            let n = stream.read(buf, maxLength: bufSize)
+            if n <= 0 { break }
+            lineBuf.append(buf, count: n)
+            while let nlRange = lineBuf.range(of: Data([0x0A])) {
+                let lineData = lineBuf[lineBuf.startIndex..<nlRange.lowerBound]
+                lineBuf = lineBuf[nlRange.upperBound...]
+                guard !lineData.isEmpty else { continue }
+                guard let line = String(data: lineData, encoding: .utf8),
+                      let obj = try? JSONSerialization.jsonObject(with: line.data(using: .utf8) ?? Data()) as? [String: Any] else { continue }
+
+                // 首行是 session 元数据
+                if sessionId.isEmpty, let sid = obj["sessionId"] as? String {
+                    sessionId = sid
+                }
+                if let result = parseGeminiEvent(obj), result.dateKey == today {
+                    totalTokens += result.tokens
+                    msgCount += 1
+                }
+            }
+        }
+
+        // 处理末尾无换行的行
+        if !lineBuf.isEmpty,
+           let line = String(data: lineBuf, encoding: .utf8),
+           let obj = try? JSONSerialization.jsonObject(with: line.data(using: .utf8) ?? Data()) as? [String: Any] {
+            if sessionId.isEmpty, let sid = obj["sessionId"] as? String { sessionId = sid }
+            if let result = parseGeminiEvent(obj), result.dateKey == today {
+                totalTokens += result.tokens
+                msgCount += 1
+            }
         }
 
         return (totalTokens, msgCount, sessionId)

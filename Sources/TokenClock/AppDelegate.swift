@@ -6,7 +6,7 @@ import ServiceManagement
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var panel: FloatingPanel!
     private var viewModel: ViewModel!
-    private var settingsWindow: NSPanel?
+    private var settingsWindow: NSWindow?
     private var themePickerPanel: NSPanel?
     private var themePickerEventMonitor: Any?
 
@@ -292,20 +292,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         })
         let hostingView = NSHostingView(rootView: settingsView)
 
-        // 用 NSPanel 而非 NSWindow，确保能显示在 non-activating 应用之上
-        let panel = NSPanel(
+        let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 520, height: 460),
-            styleMask: [.titled, .closable, .nonactivatingPanel],
+            styleMask: [.titled, .closable],
             backing: .buffered,
             defer: false
         )
-        panel.title = "TokenClock 设置"
-        panel.contentView = hostingView
-        panel.level = .floating
-        panel.center()
-        panel.makeKeyAndOrderFront(nil)
+        window.title = "TokenClock 设置"
+        window.contentView = hostingView
+        window.center()
+        window.makeKeyAndOrderFront(nil)
 
-        self.settingsWindow = panel
+        self.settingsWindow = window
     }
 
     // MARK: - 表盘预览面板

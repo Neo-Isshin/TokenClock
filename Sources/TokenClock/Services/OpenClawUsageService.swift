@@ -85,7 +85,7 @@ final class OpenClawUsageService: @unchecked Sendable {
             guard let files = try? fm.contentsOfDirectory(atPath: sessionsDir) else { continue }
 
             for file in files {
-                if file.contains(".checkpoint.") || file.hasSuffix(".lock") || file == "sessions.json" { continue }
+                if file.contains(".checkpoint.") || file.contains(".trajectory.") || file.hasSuffix(".lock") || file == "sessions.json" { continue }
                 guard file.hasSuffix(".jsonl") else { continue }
 
                 let fullPath = sessionsDir + "/" + file
