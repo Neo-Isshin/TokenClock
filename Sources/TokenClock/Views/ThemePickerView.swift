@@ -7,9 +7,18 @@ struct ThemePickerView: View {
 
     var body: some View {
         VStack(spacing: 12) {
-            Text("选择表盘")
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundColor(.primary)
+            HStack {
+                Text("选择表盘")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(.primary)
+                Spacer()
+                Button(action: { onDismiss() }) {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 14))
+                        .foregroundColor(.secondary)
+                }
+                .buttonStyle(.plain)
+            }
 
             ScrollView([.horizontal, .vertical], showsIndicators: false) {
                 let standardThemes = ClockFaceTheme.allCases

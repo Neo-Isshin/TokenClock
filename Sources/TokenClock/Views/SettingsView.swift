@@ -534,12 +534,19 @@ struct SettingsView: View {
 
             if !isEditingCustomTheme {
                 // 未编辑状态：显示新建按钮
-                Button("新建自定义表盘") {
-                    startEditingCustomTheme()
+                HStack {
+                    Button(action: { startEditingCustomTheme() }) {
+                        Label("新建自定义表盘", systemImage: "paintbrush.pointed.fill")
+                            .foregroundColor(.black)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 6)
+                            .background(Color.yellow)
+                            .cornerRadius(6)
+                    }
+                    .buttonStyle(.plain)
+                    .font(.system(size: 12, weight: .medium))
+                    Spacer()
                 }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.regular)
-                .font(.system(size: 12))
             } else {
                 // 编辑状态：显示编辑器 + 取消/保存
                 VStack(alignment: .leading, spacing: 8) {
@@ -575,9 +582,6 @@ struct SettingsView: View {
                 }
             }
         }
-        .padding(12)
-        .background(Color.secondary.opacity(0.06))
-        .cornerRadius(8)
     }
 
     private func startEditingCustomTheme() {

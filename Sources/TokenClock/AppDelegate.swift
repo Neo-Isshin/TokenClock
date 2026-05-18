@@ -3,7 +3,7 @@ import AppKit
 import ServiceManagement
 
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var panel: FloatingPanel!
     private var viewModel: ViewModel!
     private var settingsWindow: NSWindow?
@@ -283,6 +283,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func showSettingsWindow() {
         if let window = settingsWindow {
             window.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
             return
         }
 
@@ -299,9 +300,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             defer: false
         )
         window.title = "TokenClock 设置"
+        window.isReleasedWhenClosed = false
+        window.delegate = self
         window.contentView = hostingView
         window.center()
         window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
 
         self.settingsWindow = window
     }
@@ -362,6 +366,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let monitor = themePickerEventMonitor {
             NSEvent.removeMonitor(monitor)
             themePickerEventMonitor = nil
+        }
+    }
+
+    // MARK: - NSWindowDelegate
+
+    nonisolated func windowWillClose(_ notification: Notification) {
+        let closingWindow = notification.object as? NSWindow
+        Task { @MainActor in
+            if let window = closingWindow, window == settingsWindow {
+                settingsWindow = nil
+            }
         }
     }
 }
