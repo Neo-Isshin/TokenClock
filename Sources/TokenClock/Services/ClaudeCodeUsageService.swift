@@ -214,6 +214,7 @@ final class ClaudeCodeUsageService: @unchecked Sendable {
         guard let sessionFiles = try? fm.contentsOfDirectory(atPath: sessionsDir) else { return [] }
 
         let today = DateHelper.todayKey()
+        var seen = Set<String>()
         var results: [SessionInfo] = []
 
         for file in sessionFiles where file.hasSuffix(".json") {
@@ -222,7 +223,8 @@ final class ClaudeCodeUsageService: @unchecked Sendable {
                   let meta = try? JSONSerialization.jsonObject(with: metaData) as? [String: Any],
                   let sessionId = meta["sessionId"] as? String else { continue }
 
-            // 在 projects 目录中定位该 session 的对话记录
+            guard seen.insert(sessionId).inserted else { continue }
+
             let (tokens, messages) = findSessionTokens(sessionId: sessionId, today: today)
             guard tokens > 0 || messages > 0 else { continue }
 
