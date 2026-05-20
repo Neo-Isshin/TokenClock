@@ -2,7 +2,7 @@ import Foundation
 
 /// 单个工具的 token 使用数据
 struct ToolUsage: Identifiable, Hashable {
-    let id = UUID()
+    var id: String { name }
     let name: String
     let abbreviation: String
     let emoji: String
@@ -39,7 +39,7 @@ struct ToolUsage: Identifiable, Hashable {
 
 /// 单个 session 或 agent 的今日数据
 struct SessionInfo: Identifiable, Hashable {
-    let id = UUID()
+    var id: String { rawId }
     /// 原始 session ID 或 agent 名
     let rawId: String
     /// 展示名称（session 前7位 或 agent 名）

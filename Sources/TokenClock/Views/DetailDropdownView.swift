@@ -27,11 +27,11 @@ struct DetailDropdownView: View {
                 Text(L10n.shared.tr("detail.instance"))
                     .frame(maxWidth: .infinity, alignment: .leading)
                 Text(L10n.shared.tr("detail.todayUsage"))
-                    .frame(width: 68, alignment: .trailing)
+                    .frame(width: 62, alignment: .trailing)
                 Text(L10n.shared.tr("detail.messages"))
-                    .frame(width: 40, alignment: .trailing)
+                    .frame(width: 36, alignment: .trailing)
                 Text(L10n.shared.tr("detail.cacheRate"))
-                    .frame(width: 44, alignment: .trailing)
+                    .frame(width: 40, alignment: .trailing)
             }
             .font(.system(size: 9, weight: .medium))
             .foregroundColor(theme.dropdownHeaderColor)
@@ -40,15 +40,21 @@ struct DetailDropdownView: View {
             .padding(.bottom, 4)
 
             // 工具列表（过滤消耗为 0 的）
-            ForEach(Array(activeTools.enumerated()), id: \.element.id) { index, tool in
-                if index > 0 {
-                    Divider()
-                        .background(theme.dropdownDividerColor)
-                }
+            ScrollView(.vertical, showsIndicators: true) {
+                VStack(spacing: 0) {
+                    ForEach(Array(activeTools.enumerated()), id: \.element.id) { index, tool in
+                        if index > 0 {
+                            Divider()
+                                .background(theme.dropdownDividerColor)
+                        }
 
-                ToolExpandableRow(tool: tool, theme: theme)
+                        ToolExpandableRow(tool: tool, theme: theme)
+                    }
+                }
             }
+            .frame(maxHeight: .infinity)
         }
+        .frame(maxHeight: .infinity, alignment: .top)
         .background(
             RoundedRectangle(cornerRadius: 12)
                 .fill(theme.dropdownBgColor)
@@ -72,6 +78,8 @@ struct DetailDropdownView: View {
                 Text("\(weather.emoji) \(localizedCityName.isEmpty ? weather.cityName : localizedCityName) \(weather.temperature)°C")
                     .font(.system(size: 12, weight: .medium))
                     .foregroundColor(theme.dropdownTextColor)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
                 Spacer()
                 if hasForecast {
                     Text(L10n.shared.tr("detail.forecast"))
@@ -82,11 +90,8 @@ struct DetailDropdownView: View {
             .padding(.horizontal, 12)
 
             if hasForecast {
-                HStack(spacing: 0) {
+                HStack(spacing: 8) {
                     ForEach(Array(slots.enumerated()), id: \.offset) { idx, slot in
-                        if idx > 0 {
-                            Spacer()
-                        }
                         VStack(spacing: 2) {
                             Text(formatForecastTime(slot.time))
                                 .font(.system(size: 10, design: .monospaced))
@@ -97,7 +102,7 @@ struct DetailDropdownView: View {
                                 .font(.system(size: 11, weight: .medium, design: .monospaced))
                                 .foregroundColor(theme.dropdownTextColor)
                         }
-                        .frame(minWidth: 44)
+                        .frame(maxWidth: .infinity)
                     }
                 }
                 .padding(.horizontal, 12)
@@ -118,15 +123,19 @@ struct DetailDropdownView: View {
             return Int(time.prefix(2)) ?? 0
         }
 
-        // 找当前小时所在的槽（最大的 <= currentHour 的槽）
+        // 找当前小时所在的槽。forecast 已按 API 顺序合并多天，跨日后小时会回到 0，
+        // 因此遇到次日时间回卷时停止比较，避免深夜误选到次日末尾。
         var currentIndex = 0
+        var previousHour = -1
         for (i, slot) in weather.forecast.enumerated() {
             let h = slotHour(slot.time)
+            if previousHour > h { break }
             if h <= currentHour {
                 currentIndex = i
             } else {
                 break
             }
+            previousHour = h
         }
 
         // 取当前槽 + 接下来 3 个槽
@@ -173,24 +182,26 @@ private struct ToolExpandableRow: View {
                         .frame(width: 14)
 
                     Text("\(tool.emoji) \(tool.name)")
-                        .font(.system(size: 12, weight: .medium))
+                        .font(.system(size: 11, weight: .medium))
                         .foregroundColor(theme.dropdownTextColor)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
                         .frame(maxWidth: .infinity, alignment: .leading)
 
                     Text(tool.formattedTokens)
                         .font(.system(size: 11, weight: .semibold, design: .monospaced))
                         .foregroundColor(theme.dropdownTextColor)
-                        .frame(width: 68, alignment: .trailing)
+                        .frame(width: 62, alignment: .trailing)
 
                     Text("\(tool.todayMessages)")
                         .font(.system(size: 10, design: .monospaced))
                         .foregroundColor(theme.dropdownSubtextColor)
-                        .frame(width: 40, alignment: .trailing)
+                        .frame(width: 36, alignment: .trailing)
 
                     Text(formatCacheRate(tool.cacheRate))
                         .font(.system(size: 10, design: .monospaced))
                         .foregroundColor(theme.dropdownSubtextColor)
-                        .frame(width: 44, alignment: .trailing)
+                        .frame(width: 40, alignment: .trailing)
                 }
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
@@ -245,6 +256,8 @@ private struct SessionRow: View {
                     Text(session.displayName)
                         .font(.system(size: 10, weight: .medium))
                         .foregroundColor(theme.dropdownTextColor)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
                 } else {
                     // 其他工具：session 标签 + ID
                     Text("session")
@@ -267,17 +280,17 @@ private struct SessionRow: View {
             Text(session.formattedTokens)
                 .font(.system(size: 10, weight: .semibold, design: .monospaced))
                 .foregroundColor(theme.dropdownSubtextColor)
-                .frame(width: 68, alignment: .trailing)
+                .frame(width: 62, alignment: .trailing)
 
             Text("\(session.todayMessages)")
                 .font(.system(size: 9, design: .monospaced))
                 .foregroundColor(theme.dropdownSubtextColor)
-                .frame(width: 40, alignment: .trailing)
+                .frame(width: 36, alignment: .trailing)
 
             // 子行无缓存率列，占位保持对齐
             Rectangle()
                 .fill(Color.clear)
-                .frame(width: 44)
+                .frame(width: 40)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 5)

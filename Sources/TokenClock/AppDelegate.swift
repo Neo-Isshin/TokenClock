@@ -22,7 +22,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
         let mainView = MainView(viewModel: viewModel)
         let contentView = NSHostingView(rootView: mainView)
-        contentView.frame = NSRect(x: 0, y: 0, width: 300, height: 260)
+        contentView.frame = NSRect(
+            x: 0,
+            y: 0,
+            width: FloatingPanel.panelWidth,
+            height: FloatingPanel.collapsedHeight
+        )
         contentView.autoresizingMask = [.width, .height]
         panel.contentView = contentView
 
@@ -34,7 +39,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
         // 绑定展开/收起直接回调，绕过 NotificationCenter 延迟
         viewModel.onExpandChanged = { [weak self] expanded in
-            self?.panel?.updateSize(expanded: expanded)
+            guard let self else { return }
+            self.panel?.updateSize(
+                expanded: expanded,
+                activeToolCount: self.viewModel.sortedTools.filter { $0.todayTokens > 0 }.count,
+                showsWeather: !self.viewModel.weather.cityName.isEmpty
+            )
         }
 
         // 监听天气更新（城市解析后刷新菜单标签）
@@ -401,24 +411,229 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
 struct MainView: View {
     @ObservedObject var viewModel: ViewModel
+    @State private var visibleHeight: CGFloat?
+    @State private var dragStartVisibleHeight: CGFloat = 0
+
+    private var activeToolCount: Int {
+        viewModel.sortedTools.filter { $0.todayTokens > 0 }.count
+    }
+
+    private var minimumVisibleHeight: CGFloat {
+        let contentHeight = FloatingPanel.clockHeight
+            + FloatingPanel.dropdownVerticalMargin
+            + (viewModel.weather.cityName.isEmpty ? 0 : FloatingPanel.forecastHeight)
+            + FloatingPanel.headerHeight
+            + CGFloat(activeToolCount) * FloatingPanel.toolRowHeight
+            + FloatingPanel.resizeGripHeight
+        return max(FloatingPanel.collapsedHeight, contentHeight)
+    }
 
     var body: some View {
         GeometryReader { proxy in
-            VStack(spacing: 0) {
+            let minHeight = minimumVisibleHeight
+            let maxHeight = max(minHeight, proxy.size.height)
+            let currentVisibleHeight = min(max(visibleHeight ?? minHeight, minHeight), maxHeight)
+
+            ZStack(alignment: .top) {
                 ClockContentView(viewModel: viewModel)
+                    .frame(width: 240, height: 240)
+                    .position(x: FloatingPanel.panelWidth / 2, y: FloatingPanel.clockHeight / 2)
 
                 if viewModel.isExpanded {
+                    let detailHeight = max(
+                        0,
+                        currentVisibleHeight - FloatingPanel.clockHeight - FloatingPanel.resizeGripHeight
+                    )
+
                     DetailDropdownView(
                         tools: viewModel.sortedTools,
                         theme: viewModel.selectedTheme,
                         weather: viewModel.weather,
                         localizedCityName: viewModel.localizedCityName
                     )
+                    .frame(width: FloatingPanel.panelWidth, height: detailHeight, alignment: .top)
+                    .position(
+                        x: FloatingPanel.panelWidth / 2,
+                        y: FloatingPanel.clockHeight + detailHeight / 2
+                    )
+
+                    BottomResizeControl(
+                        onResizeStart: {
+                            dragStartVisibleHeight = currentVisibleHeight
+                        },
+                        onResizeChanged: { deltaY in
+                            let requested = dragStartVisibleHeight + deltaY
+                            visibleHeight = min(max(requested, minHeight), maxHeight)
+                        },
+                        onResizeEnded: {}
+                    )
+                    .frame(width: FloatingPanel.panelWidth, height: FloatingPanel.resizeGripHeight)
+                    .position(
+                        x: FloatingPanel.panelWidth / 2,
+                        y: currentVisibleHeight - FloatingPanel.resizeGripHeight / 2
+                    )
                 }
             }
-            .frame(width: 300, height: proxy.size.height, alignment: .top)
+            .frame(width: FloatingPanel.panelWidth, height: proxy.size.height, alignment: .top)
             .clipped()
         }
-        .frame(width: 300)
+        .frame(width: FloatingPanel.panelWidth)
+        .onChange(of: viewModel.isExpanded) { _, expanded in
+            visibleHeight = expanded ? minimumVisibleHeight : nil
+        }
+        .onChange(of: activeToolCount) { _, _ in
+            if viewModel.isExpanded {
+                visibleHeight = max(visibleHeight ?? minimumVisibleHeight, minimumVisibleHeight)
+            }
+        }
+        .onChange(of: viewModel.weather.cityName) { _, _ in
+            if viewModel.isExpanded {
+                visibleHeight = max(visibleHeight ?? minimumVisibleHeight, minimumVisibleHeight)
+            }
+        }
+    }
+}
+
+private struct BottomResizeControl: NSViewRepresentable {
+    let onResizeStart: () -> Void
+    let onResizeChanged: (CGFloat) -> Void
+    let onResizeEnded: () -> Void
+
+    func makeNSView(context: Context) -> ResizeControlNSView {
+        ResizeControlNSView(
+            onResizeStart: onResizeStart,
+            onResizeChanged: onResizeChanged,
+            onResizeEnded: onResizeEnded
+        )
+    }
+
+    func updateNSView(_ nsView: ResizeControlNSView, context: Context) {
+        nsView.onResizeStart = onResizeStart
+        nsView.onResizeChanged = onResizeChanged
+        nsView.onResizeEnded = onResizeEnded
+    }
+}
+
+private final class ResizeControlNSView: NSView {
+    var onResizeStart: () -> Void
+    var onResizeChanged: (CGFloat) -> Void
+    var onResizeEnded: () -> Void
+
+    private var trackingAreaRef: NSTrackingArea?
+    private var isHovering = false { didSet { needsDisplay = true } }
+    private var isDragging = false { didSet { needsDisplay = true } }
+
+    init(
+        onResizeStart: @escaping () -> Void,
+        onResizeChanged: @escaping (CGFloat) -> Void,
+        onResizeEnded: @escaping () -> Void
+    ) {
+        self.onResizeStart = onResizeStart
+        self.onResizeChanged = onResizeChanged
+        self.onResizeEnded = onResizeEnded
+        super.init(frame: .zero)
+        wantsLayer = true
+        layer?.backgroundColor = NSColor.clear.cgColor
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override var acceptsFirstResponder: Bool { true }
+
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
+        true
+    }
+
+    override func updateTrackingAreas() {
+        if let trackingAreaRef {
+            removeTrackingArea(trackingAreaRef)
+        }
+        let options: NSTrackingArea.Options = [.mouseEnteredAndExited, .activeAlways, .inVisibleRect]
+        let area = NSTrackingArea(rect: .zero, options: options, owner: self, userInfo: nil)
+        addTrackingArea(area)
+        trackingAreaRef = area
+        super.updateTrackingAreas()
+    }
+
+    override func resetCursorRects() {
+        addCursorRect(bounds, cursor: .resizeUpDown)
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        bounds.contains(point) ? self : nil
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect)
+
+        let capsuleWidth: CGFloat = 62
+        let capsuleHeight: CGFloat = 16
+        let capsuleRect = NSRect(
+            x: (bounds.width - capsuleWidth) / 2,
+            y: (bounds.height - capsuleHeight) / 2,
+            width: capsuleWidth,
+            height: capsuleHeight
+        )
+
+        let fillAlpha: CGFloat = isDragging ? 0.34 : (isHovering ? 0.24 : 0.14)
+        NSColor.controlAccentColor.withAlphaComponent(fillAlpha).setFill()
+        NSBezierPath(roundedRect: capsuleRect, xRadius: 8, yRadius: 8).fill()
+
+        NSColor.labelColor.withAlphaComponent(isDragging ? 0.78 : 0.5).setStroke()
+        let centerX = bounds.midX
+        let centerY = bounds.midY
+        let path = NSBezierPath()
+        path.lineWidth = 1.5
+        path.move(to: NSPoint(x: centerX, y: centerY - 4))
+        path.line(to: NSPoint(x: centerX, y: centerY + 4))
+        path.move(to: NSPoint(x: centerX - 3, y: centerY + 1))
+        path.line(to: NSPoint(x: centerX, y: centerY + 4))
+        path.line(to: NSPoint(x: centerX + 3, y: centerY + 1))
+        path.move(to: NSPoint(x: centerX - 3, y: centerY - 1))
+        path.line(to: NSPoint(x: centerX, y: centerY - 4))
+        path.line(to: NSPoint(x: centerX + 3, y: centerY - 1))
+        path.stroke()
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        isHovering = true
+        NSCursor.resizeUpDown.set()
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        isHovering = false
+        if !isDragging {
+            NSCursor.arrow.set()
+        }
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        isDragging = true
+        let startMouseY = NSEvent.mouseLocation.y
+        onResizeStart()
+        NSCursor.resizeUpDown.set()
+
+        while true {
+            guard let nextEvent = window?.nextEvent(matching: [.leftMouseDragged, .leftMouseUp]) else {
+                break
+            }
+
+            switch nextEvent.type {
+            case .leftMouseDragged:
+                onResizeChanged(startMouseY - NSEvent.mouseLocation.y)
+            case .leftMouseUp:
+                isDragging = false
+                onResizeEnded()
+                NSCursor.resizeUpDown.set()
+                return
+            default:
+                break
+            }
+        }
+
+        isDragging = false
+        onResizeEnded()
     }
 }

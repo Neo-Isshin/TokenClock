@@ -9,6 +9,7 @@ final class CodexUsageService: @unchecked Sendable {
     private(set) var hourlyData: [String: HourlyUsage] = [:]
     private var dailyCache: [String: Int] = [:]
     private var recentEntries: [RecentEntry] = []
+    private var sessionMessagesByDate: [String: [String: Int]] = [:]
 
     /// 已扫描的 JSONL 文件路径及其统计结果
     private var jsonlCache: [String: (dateKey: String, count: Int, tokens: Int, cachedTokens: Int)] = [:]
@@ -25,6 +26,7 @@ final class CodexUsageService: @unchecked Sendable {
         hourlyData.removeAll()
         dailyCache.removeAll()
         recentEntries = []
+        sessionMessagesByDate = [:]
         jsonlCache = [:]
         scanJSONL()
     }
@@ -146,6 +148,18 @@ final class CodexUsageService: @unchecked Sendable {
         if let ts = lastTimestamp {
             recentEntries.append(RecentEntry(timestamp: ts, tokens: totalTokens))
         }
+        if let sessionId = sessionId(fromJSONLPath: path), !sessionId.isEmpty {
+            sessionMessagesByDate[lastDateKey, default: [:]][sessionId, default: 0] += msgCount
+        }
+    }
+
+    private func sessionId(fromJSONLPath path: String) -> String? {
+        let filename = (path as NSString).lastPathComponent
+        guard filename.hasPrefix("rollout-"), filename.hasSuffix(".jsonl") else { return nil }
+        let stem = String(filename.dropFirst("rollout-".count).dropLast(".jsonl".count))
+        // Codex filenames are rollout-YYYY-MM-DDTHH-MM-SS-<sessionId>.jsonl.
+        guard stem.count > 20 else { return nil }
+        return String(stem.dropFirst(20))
     }
 
     private struct TokenBreakdown { let total: Int; let cached: Int }
@@ -200,6 +214,7 @@ final class CodexUsageService: @unchecked Sendable {
         sqlite3_bind_double(stmt, 1, todayStart.timeIntervalSince1970 * 1000)
 
         let today = DateHelper.todayKey()
+        let sessionMessageCounts = sessionMessagesByDate[today] ?? [:]
         var results: [SessionInfo] = []
 
         while sqlite3_step(stmt) == SQLITE_ROW {
@@ -216,17 +231,34 @@ final class CodexUsageService: @unchecked Sendable {
             let displayId = sessionId.isEmpty ? "unknown" : String(sessionId.prefix(7))
             let cwd = cwdPtr != nil ? String(cString: cwdPtr!) : ""
             let detail = cwd.isEmpty ? nil : cwd
+            let messages = sessionMessageCount(
+                for: sessionId,
+                in: sessionMessageCounts,
+                fallback: tokens > 0 ? 1 : 0
+            )
 
             results.append(SessionInfo(
                 rawId: sessionId,
                 displayName: displayId,
                 detail: detail,
                 todayTokens: tokens,
-                todayMessages: 1,
+                todayMessages: messages,
                 isActive: true
             ))
         }
 
         return results
+    }
+
+    private func sessionMessageCount(
+        for sessionId: String,
+        in counts: [String: Int],
+        fallback: Int
+    ) -> Int {
+        if let exact = counts[sessionId] { return exact }
+        if let prefixMatch = counts.first(where: { sessionId.hasPrefix($0.key) || $0.key.hasPrefix(sessionId) }) {
+            return prefixMatch.value
+        }
+        return fallback
     }
 }
