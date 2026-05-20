@@ -43,7 +43,7 @@ struct SettingsView: View {
         VStack(spacing: 0) {
             // 标题栏
             HStack {
-                Text("TokenClock 设置")
+                Text(L10n.shared.tr("settings.title"))
                     .font(.system(size: 15, weight: .semibold))
                 Spacer()
             }
@@ -59,34 +59,34 @@ struct SettingsView: View {
                     autoDetectSection()
 
                     // 数据源路径
-                    collapsibleSection(title: "📁 数据源路径", isExpanded: $pathsExpanded) {
+                    collapsibleSection(title: L10n.shared.tr("settings.dataPaths"), isExpanded: $pathsExpanded) {
                         VStack(alignment: .leading, spacing: 10) {
                             pathRow(
                                 emoji: "🦞", name: "OpenClaw",
                                 path: $openclawPath,
                                 service: "openclaw",
-                                browseTitle: "选择 OpenClaw 目录"
+                                browseTitle: L10n.shared.tr("settings.browseOpenClaw")
                             )
 
                             pathRow(
                                 emoji: "✳️", name: "Claude Code",
                                 path: $claudeCodePath,
                                 service: "claudeCode",
-                                browseTitle: "选择 Claude Code 目录"
+                                browseTitle: L10n.shared.tr("settings.browseClaudeCode")
                             )
 
                             pathRow(
                                 emoji: "✨", name: "Gemini CLI",
                                 path: $geminiPath,
                                 service: "gemini",
-                                browseTitle: "选择 Gemini CLI 目录"
+                                browseTitle: L10n.shared.tr("settings.browseGemini")
                             )
 
                             pathRow(
                                 emoji: "🤖", name: "Codex",
                                 path: $codexPath,
                                 service: "codex",
-                                browseTitle: "选择 Codex 目录"
+                                browseTitle: L10n.shared.tr("settings.browseCodex")
                             )
 
                             hermesPathRow()
@@ -95,12 +95,12 @@ struct SettingsView: View {
                     }
 
                     // 热力图标阈值
-                    collapsibleSection(title: "🔥 热力图标阈值", isExpanded: $rateThresholdExpanded) {
+                    collapsibleSection(title: L10n.shared.tr("rate.title"), isExpanded: $rateThresholdExpanded) {
                         rateThresholdSection()
                     }
 
                     // 自定义表盘
-                    collapsibleSection(title: "🎨 自定义表盘", isExpanded: $customThemeExpanded) {
+                    collapsibleSection(title: L10n.shared.tr("theme.title"), isExpanded: $customThemeExpanded) {
                         customThemeSection()
                     }
                 }
@@ -112,7 +112,7 @@ struct SettingsView: View {
             // 底部按钮
             HStack {
                 Spacer()
-                Button("完成") {
+                Button(L10n.shared.tr("settings.done")) {
                     savePaths()
                     saveRateSettings()
                     saveCustomTheme()
@@ -138,11 +138,11 @@ struct SettingsView: View {
     private func autoDetectSection() -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text("🔍 自动探测")
+                Text(L10n.shared.tr("settings.autoDetect"))
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundColor(.secondary)
                 Spacer()
-                Button("重新探测") {
+                Button(L10n.shared.tr("settings.redetect")) {
                     runAutoDetection()
                 }
                 .buttonStyle(.bordered)
@@ -210,13 +210,13 @@ struct SettingsView: View {
 
             HStack(spacing: 8) {
                 // 路径输入框
-                TextField("默认路径", text: path)
+                TextField(L10n.shared.tr("settings.defaultPath"), text: path)
                     .textFieldStyle(.roundedBorder)
                     .font(.system(size: 11, design: .monospaced))
                     .lineLimit(1)
 
                 // 检索按钮
-                Button("检索") {
+                Button(L10n.shared.tr("settings.search")) {
                     detectPath(for: service)
                 }
                 .buttonStyle(.bordered)
@@ -224,7 +224,7 @@ struct SettingsView: View {
                 .font(.system(size: 11))
 
                 // 浏览按钮
-                Button("浏览") {
+                Button(L10n.shared.tr("settings.browse")) {
                     browseForPath(service: service, currentPath: path.wrappedValue, title: browseTitle)
                 }
                 .buttonStyle(.bordered)
@@ -255,20 +255,20 @@ struct SettingsView: View {
                 .font(.system(size: 12, weight: .medium))
 
             HStack(spacing: 8) {
-                TextField("默认路径", text: $hermesPath)
+                TextField(L10n.shared.tr("settings.defaultPath"), text: $hermesPath)
                     .textFieldStyle(.roundedBorder)
                     .font(.system(size: 11, design: .monospaced))
                     .lineLimit(1)
 
-                Button("检索") {
+                Button(L10n.shared.tr("settings.search")) {
                     detectPath(for: "hermes")
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
                 .font(.system(size: 11))
 
-                Button("浏览") {
-                    browseForPath(service: "hermes", currentPath: hermesPath, title: "选择 Hermes 目录")
+                Button(L10n.shared.tr("settings.browse")) {
+                    browseForPath(service: "hermes", currentPath: hermesPath, title: L10n.shared.tr("settings.browseHermes"))
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
@@ -297,7 +297,7 @@ struct SettingsView: View {
                 Image(systemName: "lightbulb.fill")
                     .font(.system(size: 10))
                     .foregroundColor(.yellow)
-                Text("留空则使用默认路径。修改路径后需重启应用生效。")
+                Text(L10n.shared.tr("settings.hint.emptyPath"))
                     .font(.system(size: 10))
                     .foregroundColor(.secondary)
             }
@@ -306,7 +306,7 @@ struct SettingsView: View {
                 Image(systemName: "info.circle.fill")
                     .font(.system(size: 10))
                     .foregroundColor(.blue)
-                Text("支持环境变量覆盖：OPENCLAW_HOME、CLAUDE_CONFIG_DIR、GEMINI_HOME、CODEX_HOME、HERMES_HOME")
+                Text(L10n.shared.tr("settings.hint.envVars"))
                     .font(.system(size: 10))
                     .foregroundColor(.secondary)
                     .lineLimit(2)
@@ -321,13 +321,13 @@ struct SettingsView: View {
         VStack(alignment: .leading, spacing: 10) {
             // 统计周期选择
             HStack(spacing: 8) {
-                Text("统计周期")
+                Text(L10n.shared.tr("rate.period"))
                     .font(.system(size: 12))
                     .foregroundColor(.secondary)
                 Picker("", selection: $rateWindow) {
-                    Text("10分钟").tag(10)
-                    Text("30分钟").tag(30)
-                    Text("1小时").tag(60)
+                    Text(L10n.shared.tr("rate.10min")).tag(10)
+                    Text(L10n.shared.tr("rate.30min")).tag(30)
+                    Text(L10n.shared.tr("rate.1hour")).tag(60)
                 }
                 .pickerStyle(.segmented)
                 .frame(width: 220)
@@ -340,12 +340,12 @@ struct SettingsView: View {
             Divider()
 
             // 阈值输入行
-            thresholdRow(emoji: "💥", label: "爆发", value: $burstValue, unit: $burstUnit)
-            thresholdRow(emoji: "🔥", label: "火热", value: $hotValue, unit: $hotUnit)
-            thresholdRow(emoji: "🏃‍♂️", label: "活跃", value: $activeValue, unit: $activeUnit)
-            thresholdRow(emoji: "☕", label: "悠闲", value: $calmValue, unit: $calmUnit)
+            thresholdRow(emoji: "💥", label: L10n.shared.tr("rate.burst"), value: $burstValue, unit: $burstUnit)
+            thresholdRow(emoji: "🔥", label: L10n.shared.tr("rate.hot"), value: $hotValue, unit: $hotUnit)
+            thresholdRow(emoji: "🏃‍♂️", label: L10n.shared.tr("rate.active"), value: $activeValue, unit: $activeUnit)
+            thresholdRow(emoji: "☕", label: L10n.shared.tr("rate.calm"), value: $calmValue, unit: $calmUnit)
 
-            Text("🛌 休息：低于悠闲阈值")
+            Text(L10n.shared.tr("rate.rest"))
                 .font(.system(size: 11))
                 .foregroundColor(.secondary)
                 .padding(.top, 2)
@@ -355,7 +355,7 @@ struct SettingsView: View {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .font(.system(size: 10))
                         .foregroundColor(.orange)
-                    Text("阈值已自动调整为递减顺序")
+                    Text(L10n.shared.tr("rate.adjusted"))
                         .font(.system(size: 10))
                         .foregroundColor(.orange)
                 }
@@ -373,7 +373,7 @@ struct SettingsView: View {
                 .font(.system(size: 12))
                 .frame(width: 60, alignment: .leading)
 
-            TextField("数值", text: value)
+            TextField(L10n.shared.tr("rate.value"), text: value)
                 .textFieldStyle(.roundedBorder)
                 .font(.system(size: 12, design: .monospaced))
                 .frame(width: 80)
@@ -390,7 +390,7 @@ struct SettingsView: View {
                 saveRateSettings()
             }
 
-            Text("以上")
+            Text(L10n.shared.tr("rate.above"))
                 .font(.system(size: 11))
                 .foregroundColor(.secondary)
 
@@ -492,7 +492,7 @@ struct SettingsView: View {
             // 已保存表盘列表（始终可见）
             if !viewModel.savedCustomThemes.isEmpty {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("已保存的表盘")
+                    Text(L10n.shared.tr("theme.saved"))
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundColor(.secondary)
 
@@ -507,7 +507,7 @@ struct SettingsView: View {
 
                             Spacer()
 
-                            Button("应用") {
+                            Button(L10n.shared.tr("theme.apply")) {
                                 viewModel.applyCustomTheme(id: theme.id)
                                 viewModel.selectedTheme = .custom
                                 viewModel.saveTheme()
@@ -516,7 +516,7 @@ struct SettingsView: View {
                             .controlSize(.small)
                             .font(.system(size: 11))
 
-                            Button("删除") {
+                            Button(L10n.shared.tr("theme.delete")) {
                                 viewModel.deleteCustomTheme(id: theme.id)
                             }
                             .buttonStyle(.borderless)
@@ -536,7 +536,7 @@ struct SettingsView: View {
                 // 未编辑状态：显示新建按钮
                 HStack {
                     Button(action: { startEditingCustomTheme() }) {
-                        Label("新建自定义表盘", systemImage: "paintbrush.pointed.fill")
+                        Label(L10n.shared.tr("theme.new"), systemImage: "paintbrush.pointed.fill")
                             .foregroundColor(.black)
                             .padding(.horizontal, 14)
                             .padding(.vertical, 6)
@@ -551,18 +551,18 @@ struct SettingsView: View {
                 // 编辑状态：显示编辑器 + 取消/保存
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {
-                        Text("编辑中 — 表盘实时预览")
+                        Text(L10n.shared.tr("theme.editing"))
                             .font(.system(size: 11, weight: .semibold))
                             .foregroundColor(.secondary)
                         Spacer()
-                        Button("取消") {
+                        Button(L10n.shared.tr("theme.cancel")) {
                             cancelEditingCustomTheme()
                         }
                         .buttonStyle(.bordered)
                         .controlSize(.small)
                         .font(.system(size: 11))
 
-                        Button("保存") {
+                        Button(L10n.shared.tr("theme.save")) {
                             saveEditingCustomTheme()
                         }
                         .buttonStyle(.borderedProminent)
@@ -571,7 +571,7 @@ struct SettingsView: View {
                         .disabled(editingThemeName.trimmingCharacters(in: .whitespaces).isEmpty)
                     }
 
-                    TextField("输入表盘名称", text: $editingThemeName)
+                    TextField(L10n.shared.tr("theme.nameHint"), text: $editingThemeName)
                         .textFieldStyle(.roundedBorder)
                         .font(.system(size: 12))
 
@@ -609,50 +609,50 @@ struct SettingsView: View {
     @ViewBuilder
     private func customThemeEditor() -> some View {
         // 表盘
-        colorRow(label: "表盘底色", color: Binding(
+        colorRow(label: L10n.shared.tr("editor.dialBg"), color: Binding(
             get: { editingConfig.dialColor.swiftUIColor },
             set: { editingConfig.dialColor = CodableColor(color: $0) }
         ))
-        colorRow(label: "表盘边框", color: Binding(
+        colorRow(label: L10n.shared.tr("editor.dialBorder"), color: Binding(
             get: { editingConfig.dialRimColor.swiftUIColor },
             set: { editingConfig.dialRimColor = CodableColor(color: $0) }
         ))
-        sliderRow(label: "边框宽度", value: $editingConfig.dialRimWidth, range: 0...20, step: 0.5)
+        sliderRow(label: L10n.shared.tr("editor.borderWidth"), value: $editingConfig.dialRimWidth, range: 0...20, step: 0.5)
 
         Divider()
 
         // 指针颜色
-        colorRow(label: "时针颜色", color: Binding(
+        colorRow(label: L10n.shared.tr("editor.handHour"), color: Binding(
             get: { editingConfig.hourHandColor.swiftUIColor },
             set: { editingConfig.hourHandColor = CodableColor(color: $0) }
         ))
-        colorRow(label: "分针颜色", color: Binding(
+        colorRow(label: L10n.shared.tr("editor.handMinute"), color: Binding(
             get: { editingConfig.minuteHandColor.swiftUIColor },
             set: { editingConfig.minuteHandColor = CodableColor(color: $0) }
         ))
-        colorRow(label: "秒针颜色", color: Binding(
+        colorRow(label: L10n.shared.tr("editor.handSecond"), color: Binding(
             get: { editingConfig.secondHandColor.swiftUIColor },
             set: { editingConfig.secondHandColor = CodableColor(color: $0) }
         ))
 
         // 指针样式
-        pickerRow(label: "指针样式", selection: $editingConfig.handStyleRaw, options: [
-            ("round", "圆形"), ("tapered", "锥形"), ("lance", "枪尖"), ("sword", "剑形")
+        pickerRow(label: L10n.shared.tr("editor.handStyle"), selection: $editingConfig.handStyleRaw, options: [
+            ("round", L10n.shared.tr("handStyle.round")), ("tapered", L10n.shared.tr("handStyle.tapered")), ("lance", L10n.shared.tr("handStyle.lance")), ("sword", L10n.shared.tr("handStyle.sword"))
         ])
 
         // 指针宽度
-        sliderRow(label: "时针宽度", value: $editingConfig.hourHandWidth, range: 1...10, step: 0.5)
-        sliderRow(label: "分针宽度", value: $editingConfig.minuteHandWidth, range: 1...8, step: 0.5)
-        sliderRow(label: "秒针宽度", value: $editingConfig.secondHandWidth, range: 0.5...5, step: 0.5)
+        sliderRow(label: L10n.shared.tr("editor.handWidthHour"), value: $editingConfig.hourHandWidth, range: 1...10, step: 0.5)
+        sliderRow(label: L10n.shared.tr("editor.handWidthMin"), value: $editingConfig.minuteHandWidth, range: 1...8, step: 0.5)
+        sliderRow(label: L10n.shared.tr("editor.handWidthSec"), value: $editingConfig.secondHandWidth, range: 0.5...5, step: 0.5)
 
         Divider()
 
         // 中心点
-        colorRow(label: "中心外圈", color: Binding(
+        colorRow(label: L10n.shared.tr("editor.centerOuter"), color: Binding(
             get: { editingConfig.centerDotOuterColor.swiftUIColor },
             set: { editingConfig.centerDotOuterColor = CodableColor(color: $0) }
         ))
-        colorRow(label: "中心内圈", color: Binding(
+        colorRow(label: L10n.shared.tr("editor.centerInner"), color: Binding(
             get: { editingConfig.centerDotInnerColor.swiftUIColor },
             set: { editingConfig.centerDotInnerColor = CodableColor(color: $0) }
         ))
@@ -661,52 +661,52 @@ struct SettingsView: View {
 
         // 刻度与数字
         HStack {
-            Toggle("显示刻度", isOn: $editingConfig.hasTickMarks)
+            Toggle(L10n.shared.tr("editor.showTicks"), isOn: $editingConfig.hasTickMarks)
                 .font(.system(size: 12))
-            Toggle("显示数字", isOn: $editingConfig.showNumbers)
+            Toggle(L10n.shared.tr("editor.showNumbers"), isOn: $editingConfig.showNumbers)
                 .font(.system(size: 12))
-            Toggle("表盘装饰", isOn: $editingConfig.hasDialDecoration)
+            Toggle(L10n.shared.tr("editor.showDeco"), isOn: $editingConfig.hasDialDecoration)
                 .font(.system(size: 12))
         }
-        colorRow(label: "刻度颜色", color: Binding(
+        colorRow(label: L10n.shared.tr("editor.tickColor"), color: Binding(
             get: { editingConfig.tickMarkColor.swiftUIColor },
             set: { editingConfig.tickMarkColor = CodableColor(color: $0) }
         ))
-        colorRow(label: "主刻度颜色", color: Binding(
+        colorRow(label: L10n.shared.tr("editor.majorTickColor"), color: Binding(
             get: { editingConfig.majorTickMarkColor.swiftUIColor },
             set: { editingConfig.majorTickMarkColor = CodableColor(color: $0) }
         ))
-        colorRow(label: "数字颜色", color: Binding(
+        colorRow(label: L10n.shared.tr("editor.numberColor"), color: Binding(
             get: { editingConfig.numberColor.swiftUIColor },
             set: { editingConfig.numberColor = CodableColor(color: $0) }
         ))
-        pickerRow(label: "数字样式", selection: $editingConfig.numberStyleRaw, options: [
-            ("arabic", "阿拉伯数字"), ("chinese", "中文数字")
+        pickerRow(label: L10n.shared.tr("editor.numberStyle"), selection: $editingConfig.numberStyleRaw, options: [
+            ("arabic", L10n.shared.tr("editor.numArabic")), ("chinese", L10n.shared.tr("editor.numChinese"))
         ])
-        pickerRow(label: "数字字体", selection: $editingConfig.numberFontDesignRaw, options: [
-            ("rounded", "圆体"), ("serif", "衬线"), ("monospaced", "等宽"), ("default", "默认")
+        pickerRow(label: L10n.shared.tr("editor.numberFont"), selection: $editingConfig.numberFontDesignRaw, options: [
+            ("rounded", L10n.shared.tr("editor.fontRounded")), ("serif", L10n.shared.tr("editor.fontSerif")), ("monospaced", L10n.shared.tr("editor.fontMono")), ("default", L10n.shared.tr("editor.fontDefault"))
         ])
 
         Divider()
 
         // 下拉面板颜色
-        colorRow(label: "面板背景", color: Binding(
+        colorRow(label: L10n.shared.tr("editor.dropBg"), color: Binding(
             get: { editingConfig.dropdownBgColor.swiftUIColor },
             set: { editingConfig.dropdownBgColor = CodableColor(color: $0) }
         ))
-        colorRow(label: "面板文字", color: Binding(
+        colorRow(label: L10n.shared.tr("editor.dropText"), color: Binding(
             get: { editingConfig.dropdownTextColor.swiftUIColor },
             set: { editingConfig.dropdownTextColor = CodableColor(color: $0) }
         ))
-        colorRow(label: "面板副文字", color: Binding(
+        colorRow(label: L10n.shared.tr("editor.dropSubtext"), color: Binding(
             get: { editingConfig.dropdownSubtextColor.swiftUIColor },
             set: { editingConfig.dropdownSubtextColor = CodableColor(color: $0) }
         ))
-        colorRow(label: "面板边框", color: Binding(
+        colorRow(label: L10n.shared.tr("editor.dropBorder"), color: Binding(
             get: { editingConfig.dropdownBorderColor.swiftUIColor },
             set: { editingConfig.dropdownBorderColor = CodableColor(color: $0) }
         ))
-        colorRow(label: "面板分割线", color: Binding(
+        colorRow(label: L10n.shared.tr("editor.dropDivider"), color: Binding(
             get: { editingConfig.dropdownDividerColor.swiftUIColor },
             set: { editingConfig.dropdownDividerColor = CodableColor(color: $0) }
         ))
@@ -714,11 +714,11 @@ struct SettingsView: View {
         Divider()
 
         // 叠加文字颜色
-        colorRow(label: "主文字颜色", color: Binding(
+        colorRow(label: L10n.shared.tr("editor.overlayPrimary"), color: Binding(
             get: { editingConfig.textPrimaryColor.swiftUIColor },
             set: { editingConfig.textPrimaryColor = CodableColor(color: $0) }
         ))
-        colorRow(label: "副文字颜色", color: Binding(
+        colorRow(label: L10n.shared.tr("editor.overlaySecondary"), color: Binding(
             get: { editingConfig.textSecondaryColor.swiftUIColor },
             set: { editingConfig.textSecondaryColor = CodableColor(color: $0) }
         ))
@@ -889,9 +889,9 @@ struct SettingsView: View {
 
         let timeStr = DateFormatter.localizedString(from: Date(), dateStyle: .none, timeStyle: .medium)
         if summary.allFound {
-            detectionSummary = "✅ 已探测到全部 \(summary.totalCount) 个数据源（\(timeStr)）"
+            detectionSummary = String(format: L10n.shared.tr("settings.detectAllFound"), summary.totalCount, timeStr)
         } else {
-            detectionSummary = "⚠️ 已探测到 \(summary.foundCount)/\(summary.totalCount) 个数据源（\(timeStr)）"
+            detectionSummary = String(format: L10n.shared.tr("settings.detectPartial"), summary.foundCount, summary.totalCount, timeStr)
         }
 
         savePaths()
@@ -921,9 +921,9 @@ struct SettingsView: View {
                 case "hermes": hermesPath = result.detectedPath
                 default: break
                 }
-                detectionSummary = "✅ \(label.emoji) \(label.name) 路径已更新（\(timeStr)）"
+                detectionSummary = String(format: L10n.shared.tr("settings.detectUpdated"), label.emoji, label.name, timeStr)
             } else {
-                detectionSummary = "❌ \(label.emoji) \(label.name) 未找到有效数据目录"
+                detectionSummary = String(format: L10n.shared.tr("settings.detectNotFound"), label.emoji, label.name)
             }
             savePaths()
         }
@@ -985,7 +985,7 @@ struct SettingsView: View {
             detectedPath: exists ? selectedPath : "",
             isDefault: false, exists: exists,
             source: exists ? .userDefaults : .notFound,
-            detail: exists ? "用户自定义路径有效" : "所选路径未找到有效日志文件"
+            detail: exists ? L10n.shared.tr("settings.pathValid") : L10n.shared.tr("settings.pathInvalid")
         ))
     }
 }

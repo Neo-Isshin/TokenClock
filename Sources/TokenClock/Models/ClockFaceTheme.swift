@@ -13,25 +13,25 @@ enum ClockFaceTheme: String, CaseIterable, Identifiable {
 
     var displayName: String {
         switch self {
-        case .classic: return "经典"
-        case .midnight: return "深夜"
-        case .luxe: return "暗金"
-        case .gufeng: return "古风"
-        case .railgun: return "超電磁砲"
-        case .sky: return "天空"
-        case .custom: return "自定义"
+        case .classic: return L10n.shared.tr("themeName.classic")
+        case .midnight: return L10n.shared.tr("themeName.midnight")
+        case .luxe: return L10n.shared.tr("themeName.luxe")
+        case .gufeng: return L10n.shared.tr("themeName.gufeng")
+        case .railgun: return L10n.shared.tr("themeName.railgun")
+        case .sky: return L10n.shared.tr("themeName.sky")
+        case .custom: return L10n.shared.tr("themeName.custom")
         }
     }
 
     var description: String {
         switch self {
-        case .classic: return "浅灰表盘 · 红色层次指针"
-        case .midnight: return "深蓝表盘 · 青色锥形指针"
-        case .luxe: return "暗色表盘 · 金色菱形指针"
-        case .gufeng: return "宣纸底色 · 墨色剑形指针"
-        case .railgun: return "米白表盘 · 电弧蓝秒针"
-        case .sky: return "蓝天白云 · 阳光金色指针"
-        case .custom: return "用户自定义配色与样式"
+        case .classic: return L10n.shared.tr("themeDesc.classic")
+        case .midnight: return L10n.shared.tr("themeDesc.midnight")
+        case .luxe: return L10n.shared.tr("themeDesc.luxe")
+        case .gufeng: return L10n.shared.tr("themeDesc.gufeng")
+        case .railgun: return L10n.shared.tr("themeDesc.railgun")
+        case .sky: return L10n.shared.tr("themeDesc.sky")
+        case .custom: return L10n.shared.tr("themeDesc.custom")
         }
     }
 

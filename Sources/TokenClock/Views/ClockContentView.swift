@@ -33,13 +33,13 @@ struct ClockContentView: View {
 
                 // 下方：tokens + 消息数（中心到下部中点）
                 VStack(spacing: 2) {
-                    Text("今日Tokens")
+                    Text(L10n.shared.tr("clock.todayTokens"))
                         .font(.system(size: 9))
                         .foregroundColor(viewModel.selectedTheme.textSecondaryColor)
                     Text(viewModel.totalTokensFormatted)
                         .font(.system(size: 20, weight: .bold, design: .rounded))
                         .foregroundColor(viewModel.selectedTheme.textPrimaryColor)
-                    Text("消息数：\(viewModel.totalMessagesCount)条")
+                    Text(viewModel.totalMessagesFormatted)
                         .font(.system(size: 10))
                         .foregroundColor(viewModel.selectedTheme.textSecondaryColor)
                 }

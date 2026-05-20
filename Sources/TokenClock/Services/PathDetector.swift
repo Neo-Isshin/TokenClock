@@ -13,11 +13,15 @@ enum PathDetector {
         let detail: String
 
         enum PathSource: String {
-            case userDefaults = "用户自定义"
-            case envVariable = "环境变量"
-            case officialDefault = "官方默认"
-            case alternate = "备选路径"
-            case notFound = "未找到"
+            case userDefaults = "pathSource.userDefaults"
+            case envVariable = "pathSource.envVar"
+            case officialDefault = "pathSource.official"
+            case alternate = "pathSource.alternate"
+            case notFound = "pathSource.notFound"
+        }
+
+        var localizedSource: String {
+            L10n.shared.tr(source.rawValue)
         }
     }
 
@@ -233,15 +237,15 @@ enum PathDetector {
             let detail: String
             switch match.source {
             case .userDefaults:
-                detail = "使用用户自定义路径"
+                detail = L10n.shared.tr("pathDetail.userCustom")
             case .envVariable:
-                detail = "从环境变量探测到"
+                detail = L10n.shared.tr("pathDetail.envDetected")
             case .officialDefault:
-                detail = "使用官方默认路径"
+                detail = L10n.shared.tr("pathDetail.official")
             case .alternate:
-                detail = "从备选路径探测到"
+                detail = L10n.shared.tr("pathDetail.alternate")
             case .notFound:
-                detail = "未找到"
+                detail = L10n.shared.tr("pathDetail.notFound")
             }
             return DetectionResult(
                 service: service, emoji: emoji,
@@ -258,7 +262,7 @@ enum PathDetector {
                 isDefault: true,
                 exists: false,
                 source: .notFound,
-                detail: "未找到有效日志文件，将使用默认路径"
+                detail: L10n.shared.tr("pathDetail.notFoundDefault")
             )
         }
     }

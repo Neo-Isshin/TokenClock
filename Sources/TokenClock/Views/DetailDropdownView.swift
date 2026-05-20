@@ -23,13 +23,13 @@ struct DetailDropdownView: View {
 
             // 表头
             HStack(spacing: 0) {
-                Text("实例")
+                Text(L10n.shared.tr("detail.instance"))
                     .frame(maxWidth: .infinity, alignment: .leading)
-                Text("今日消耗")
+                Text(L10n.shared.tr("detail.todayUsage"))
                     .frame(width: 68, alignment: .trailing)
-                Text("消息数")
+                Text(L10n.shared.tr("detail.messages"))
                     .frame(width: 40, alignment: .trailing)
-                Text("缓存率")
+                Text(L10n.shared.tr("detail.cacheRate"))
                     .frame(width: 44, alignment: .trailing)
             }
             .font(.system(size: 9, weight: .medium))
@@ -73,7 +73,7 @@ struct DetailDropdownView: View {
                     .foregroundColor(theme.dropdownTextColor)
                 Spacer()
                 if hasForecast {
-                    Text("未来趋势")
+                    Text(L10n.shared.tr("detail.forecast"))
                         .font(.system(size: 11))
                         .foregroundColor(theme.dropdownSubtextColor)
                 }

@@ -57,13 +57,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     private func setupRightClickMenu() {
         let menu = NSMenu()
+        let tr = L10n.shared.tr
 
-        // 表盘选择（弹出带缩略图的预览面板）
-        let themeItem = NSMenuItem(title: "🎨 表盘",
+        let themeItem = NSMenuItem(title: tr("menu.clockFace"),
                                   action: #selector(openThemePicker(_:)), keyEquivalent: "")
         menu.addItem(themeItem)
 
-        // 已保存自定义主题快捷切换（非空时显示）
         if !viewModel.savedCustomThemes.isEmpty {
             let savedMenu = NSMenu()
             for saved in viewModel.savedCustomThemes {
@@ -75,18 +74,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 }
                 savedMenu.addItem(item)
             }
-            let savedItem = NSMenuItem(title: "✏️ 我的表盘", action: nil, keyEquivalent: "")
+            let savedItem = NSMenuItem(title: tr("menu.myClockFaces"), action: nil, keyEquivalent: "")
             savedItem.submenu = savedMenu
             menu.addItem(savedItem)
         }
 
-        // API 端点信息
-        let apiItem = NSMenuItem(title: "🔌 API: localhost:9988/api/usage",
+        let apiItem = NSMenuItem(title: tr("menu.api"),
                                  action: #selector(copyAPIEndpoint(_:)), keyEquivalent: "")
         menu.addItem(apiItem)
         menu.addItem(.separator())
 
-        // 透明度子菜单
         let opacityMenu = NSMenu()
         for value in [25, 50, 75, 100] {
             let item = NSMenuItem(title: "\(value)%",
@@ -95,24 +92,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             if Int(viewModel.windowOpacity * 100) == value { item.state = .on }
             opacityMenu.addItem(item)
         }
-        let opacityItem = NSMenuItem(title: "透明度", action: nil, keyEquivalent: "")
+        let opacityItem = NSMenuItem(title: tr("menu.opacity"), action: nil, keyEquivalent: "")
         opacityItem.submenu = opacityMenu
+        opacityItem.tag = 100 // tag for lookup in setOpacity
         menu.addItem(opacityItem)
         menu.addItem(.separator())
 
-        // 置顶
-        let alwaysOnTopItem = NSMenuItem(title: "始终置于顶层",
+        let alwaysOnTopItem = NSMenuItem(title: tr("menu.alwaysOnTop"),
                                          action: #selector(toggleAlwaysOnTop(_:)), keyEquivalent: "")
         alwaysOnTopItem.state = viewModel.alwaysOnTop ? .on : .off
         menu.addItem(alwaysOnTopItem)
         menu.addItem(.separator())
 
-        // 温度单位切换
-        let tempItem = NSMenuItem(title: "🌡️ 温度", action: nil, keyEquivalent: "")
+        let tempItem = NSMenuItem(title: tr("menu.temperature"), action: nil, keyEquivalent: "")
         let tempMenu = NSMenu()
-        let celsiusItem = NSMenuItem(title: "摄氏度 °C", action: #selector(setCelsius(_:)), keyEquivalent: "")
+        let celsiusItem = NSMenuItem(title: tr("menu.celsius"), action: #selector(setCelsius(_:)), keyEquivalent: "")
         celsiusItem.state = viewModel.useFahrenheit ? .off : .on
-        let fahrenheitItem = NSMenuItem(title: "华氏度 °F", action: #selector(setFahrenheit(_:)), keyEquivalent: "")
+        let fahrenheitItem = NSMenuItem(title: tr("menu.fahrenheit"), action: #selector(setFahrenheit(_:)), keyEquivalent: "")
         fahrenheitItem.state = viewModel.useFahrenheit ? .on : .off
         tempMenu.addItem(celsiusItem)
         tempMenu.addItem(fahrenheitItem)
@@ -120,14 +116,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         menu.addItem(tempItem)
         menu.addItem(.separator())
 
-        // 城市选择（天气）
         let cityMenu = NSMenu()
         let currentCity = viewModel.selectedCity
         for city in ViewModel.cityOptions {
             let label: String
             if city == "auto" {
                 let resolved = viewModel.resolvedCityName
-                label = resolved.isEmpty ? "自动(定位中...)" : "自动(\(resolved))"
+                label = resolved.isEmpty ? tr("menu.cityAutoLocating") : String(format: tr("menu.cityAuto"), resolved)
             } else {
                 label = ViewModel.cityLabels[city] ?? city
             }
@@ -137,45 +132,54 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             if city == currentCity { item.state = .on }
             cityMenu.addItem(item)
         }
-        let cityItem = NSMenuItem(title: "🌤️ 城市", action: nil, keyEquivalent: "")
+        let cityItem = NSMenuItem(title: tr("menu.city"), action: nil, keyEquivalent: "")
         cityItem.submenu = cityMenu
         menu.addItem(cityItem)
         menu.addItem(.separator())
 
-        // 时区选择
         let tzMenu = NSMenu()
         let currentTZ = viewModel.selectedTimezone
         for tz in ViewModel.timezoneOptions {
-            let item = NSMenuItem(title: tz.label,
+            let item = NSMenuItem(title: tr(tz.label),
                                   action: #selector(selectTimezone(_:)), keyEquivalent: "")
             item.representedObject = tz.identifier
             if tz.identifier == currentTZ { item.state = .on }
             tzMenu.addItem(item)
         }
-        let tzItem = NSMenuItem(title: "🕐 时区", action: nil, keyEquivalent: "")
+        let tzItem = NSMenuItem(title: tr("menu.timezone"), action: nil, keyEquivalent: "")
         tzItem.submenu = tzMenu
         menu.addItem(tzItem)
         menu.addItem(.separator())
 
-        // 设置
-        let settingsItem = NSMenuItem(title: "⚙️ 设置",
+        // Language submenu
+        let langMenu = NSMenu()
+        let langItem = NSMenuItem(title: tr("menu.language"), action: nil, keyEquivalent: "")
+        for lang in AppLanguage.allCases {
+            let item = NSMenuItem(title: lang.displayName,
+                                  action: #selector(selectLanguage(_:)), keyEquivalent: "")
+            item.representedObject = lang.rawValue
+            if viewModel.language == lang { item.state = .on }
+            langMenu.addItem(item)
+        }
+        langItem.submenu = langMenu
+        menu.addItem(langItem)
+        menu.addItem(.separator())
+
+        let settingsItem = NSMenuItem(title: tr("menu.settings"),
                                       action: #selector(openSettings(_:)), keyEquivalent: ",")
         menu.addItem(settingsItem)
         menu.addItem(.separator())
 
-        // 开机自启
-        let launchItem = NSMenuItem(title: "开机自启",
+        let launchItem = NSMenuItem(title: tr("menu.launchAtLogin"),
                                     action: #selector(toggleLaunchAtLogin(_:)), keyEquivalent: "")
         if SMAppService.mainApp.status == .enabled { launchItem.state = .on }
         menu.addItem(launchItem)
         menu.addItem(.separator())
 
-        // 关闭
-        let quitItem = NSMenuItem(title: "关闭 TokenClock",
+        let quitItem = NSMenuItem(title: tr("menu.quit"),
                                   action: #selector(quitApp(_:)), keyEquivalent: "q")
         menu.addItem(quitItem)
 
-        // 在整个面板上启用右键菜单
         panel.menu = menu
     }
 
@@ -198,7 +202,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let value = Double(sender.tag) / 100.0
         panel.alphaValue = value
         viewModel.windowOpacity = value
-        if let opacityMenu = panel.menu?.items.first(where: { $0.title == "透明度" })?.submenu {
+        if let opacityMenu = panel.menu?.items.first(where: { $0.tag == 100 })?.submenu {
             for item in opacityMenu.items {
                 item.state = (item.tag == sender.tag) ? .on : .off
             }
@@ -264,6 +268,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         setupRightClickMenu()
     }
 
+    @objc private func selectLanguage(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String,
+              let lang = AppLanguage(rawValue: raw) else { return }
+        L10n.shared.language = lang
+        viewModel.language = lang
+        setupRightClickMenu()
+        settingsWindow?.title = L10n.shared.tr("settings.title")
+    }
+
     @objc private func openSettings(_ sender: NSMenuItem) {
         showSettingsWindow()
     }
@@ -299,7 +312,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             backing: .buffered,
             defer: false
         )
-        window.title = "TokenClock 设置"
+        window.title = L10n.shared.tr("settings.title")
         window.isReleasedWhenClosed = false
         window.delegate = self
         window.contentView = hostingView

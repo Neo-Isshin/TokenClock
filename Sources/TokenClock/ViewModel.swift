@@ -11,6 +11,7 @@ final class ViewModel: ObservableObject {
     @Published private(set) var sortedTools: [ToolUsage] = []
 
     @Published var currentTime = Date()
+    @Published var language: AppLanguage = L10n.shared.language
     @Published var isExpanded = false {
         didSet {
             // 直接触发面板大小调整，跳过 NotificationCenter 绕路
@@ -55,16 +56,16 @@ final class ViewModel: ObservableObject {
     /// 当前激活的自定义主题 ID（nil 表示使用默认未命名配置）
     @Published var activeCustomThemeId: UUID? = nil
 
-    /// 可用时区列表
+    /// 可用时区列表（label 为 L10n key，运行时通过 tr() 解析）
     static let timezoneOptions: [(label: String, identifier: String)] = [
-        ("自动", "auto"),
-        ("香港 HKT", "Asia/Hong_Kong"),
-        ("上海 CST", "Asia/Shanghai"),
-        ("东京 JST", "Asia/Tokyo"),
-        ("新加坡 SGT", "Asia/Singapore"),
-        ("纽约 EST", "America/New_York"),
-        ("伦敦 GMT", "Europe/London"),
-        ("洛杉矶 PST", "America/Los_Angeles"),
+        ("tz.auto", "auto"),
+        ("tz.hongKong", "Asia/Hong_Kong"),
+        ("tz.shanghai", "Asia/Shanghai"),
+        ("tz.tokyo", "Asia/Tokyo"),
+        ("tz.singapore", "Asia/Singapore"),
+        ("tz.newYork", "America/New_York"),
+        ("tz.london", "Europe/London"),
+        ("tz.losAngeles", "America/Los_Angeles"),
     ]
 
     private var clockTimer: Timer?
@@ -219,7 +220,7 @@ final class ViewModel: ObservableObject {
 
     var totalMessagesFormatted: String {
         let total = UsageAggregator.totalMessages(tools)
-        return "\(total) 条"
+        return L10n.shared.tr("clock.messagesCount", total)
     }
 
     var totalMessagesCount: Int {
@@ -264,7 +265,11 @@ final class ViewModel: ObservableObject {
 
     var dateString: String {
         let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "zh_CN")
+        switch L10n.shared.language {
+        case .zhHans: formatter.locale = Locale(identifier: "zh_CN")
+        case .zhHant: formatter.locale = Locale(identifier: "zh_TW")
+        case .en:     formatter.locale = Locale(identifier: "en_US")
+        }
         formatter.dateFormat = "M月d日 EEEE"
         formatter.timeZone = effectiveTimezone
         return formatter.string(from: currentTime)

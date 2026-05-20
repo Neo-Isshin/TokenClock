@@ -8,7 +8,7 @@ struct ThemePickerView: View {
     var body: some View {
         VStack(spacing: 12) {
             HStack {
-                Text("选择表盘")
+                Text(L10n.shared.tr("themePicker.title"))
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundColor(.primary)
                 Spacer()
