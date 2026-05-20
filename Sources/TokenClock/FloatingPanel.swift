@@ -3,20 +3,13 @@ import AppKit
 /// 自定义浮动面板：无标题栏、始终置顶、可拖拽
 final class FloatingPanel: NSPanel {
     static let panelWidth: CGFloat = 320
-    static let collapsedHeight: CGFloat = 260
+    static let collapsedHeight: CGFloat = 240
     static let resizeGripHeight: CGFloat = 18
     static let clockHeight: CGFloat = 240
     static let dropdownVerticalMargin: CGFloat = 10
     static let forecastHeight: CGFloat = 76
     static let headerHeight: CGFloat = 25
     static let toolRowHeight: CGFloat = 37
-
-    private var isExpanded = false
-    private var minimumExpandedHeight = FloatingPanel.collapsedHeight
-    private var preferredExpandedHeight: CGFloat?
-    private var resizeDragStartHeight: CGFloat = 0
-    private var resizeDragTopY: CGFloat = 0
-    private var wasMovableByBackgroundBeforeResize = true
 
     init(viewModel: ViewModel) {
         super.init(
@@ -61,95 +54,125 @@ final class FloatingPanel: NSPanel {
         self.menu?.popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
     }
 
-    func beginInteractiveResize() {
-        guard isExpanded else { return }
-        resizeDragStartHeight = frame.height
-        resizeDragTopY = frame.maxY
-        wasMovableByBackgroundBeforeResize = isMovableByWindowBackground
-        isMovableByWindowBackground = false
-    }
-
-    func updateInteractiveResize(deltaY: CGFloat) {
-        guard isExpanded else { return }
-        let requestedHeight = resizeDragStartHeight + deltaY
-        let maxHeight: CGFloat
-        if let screen = screen ?? NSScreen.main {
-            maxHeight = resizeDragTopY - screen.visibleFrame.minY
-        } else {
-            maxHeight = requestedHeight
-        }
-        let newHeight = min(max(requestedHeight, minimumExpandedHeight), maxHeight)
-        preferredExpandedHeight = newHeight
-        let newOriginY = resizeDragTopY - newHeight
+    /// 表盘窗口保持固定高度；展开内容由独立详情面板承载。
+    func updateSize(expanded: Bool, activeToolCount: Int = 0, showsWeather: Bool = false) {
+        let topY = frame.maxY
         setFrame(
             NSRect(
                 x: frame.origin.x,
-                y: newOriginY,
+                y: topY - Self.collapsedHeight,
                 width: Self.panelWidth,
-                height: newHeight
+                height: Self.collapsedHeight
             ),
             display: true
         )
-        setFrameTopLeftPoint(NSPoint(x: frame.minX, y: resizeDragTopY))
-    }
-
-    func endInteractiveResize() {
-        isMovableByWindowBackground = wasMovableByBackgroundBeforeResize
-    }
-
-    /// 更新窗口大小（收起/展开）
-    /// 展开时按可见工具数量动态适配；超过屏幕可用高度后由详情列表滚动。
-    func updateSize(expanded: Bool, activeToolCount: Int = 0, showsWeather: Bool = false) {
-        isExpanded = expanded
-        let contentHeight = Self.clockHeight
-            + Self.dropdownVerticalMargin
-            + (showsWeather ? Self.forecastHeight : 0)
-            + Self.headerHeight
-            + CGFloat(activeToolCount) * Self.toolRowHeight
-        minimumExpandedHeight = max(Self.collapsedHeight, contentHeight)
-        let currentFrame = self.frame
-        updateResizeLimits(expanded: expanded)
-
-        // 保存位置（基于底部，topY 不变）
-        if let screen = NSScreen.main {
-            let screenFrame = screen.visibleFrame
-            let topY = currentFrame.maxY
-            let targetHeight: CGFloat = expanded
-                ? max(minimumExpandedHeight, topY - screenFrame.minY)
-                : Self.collapsedHeight
-            var newFrame = NSRect(
-                x: currentFrame.origin.x,
-                y: topY - targetHeight,
-                width: Self.panelWidth,
-                height: targetHeight
-            )
-            // 确保不超出屏幕底部
-            if newFrame.minY < screenFrame.minY {
-                newFrame.origin.y = screenFrame.minY
-                newFrame.size.height = topY - screenFrame.minY
-            }
-            NSAnimationContext.runAnimationGroup({ context in
-                context.duration = 0.18
-                context.timingFunction = CAMediaTimingFunction(name: .easeOut)
-                self.animator().setFrame(newFrame, display: true)
-            })
-        } else {
-            let targetHeight: CGFloat = expanded ? minimumExpandedHeight : Self.collapsedHeight
-            self.setFrame(NSRect(origin: self.frame.origin, size: NSSize(width: Self.panelWidth, height: targetHeight)), display: true)
-        }
-    }
-
-    private func updateResizeLimits(expanded: Bool) {
-        if expanded {
-            minSize = NSSize(width: Self.panelWidth, height: minimumExpandedHeight)
-        } else {
-            minSize = NSSize(width: Self.panelWidth, height: Self.collapsedHeight)
-            preferredExpandedHeight = nil
-        }
     }
 
     /// 保存窗口位置
     func savePosition() {
         ViewModel.saveWindowPosition(self.frame.origin)
+    }
+}
+
+final class DropdownPanel: NSPanel {
+    private var resizeStartHeight: CGFloat = 0
+    private var resizeTopY: CGFloat = 0
+    private var minPanelHeight: CGFloat = 0
+    private var maxPanelHeight: CGFloat = 0
+    private var preferredPanelHeight: CGFloat?
+
+    init() {
+        super.init(
+            contentRect: NSRect(x: 0, y: 0, width: FloatingPanel.panelWidth, height: FloatingPanel.collapsedHeight),
+            styleMask: [.borderless, .nonactivatingPanel],
+            backing: .buffered,
+            defer: false
+        )
+
+        level = .normal
+        isOpaque = false
+        backgroundColor = .clear
+        hasShadow = false
+        isMovableByWindowBackground = false
+        becomesKeyOnlyIfNeeded = true
+        collectionBehavior = [.canJoinAllSpaces]
+    }
+
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { false }
+
+    func configureLevel(alwaysOnTop: Bool) {
+        if alwaysOnTop {
+            level = .statusBar
+            collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        } else {
+            level = .normal
+            collectionBehavior = [.canJoinAllSpaces]
+        }
+    }
+
+    func requiredHeight(activeToolCount: Int, showsWeather: Bool) -> CGFloat {
+        let contentHeight = (showsWeather ? FloatingPanel.forecastHeight : 0)
+            + FloatingPanel.headerHeight
+            + CGFloat(activeToolCount) * FloatingPanel.toolRowHeight
+            + FloatingPanel.resizeGripHeight
+            + FloatingPanel.dropdownVerticalMargin
+        return max(120, contentHeight)
+    }
+
+    func show(below clockFrame: NSRect, activeToolCount: Int, showsWeather: Bool) {
+        updateLimits(below: clockFrame, activeToolCount: activeToolCount, showsWeather: showsWeather)
+        let targetHeight = min(max(preferredPanelHeight ?? minPanelHeight, minPanelHeight), maxPanelHeight)
+        setFrame(frame(below: clockFrame, height: targetHeight), display: true)
+        orderFront(nil)
+    }
+
+    func hide() {
+        orderOut(nil)
+    }
+
+    func reposition(below clockFrame: NSRect) {
+        updateLimits(below: clockFrame)
+        setFrame(frame(below: clockFrame, height: min(frame.height, maxPanelHeight)), display: true)
+    }
+
+    func beginResize() {
+        resizeStartHeight = frame.height
+        resizeTopY = frame.maxY
+    }
+
+    func updateResize(deltaY: CGFloat) {
+        let requestedHeight = resizeStartHeight + deltaY
+        let newHeight = min(max(requestedHeight, minPanelHeight), maxPanelHeight)
+        preferredPanelHeight = newHeight
+        setFrame(
+            NSRect(x: frame.minX, y: resizeTopY - newHeight, width: FloatingPanel.panelWidth, height: newHeight),
+            display: true
+        )
+    }
+
+    func endResize() {}
+
+    private func updateLimits(
+        below clockFrame: NSRect,
+        activeToolCount: Int? = nil,
+        showsWeather: Bool? = nil
+    ) {
+        if let activeToolCount, let showsWeather {
+            minPanelHeight = requiredHeight(activeToolCount: activeToolCount, showsWeather: showsWeather)
+        }
+        let screenFrame = (screen ?? NSScreen.main)?.visibleFrame
+        let availableHeight = max(80, clockFrame.minY - (screenFrame?.minY ?? 0))
+        minPanelHeight = min(minPanelHeight, availableHeight)
+        maxPanelHeight = availableHeight
+    }
+
+    private func frame(below clockFrame: NSRect, height: CGFloat) -> NSRect {
+        NSRect(
+            x: clockFrame.midX - FloatingPanel.panelWidth / 2,
+            y: clockFrame.minY - height,
+            width: FloatingPanel.panelWidth,
+            height: height
+        )
     }
 }

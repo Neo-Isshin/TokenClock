@@ -5,6 +5,7 @@ import ServiceManagement
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var panel: FloatingPanel!
+    private var dropdownPanel: DropdownPanel!
     private var viewModel: ViewModel!
     private var settingsWindow: NSWindow?
     private var themePickerPanel: NSPanel?
@@ -19,6 +20,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private func setup() {
         viewModel = ViewModel()
         panel = FloatingPanel(viewModel: viewModel)
+        dropdownPanel = DropdownPanel()
 
         let mainView = MainView(viewModel: viewModel)
         let contentView = NSHostingView(rootView: mainView)
@@ -30,21 +32,50 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         )
         contentView.autoresizingMask = [.width, .height]
         panel.contentView = contentView
+        panel.delegate = self
+
+        let detailView = DropdownPanelView(
+            viewModel: viewModel,
+            onResizeStart: { [weak self] in
+                self?.dropdownPanel?.beginResize()
+            },
+            onResizeChanged: { [weak self] deltaY in
+                self?.dropdownPanel?.updateResize(deltaY: deltaY)
+            },
+            onResizeEnded: { [weak self] in
+                self?.dropdownPanel?.endResize()
+            }
+        )
+        let detailContentView = NSHostingView(rootView: detailView)
+        detailContentView.frame = NSRect(
+            x: 0,
+            y: 0,
+            width: FloatingPanel.panelWidth,
+            height: FloatingPanel.collapsedHeight
+        )
+        detailContentView.autoresizingMask = [.width, .height]
+        dropdownPanel.contentView = detailContentView
 
         // 同步 alwaysOnTop 状态到面板
         if viewModel.alwaysOnTop {
             panel.level = .statusBar
             panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         }
+        dropdownPanel.configureLevel(alwaysOnTop: viewModel.alwaysOnTop)
 
         // 绑定展开/收起直接回调，绕过 NotificationCenter 延迟
         viewModel.onExpandChanged = { [weak self] expanded in
             guard let self else { return }
-            self.panel?.updateSize(
+            self.panel.updateSize(
                 expanded: expanded,
-                activeToolCount: self.viewModel.sortedTools.filter { $0.todayTokens > 0 }.count,
+                activeToolCount: self.activeToolCount,
                 showsWeather: !self.viewModel.weather.cityName.isEmpty
             )
+            if expanded {
+                self.showDropdownPanel()
+            } else {
+                self.dropdownPanel.hide()
+            }
         }
 
         // 监听天气更新（城市解析后刷新菜单标签）
@@ -59,6 +90,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
         panel.makeKeyAndOrderFront(nil)
         setupRightClickMenu()
+    }
+
+    private var activeToolCount: Int {
+        viewModel.sortedTools.filter { $0.todayTokens > 0 }.count
+    }
+
+    private func showDropdownPanel() {
+        dropdownPanel.show(
+            below: panel.frame,
+            activeToolCount: activeToolCount,
+            showsWeather: !viewModel.weather.cityName.isEmpty
+        )
     }
 
     nonisolated func applicationWillTerminate(_ notification: Notification) {
@@ -217,6 +260,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     @objc private func setOpacity(_ sender: NSMenuItem) {
         let value = Double(sender.tag) / 100.0
         panel.alphaValue = value
+        dropdownPanel.alphaValue = value
         viewModel.windowOpacity = value
         if let opacityMenu = panel.menu?.items.first(where: { $0.tag == 100 })?.submenu {
             for item in opacityMenu.items {
@@ -230,11 +274,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             sender.state = .off
             panel.level = .normal
             panel.collectionBehavior = [.canJoinAllSpaces]
+            dropdownPanel.configureLevel(alwaysOnTop: false)
             viewModel.alwaysOnTop = false
         } else {
             sender.state = .on
             panel.level = .statusBar
             panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+            dropdownPanel.configureLevel(alwaysOnTop: true)
             viewModel.alwaysOnTop = true
         }
         UserDefaults.standard.set(viewModel.alwaysOnTop, forKey: "TC_alwaysOnTop")
@@ -405,92 +451,50 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             }
         }
     }
+
+    func windowDidMove(_ notification: Notification) {
+        guard let movedWindow = notification.object as? NSWindow,
+              movedWindow == panel,
+              viewModel.isExpanded else { return }
+        dropdownPanel.reposition(below: panel.frame)
+    }
 }
 
 // MARK: - 主视图容器
 
 struct MainView: View {
     @ObservedObject var viewModel: ViewModel
-    @State private var visibleHeight: CGFloat?
-    @State private var dragStartVisibleHeight: CGFloat = 0
-
-    private var activeToolCount: Int {
-        viewModel.sortedTools.filter { $0.todayTokens > 0 }.count
-    }
-
-    private var minimumVisibleHeight: CGFloat {
-        let contentHeight = FloatingPanel.clockHeight
-            + FloatingPanel.dropdownVerticalMargin
-            + (viewModel.weather.cityName.isEmpty ? 0 : FloatingPanel.forecastHeight)
-            + FloatingPanel.headerHeight
-            + CGFloat(activeToolCount) * FloatingPanel.toolRowHeight
-            + FloatingPanel.resizeGripHeight
-        return max(FloatingPanel.collapsedHeight, contentHeight)
-    }
 
     var body: some View {
-        GeometryReader { proxy in
-            let minHeight = minimumVisibleHeight
-            let maxHeight = max(minHeight, proxy.size.height)
-            let currentVisibleHeight = min(max(visibleHeight ?? minHeight, minHeight), maxHeight)
+        ClockContentView(viewModel: viewModel)
+            .frame(width: FloatingPanel.panelWidth, height: FloatingPanel.collapsedHeight)
+    }
+}
 
-            ZStack(alignment: .top) {
-                ClockContentView(viewModel: viewModel)
-                    .frame(width: 240, height: 240)
-                    .position(x: FloatingPanel.panelWidth / 2, y: FloatingPanel.clockHeight / 2)
+private struct DropdownPanelView: View {
+    @ObservedObject var viewModel: ViewModel
+    let onResizeStart: () -> Void
+    let onResizeChanged: (CGFloat) -> Void
+    let onResizeEnded: () -> Void
 
-                if viewModel.isExpanded {
-                    let detailHeight = max(
-                        0,
-                        currentVisibleHeight - FloatingPanel.clockHeight - FloatingPanel.resizeGripHeight
-                    )
+    var body: some View {
+        VStack(spacing: 0) {
+            DetailDropdownView(
+                tools: viewModel.sortedTools,
+                theme: viewModel.selectedTheme,
+                weather: viewModel.weather,
+                localizedCityName: viewModel.localizedCityName
+            )
+            .frame(maxHeight: .infinity, alignment: .top)
 
-                    DetailDropdownView(
-                        tools: viewModel.sortedTools,
-                        theme: viewModel.selectedTheme,
-                        weather: viewModel.weather,
-                        localizedCityName: viewModel.localizedCityName
-                    )
-                    .frame(width: FloatingPanel.panelWidth, height: detailHeight, alignment: .top)
-                    .position(
-                        x: FloatingPanel.panelWidth / 2,
-                        y: FloatingPanel.clockHeight + detailHeight / 2
-                    )
-
-                    BottomResizeControl(
-                        onResizeStart: {
-                            dragStartVisibleHeight = currentVisibleHeight
-                        },
-                        onResizeChanged: { deltaY in
-                            let requested = dragStartVisibleHeight + deltaY
-                            visibleHeight = min(max(requested, minHeight), maxHeight)
-                        },
-                        onResizeEnded: {}
-                    )
-                    .frame(width: FloatingPanel.panelWidth, height: FloatingPanel.resizeGripHeight)
-                    .position(
-                        x: FloatingPanel.panelWidth / 2,
-                        y: currentVisibleHeight - FloatingPanel.resizeGripHeight / 2
-                    )
-                }
-            }
-            .frame(width: FloatingPanel.panelWidth, height: proxy.size.height, alignment: .top)
-            .clipped()
+            BottomResizeControl(
+                onResizeStart: onResizeStart,
+                onResizeChanged: onResizeChanged,
+                onResizeEnded: onResizeEnded
+            )
+            .frame(width: FloatingPanel.panelWidth, height: FloatingPanel.resizeGripHeight)
         }
         .frame(width: FloatingPanel.panelWidth)
-        .onChange(of: viewModel.isExpanded) { _, expanded in
-            visibleHeight = expanded ? minimumVisibleHeight : nil
-        }
-        .onChange(of: activeToolCount) { _, _ in
-            if viewModel.isExpanded {
-                visibleHeight = max(visibleHeight ?? minimumVisibleHeight, minimumVisibleHeight)
-            }
-        }
-        .onChange(of: viewModel.weather.cityName) { _, _ in
-            if viewModel.isExpanded {
-                visibleHeight = max(visibleHeight ?? minimumVisibleHeight, minimumVisibleHeight)
-            }
-        }
     }
 }
 
