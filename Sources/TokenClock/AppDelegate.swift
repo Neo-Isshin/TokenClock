@@ -296,7 +296,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private func showSettingsWindow() {
         if let window = settingsWindow {
             window.makeKeyAndOrderFront(nil)
-            NSApp.activate(ignoringOtherApps: true)
             return
         }
 
@@ -318,7 +317,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         window.contentView = hostingView
         window.center()
         window.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
 
         self.settingsWindow = window
     }
@@ -407,7 +405,8 @@ struct MainView: View {
                 DetailDropdownView(
                     tools: viewModel.sortedTools,
                     theme: viewModel.selectedTheme,
-                    weather: viewModel.weather
+                    weather: viewModel.weather,
+                    localizedCityName: viewModel.localizedCityName
                 )
                 .transition(.asymmetric(
                     insertion: .move(edge: .top).combined(with: .opacity),

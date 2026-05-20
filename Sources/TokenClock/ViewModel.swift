@@ -266,11 +266,16 @@ final class ViewModel: ObservableObject {
     var dateString: String {
         let formatter = DateFormatter()
         switch L10n.shared.language {
-        case .zhHans: formatter.locale = Locale(identifier: "zh_CN")
-        case .zhHant: formatter.locale = Locale(identifier: "zh_TW")
-        case .en:     formatter.locale = Locale(identifier: "en_US")
+        case .zhHans:
+            formatter.locale = Locale(identifier: "zh_CN")
+            formatter.dateFormat = "M月d日 EEEE"
+        case .zhHant:
+            formatter.locale = Locale(identifier: "zh_TW")
+            formatter.dateFormat = "M月d日 EEEE"
+        case .en:
+            formatter.locale = Locale(identifier: "en_US")
+            formatter.setLocalizedDateFormatFromTemplate("EEEEMMMd")
         }
-        formatter.dateFormat = "M月d日 EEEE"
         formatter.timeZone = effectiveTimezone
         return formatter.string(from: currentTime)
     }
@@ -283,6 +288,38 @@ final class ViewModel: ObservableObject {
             return "\(weather.emoji) \(weather.temperature)°C"
         }
     }
+
+    /// 根据当前语言返回本地化的城市名
+    var localizedCityName: String {
+        let name = weather.cityName.isEmpty ? resolvedCityName : weather.cityName
+        guard !name.isEmpty else { return name }
+        if L10n.shared.language == .en {
+            return cityNameEN[name] ?? name
+        } else if L10n.shared.language == .zhHant {
+            return cityNameHant[name] ?? name
+        }
+        return name
+    }
+
+    private let cityNameEN: [String: String] = [
+        "上海": "Shanghai", "北京": "Beijing", "香港": "Hong Kong",
+        "东京": "Tokyo", "新加坡": "Singapore", "纽约": "New York",
+        "伦敦": "London", "洛杉矶": "Los Angeles", "深圳": "Shenzhen",
+        "广州": "Guangzhou", "成都": "Chengdu", "杭州": "Hangzhou",
+        "武汉": "Wuhan", "南京": "Nanjing", "台北": "Taipei",
+        "大阪": "Osaka", "首尔": "Seoul", "悉尼": "Sydney",
+        "旧金山": "San Francisco", "西雅图": "Seattle", "芝加哥": "Chicago",
+    ]
+
+    private let cityNameHant: [String: String] = [
+        "上海": "上海", "北京": "北京", "香港": "香港",
+        "东京": "東京", "新加坡": "新加坡", "纽约": "紐約",
+        "伦敦": "倫敦", "洛杉矶": "洛杉磯", "深圳": "深圳",
+        "广州": "廣州", "成都": "成都", "杭州": "杭州",
+        "武汉": "武漢", "南京": "南京", "台北": "臺北",
+        "大阪": "大阪", "首尔": "首爾", "悉尼": "雪梨",
+        "旧金山": "舊金山", "西雅图": "西雅圖", "芝加哥": "芝加哥",
+    ]
 
     // MARK: - 天气
 

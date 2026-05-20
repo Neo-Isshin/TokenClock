@@ -5,6 +5,7 @@ struct DetailDropdownView: View {
     let tools: [ToolUsage]
     var theme: ClockFaceTheme = .classic
     var weather: WeatherInfo = WeatherInfo()
+    var localizedCityName: String = ""
 
     /// 过滤掉今日消耗为 0 的工具
     private var activeTools: [ToolUsage] {
@@ -68,7 +69,7 @@ struct DetailDropdownView: View {
 
         return VStack(spacing: 4) {
             HStack(spacing: 0) {
-                Text("\(weather.emoji) \(weather.cityName) \(weather.temperature)°C")
+                Text("\(weather.emoji) \(localizedCityName.isEmpty ? weather.cityName : localizedCityName) \(weather.temperature)°C")
                     .font(.system(size: 12, weight: .medium))
                     .foregroundColor(theme.dropdownTextColor)
                 Spacer()
