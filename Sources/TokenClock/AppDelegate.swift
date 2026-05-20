@@ -12,7 +12,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     nonisolated func applicationDidFinishLaunching(_ notification: Notification) {
         Task { @MainActor in
-            await setup()
+            setup()
         }
     }
 
@@ -403,20 +403,22 @@ struct MainView: View {
     @ObservedObject var viewModel: ViewModel
 
     var body: some View {
-        VStack(spacing: 0) {
-            ClockContentView(viewModel: viewModel)
+        GeometryReader { proxy in
+            VStack(spacing: 0) {
+                ClockContentView(viewModel: viewModel)
 
-            if viewModel.isExpanded {
-                DetailDropdownView(
-                    tools: viewModel.sortedTools,
-                    theme: viewModel.selectedTheme,
-                    weather: viewModel.weather,
-                    localizedCityName: viewModel.localizedCityName
-                )
-                .transition(.opacity)
+                if viewModel.isExpanded {
+                    DetailDropdownView(
+                        tools: viewModel.sortedTools,
+                        theme: viewModel.selectedTheme,
+                        weather: viewModel.weather,
+                        localizedCityName: viewModel.localizedCityName
+                    )
+                }
             }
+            .frame(width: 300, height: proxy.size.height, alignment: .top)
+            .clipped()
         }
         .frame(width: 300)
-        .animation(.easeOut(duration: 0.18), value: viewModel.isExpanded)
     }
 }
