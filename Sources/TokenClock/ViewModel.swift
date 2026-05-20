@@ -23,7 +23,12 @@ final class ViewModel: ObservableObject {
     var onExpandChanged: ((Bool) -> Void)?
 
     @Published var windowOpacity: Double = 1.0
-    @Published var alwaysOnTop = true
+    @Published var alwaysOnTop: Bool = {
+        if UserDefaults.standard.object(forKey: "TC_alwaysOnTop") != nil {
+            return UserDefaults.standard.bool(forKey: "TC_alwaysOnTop")
+        }
+        return true
+    }()
     @Published var launchAtLogin = false
 
     /// 表盘主题

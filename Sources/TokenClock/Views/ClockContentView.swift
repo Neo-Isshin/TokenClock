@@ -11,8 +11,7 @@ struct ClockContentView: View {
                 hours: viewModel.hours,
                 minutes: viewModel.minutes,
                 seconds: viewModel.seconds,
-                theme: viewModel.selectedTheme,
-                onTap: { viewModel.isExpanded.toggle() }
+                theme: viewModel.selectedTheme
             )
             .frame(width: 240, height: 240)
 
@@ -68,5 +67,9 @@ struct ClockContentView: View {
             }
         }
         .frame(width: 240, height: 240)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            viewModel.isExpanded.toggle()
+        }
     }
 }

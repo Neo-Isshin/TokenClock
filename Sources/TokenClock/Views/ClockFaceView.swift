@@ -6,38 +6,29 @@ struct ClockFaceView: View {
     let minutes: Int
     let seconds: Int
     var theme: ClockFaceTheme = .classic
-    let onTap: () -> Void
 
     var body: some View {
         Canvas { context, size in
             let center = CGPoint(x: size.width / 2, y: size.height / 2)
             let radius = min(size.width, size.height) / 2 - 4
 
-            // 表盘
             drawDial(context: context, center: center, radius: radius)
 
-            // 表盘装饰（天空主题的云朵、太阳、飞鸟）
             if theme.hasDialDecoration {
                 drawDialDecoration(context: context, center: center, radius: radius)
             }
 
-            // 刻度
             if theme.hasTickMarks {
                 drawTickMarks(context: context, center: center, radius: radius)
             }
 
-            // 数字
             if theme.showNumbers {
                 drawNumbers(context: context, center: center, radius: radius)
             }
 
-            // 指针
             drawHands(context: context, center: center, radius: radius)
-
-            // 中心点
             drawCenterDot(context: context, center: center)
         }
-        .onTapGesture { onTap() }
     }
 
     // MARK: - 表盘

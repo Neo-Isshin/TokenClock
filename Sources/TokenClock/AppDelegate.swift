@@ -26,6 +26,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         contentView.autoresizingMask = [.width, .height]
         panel.contentView = contentView
 
+        // 同步 alwaysOnTop 状态到面板
+        if viewModel.alwaysOnTop {
+            panel.level = .statusBar
+            panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        }
+
         // 绑定展开/收起直接回调，绕过 NotificationCenter 延迟
         viewModel.onExpandChanged = { [weak self] expanded in
             self?.panel?.updateSize(expanded: expanded)
@@ -211,18 +217,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     @objc private func toggleAlwaysOnTop(_ sender: NSMenuItem) {
         if sender.state == .on {
-            // 关闭置顶：隐藏在全屏 Space 中，级别降为 normal
             sender.state = .off
             panel.level = .normal
             panel.collectionBehavior = [.canJoinAllSpaces]
             viewModel.alwaysOnTop = false
         } else {
-            // 开启置顶：进入全屏 Space，级别升为 statusBar
             sender.state = .on
             panel.level = .statusBar
             panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
             viewModel.alwaysOnTop = true
         }
+        UserDefaults.standard.set(viewModel.alwaysOnTop, forKey: "TC_alwaysOnTop")
     }
 
     @objc private func toggleLaunchAtLogin(_ sender: NSMenuItem) {
@@ -408,10 +413,7 @@ struct MainView: View {
                     weather: viewModel.weather,
                     localizedCityName: viewModel.localizedCityName
                 )
-                .transition(.asymmetric(
-                    insertion: .move(edge: .top).combined(with: .opacity),
-                    removal: .opacity
-                ))
+                .transition(.opacity)
             }
         }
         .frame(width: 300)
