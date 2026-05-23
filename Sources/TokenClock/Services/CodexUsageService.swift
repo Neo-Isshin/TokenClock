@@ -2,7 +2,8 @@ import Foundation
 import SQLite3
 
 /// 从 Codex CLI 读取 token 使用数据
-/// 所有统计数据（tokens、messages、cache）均从 JSONL token_count 事件的 last_token_usage 累加
+/// Token 计数使用 total_token_usage.total_tokens 的差值（累计增量），避免 last_token_usage 重复统计
+/// 缓存率从 last_token_usage.cached_input_tokens 计算
 /// Session 列表从 SQLite threads 表读取
 final class CodexUsageService: @unchecked Sendable {
     private(set) var dailyData: [String: DayUsage] = [:]
@@ -11,8 +12,8 @@ final class CodexUsageService: @unchecked Sendable {
     private var recentEntries: [RecentEntry] = []
     private var sessionMessagesByDate: [String: [String: Int]] = [:]
 
-    /// 已扫描的 JSONL 文件路径及其统计结果
-    private var jsonlCache: [String: (dateKey: String, count: Int, tokens: Int, cachedTokens: Int)] = [:]
+    /// 已扫描的 JSONL 文件路径及其统计结果（含文件大小用于变更检测）
+    private var jsonlCache: [String: (dateKey: String, count: Int, tokens: Int, cachedTokens: Int, fileSize: Int)] = [:]
 
     private let fm = FileManager.default
     private let codexHome: String
@@ -31,7 +32,25 @@ final class CodexUsageService: @unchecked Sendable {
         scanJSONL()
     }
 
-    func incrementalScan() { scanJSONL() }
+    func incrementalScan() {
+        // 检测文件变化：如有任何已缓存文件增长，触发全量重扫
+        let needsRescan = checkForFileChanges()
+        if needsRescan {
+            fullScan()
+        } else {
+            scanJSONL()
+        }
+    }
+
+    /// 检查已缓存的文件是否有增长
+    private func checkForFileChanges() -> Bool {
+        for (path, cached) in jsonlCache {
+            let attrs = try? fm.attributesOfItem(atPath: path)
+            let size = (attrs?[.size] as? Int) ?? 0
+            if size != cached.fileSize { return true }
+        }
+        return false
+    }
 
     func todayUsage() -> (tokens: Int, messages: Int, cacheRate: Double) {
         let d = dailyData[DateHelper.todayKey()]
@@ -95,6 +114,7 @@ final class CodexUsageService: @unchecked Sendable {
         var msgCount = 0
         var totalTokens = 0
         var cachedTokens = 0
+        var prevTotalUsage = 0
         var lastDateKey = ""
         var lastTimestamp: Date?
 
@@ -108,13 +128,21 @@ final class CodexUsageService: @unchecked Sendable {
                 guard !lineData.isEmpty else { continue }
                 let line = String(data: lineData, encoding: .utf8) ?? ""
 
-                // 只处理有 last_token_usage 的 token_count 事件（增量数据）
-                if line.contains("\"type\":\"token_count\"") && line.contains("\"last_token_usage\"") {
-                    msgCount += 1
-                    // 提取 last_token_usage 中的数值
-                    let lastTokens = extractLastTokens(from: line)
-                    totalTokens += lastTokens.total
-                    cachedTokens += lastTokens.cached
+                // 匹配新版格式：payload 内 type=token_count 且有 info 字段
+                if line.contains("\"type\":\"token_count\",\"info\"") {
+                    // 用 total_token_usage.total_tokens 的差值作为真实增量
+                    let currentTotal = extractInt(from: line, key: "\"total_tokens\"")
+                    let delta = max(0, currentTotal - prevTotalUsage)
+                    prevTotalUsage = currentTotal
+
+                    // 缓存 token 从 last_token_usage 提取
+                    let cached = extractCachedTokens(from: line)
+
+                    if delta > 0 {
+                        msgCount += 1
+                        totalTokens += delta
+                        cachedTokens += cached
+                    }
 
                     if let tsRange = line.range(of: "\"timestamp\":\"") {
                         let start = tsRange.upperBound
@@ -131,14 +159,17 @@ final class CodexUsageService: @unchecked Sendable {
         // 尾部残留
         if !lineBuf.isEmpty,
            let line = String(data: lineBuf, encoding: .utf8),
-           line.contains("\"type\":\"token_count\"") && line.contains("\"last_token_usage\"") {
-            msgCount += 1
-            let lastTokens = extractLastTokens(from: line)
-            totalTokens += lastTokens.total
-            cachedTokens += lastTokens.cached
+           line.contains("\"type\":\"token_count\",\"info\"") {
+            let currentTotal = extractInt(from: line, key: "\"total_tokens\"")
+            let delta = max(0, currentTotal - prevTotalUsage)
+            if delta > 0 {
+                msgCount += 1
+                totalTokens += delta
+                cachedTokens += extractCachedTokens(from: line)
+            }
         }
 
-        jsonlCache[path] = (lastDateKey, msgCount, totalTokens, cachedTokens)
+        jsonlCache[path] = (lastDateKey, msgCount, totalTokens, cachedTokens, fileSize(at: path))
         guard msgCount > 0, !lastDateKey.isEmpty else { return }
 
         dailyData[lastDateKey, default: DayUsage(tokens: 0, messages: 0)].tokens += totalTokens
@@ -162,21 +193,11 @@ final class CodexUsageService: @unchecked Sendable {
         return String(stem.dropFirst(20))
     }
 
-    private struct TokenBreakdown { let total: Int; let cached: Int }
-
-    private func extractLastTokens(from line: String) -> TokenBreakdown {
-        // 从 last_token_usage 对象中提取增量值
-        var input = 0, cached = 0, output = 0
-
-        // 找到 last_token_usage 的位置，提取其后的数值
-        if let range = line.range(of: "\"last_token_usage\":{") {
-            let segment = String(line[range.lowerBound...]).prefix(500)
-            input = extractInt(from: String(segment), key: "\"input_tokens\"")
-            cached = extractInt(from: String(segment), key: "\"cached_input_tokens\"")
-            output = extractInt(from: String(segment), key: "\"output_tokens\"")
-        }
-
-        return TokenBreakdown(total: input + cached + output, cached: cached)
+    /// 从 last_token_usage 中提取 cached_input_tokens（用于缓存率计算）
+    private func extractCachedTokens(from line: String) -> Int {
+        guard let range = line.range(of: "\"last_token_usage\":{") else { return 0 }
+        let segment = String(line[range.lowerBound...]).prefix(300)
+        return extractInt(from: String(segment), key: "\"cached_input_tokens\"")
     }
 
     private func extractInt(from str: String, key: String) -> Int {
@@ -260,5 +281,9 @@ final class CodexUsageService: @unchecked Sendable {
             return prefixMatch.value
         }
         return fallback
+    }
+
+    private func fileSize(at path: String) -> Int {
+        (try? fm.attributesOfItem(atPath: path)[.size] as? Int) ?? 0
     }
 }
