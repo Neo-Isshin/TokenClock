@@ -576,18 +576,18 @@ private final class ResizeControlNSView: NSView {
         let capsuleHeight: CGFloat = 16
         let capsuleRect = NSRect(
             x: (bounds.width - capsuleWidth) / 2,
-            y: (bounds.height - capsuleHeight) / 2,
+            y: 0,
             width: capsuleWidth,
             height: capsuleHeight
         )
 
-        let fillAlpha: CGFloat = isDragging ? 0.34 : (isHovering ? 0.24 : 0.14)
+        let fillAlpha: CGFloat = isDragging ? 0.70 : (isHovering ? 0.55 : 0.40)
         NSColor.controlAccentColor.withAlphaComponent(fillAlpha).setFill()
         NSBezierPath(roundedRect: capsuleRect, xRadius: 8, yRadius: 8).fill()
 
-        NSColor.labelColor.withAlphaComponent(isDragging ? 0.78 : 0.5).setStroke()
+        NSColor.labelColor.withAlphaComponent(isDragging ? 0.95 : 0.75).setStroke()
         let centerX = bounds.midX
-        let centerY = bounds.midY
+        let centerY = capsuleHeight / 2
         let path = NSBezierPath()
         path.lineWidth = 1.5
         path.move(to: NSPoint(x: centerX, y: centerY - 4))

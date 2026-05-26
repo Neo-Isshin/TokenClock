@@ -11,6 +11,7 @@ final class CodexUsageService: @unchecked Sendable {
     private var dailyCache: [String: Int] = [:]
     private var recentEntries: [RecentEntry] = []
     private var sessionMessagesByDate: [String: [String: Int]] = [:]
+    private var sessionTokensByDate: [String: [String: Int]] = [:]
 
     /// 已扫描的 JSONL 文件路径及其统计结果（含文件大小用于变更检测）
     private var jsonlCache: [String: (dateKey: String, count: Int, tokens: Int, cachedTokens: Int, fileSize: Int)] = [:]
@@ -28,6 +29,7 @@ final class CodexUsageService: @unchecked Sendable {
         dailyCache.removeAll()
         recentEntries = []
         sessionMessagesByDate = [:]
+        sessionTokensByDate = [:]
         jsonlCache = [:]
         scanJSONL()
     }
@@ -111,12 +113,13 @@ final class CodexUsageService: @unchecked Sendable {
         let buf = UnsafeMutablePointer<UInt8>.allocate(capacity: bufSize)
         defer { buf.deallocate() }
         var lineBuf = Data()
-        var msgCount = 0
-        var totalTokens = 0
-        var cachedTokens = 0
         var prevTotalUsage = 0
         var lastDateKey = ""
         var lastTimestamp: Date?
+        // 按日期拆分的统计
+        var dailyTokens: [String: Int] = [:]
+        var dailyMsgs: [String: Int] = [:]
+        var dailyCached: [String: Int] = [:]
 
         while stream.hasBytesAvailable {
             let n = stream.read(buf, maxLength: bufSize)
@@ -128,29 +131,29 @@ final class CodexUsageService: @unchecked Sendable {
                 guard !lineData.isEmpty else { continue }
                 let line = String(data: lineData, encoding: .utf8) ?? ""
 
-                // 匹配新版格式：payload 内 type=token_count 且有 info 字段
                 if line.contains("\"type\":\"token_count\",\"info\"") {
-                    // 用 total_token_usage.total_tokens 的差值作为真实增量
-                    let currentTotal = extractInt(from: line, key: "\"total_tokens\"")
-                    let delta = max(0, currentTotal - prevTotalUsage)
-                    prevTotalUsage = currentTotal
+                    let grossTotal = extractInt(from: line, key: "\"total_tokens\"")
+                    let reasoning = extractInt(from: line, key: "\"reasoning_output_tokens\"")
+                    let effectiveTotal = grossTotal + reasoning
+                    let delta = max(0, effectiveTotal - prevTotalUsage)
+                    prevTotalUsage = effectiveTotal
 
-                    // 缓存 token 从 last_token_usage 提取
-                    let cached = extractCachedTokens(from: line)
-
-                    if delta > 0 {
-                        msgCount += 1
-                        totalTokens += delta
-                        cachedTokens += cached
-                    }
-
+                    var dateKey = ""
                     if let tsRange = line.range(of: "\"timestamp\":\"") {
                         let start = tsRange.upperBound
                         if let end = line[start...].firstIndex(of: "\"") {
                             let tsStr = String(line[start..<end])
-                            lastDateKey = DateHelper.localDateKey(from: tsStr)
+                            dateKey = DateHelper.localDateKey(from: tsStr)
                             lastTimestamp = DateHelper.parseISO8601(tsStr)
                         }
+                    }
+                    guard !dateKey.isEmpty else { continue }
+                    lastDateKey = dateKey
+
+                    if delta > 0 {
+                        dailyTokens[dateKey, default: 0] += delta
+                        dailyMsgs[dateKey, default: 0] += 1
+                        dailyCached[dateKey, default: 0] += extractCachedTokens(from: line)
                     }
                 }
             }
@@ -160,27 +163,38 @@ final class CodexUsageService: @unchecked Sendable {
         if !lineBuf.isEmpty,
            let line = String(data: lineBuf, encoding: .utf8),
            line.contains("\"type\":\"token_count\",\"info\"") {
-            let currentTotal = extractInt(from: line, key: "\"total_tokens\"")
-            let delta = max(0, currentTotal - prevTotalUsage)
-            if delta > 0 {
-                msgCount += 1
-                totalTokens += delta
-                cachedTokens += extractCachedTokens(from: line)
+            let grossTotal = extractInt(from: line, key: "\"total_tokens\"")
+            let reasoning = extractInt(from: line, key: "\"reasoning_output_tokens\"")
+            let effectiveTotal = grossTotal + reasoning
+            let delta = max(0, effectiveTotal - prevTotalUsage)
+            if delta > 0, !lastDateKey.isEmpty {
+                dailyTokens[lastDateKey, default: 0] += delta
+                dailyMsgs[lastDateKey, default: 0] += 1
+                dailyCached[lastDateKey, default: 0] += extractCachedTokens(from: line)
             }
         }
 
-        jsonlCache[path] = (lastDateKey, msgCount, totalTokens, cachedTokens, fileSize(at: path))
-        guard msgCount > 0, !lastDateKey.isEmpty else { return }
+        let totalTokens = dailyTokens.values.reduce(0, +)
+        let totalMsgs = dailyMsgs.values.reduce(0, +)
+        let totalCached = dailyCached.values.reduce(0, +)
+        jsonlCache[path] = (lastDateKey, totalMsgs, totalTokens, totalCached, fileSize(at: path))
+        guard totalMsgs > 0, !lastDateKey.isEmpty else { return }
 
-        dailyData[lastDateKey, default: DayUsage(tokens: 0, messages: 0)].tokens += totalTokens
-        dailyData[lastDateKey]!.messages += msgCount
-        dailyCache[lastDateKey, default: 0] += cachedTokens
+        // 按日期写入 dailyData
+        for (dateKey, tokens) in dailyTokens {
+            dailyData[dateKey, default: DayUsage(tokens: 0, messages: 0)].tokens += tokens
+            dailyData[dateKey]!.messages += dailyMsgs[dateKey] ?? 0
+            dailyCache[dateKey, default: 0] += dailyCached[dateKey] ?? 0
+        }
 
         if let ts = lastTimestamp {
             recentEntries.append(RecentEntry(timestamp: ts, tokens: totalTokens))
         }
         if let sessionId = sessionId(fromJSONLPath: path), !sessionId.isEmpty {
-            sessionMessagesByDate[lastDateKey, default: [:]][sessionId, default: 0] += msgCount
+            for (dateKey, tokens) in dailyTokens {
+                sessionMessagesByDate[dateKey, default: [:]][sessionId, default: 0] += dailyMsgs[dateKey] ?? 0
+                sessionTokensByDate[dateKey, default: [:]][sessionId, default: 0] += tokens
+            }
         }
     }
 
@@ -222,9 +236,9 @@ final class CodexUsageService: @unchecked Sendable {
 
         let todayStart = Date().addingTimeInterval(-86400)
         let query = """
-        SELECT id, tokens_used, updated_at_ms, cwd
+        SELECT id, updated_at_ms, cwd
         FROM threads
-        WHERE updated_at_ms >= ? AND tokens_used > 0
+        WHERE updated_at_ms >= ?
         ORDER BY updated_at_ms DESC
         """
 
@@ -236,14 +250,14 @@ final class CodexUsageService: @unchecked Sendable {
 
         let today = DateHelper.todayKey()
         let sessionMessageCounts = sessionMessagesByDate[today] ?? [:]
+        let sessionTokenCounts = sessionTokensByDate[today] ?? [:]
         var results: [SessionInfo] = []
 
         while sqlite3_step(stmt) == SQLITE_ROW {
             let idPtr = sqlite3_column_text(stmt, 0)
             let sessionId = idPtr != nil ? String(cString: idPtr!) : ""
-            let tokens = Int(sqlite3_column_int64(stmt, 1))
-            let updatedAtMs = sqlite3_column_int64(stmt, 2)
-            let cwdPtr = sqlite3_column_text(stmt, 3)
+            let updatedAtMs = sqlite3_column_int64(stmt, 1)
+            let cwdPtr = sqlite3_column_text(stmt, 2)
 
             let updatedDate = Date(timeIntervalSince1970: Double(updatedAtMs) / 1000.0)
             let dateKey = DateHelper.dateKey(from: updatedDate)
@@ -255,8 +269,13 @@ final class CodexUsageService: @unchecked Sendable {
             let messages = sessionMessageCount(
                 for: sessionId,
                 in: sessionMessageCounts,
-                fallback: tokens > 0 ? 1 : 0
+                fallback: 1
             )
+            let tokens = sessionTokenCount(
+                for: sessionId,
+                in: sessionTokenCounts
+            )
+            guard tokens > 0 else { continue }
 
             results.append(SessionInfo(
                 rawId: sessionId,
@@ -283,7 +302,18 @@ final class CodexUsageService: @unchecked Sendable {
         return fallback
     }
 
+    private func sessionTokenCount(
+        for sessionId: String,
+        in counts: [String: Int]
+    ) -> Int {
+        if let exact = counts[sessionId] { return exact }
+        if let prefixMatch = counts.first(where: { sessionId.hasPrefix($0.key) || $0.key.hasPrefix(sessionId) }) {
+            return prefixMatch.value
+        }
+        return 0
+    }
+
     private func fileSize(at path: String) -> Int {
-        (try? fm.attributesOfItem(atPath: path)[.size] as? Int) ?? 0
+        (try? fm.attributesOfItem(atPath: path)[FileAttributeKey.size] as? Int) ?? 0
     }
 }

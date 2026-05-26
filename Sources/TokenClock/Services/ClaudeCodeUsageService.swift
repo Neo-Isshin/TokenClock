@@ -175,7 +175,7 @@ final class ClaudeCodeUsageService: @unchecked Sendable {
         let outputTokens = usage["output_tokens"] as? Int ?? 0
         let cacheRead = usage["cache_read_input_tokens"] as? Int ?? 0
         let cacheCreation = usage["cache_creation_input_tokens"] as? Int ?? 0
-        let tokens = inputTokens + outputTokens + cacheRead + cacheCreation
+        let tokens = inputTokens + outputTokens + cacheRead
         guard tokens > 0 else { return nil }
         let timestamp = obj["timestamp"] as? String ?? ""
         let dateKey = DateHelper.localDateKey(from: timestamp)

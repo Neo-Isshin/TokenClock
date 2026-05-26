@@ -234,7 +234,7 @@ final class OpenClawUsageService: @unchecked Sendable {
         let output = usage["output"] as? Int ?? 0
         let cacheRead = usage["cacheRead"] as? Int ?? 0
         let cacheWrite = usage["cacheWrite"] as? Int ?? 0
-        let tokens = input + output + cacheRead + cacheWrite
+        let tokens = input + output + cacheRead
         let cacheTokens = cacheRead + cacheWrite
         guard tokens > 0 else { return nil }
 

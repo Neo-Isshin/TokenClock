@@ -115,7 +115,7 @@ final class HermesUsageService: @unchecked Sendable {
             let cacheWrite = sqlite3_column_int(stmt, 4)
             let msgCount = sqlite3_column_int(stmt, 5)
 
-            let tokens = Int(inputTokens) + Int(outputTokens) + Int(cacheRead) + Int(cacheWrite)
+            let tokens = Int(inputTokens) + Int(outputTokens) + Int(cacheRead)
             guard tokens > 0 else { continue }
 
             let date = Date(timeIntervalSince1970: startedAt)
@@ -194,7 +194,7 @@ final class HermesUsageService: @unchecked Sendable {
             let cacheWrite = sqlite3_column_int(stmt, 5)
             let msgCount = sqlite3_column_int(stmt, 6)
 
-            let tokens = Int(inputTokens) + Int(outputTokens) + Int(cacheRead) + Int(cacheWrite)
+            let tokens = Int(inputTokens) + Int(outputTokens) + Int(cacheRead)
             guard tokens > 0 else { continue }
 
             let date = Date(timeIntervalSince1970: startedAt)
