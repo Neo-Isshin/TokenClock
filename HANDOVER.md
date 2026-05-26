@@ -1,6 +1,6 @@
 # TokenClock - Handover Document
 
-> Last updated: 2026-05-23
+> Last updated: 2026-05-26
 
 ## Project Overview
 
@@ -46,22 +46,31 @@ TokenClockApp (main.swift) → @NSApplicationDelegateAdator → AppDelegate
 | Codex | `CodexUsageService` | JSONL + SQLite threads | `~/.codex/` |
 | Hermes | `HermesUsageService` | JSONL session files | `~/.hermes/` |
 
-### Codex Token Counting Algorithm (critical, rewritten 3 times)
+### Codex Token Counting Algorithm (critical, rewritten multiple times)
 
 Codex JSONL files contain `token_count` events wrapped in `event_msg` payloads:
 
 ```json
-{"type":"event_msg","payload":{"type":"token_count","info":{...},"last_token_usage":{...},"total_token_usage":{"total_tokens":12345,...}}}
+{"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":...,"cached_input_tokens":...,"output_tokens":...,"reasoning_output_tokens":...,"total_tokens":12345},"last_token_usage":{...}}}}
 ```
 
-**Correct approach** (current):
-1. Filter: match lines containing `"type":"token_count","info"`
-2. Extract `total_token_usage.total_tokens` from each event
-3. Compute **delta** = `current_total - previous_total` (running accumulator per file)
-4. Sum only positive deltas as real token usage
-5. Extract `cached_input_tokens` from `last_token_usage` for cache rate calculation
+**Key difference from other services**: Codex's `input_tokens` ALREADY includes `cached_input_tokens`. Other services (Claude Code, OpenClaw, etc.) keep these as separate, mutually exclusive fields.
 
-**Why this works**: `total_token_usage.total_tokens` is a monotonically increasing counter per session. `last_token_usage` is NOT a reliable incremental — it overcounts by ~105% due to including cached tokens and duplicate events.
+**Token formula by service**:
+
+| Service | Formula | Notes |
+|---------|---------|-------|
+| Codex | `(total_tokens + reasoning_output_tokens)` delta per event | `input_tokens` already includes cached |
+| OpenClaw | `input + output + cacheRead` per event | Fields are mutually exclusive |
+| Claude Code | `inputTokens + outputTokens + cacheRead` per event | Fields are mutually exclusive |
+| Gemini | `input + output + cached` per event | Only one cache field |
+| Hermes | `inputTokens + outputTokens + cacheRead` per session | Fields are mutually exclusive |
+
+**cacheWrite / cache_creation is excluded** from all services because it's already counted as part of the original input tokens (infrastructure overhead, not model processing).
+
+**Per-event date attribution**: Codex sessions can span multiple days (a single JSONL file with events across May 24-26). Each delta must be attributed to the date of that specific event's timestamp, NOT all to the last event's date. Other services already do per-event attribution natively since each event has its own independent token count.
+
+**Session tokens**: Codex session display tokens come from JSONL parsing (via `sessionTokensByDate`), NOT from SQLite `threads.tokens_used` (which includes cached tokens and uses a different counting method).
 
 **File growth detection**: Codex appends to existing JSONL files. The `jsonlCache` stores file sizes; `incrementalScan()` triggers `fullScan()` if any cached file has grown.
 
@@ -105,6 +114,7 @@ Total: ~9000 lines of Swift.
 
 | Commit | Description |
 |--------|-------------|
+| `96887b4` | Fix token counting: exclude cacheWrite, Codex per-event date attribution, resize grip visibility |
 | `dffa356` | Fix Codex: use total_token_usage deltas instead of last_token_usage sums |
 | `4a52993` | Split dropdown into separate NSPanel for resize stability |
 | `6a34569` | Improve expanded panel resizing |
@@ -118,9 +128,11 @@ Total: ~9000 lines of Swift.
 
 1. **Dual instance risk**: Using `SMAppService.mainApp.register()` for launch-at-login creates a launchd service with `OnDemand=false`. Running `.build/debug/TokenClock &` from CLI creates a second instance. Always `killall TokenClock` first, then let launchd restart it.
 2. **Codex JSONL format**: Codex wraps events in `{"type":"event_msg","payload":{...}}`. The filter `"type":"token_count","info"` must match the inner payload, not the outer wrapper. If Codex changes its format, this filter will break silently.
-3. **SwiftUI + NSPanel animation conflict**: SwiftUI `.animation()` competes with NSPanel's `NSAnimationContext` frame animation. The current approach uses `.transition(.opacity)` (not `.move`) to avoid layout shifts. Do NOT add `.animation()` to the ZStack containing the clock + dropdown.
-4. **Tap gesture**: The tap gesture is on the ZStack in `ClockContentView` with `.contentShape(Rectangle())`. Individual overlay Text/Canvas views must NOT have their own gestures, or they'll intercept taps.
-5. **Localization**: `L10n.swift` is a singleton. Language changes propagate through `@Published var language` on ViewModel. The right-click menu is rebuilt manually via `setupRightClickMenu()` on language change (not reactive).
+3. **Codex `input_tokens` includes cached**: Unlike other services where fields are mutually exclusive, Codex's `input_tokens` already contains `cached_input_tokens`. The formula must be `total_tokens + reasoning_output_tokens` (not `total_tokens - cached_input_tokens`). Getting this wrong causes either 10x overcount or 10x undercount.
+4. **Codex multi-day sessions**: A single Codex JSONL file can span multiple days. Token deltas must be attributed per-event by timestamp. Attributing all to `lastDateKey` causes ~3x overcount on the last day.
+5. **SwiftUI + NSPanel animation conflict**: SwiftUI `.animation()` competes with NSPanel's `NSAnimationContext` frame animation. The current approach uses `.transition(.opacity)` (not `.move`) to avoid layout shifts. Do NOT add `.animation()` to the ZStack containing the clock + dropdown.
+6. **Tap gesture**: The tap gesture is on the ZStack in `ClockContentView` with `.contentShape(Rectangle())`. Individual overlay Text/Canvas views must NOT have their own gestures, or they'll intercept taps.
+7. **Localization**: `L10n.swift` is a singleton. Language changes propagate through `@Published var language` on ViewModel. The right-click menu is rebuilt manually via `setupRightClickMenu()` on language change (not reactive).
 
 ## Configuration Storage
 
