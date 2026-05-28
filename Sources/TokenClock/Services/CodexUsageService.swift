@@ -2,7 +2,8 @@ import Foundation
 import SQLite3
 
 /// 从 Codex CLI 读取 token 使用数据
-/// Token 计数使用 total_token_usage.total_tokens 的差值（累计增量），避免 last_token_usage 重复统计
+/// Token 计数直接使用 last_token_usage（每条消息的增量值），公式：total_tokens + reasoning_output_tokens
+/// last_token_usage.input_tokens 已包含 cached_input_tokens，与 total_token_usage 语义一致
 /// 缓存率从 last_token_usage.cached_input_tokens 计算
 /// Session 列表从 SQLite threads 表读取
 final class CodexUsageService: @unchecked Sendable {
@@ -113,10 +114,8 @@ final class CodexUsageService: @unchecked Sendable {
         let buf = UnsafeMutablePointer<UInt8>.allocate(capacity: bufSize)
         defer { buf.deallocate() }
         var lineBuf = Data()
-        var prevTotalUsage = 0
         var lastDateKey = ""
         var lastTimestamp: Date?
-        // 按日期拆分的统计
         var dailyTokens: [String: Int] = [:]
         var dailyMsgs: [String: Int] = [:]
         var dailyCached: [String: Int] = [:]
@@ -132,11 +131,13 @@ final class CodexUsageService: @unchecked Sendable {
                 let line = String(data: lineData, encoding: .utf8) ?? ""
 
                 if line.contains("\"type\":\"token_count\",\"info\"") {
-                    let grossTotal = extractInt(from: line, key: "\"total_tokens\"")
-                    let reasoning = extractInt(from: line, key: "\"reasoning_output_tokens\"")
-                    let effectiveTotal = grossTotal + reasoning
-                    let delta = max(0, effectiveTotal - prevTotalUsage)
-                    prevTotalUsage = effectiveTotal
+                    guard let ltuRange = line.range(of: "\"last_token_usage\":{") else { continue }
+                    let segment = String(line[ltuRange.lowerBound...].prefix(500))
+
+                    let totalTokens = extractInt(from: segment, key: "\"total_tokens\"")
+                    let reasoning = extractInt(from: segment, key: "\"reasoning_output_tokens\"")
+                    let tokens = totalTokens + reasoning
+                    let cached = extractInt(from: segment, key: "\"cached_input_tokens\"")
 
                     var dateKey = ""
                     if let tsRange = line.range(of: "\"timestamp\":\"") {
@@ -150,10 +151,10 @@ final class CodexUsageService: @unchecked Sendable {
                     guard !dateKey.isEmpty else { continue }
                     lastDateKey = dateKey
 
-                    if delta > 0 {
-                        dailyTokens[dateKey, default: 0] += delta
+                    if tokens > 0 {
+                        dailyTokens[dateKey, default: 0] += tokens
                         dailyMsgs[dateKey, default: 0] += 1
-                        dailyCached[dateKey, default: 0] += extractCachedTokens(from: line)
+                        dailyCached[dateKey, default: 0] += cached
                     }
                 }
             }
@@ -162,15 +163,16 @@ final class CodexUsageService: @unchecked Sendable {
         // 尾部残留
         if !lineBuf.isEmpty,
            let line = String(data: lineBuf, encoding: .utf8),
-           line.contains("\"type\":\"token_count\",\"info\"") {
-            let grossTotal = extractInt(from: line, key: "\"total_tokens\"")
-            let reasoning = extractInt(from: line, key: "\"reasoning_output_tokens\"")
-            let effectiveTotal = grossTotal + reasoning
-            let delta = max(0, effectiveTotal - prevTotalUsage)
-            if delta > 0, !lastDateKey.isEmpty {
-                dailyTokens[lastDateKey, default: 0] += delta
+           line.contains("\"type\":\"token_count\",\"info\""),
+           let ltuRange = line.range(of: "\"last_token_usage\":{") {
+            let segment = String(line[ltuRange.lowerBound...].prefix(500))
+            let totalTokens = extractInt(from: segment, key: "\"total_tokens\"")
+            let reasoning = extractInt(from: segment, key: "\"reasoning_output_tokens\"")
+            let tokens = totalTokens + reasoning
+            if tokens > 0, !lastDateKey.isEmpty {
+                dailyTokens[lastDateKey, default: 0] += tokens
                 dailyMsgs[lastDateKey, default: 0] += 1
-                dailyCached[lastDateKey, default: 0] += extractCachedTokens(from: line)
+                dailyCached[lastDateKey, default: 0] += extractInt(from: segment, key: "\"cached_input_tokens\"")
             }
         }
 
@@ -207,14 +209,7 @@ final class CodexUsageService: @unchecked Sendable {
         return String(stem.dropFirst(20))
     }
 
-    /// 从 last_token_usage 中提取 cached_input_tokens（用于缓存率计算）
-    private func extractCachedTokens(from line: String) -> Int {
-        guard let range = line.range(of: "\"last_token_usage\":{") else { return 0 }
-        let segment = String(line[range.lowerBound...]).prefix(300)
-        return extractInt(from: String(segment), key: "\"cached_input_tokens\"")
-    }
-
-    private func extractInt(from str: String, key: String) -> Int {
+private func extractInt(from str: String, key: String) -> Int {
         guard let range = str.range(of: key) else { return 0 }
         let after = str[range.upperBound...]
         // 跳过可能的冒号和空格
