@@ -136,58 +136,107 @@ model             TEXT     -- JSON: {"id":"big-pickle","providerID":"opencode"}
 
 | Field | Value |
 |-------|-------|
-| **Tool** | Cursor Agent CLI 2026.06.04 + Cursor IDE |
-| **Data Source** | `~/.cursor/token-usage.jsonl` (written by user-installed hook) |
-| **Format** | JSONL (custom, written by hook script) |
-| **Scan Pattern** | fileCache + modDate incremental, dedup by `(timestamp, session_id)` |
-| **Token Fields** | `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_write_tokens` (hook script tries multiple field-name variants from Cursor's payload) |
-| **Token Formula** | `input + output + cache_read + cache_write` |
-| **Date Attribution** | Per-event via `timestamp` field (Unix seconds, written by hook) |
-| **Cache Semantics** | Distinct fields, all four are added (cache_write included because Cursor bills for it) |
-| **Session Source** | Same JSONL file, grouped by `session_id` field |
-| **Feasibility** | ⚠️ **Feasible with user setup** — requires installing hook script |
+| **Tool** | Cursor IDE + Cursor Agent CLI (same account system) |
+| **Data Source** | Cursor official usage API + IDE's `state.vscdb` for auth token |
+| **Format** | HTTPS POST to `https://cursor.com/api/dashboard/get-filtered-usage-events` |
+| **Scan Pattern** | Poll every 60s+ (throttled), full rescan on `fullScan`, partial on `incrementalScan` |
+| **Token Fields** | Per-event `tokenUsage`: `inputTokens`, `outputTokens`, `cacheReadTokens`, `cacheWriteTokens`, `totalCents` |
+| **Token Formula** | `input + output + cache_read + cache_write` (per-event; cost tracked separately in cents) |
+| **Date Attribution** | Per-event via `timestamp` (Unix ms, from API response) |
+| **Cache Semantics** | All four fields distinct, all added (cache_write is billable on Cursor) |
+| **Session Source** | API doesn't expose sessions; events grouped by model |
+| **Feasibility** | ✅ **Fully supported** (zero user configuration) |
 
-**Architecture (workaround for cloud-only billing):**
+**Auth flow (automatic):**
 
-Cursor's `TokenUsage` protobuf flows through in-memory hooks (`afterAgentResponse`, `stop`) but is never persisted to disk by Cursor itself. TokenClock solves this by shipping a hook script that the user installs:
+1. Read `cursorAuth/accessToken` from Cursor IDE's local SQLite:
+   `~/Library/Application Support/Cursor/User/globalStorage/state.vscdb`
+2. Extract userId from token:
+   - If format is `user_XXXXX::JWT`, split on `::`
+   - If pure JWT (3 dot-separated parts), base64-decode payload and regex `user_[A-Za-z0-9]+` from `sub`
+3. Build cookie: `WorkosCursorSessionToken=user_XXXXX%3A%3A<jwt>` (URL-encode `::` as `%3A%3A`)
 
-1. Place `log-token-usage.sh` at `~/.cursor/hooks/log-token-usage.sh` (reads stdin JSON, extracts `tokenUsage`, appends to JSONL)
-2. Register in `~/.cursor/hooks.json` for `afterAgentResponse` and `stop` events
-3. TokenClock reads `~/.cursor/token-usage.jsonl`
+**API request:**
 
-Without the hook installed, `token-usage.jsonl` stays empty and the service reports 0 tokens (graceful degradation).
+```http
+POST /api/dashboard/get-filtered-usage-events HTTP/1.1
+Host: cursor.com
+Content-Type: application/json
+Cookie: WorkosCursorSessionToken=user_XXX%3A%3A<jwt>
 
-**Why cursor's own files don't have tokens:**
+{"teamId": 0, "startDate": "<ms>", "endDate": "<ms>", "page": 1, "pageSize": 200}
+```
+
+**API response shape:**
+
+```json
+{
+  "usageEventsDisplay": [{
+    "timestamp": "1781258399219",
+    "model": "composer-2.5-fast",
+    "kind": "USAGE_EVENT_KIND_CUSTOM_SUBSCRIPTION",
+    "customSubscriptionName": "free",
+    "isTokenBasedCall": true,
+    "tokenUsage": {
+      "inputTokens": 12069,
+      "outputTokens": 83,
+      "cacheReadTokens": 544,
+      "totalCents": 3.77
+    },
+    "requestsCosts": 0.9,
+    "usageBasedCosts": "-"
+  }]
+}
+```
+
+**Verified** (2026-06-25 against real account): returns full per-event token + cost breakdown, works for any time range.
+
+**Why cursor's local files alone don't work:**
 
 - `state.vscdb`: `tokenCount` field exists but always `{"inputTokens": 0, "outputTokens": 0}`
-- `state.vscdb`: `usageData` field exists but always `{}`
 - `chats/*/store.db`: protobuf blobs contain **input prompt token budget estimates** (not actual API usage)
 - `agent-transcripts/*.jsonl`: role + message text only, no usage fields
 - `ai-tracking/ai-code-tracking.db`: file-level AI attribution, not token counts
-- No accessible API endpoint for usage history
+
+The API is the only authoritative source. Token is auto-refreshed by Cursor IDE; if our request returns 401/403 we re-read state.vscdb on next scan.
+
+**Previous approach (deprecated):** Hook script at `~/.cursor/hooks/log-token-usage.sh` captured `afterAgentResponse` events. Removed in favor of API polling which gives historical data + cost + model name without user setup.
 
 ### Antigravity IDE
 
 | Field | Value |
 |-------|-------|
 | **Tool** | Antigravity IDE (Electron, Cursor-like) + antigravity-claude-proxy 2.8.0 |
-| **Data Source** | `~/Library/Application Support/Antigravity/User/globalStorage/state.vscdb` |
-| **Format** | SQLite (ItemTable, VS Code compatible) |
+| **Data Source** | `~/.gemini/antigravity/conversations/*.pb` (encrypted) |
+| **Format** | Encrypted protobuf (Shannon entropy 8.00 = fully random) |
 | **Scan Pattern** | N/A |
-| **Token Fields** | None found |
+| **Token Fields** | None accessible (encrypted) |
 | **Token Formula** | N/A |
 | **Date Attribution** | N/A |
 | **Cache Semantics** | N/A |
-| **Session Source** | None found |
-| **Feasibility** | ❌ **Not feasible** — same architecture as Cursor IDE, no token data persisted locally |
+| **Session Source** | None accessible |
+| **Feasibility** | ❌ **Not feasible** — session files are encrypted, no public API |
 
-**Investigation findings:**
+**Investigation findings (verified 2026-06-25):**
 
-- `state.vscdb` (ItemTable): Has `antigravityUnifiedStateSync.*` keys but none contain token usage
-- `modelCredits`: key exists but value is empty
-- `trajectorySummaries`: key exists but value is empty
+- `~/.gemini/antigravity/conversations/*.pb` files: 3 files, 132-364KB each
+- Shannon entropy: 8.00 bits/byte (max — confirmed fully encrypted, not plaintext protobuf)
+- ASCII printable ratio: 36.9% (random noise, not structured data)
+- Compare: Antigravity **CLI** .db files start with `53514c697465...` ("SQLite format 3") — plaintext
 
-> **Note**: The CLI version of Antigravity (below) IS supported via SQLite parsing. The IDE version would need a similar hook-based workaround as Cursor Agent, but no such hook has been written yet.
+**Why encryption:**
+
+Antigravity IDE is a closed commercial product. Encrypting sessions prevents:
+- IP extraction (prompt templates, model behavior)
+- Subscription metering bypass
+- Reverse engineering
+
+**Paths explored (none viable):**
+- `~/Library/Application Support/Antigravity/User/globalStorage/state.vscdb`: empty token fields
+- `~/.gemini/antigravity-browser-profile/`: browser cache only
+- No public usage API documented
+
+> **Conclusion**: Antigravity IDE is genuinely unsupported without an official API. Use Antigravity CLI (separate product) which works fine via SQLite parsing.
 
 ### Antigravity CLI (agy)
 
@@ -289,7 +338,7 @@ Original algorithm over-counted by **7.64×** due to adding cumulative field 5.
 | Codex | ✅ JSONL + SQLite | ✅ Supported | — |
 | Hermes | ✅ SQLite | ✅ Supported | — |
 | **OpenCode** | ✅ **SQLite (complete)** | ✅ **Ready to implement** | **P0** |
-| **Cursor Agent** | ⚠️ **Via user-installed hook** | ⚠️ **Supported (hook required)** | — |
+| **Cursor Agent** | ✅ **Official usage API** | ✅ **Supported** (zero config) | — |
 | **Antigravity CLI (agy)** | ✅ **SQLite + protobuf telemetry** | ✅ **Supported** (verified) | — |
 | Antigravity IDE | ❌ Not persisted | ❌ Not feasible | — |
 | Trae CLI | ❌ Not persisted | ❌ Not feasible | — |
