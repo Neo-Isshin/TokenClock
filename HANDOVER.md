@@ -1,6 +1,6 @@
 # TokenClock - Handover Document
 
-> Last updated: 2026-05-26
+> Last updated: 2026-06-24
 
 ## Project Overview
 
@@ -21,7 +21,7 @@ TokenClockApp (main.swift) → @NSApplicationDelegateAdator → AppDelegate
   ├── DropdownPanel (NSPanel, detail view, appears below clock)
   │     └── DetailDropdownView (tool breakdown + weather forecast)
   ├── ViewModel (ObservableObject, all state)
-  │     ├── 5x UsageService instances (one per tool)
+  │     ├── 14x UsageService instances (one per AI tool)
   │     ├── WeatherService
   │     └── Timers (clock 1s, data 30s, weather 5min)
   ├── SettingsView (separate NSWindow)
@@ -38,13 +38,28 @@ TokenClockApp (main.swift) → @NSApplicationDelegateAdator → AppDelegate
 
 ## Supported AI Tools
 
-| Tool | Service | Data Source | Key File |
-|------|---------|------------|----------|
-| OpenClaw | `OpenClawUsageService` | JSONL session files | `~/.openclaw/sessions/` |
-| Claude Code | `ClaudeCodeUsageService` | JSONL + SQLite | `~/.claude/projects/` |
-| Gemini CLI | `GeminiUsageService` | JSONL session files | `~/.gemini/` |
-| Codex | `CodexUsageService` | JSONL + SQLite threads | `~/.codex/` |
-| Hermes | `HermesUsageService` | JSONL session files | `~/.hermes/` |
+14 tools total — original 5 (committed `6b48803`, 2026-05-28) plus 9 new (committed `4145b30`, 2026-06-24). All services follow the same protocol (`fullScan`, `incrementalScan`, `todayUsage`, `currentHourTokens`, `recentUsage`, `isActive`). See `docs/TOOL_SCHEMA_ANALYSIS.md` for JSONL field-level details per tool.
+
+| Tool | Service | Data Source (default) | Env Var |
+|------|---------|----------------------|---------|
+| OpenClaw | `OpenClawUsageService` | `~/.openclaw/` | `OPENCLAW_HOME` |
+| Claude Code | `ClaudeCodeUsageService` | `~/.claude/` | `CLAUDE_CONFIG_DIR` |
+| Gemini CLI | `GeminiUsageService` | `~/.gemini/` | `GEMINI_HOME` |
+| Codex | `CodexUsageService` | `~/.codex/` | `CODEX_HOME` |
+| Hermes | `HermesUsageService` | `~/.hermes/` | `HERMES_HOME` |
+| **OpenCode** | `OpenCodeUsageService` | `~/.local/share/opencode/` | `OPENCODE_HOME` |
+| **Qwen Code** | `QwenCodeUsageService` | `~/.qwen/` | `QWEN_HOME` |
+| **Copilot** | `CopilotUsageService` | `~/.copilot/` | `COPILOT_HOME` |
+| **Grok** | `GrokUsageService` | `~/.grok/` | `GROK_HOME` |
+| **Aider** | `AiderUsageService` | `~/.aider/analytics.jsonl` | `AIDER_HOME` |
+| **Antigravity** | `AntigravityUsageService` | `~/.gemini/antigravity-cli/` | `ANTIGRAVITY_HOME` |
+| **Cline** | `ClineUsageService` | `~/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/` | `CLINE_HOME` |
+| **Continue** | `ContinueUsageService` | `~/.continue/` | `CONTINUE_HOME` |
+| **Cursor Agent** | `CursorAgentUsageService` | `~/.cursor/` | `CURSOR_AGENT_HOME` |
+
+**Path resolution priority** (in `PathConfig`): UserDefaults custom path > env var > default path. `PathDetector` runs on first launch (`TC_hasRunInitialDetection` flag) to auto-pick the right candidate when the default doesn't exist.
+
+> **Note**: New tools (rows marked in bold) have not yet been runtime-verified against real log files on this machine. Schema analysis was done from documentation; token formulas may need adjustment after first real-world test (especially for tools with unusual formats like Cline's VSCode globalStorage path and Aider's analytics-mode opt-in).
 
 ### Codex Token Counting Algorithm (critical, rewritten multiple times)
 
@@ -81,7 +96,7 @@ Sources/TokenClock/
 ├── main.swift                          # App entry point (SwiftUI @main)
 ├── AppDelegate.swift                   # NSApplicationDelegate, panels, menus, settings window
 ├── ViewModel.swift                     # Central state: tools, timers, data refresh, themes
-├── L10n.swift                          # Localization engine (122 strings, 3 languages)
+├── L10n.swift                          # Localization engine (3 languages)
 ├── FloatingPanel.swift                 # NSPanel subclass for clock window
 ├── Models/
 │   ├── TokenUsage.swift                # ToolUsage, SessionInfo, WeatherInfo, DateHelper
@@ -102,18 +117,30 @@ Sources/TokenClock/
     ├── GeminiUsageService.swift        # Gemini CLI JSONL parser
     ├── CodexUsageService.swift         # Codex JSONL + SQLite parser (see algorithm notes above)
     ├── HermesUsageService.swift        # Hermes JSONL parser
-    ├── PathConfig.swift                # Tool log path configuration (UserDefaults)
+    ├── OpenCodeUsageService.swift      # OpenCode JSONL parser (NEW)
+    ├── QwenCodeUsageService.swift      # Qwen Code JSONL parser (NEW)
+    ├── CopilotUsageService.swift       # GitHub Copilot CLI JSONL parser (NEW)
+    ├── GrokUsageService.swift          # Grok CLI JSONL parser (NEW)
+    ├── AiderUsageService.swift         # Aider analytics JSONL parser (NEW, requires --analytics-log)
+    ├── AntigravityUsageService.swift   # Antigravity CLI JSONL parser (NEW)
+    ├── ClineUsageService.swift         # Cline (VSCode ext.) globalStorage parser (NEW)
+    ├── ContinueUsageService.swift      # Continue (VSCode ext.) JSONL parser (NEW)
+    ├── CursorAgentUsageService.swift   # Cursor agent JSONL parser (NEW)
+    ├── PathConfig.swift                # Tool log path configuration (UserDefaults + env vars)
     ├── PathDetector.swift              # Auto-detect tool log paths on first launch
     ├── WeatherService.swift            # Weather API (ip-based location or city selection)
     └── UsageAPIServer.swift            # Local HTTP server (:9988)
 ```
 
-Total: ~9000 lines of Swift.
+Total: ~10300 lines of Swift (was ~9000 before the 9-tool expansion).
 
 ## Recent Work History
 
 | Commit | Description |
 |--------|-------------|
+| `4145b30` | Expand tool coverage to 14 monitors (add 9 new services, path config, settings UI, schema doc) |
+| `6b48803` | Use last_token_usage for Codex token counting |
+| `9003eb3` | Update HANDOVER.md with token formula table and multi-day session notes |
 | `96887b4` | Fix token counting: exclude cacheWrite, Codex per-event date attribution, resize grip visibility |
 | `dffa356` | Fix Codex: use total_token_usage deltas instead of last_token_usage sums |
 | `4a52993` | Split dropdown into separate NSPanel for resize stability |
