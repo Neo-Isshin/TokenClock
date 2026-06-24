@@ -95,10 +95,9 @@ final class CursorAgentUsageService: @unchecked Sendable {
         guard FileManager.default.fileExists(atPath: dbPath) else { return }
 
         var db: OpaquePointer?
-        guard sqlite3_open(dbPath, &db) == SQLITE_OK else { return }
+        guard sqlite3_open_v2(dbPath, &db, SQLITE_OPEN_READONLY, nil) == SQLITE_OK else { return }
         defer { sqlite3_close(db) }
 
-        // 用 readonly 模式避免锁住 Cursor IDE 的写入
         let query = "SELECT value FROM ItemTable WHERE key = 'cursorAuth/accessToken' LIMIT 1"
         var stmt: OpaquePointer?
         guard sqlite3_prepare_v2(db, query, -1, &stmt, nil) == SQLITE_OK else { return }
