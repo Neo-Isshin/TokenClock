@@ -3,15 +3,22 @@ import SQLite3
 
 /// 从 Antigravity CLI 本地 SQLite 数据库读取 token 使用数据
 /// 数据库位置: ~/.gemini/antigravity-cli/conversations/{session-uuid}.db
-/// 数据结构: steps.step_payload (protobuf blob)
-///   → field 5 (step wrapper)
-///     → field 9 (telemetry event block)
-///       → field 2: input_token_count
-///       → field 3: output_token_count
-///       → field 5: cached_content_token_count
-///       → field 9: thoughts_token_count
-///       → field 10: tool_token_count
-///       → field 11: tracking_id (用于去重)
+///
+/// 两个 protobuf 列配合读取：
+///   - steps.metadata (protobuf blob) → 时间戳
+///       outer.field 1 (12B wrapper)
+///         inner.field 1 (varint) = Unix seconds
+///         inner.field 2 (varint) = nanoseconds
+///   - steps.step_payload (protobuf blob) → token telemetry
+///       outer.field 5 (step wrapper)
+///         inner.field 9 (telemetry block)
+///           field 1: input_tokens (new, non-cached)
+///           field 2: output_tokens
+///           field 3: cache_read_tokens
+///           field 5: total_prompt_tokens (cumulative, DO NOT add — would double-count)
+///           field 9: thoughts_token_count
+///           field 10: tool_token_count
+///           field 11: tracking_id (用于去重)
 final class AntigravityUsageService: @unchecked Sendable {
     private(set) var dailyData: [String: DayUsage] = [:]
     private(set) var hourlyData: [String: HourlyUsage] = [:]
@@ -91,23 +98,46 @@ final class AntigravityUsageService: @unchecked Sendable {
         guard sqlite3_open(dbPath, &db) == SQLITE_OK else { return }
         defer { sqlite3_close(db) }
 
-        let query = "SELECT step_payload FROM steps WHERE step_payload IS NOT NULL"
+        // 同时取 step_payload（token telemetry）和 metadata（时间戳）
+        let query = "SELECT step_payload, metadata FROM steps WHERE step_payload IS NOT NULL"
         var stmt: OpaquePointer?
         guard sqlite3_prepare_v2(db, query, -1, &stmt, nil) == SQLITE_OK else { return }
         defer { sqlite3_finalize(stmt) }
 
         while sqlite3_step(stmt) == SQLITE_ROW {
-            let blobPtr = sqlite3_column_blob(stmt, 0)
-            let blobLen = sqlite3_column_bytes(stmt, 0)
-            guard blobLen > 0, let blobPtr = blobPtr else { continue }
-            let data = Data(bytes: blobPtr, count: Int(blobLen))
-            processStepPayload(data)
+            let spPtr = sqlite3_column_blob(stmt, 0)
+            let spLen = sqlite3_column_bytes(stmt, 0)
+            guard spLen > 0, let spPtr = spPtr else { continue }
+            let stepPayload = Data(bytes: spPtr, count: Int(spLen))
+
+            // metadata 可能为 NULL
+            var timestamp: Date? = nil
+            if let metaPtr = sqlite3_column_blob(stmt, 1) {
+                let metaLen = sqlite3_column_bytes(stmt, 1)
+                if metaLen > 0 {
+                    let metaBlob = Data(bytes: metaPtr, count: Int(metaLen))
+                    timestamp = parseTimestamp(from: metaBlob)
+                }
+            }
+
+            processStepPayload(stepPayload, timestamp: timestamp)
         }
     }
 
     // MARK: - Protobuf 解析
 
-    private func processStepPayload(_ data: Data) {
+    /// 从 metadata blob 解析时间戳：outer.field 1 → inner.field 1 (Unix seconds)
+    private func parseTimestamp(from metadata: Data) -> Date? {
+        guard let outer = parseProtobufFields(metadata) else { return nil }
+        guard let wrapperField = outer.first(where: { $0.field == 1 && $0.wireType == 2 }),
+              let wrapperData = wrapperField.value as? Data,
+              let inner = parseProtobufFields(wrapperData) else { return nil }
+        guard let secsField = inner.first(where: { $0.field == 1 && $0.wireType == 0 }),
+              let secs = secsField.value as? UInt64, secs > 0 else { return nil }
+        return Date(timeIntervalSince1970: TimeInterval(secs))
+    }
+
+    private func processStepPayload(_ data: Data, timestamp: Date?) {
         guard let outer = parseProtobufFields(data) else { return }
         // field 5: step wrapper
         guard let f5Field = outer.first(where: { $0.field == 5 && $0.wireType == 2 }),
@@ -123,19 +153,25 @@ final class AntigravityUsageService: @unchecked Sendable {
             guard !trackIdStr.isEmpty, !seenTrackingIds.contains(trackIdStr) else { continue }
             seenTrackingIds.insert(trackIdStr)
 
-            let inputTokens = varintValue(tel, field: 2)
-            let outputTokens = varintValue(tel, field: 3)
-            let cacheTokens = varintValue(tel, field: 5)
+            // Token 字段映射（已根据实际 protobuf 数据校准）：
+            //   field 1: input tokens (new, non-cached)
+            //   field 2: output tokens
+            //   field 3: cache read tokens
+            //   field 9: thoughts tokens
+            //   field 10: tool tokens
+            //   field 5 是累计总 prompt（含历史），不要加入，否则会双重计算
+            let inputTokens = varintValue(tel, field: 1)
+            let outputTokens = varintValue(tel, field: 2)
+            let cacheTokens = varintValue(tel, field: 3)
             let thoughtTokens = varintValue(tel, field: 9)
             let toolTokens = varintValue(tel, field: 10)
             let total = inputTokens + outputTokens + cacheTokens + thoughtTokens + toolTokens
             guard total > 0 else { continue }
 
-            // 数据库文件名是 session UUID，没有时间戳信息
-            // 使用当前时间作为近似（Antigravity 数据库本身没有逐条时间戳）
-            let now = Date()
-            let dateKey = DateHelper.dateKey(from: now)
-            let hourKey = DateHelper.hourKey(from: now)
+            // 使用 metadata 提供的真实时间戳；缺失时退回到当前时间
+            let date = timestamp ?? Date()
+            let dateKey = DateHelper.dateKey(from: date)
+            let hourKey = DateHelper.hourKey(from: date)
 
             if var e = dailyData[dateKey] {
                 e.tokens += total; e.messages += 1; dailyData[dateKey] = e
@@ -150,7 +186,7 @@ final class AntigravityUsageService: @unchecked Sendable {
             }
 
             dailyCache[dateKey, default: 0] += cacheTokens
-            recentEntries.append(RecentEntry(timestamp: now, tokens: total))
+            recentEntries.append(RecentEntry(timestamp: date, tokens: total))
         }
     }
 
@@ -239,13 +275,15 @@ final class AntigravityUsageService: @unchecked Sendable {
             guard sqlite3_open(dbPath, &db) == SQLITE_OK else { continue }
             defer { sqlite3_close(db) }
 
+            // 粗过滤：文件 modDate 必须是今天（避免扫历史库）
             guard let attrs = try? fm.attributesOfItem(atPath: dbPath),
                   let modDate = attrs[.modificationDate] as? Date,
                   DateHelper.dateKey(from: modDate) == today else { continue }
 
             var sessionTokens = 0
             var sessionMsgs = 0
-            let query = "SELECT step_payload FROM steps WHERE step_payload IS NOT NULL"
+            // 同时取 step_payload（telemetry）和 metadata（时间戳）
+            let query = "SELECT step_payload, metadata FROM steps WHERE step_payload IS NOT NULL"
             var stmt: OpaquePointer?
             guard sqlite3_prepare_v2(db, query, -1, &stmt, nil) == SQLITE_OK else { continue }
             defer { sqlite3_finalize(stmt) }
@@ -255,25 +293,36 @@ final class AntigravityUsageService: @unchecked Sendable {
                 let blobLen = sqlite3_column_bytes(stmt, 0)
                 guard blobLen > 0, let blobPtr = blobPtr else { continue }
                 let data = Data(bytes: blobPtr, count: Int(blobLen))
+
+                // 从 metadata 取时间戳，按行级时间过滤
+                var rowDate: Date? = nil
+                if let metaPtr = sqlite3_column_blob(stmt, 1) {
+                    let metaLen = sqlite3_column_bytes(stmt, 1)
+                    if metaLen > 0 {
+                        let metaBlob = Data(bytes: metaPtr, count: Int(metaLen))
+                        rowDate = parseTimestamp(from: metaBlob)
+                    }
+                }
+                // 如果文件是今天但具体行不是今天（历史 session 在今天被 touch），跳过
+                if let rd = rowDate, DateHelper.dateKey(from: rd) != today { continue }
+
                 guard let outer = parseProtobufFields(data),
                       let f5Field = outer.first(where: { $0.field == 5 && $0.wireType == 2 }),
                       let f5Data = f5Field.value as? Data,
                       let f5 = parseProtobufFields(f5Data) else { continue }
                 for field in f5 where field.field == 9 && field.wireType == 2 {
                     guard let telData = field.value as? Data,
-                          let tel = parseProtobufFields(telData),
-                          let trackIdData = tel.first(where: { $0.field == 11 })?.value as? Data,
-                          let trackIdStr = String(data: trackIdData, encoding: .utf8) else { continue }
-                    let inputT = varintValue(tel, field: 2)
-                    let outputT = varintValue(tel, field: 3)
-                    let cacheT = varintValue(tel, field: 5)
+                          let tel = parseProtobufFields(telData) else { continue }
+                    // 字段映射与 processStepPayload 保持一致（已校准）
+                    let inputT = varintValue(tel, field: 1)
+                    let outputT = varintValue(tel, field: 2)
+                    let cacheT = varintValue(tel, field: 3)
                     let thoughtT = varintValue(tel, field: 9)
                     let toolT = varintValue(tel, field: 10)
                     let total = inputT + outputT + cacheT + thoughtT + toolT
                     guard total > 0 else { continue }
                     sessionTokens += total
                     sessionMsgs += 1
-                    _ = trackIdStr
                 }
             }
 
