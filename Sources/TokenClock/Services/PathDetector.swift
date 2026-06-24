@@ -42,6 +42,15 @@ enum PathDetector {
             detectGemini(),
             detectCodex(),
             detectHermes(),
+            detectOpenCode(),
+            detectQwen(),
+            detectCopilot(),
+            detectGrok(),
+            detectAider(),
+            detectAntigravity(),
+            detectCline(),
+            detectContinue(),
+            detectCursorAgent(),
         ]
         let found = results.filter(\.exists).count
         return DetectionSummary(results: results, foundCount: found, totalCount: results.count)
@@ -157,7 +166,6 @@ enum PathDetector {
         let match = findFirstValid(
             candidates: candidates,
             validator: { path in
-                // Hermes: ~/.hermes/state.db (SQLite)
                 let dbPath = path + "/state.db"
                 let fm = FileManager.default
                 var isDir: ObjCBool = false
@@ -169,6 +177,139 @@ enum PathDetector {
             match: match, custom: custom,
             defaultPath: PathConfig.defaultHermesHome()
         )
+    }
+
+    private static func detectOpenCode() -> DetectionResult {
+        let custom = UserDefaults.standard.string(forKey: "TC_opencodePath")
+        let candidates = buildCandidates(
+            custom: custom,
+            envName: PathConfig.opencodeCandidates(),
+            defaults: [PathConfig.defaultOpenCodeHome()],
+            alternates: [NSHomeDirectory() + "/.opencode"]
+        )
+        let match = findFirstValid(
+            candidates: candidates,
+            validator: { path in
+                let dbPath = path + "/opencode.db"
+                let fm = FileManager.default
+                var isDir: ObjCBool = false
+                return fm.fileExists(atPath: dbPath, isDirectory: &isDir) && !isDir.boolValue
+            }
+        )
+        return buildResult(
+            service: "opencode", emoji: "🐙",
+            match: match, custom: custom,
+            defaultPath: PathConfig.defaultOpenCodeHome()
+        )
+    }
+
+    private static func detectQwen() -> DetectionResult {
+        let custom = UserDefaults.standard.string(forKey: "TC_qwenPath")
+        let candidates = buildCandidates(
+            custom: custom, envName: PathConfig.qwenCandidates(),
+            defaults: [PathConfig.defaultQwenHome()], alternates: [])
+        let match = findFirstValid(candidates: candidates, validator: { path in
+            findJSONLFiles(in: path, subpath: "projects", recursive: true)
+        })
+        return buildResult(service: "qwen", emoji: "🟣", match: match, custom: custom, defaultPath: PathConfig.defaultQwenHome())
+    }
+
+    private static func detectCopilot() -> DetectionResult {
+        let custom = UserDefaults.standard.string(forKey: "TC_copilotPath")
+        let candidates = buildCandidates(
+            custom: custom, envName: PathConfig.copilotCandidates(),
+            defaults: [PathConfig.defaultCopilotHome()], alternates: [])
+        let match = findFirstValid(candidates: candidates, validator: { path in
+            let fm = FileManager.default
+            var isDir: ObjCBool = false
+            return (fm.fileExists(atPath: path + "/otel", isDirectory: &isDir) && isDir.boolValue)
+                || (fm.fileExists(atPath: path + "/session-state", isDirectory: &isDir) && isDir.boolValue)
+        })
+        return buildResult(service: "copilot", emoji: "🐙", match: match, custom: custom, defaultPath: PathConfig.defaultCopilotHome())
+    }
+
+    private static func detectGrok() -> DetectionResult {
+        let custom = UserDefaults.standard.string(forKey: "TC_grokPath")
+        let candidates = buildCandidates(
+            custom: custom, envName: PathConfig.grokCandidates(),
+            defaults: [PathConfig.defaultGrokHome()], alternates: [])
+        let match = findFirstValid(candidates: candidates, validator: { path in
+            let fm = FileManager.default
+            var isDir: ObjCBool = false
+            return fm.fileExists(atPath: path + "/sessions", isDirectory: &isDir) && isDir.boolValue
+        })
+        return buildResult(service: "grok", emoji: "⚡", match: match, custom: custom, defaultPath: PathConfig.defaultGrokHome())
+    }
+
+    private static func detectAider() -> DetectionResult {
+        let custom = UserDefaults.standard.string(forKey: "TC_aiderPath")
+        let candidates = buildCandidates(
+            custom: custom, envName: PathConfig.aiderCandidates(),
+            defaults: [PathConfig.defaultAiderHome()], alternates: [])
+        let match = findFirstValid(candidates: candidates, validator: { path in
+            let fm = FileManager.default
+            var isDir: ObjCBool = false
+            return fm.fileExists(atPath: path, isDirectory: &isDir) && isDir.boolValue
+                && findJSONLFiles(in: path)
+        })
+        return buildResult(service: "aider", emoji: "🤝", match: match, custom: custom, defaultPath: PathConfig.defaultAiderHome())
+    }
+
+    private static func detectAntigravity() -> DetectionResult {
+        let custom = UserDefaults.standard.string(forKey: "TC_antigravityPath")
+        let candidates = buildCandidates(
+            custom: custom, envName: PathConfig.antigravityCandidates(),
+            defaults: [PathConfig.defaultAntigravityHome()], alternates: [])
+        let match = findFirstValid(candidates: candidates, validator: { path in
+            let fm = FileManager.default
+            var isDir: ObjCBool = false
+            return fm.fileExists(atPath: path + "/conversations", isDirectory: &isDir) && isDir.boolValue
+        })
+        return buildResult(service: "antigravity", emoji: "🛡️", match: match, custom: custom, defaultPath: PathConfig.defaultAntigravityHome())
+    }
+
+    private static func detectCline() -> DetectionResult {
+        let custom = UserDefaults.standard.string(forKey: "TC_clinePath")
+        let candidates = buildCandidates(
+            custom: custom, envName: PathConfig.clineCandidates(),
+            defaults: [PathConfig.defaultClineHome()], alternates: [])
+        let match = findFirstValid(candidates: candidates, validator: { path in
+            let fm = FileManager.default
+            var isDir: ObjCBool = false
+            return fm.fileExists(atPath: path + "/tasks", isDirectory: &isDir) && isDir.boolValue
+        })
+        return buildResult(service: "cline", emoji: "🤖", match: match, custom: custom, defaultPath: PathConfig.defaultClineHome())
+    }
+
+    private static func detectContinue() -> DetectionResult {
+        let custom = UserDefaults.standard.string(forKey: "TC_continuePath")
+        let candidates = buildCandidates(
+            custom: custom, envName: PathConfig.continueCandidates(),
+            defaults: [PathConfig.defaultContinueHome()], alternates: [])
+        let match = findFirstValid(candidates: candidates, validator: { path in
+            let fm = FileManager.default
+            var isDir: ObjCBool = false
+            return (fm.fileExists(atPath: path + "/dev_data", isDirectory: &isDir) && isDir.boolValue)
+                || (fm.fileExists(atPath: path + "/sessions", isDirectory: &isDir) && isDir.boolValue)
+        })
+        return buildResult(service: "continue", emoji: "▶️", match: match, custom: custom, defaultPath: PathConfig.defaultContinueHome())
+    }
+
+    private static func detectCursorAgent() -> DetectionResult {
+        let custom = UserDefaults.standard.string(forKey: "TC_cursorAgentPath")
+        let candidates = buildCandidates(
+            custom: custom, envName: PathConfig.cursorAgentCandidates(),
+            defaults: [PathConfig.defaultCursorAgentHome()], alternates: [])
+        let match = findFirstValid(candidates: candidates, validator: { path in
+            // 检测条件：hook 脚本存在 OR token-usage.jsonl 已存在
+            let fm = FileManager.default
+            var isDir: ObjCBool = false
+            let hookExists = fm.fileExists(atPath: path + "/hooks/log-token-usage.sh")
+            let logExists = fm.fileExists(atPath: path + "/token-usage.jsonl")
+            let cliConfigExists = fm.fileExists(atPath: path + "/cli-config.json", isDirectory: &isDir) && !isDir.boolValue
+            return hookExists || logExists || cliConfigExists
+        })
+        return buildResult(service: "cursorAgent", emoji: "🖱️", match: match, custom: custom, defaultPath: PathConfig.defaultCursorAgentHome())
     }
 
     // MARK: - 候选路径构建

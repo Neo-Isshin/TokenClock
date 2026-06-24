@@ -258,7 +258,7 @@ private func extractInt(from str: String, key: String) -> Int {
             let dateKey = DateHelper.dateKey(from: updatedDate)
             guard dateKey == today else { continue }
 
-            let displayId = sessionId.isEmpty ? "unknown" : String(sessionId.prefix(7))
+            let displayId = sessionId.isEmpty ? "unknown" : SessionIdDisplay.format(sessionId)
             let cwd = cwdPtr != nil ? String(cString: cwdPtr!) : ""
             let detail = cwd.isEmpty ? nil : cwd
             let messages = sessionMessageCount(

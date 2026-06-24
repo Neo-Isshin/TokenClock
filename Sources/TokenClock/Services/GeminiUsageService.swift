@@ -310,7 +310,7 @@ final class GeminiUsageService: @unchecked Sendable {
                 }
                 guard tokens > 0 else { continue }
 
-                let displayId = sessionId.isEmpty ? String(file.dropFirst("session-".count).prefix(7)) : String(sessionId.prefix(7))
+                let displayId = sessionId.isEmpty ? SessionIdDisplay.format(String(file.dropFirst("session-".count))) : SessionIdDisplay.format(sessionId)
                 results.append(SessionInfo(
                     rawId: sessionId,
                     displayName: displayId,

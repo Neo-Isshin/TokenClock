@@ -65,6 +65,18 @@ struct SessionInfo: Identifiable, Hashable {
     }
 }
 
+/// Session ID 统一格式化：取前 6 位 + "…" + 末 4 位
+/// 用于解决 UUIDv7 / session-UUID 前缀碰撞导致的视觉混淆
+enum SessionIdDisplay {
+    static func format(_ id: String) -> String {
+        let trimmed = id.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.count <= 10 { return trimmed }
+        let head = trimmed.prefix(6)
+        let tail = trimmed.suffix(4)
+        return "\(head)…\(tail)"
+    }
+}
+
 /// 天气数据
 struct WeatherInfo {
     var emoji: String = "☀️"

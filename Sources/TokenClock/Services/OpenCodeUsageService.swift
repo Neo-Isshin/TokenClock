@@ -1,20 +1,20 @@
 import Foundation
 import SQLite3
 
-/// 从 Hermes Agent 本地 SQLite 数据库读取 token 使用数据
-/// 数据库位置: ~/.hermes/state.db
-/// 表结构: sessions (input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, started_at, message_count)
-final class HermesUsageService: @unchecked Sendable {
+/// 从 OpenCode 本地 SQLite 数据库读取 token 使用数据
+/// 数据库位置: ~/.local/share/opencode/opencode.db
+/// 表结构: session (tokens_input, tokens_output, tokens_reasoning, tokens_cache_read, tokens_cache_write, time_created)
+final class OpenCodeUsageService: @unchecked Sendable {
     private(set) var dailyData: [String: DayUsage] = [:]
     private(set) var hourlyData: [String: HourlyUsage] = [:]
     private(set) var dailyCache: [String: Int] = [:]
     private var recentEntries: [RecentEntry] = []
 
-    private let hermesHome: String
+    private let opencodeHome: String
     private var lastScanTime: Date = .distantPast
 
     init() {
-        hermesHome = PathConfig.hermesHome()
+        opencodeHome = PathConfig.opencodeHome()
     }
 
     func fullScan() {
@@ -57,7 +57,7 @@ final class HermesUsageService: @unchecked Sendable {
     // MARK: - 内部
 
     private var dbPath: String {
-        hermesHome + "/state.db"
+        opencodeHome + "/opencode.db"
     }
 
     private func scanDatabase() {
@@ -65,8 +65,6 @@ final class HermesUsageService: @unchecked Sendable {
         let walFile = dbFile + "-wal"
         var db: OpaquePointer?
 
-        // SQLite WAL 模式下，新数据可能写入 -wal 文件而非主 db
-        // 检查两者中较新的修改时间
         let fm = FileManager.default
         var newestMod: Date?
         for path in [dbFile, walFile] {
@@ -77,7 +75,6 @@ final class HermesUsageService: @unchecked Sendable {
         }
         if let newest = newestMod, newest <= lastScanTime { return }
 
-        // DB 有修改，需要先清空再重读（避免叠加重复计数）
         dailyData.removeAll()
         hourlyData.removeAll()
         dailyCache.removeAll()
@@ -86,18 +83,13 @@ final class HermesUsageService: @unchecked Sendable {
         guard sqlite3_open(dbFile, &db) == SQLITE_OK else { return }
         defer { sqlite3_close(db) }
 
-        // 从 sessions 表读取所有 token 数据
-        // started_at 是 Unix timestamp (REAL)
         let query = """
-        SELECT started_at,
-               input_tokens,
-               output_tokens,
-               cache_read_tokens,
-               cache_write_tokens,
-               message_count
-        FROM sessions
-        WHERE input_tokens > 0 OR output_tokens > 0
-        ORDER BY started_at ASC
+        SELECT tokens_input, tokens_output, tokens_reasoning,
+               tokens_cache_read, tokens_cache_write,
+               time_created
+        FROM session
+        WHERE tokens_input > 0 OR tokens_output > 0
+        ORDER BY time_created ASC
         """
 
         var stmt: OpaquePointer?
@@ -108,45 +100,37 @@ final class HermesUsageService: @unchecked Sendable {
         let now = Date()
 
         while sqlite3_step(stmt) == SQLITE_ROW {
-            let startedAt = sqlite3_column_double(stmt, 0)
-            let inputTokens = sqlite3_column_int(stmt, 1)
-            let outputTokens = sqlite3_column_int(stmt, 2)
+            let inputTokens = sqlite3_column_int(stmt, 0)
+            let outputTokens = sqlite3_column_int(stmt, 1)
+            let reasoningTokens = sqlite3_column_int(stmt, 2)
             let cacheRead = sqlite3_column_int(stmt, 3)
             let cacheWrite = sqlite3_column_int(stmt, 4)
-            let msgCount = sqlite3_column_int(stmt, 5)
+            let timeCreatedMs = sqlite3_column_int64(stmt, 5)
 
-            let tokens = Int(inputTokens) + Int(outputTokens) + Int(cacheRead)
+            let tokens = Int(inputTokens) + Int(outputTokens) + Int(reasoningTokens) + Int(cacheRead)
             guard tokens > 0 else { continue }
 
-            let date = Date(timeIntervalSince1970: startedAt)
+            let date = Date(timeIntervalSince1970: Double(timeCreatedMs) / 1000.0)
             let dateKey = DateHelper.dateKey(from: date)
             let hourKey = DateHelper.hourKey(from: date)
 
-            // 每条 session 算 1 条消息（代表一次会话的 token 消耗）
-            // 但如果 message_count > 0，用实际的 assistant 回复数
-            let effectiveMessages = msgCount > 0 ? Int(msgCount) : 1
-
-            // Daily
             if var e = dailyData[dateKey] {
-                e.tokens += tokens; e.messages += effectiveMessages
+                e.tokens += tokens; e.messages += 1
                 dailyData[dateKey] = e
             } else {
-                dailyData[dateKey] = DayUsage(tokens: tokens, messages: effectiveMessages)
+                dailyData[dateKey] = DayUsage(tokens: tokens, messages: 1)
             }
 
-            // Hourly
             if var e = hourlyData[hourKey] {
-                e.tokens += tokens; e.messages += effectiveMessages
+                e.tokens += tokens; e.messages += 1
                 hourlyData[hourKey] = e
             } else {
-                hourlyData[hourKey] = HourlyUsage(tokens: tokens, messages: effectiveMessages)
+                hourlyData[hourKey] = HourlyUsage(tokens: tokens, messages: 1)
             }
 
-            // Cache
             let cacheTokens = Int(cacheRead) + Int(cacheWrite)
             dailyCache[dateKey, default: 0] += cacheTokens
 
-            // Recent (今天内的 session)
             if dateKey == today && date >= now.addingTimeInterval(-86400) {
                 recentEntries.append(RecentEntry(timestamp: date, tokens: tokens))
             }
@@ -157,7 +141,6 @@ final class HermesUsageService: @unchecked Sendable {
 
     // MARK: - 今日活跃 Session 列表
 
-    /// Hermes session 数据存储在 SQLite 的 sessions 表中
     func todaySessions() -> [SessionInfo] {
         let dbFile = dbPath
         var db: OpaquePointer?
@@ -165,50 +148,58 @@ final class HermesUsageService: @unchecked Sendable {
         defer { sqlite3_close(db) }
 
         let todayStart = Date().addingTimeInterval(-86400)
+        let todayStartMs = Int64(todayStart.timeIntervalSince1970 * 1000)
+
         let query = """
-        SELECT session_id, started_at,
-               input_tokens, output_tokens,
-               cache_read_tokens, cache_write_tokens,
-               message_count
-        FROM sessions
-        WHERE started_at >= ?
-          AND (input_tokens > 0 OR output_tokens > 0)
-        ORDER BY started_at DESC
+        SELECT id, title, directory,
+               tokens_input, tokens_output, tokens_reasoning,
+               tokens_cache_read, tokens_cache_write,
+               time_created
+        FROM session
+        WHERE time_created >= ?
+          AND (tokens_input > 0 OR tokens_output > 0)
+        ORDER BY time_created DESC
         """
 
         var stmt: OpaquePointer?
         guard sqlite3_prepare_v2(db, query, -1, &stmt, nil) == SQLITE_OK else { return [] }
         defer { sqlite3_finalize(stmt) }
 
-        sqlite3_bind_double(stmt, 1, todayStart.timeIntervalSince1970)
+        sqlite3_bind_int64(stmt, 1, todayStartMs)
 
         var results: [SessionInfo] = []
 
         while sqlite3_step(stmt) == SQLITE_ROW {
             let sessionIdPtr = sqlite3_column_text(stmt, 0)
             let sessionId = sessionIdPtr != nil ? String(cString: sessionIdPtr!) : ""
-            let startedAt = sqlite3_column_double(stmt, 1)
-            let inputTokens = sqlite3_column_int(stmt, 2)
-            let outputTokens = sqlite3_column_int(stmt, 3)
-            let cacheRead = sqlite3_column_int(stmt, 4)
-            let msgCount = sqlite3_column_int(stmt, 6)
+            let titlePtr = sqlite3_column_text(stmt, 1)
+            let title = titlePtr != nil ? String(cString: titlePtr!) : ""
+            let dirPtr = sqlite3_column_text(stmt, 2)
+            let directory = dirPtr != nil ? String(cString: dirPtr!) : ""
 
-            let tokens = Int(inputTokens) + Int(outputTokens) + Int(cacheRead)
+            let inputTokens = sqlite3_column_int(stmt, 3)
+            let outputTokens = sqlite3_column_int(stmt, 4)
+            let reasoningTokens = sqlite3_column_int(stmt, 5)
+            let cacheRead = sqlite3_column_int(stmt, 6)
+            let cacheWrite = sqlite3_column_int(stmt, 7)
+            let timeCreatedMs = sqlite3_column_int64(stmt, 8)
+
+            let tokens = Int(inputTokens) + Int(outputTokens) + Int(reasoningTokens) + Int(cacheRead)
             guard tokens > 0 else { continue }
 
-            let date = Date(timeIntervalSince1970: startedAt)
+            let date = Date(timeIntervalSince1970: Double(timeCreatedMs) / 1000.0)
             let dateKey = DateHelper.dateKey(from: date)
             guard dateKey == DateHelper.todayKey() else { continue }
 
-            let displayId = sessionId.isEmpty ? "unknown" : SessionIdDisplay.format(sessionId)
-            let effectiveMessages = msgCount > 0 ? Int(msgCount) : 1
+            let displayId = SessionIdDisplay.format(sessionId)
+            let dirName = (directory as NSString).lastPathComponent
 
             results.append(SessionInfo(
                 rawId: sessionId,
                 displayName: displayId,
-                detail: nil,
+                detail: dirName.isEmpty ? nil : dirName,
                 todayTokens: tokens,
-                todayMessages: effectiveMessages,
+                todayMessages: 1,
                 isActive: true
             ))
         }

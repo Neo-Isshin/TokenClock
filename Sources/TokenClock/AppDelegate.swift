@@ -93,7 +93,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     private var activeToolCount: Int {
-        viewModel.sortedTools.filter { $0.todayTokens > 0 }.count
+        viewModel.visibleTools.filter { $0.todayTokens > 0 }.count
     }
 
     private func showDropdownPanel() {
@@ -480,7 +480,7 @@ private struct DropdownPanelView: View {
     var body: some View {
         VStack(spacing: 0) {
             DetailDropdownView(
-                tools: viewModel.sortedTools,
+                tools: viewModel.visibleTools,
                 theme: viewModel.selectedTheme,
                 weather: viewModel.weather,
                 localizedCityName: viewModel.localizedCityName

@@ -10,6 +10,14 @@ final class ViewModel: ObservableObject {
     /// 预计算排序后的工具列表，避免每次展开时重新排序
     @Published private(set) var sortedTools: [ToolUsage] = []
 
+    /// 用户启用的工具名集合（默认全选）
+    @Published var enabledTools: Set<String>
+
+    /// 只包含已启用工具的排序列表
+    var visibleTools: [ToolUsage] {
+        sortedTools.filter { enabledTools.contains($0.name) }
+    }
+
     @Published var currentTime = Date()
     @Published var language: AppLanguage = L10n.shared.language
     @Published var isExpanded = false {
@@ -84,8 +92,23 @@ final class ViewModel: ObservableObject {
     private let geminiService = GeminiUsageService()
     private let codexService = CodexUsageService()
     private let hermesService = HermesUsageService()
+    private let opencodeService = OpenCodeUsageService()
+    private let qwenService = QwenCodeUsageService()
+    private let copilotService = CopilotUsageService()
+    private let grokService = GrokUsageService()
+    private let aiderService = AiderUsageService()
+    private let antigravityService = AntigravityUsageService()
+    private let clineService = ClineUsageService()
+    private let continueService = ContinueUsageService()
+    private let cursorAgentService = CursorAgentUsageService()
+
+    private static let allToolNames = ["OpenClaw", "Claude Code", "Gemini CLI", "Codex", "Hermes", "OpenCode", "Qwen Code", "Copilot", "Grok", "Aider", "Antigravity", "Cline", "Continue", "Cursor Agent"]
 
     init() {
+        // 加载启用的工具集合
+        let saved = UserDefaults.standard.stringArray(forKey: "TC_enabledTools")
+        self.enabledTools = Set(saved ?? Self.allToolNames)
+
         // 先生成初始结构，再被真实数据覆盖
         self.tools = MockUsageService.generateInitialData()
         updateSortedTools()
@@ -131,6 +154,33 @@ final class ViewModel: ObservableObject {
             case "hermes":
                 PathConfig.setHermesPath(result.detectedPath)
                 savedPaths.append("🏔️ Hermes: \(result.detail)")
+            case "opencode":
+                PathConfig.setOpenCodePath(result.detectedPath)
+                savedPaths.append("🐙 OpenCode: \(result.detail)")
+            case "qwen":
+                PathConfig.setQwenPath(result.detectedPath)
+                savedPaths.append("🟣 Qwen Code: \(result.detail)")
+            case "copilot":
+                PathConfig.setCopilotPath(result.detectedPath)
+                savedPaths.append("🐙 Copilot: \(result.detail)")
+            case "grok":
+                PathConfig.setGrokPath(result.detectedPath)
+                savedPaths.append("⚡ Grok: \(result.detail)")
+            case "aider":
+                PathConfig.setAiderPath(result.detectedPath)
+                savedPaths.append("🤝 Aider: \(result.detail)")
+            case "antigravity":
+                PathConfig.setAntigravityPath(result.detectedPath)
+                savedPaths.append("🛡️ Antigravity: \(result.detail)")
+            case "cline":
+                PathConfig.setClinePath(result.detectedPath)
+                savedPaths.append("🤖 Cline: \(result.detail)")
+            case "continue":
+                PathConfig.setContinuePath(result.detectedPath)
+                savedPaths.append("▶️ Continue: \(result.detail)")
+            case "cursorAgent":
+                PathConfig.setCursorAgentPath(result.detectedPath)
+                savedPaths.append("🖱️ Cursor Agent: \(result.detail)")
             default:
                 break
             }
@@ -158,6 +208,17 @@ final class ViewModel: ObservableObject {
 
     private func updateSortedTools() {
         sortedTools = tools.sorted { $0.todayTokens > $1.todayTokens }
+    }
+
+    // MARK: - 工具启用/禁用
+
+    func toggleTool(_ name: String) {
+        if enabledTools.contains(name) {
+            enabledTools.remove(name)
+        } else {
+            enabledTools.insert(name)
+        }
+        UserDefaults.standard.set(Array(enabledTools), forKey: "TC_enabledTools")
     }
 
     // MARK: - 主题持久化
@@ -214,7 +275,7 @@ final class ViewModel: ObservableObject {
     // MARK: - 聚合属性
 
     var totalTokensFormatted: String {
-        let total = UsageAggregator.totalTokens(tools)
+        let total = UsageAggregator.totalTokens(visibleTools)
         if total >= 1_000_000 {
             return String(format: "%.1fM", Double(total) / 1_000_000)
         } else if total >= 1_000 {
@@ -224,20 +285,20 @@ final class ViewModel: ObservableObject {
     }
 
     var totalMessagesFormatted: String {
-        let total = UsageAggregator.totalMessages(tools)
+        let total = UsageAggregator.totalMessages(visibleTools)
         return L10n.shared.tr("clock.messagesCount", total)
     }
 
     var totalMessagesCount: Int {
-        UsageAggregator.totalMessages(tools)
+        UsageAggregator.totalMessages(visibleTools)
     }
 
     var activeToolsList: [ToolUsage] {
-        UsageAggregator.topToolsByTokens(tools, limit: 2)
+        UsageAggregator.topToolsByTokens(visibleTools, limit: 2)
     }
 
     var rateEmoji: String {
-        UsageAggregator.rateEmoji(tools)
+        UsageAggregator.rateEmoji(visibleTools)
     }
 
     // MARK: - 时间属性
@@ -399,78 +460,133 @@ final class ViewModel: ObservableObject {
         }
     }
 
-    /// 从真实数据服务刷新所有工具的 token 数据
-    private func refreshRealData() {
-        let oc = openclawService.todayUsage()
-        let ocRecent = openclawService.recentUsage(minutes: rateWindowMinutes)
-        updateTool(name: "OpenClaw", tokens: oc.tokens, messages: oc.messages,
-                   recentTokens: ocRecent.tokens, hourlyTokens: openclawService.currentHourTokens(),
-                   active: openclawService.isActive(), cacheRate: oc.cacheRate,
-                   sessions: openclawService.todaySessions())
 
-        let cc = claudeCodeService.todayUsage()
-        let ccRecent = claudeCodeService.recentUsage(minutes: rateWindowMinutes)
-        updateTool(name: "Claude Code", tokens: cc.tokens, messages: cc.messages,
-                   recentTokens: ccRecent.tokens, hourlyTokens: claudeCodeService.currentHourTokens(),
-                   active: claudeCodeService.isActive(), cacheRate: cc.cacheRate,
-                   sessions: claudeCodeService.todaySessions())
-
-        let gc = geminiService.todayUsage()
-        let gcRecent = geminiService.recentUsage(minutes: rateWindowMinutes)
-        updateTool(name: "Gemini CLI", tokens: gc.tokens, messages: gc.messages,
-                   recentTokens: gcRecent.tokens, hourlyTokens: geminiService.currentHourTokens(),
-                   active: geminiService.isActive(), cacheRate: gc.cacheRate,
-                   sessions: geminiService.todaySessions())
-
-        let cx = codexService.todayUsage()
-        let cxRecent = codexService.recentUsage(minutes: rateWindowMinutes)
-        updateTool(name: "Codex", tokens: cx.tokens, messages: cx.messages,
-                   recentTokens: cxRecent.tokens, hourlyTokens: codexService.currentHourTokens(),
-                   active: codexService.isActive(), cacheRate: cx.cacheRate,
-                   sessions: codexService.todaySessions())
-
-        let hm = hermesService.todayUsage()
-        let hmRecent = hermesService.recentUsage(minutes: rateWindowMinutes)
-        updateTool(name: "Hermes", tokens: hm.tokens, messages: hm.messages,
-                   recentTokens: hmRecent.tokens, hourlyTokens: hermesService.currentHourTokens(),
-                   active: hermesService.isActive(), cacheRate: hm.cacheRate,
-                   sessions: hermesService.todaySessions())
+    private func updateMockData() {
+        runBackgroundScan(incremental: true)
     }
 
-    private func updateTool(name: String, tokens: Int, messages: Int,
-                           recentTokens: Int, hourlyTokens: Int, active: Bool,
-                           cacheRate: Double = 0, sessions: [SessionInfo] = []) {
+    private func performFullScan() {
+        runBackgroundScan(incremental: false)
+    }
+
+    /// 在后台线程执行扫描 + 数据提取，主线程只负责更新 UI
+    private func runBackgroundScan(incremental: Bool) {
+        let enabled = enabledTools
+        let rateWindow = rateWindowMinutes
+
+        Task.detached(priority: .utility) { [weak self] in
+            guard let self = self else { return }
+
+            // 后台线程：执行所有 I/O 密集的扫描
+            if enabled.contains("OpenClaw") { incremental ? self.openclawService.incrementalScan() : self.openclawService.fullScan() }
+            if enabled.contains("Claude Code") { incremental ? self.claudeCodeService.incrementalScan() : self.claudeCodeService.fullScan() }
+            if enabled.contains("Gemini CLI") { incremental ? self.geminiService.incrementalScan() : self.geminiService.fullScan() }
+            if enabled.contains("Codex") { incremental ? self.codexService.incrementalScan() : self.codexService.fullScan() }
+            if enabled.contains("Hermes") { incremental ? self.hermesService.incrementalScan() : self.hermesService.fullScan() }
+            if enabled.contains("OpenCode") { incremental ? self.opencodeService.incrementalScan() : self.opencodeService.fullScan() }
+            if enabled.contains("Qwen Code") { incremental ? self.qwenService.incrementalScan() : self.qwenService.fullScan() }
+            if enabled.contains("Copilot") { incremental ? self.copilotService.incrementalScan() : self.copilotService.fullScan() }
+            if enabled.contains("Grok") { incremental ? self.grokService.incrementalScan() : self.grokService.fullScan() }
+            if enabled.contains("Aider") { incremental ? self.aiderService.incrementalScan() : self.aiderService.fullScan() }
+            if enabled.contains("Antigravity") { incremental ? self.antigravityService.incrementalScan() : self.antigravityService.fullScan() }
+            if enabled.contains("Cline") { incremental ? self.clineService.incrementalScan() : self.clineService.fullScan() }
+            if enabled.contains("Continue") { incremental ? self.continueService.incrementalScan() : self.continueService.fullScan() }
+            if enabled.contains("Cursor Agent") { incremental ? self.cursorAgentService.incrementalScan() : self.cursorAgentService.fullScan() }
+
+            // 后台线程：提取数据（避免与主线程读取竞争）
+            var results: [String: ToolSnapshot] = [:]
+            if enabled.contains("OpenClaw") {
+                let u = self.openclawService.todayUsage()
+                results["OpenClaw"] = ToolSnapshot(tokens: u.tokens, messages: u.messages, recent: self.openclawService.recentUsage(minutes: rateWindow).tokens, hourly: self.openclawService.currentHourTokens(), active: self.openclawService.isActive(), cacheRate: u.cacheRate, sessions: self.openclawService.todaySessions())
+            }
+            if enabled.contains("Claude Code") {
+                let u = self.claudeCodeService.todayUsage()
+                results["Claude Code"] = ToolSnapshot(tokens: u.tokens, messages: u.messages, recent: self.claudeCodeService.recentUsage(minutes: rateWindow).tokens, hourly: self.claudeCodeService.currentHourTokens(), active: self.claudeCodeService.isActive(), cacheRate: u.cacheRate, sessions: self.claudeCodeService.todaySessions())
+            }
+            if enabled.contains("Gemini CLI") {
+                let u = self.geminiService.todayUsage()
+                results["Gemini CLI"] = ToolSnapshot(tokens: u.tokens, messages: u.messages, recent: self.geminiService.recentUsage(minutes: rateWindow).tokens, hourly: self.geminiService.currentHourTokens(), active: self.geminiService.isActive(), cacheRate: u.cacheRate, sessions: self.geminiService.todaySessions())
+            }
+            if enabled.contains("Codex") {
+                let u = self.codexService.todayUsage()
+                results["Codex"] = ToolSnapshot(tokens: u.tokens, messages: u.messages, recent: self.codexService.recentUsage(minutes: rateWindow).tokens, hourly: self.codexService.currentHourTokens(), active: self.codexService.isActive(), cacheRate: u.cacheRate, sessions: self.codexService.todaySessions())
+            }
+            if enabled.contains("Hermes") {
+                let u = self.hermesService.todayUsage()
+                results["Hermes"] = ToolSnapshot(tokens: u.tokens, messages: u.messages, recent: self.hermesService.recentUsage(minutes: rateWindow).tokens, hourly: self.hermesService.currentHourTokens(), active: self.hermesService.isActive(), cacheRate: u.cacheRate, sessions: self.hermesService.todaySessions())
+            }
+            if enabled.contains("OpenCode") {
+                let u = self.opencodeService.todayUsage()
+                results["OpenCode"] = ToolSnapshot(tokens: u.tokens, messages: u.messages, recent: self.opencodeService.recentUsage(minutes: rateWindow).tokens, hourly: self.opencodeService.currentHourTokens(), active: self.opencodeService.isActive(), cacheRate: u.cacheRate, sessions: self.opencodeService.todaySessions())
+            }
+            if enabled.contains("Qwen Code") {
+                let u = self.qwenService.todayUsage()
+                results["Qwen Code"] = ToolSnapshot(tokens: u.tokens, messages: u.messages, recent: self.qwenService.recentUsage(minutes: rateWindow).tokens, hourly: self.qwenService.currentHourTokens(), active: self.qwenService.isActive(), cacheRate: u.cacheRate, sessions: self.qwenService.todaySessions())
+            }
+            if enabled.contains("Copilot") {
+                let u = self.copilotService.todayUsage()
+                results["Copilot"] = ToolSnapshot(tokens: u.tokens, messages: u.messages, recent: self.copilotService.recentUsage(minutes: rateWindow).tokens, hourly: self.copilotService.currentHourTokens(), active: self.copilotService.isActive(), cacheRate: u.cacheRate, sessions: self.copilotService.todaySessions())
+            }
+            if enabled.contains("Grok") {
+                let u = self.grokService.todayUsage()
+                results["Grok"] = ToolSnapshot(tokens: u.tokens, messages: u.messages, recent: self.grokService.recentUsage(minutes: rateWindow).tokens, hourly: self.grokService.currentHourTokens(), active: self.grokService.isActive(), cacheRate: u.cacheRate, sessions: self.grokService.todaySessions())
+            }
+            if enabled.contains("Aider") {
+                let u = self.aiderService.todayUsage()
+                results["Aider"] = ToolSnapshot(tokens: u.tokens, messages: u.messages, recent: self.aiderService.recentUsage(minutes: rateWindow).tokens, hourly: self.aiderService.currentHourTokens(), active: self.aiderService.isActive(), cacheRate: u.cacheRate, sessions: self.aiderService.todaySessions())
+            }
+            if enabled.contains("Antigravity") {
+                let u = self.antigravityService.todayUsage()
+                results["Antigravity"] = ToolSnapshot(tokens: u.tokens, messages: u.messages, recent: self.antigravityService.recentUsage(minutes: rateWindow).tokens, hourly: self.antigravityService.currentHourTokens(), active: self.antigravityService.isActive(), cacheRate: u.cacheRate, sessions: self.antigravityService.todaySessions())
+            }
+            if enabled.contains("Cline") {
+                let u = self.clineService.todayUsage()
+                results["Cline"] = ToolSnapshot(tokens: u.tokens, messages: u.messages, recent: self.clineService.recentUsage(minutes: rateWindow).tokens, hourly: self.clineService.currentHourTokens(), active: self.clineService.isActive(), cacheRate: u.cacheRate, sessions: self.clineService.todaySessions())
+            }
+            if enabled.contains("Continue") {
+                let u = self.continueService.todayUsage()
+                results["Continue"] = ToolSnapshot(tokens: u.tokens, messages: u.messages, recent: self.continueService.recentUsage(minutes: rateWindow).tokens, hourly: self.continueService.currentHourTokens(), active: self.continueService.isActive(), cacheRate: u.cacheRate, sessions: self.continueService.todaySessions())
+            }
+            if enabled.contains("Cursor Agent") {
+                let u = self.cursorAgentService.todayUsage()
+                results["Cursor Agent"] = ToolSnapshot(tokens: u.tokens, messages: u.messages, recent: self.cursorAgentService.recentUsage(minutes: rateWindow).tokens, hourly: self.cursorAgentService.currentHourTokens(), active: self.cursorAgentService.isActive(), cacheRate: u.cacheRate, sessions: self.cursorAgentService.todaySessions())
+            }
+
+            // 主线程：批量更新 @Published tools
+            await MainActor.run {
+                for (name, snap) in results {
+                    self.applySnapshot(name: name, snap: snap)
+                }
+            }
+        }
+    }
+
+    /// 一次扫描提取的快照（值类型，可安全跨线程传递）
+    private struct ToolSnapshot {
+        let tokens: Int
+        let messages: Int
+        let recent: Int
+        let hourly: Int
+        let active: Bool
+        let cacheRate: Double
+        let sessions: [SessionInfo]
+    }
+
+    /// 在主线程将快照应用到 tools 数组
+    private func applySnapshot(name: String, snap: ToolSnapshot) {
         guard let idx = tools.firstIndex(where: { $0.name == name }) else { return }
         tools[idx] = ToolUsage(
             name: tools[idx].name,
             abbreviation: tools[idx].abbreviation,
             emoji: tools[idx].emoji,
-            todayTokens: tokens,
-            todayMessages: messages,
-            isActive: active,
-            cacheRate: cacheRate,
-            recentTokens: recentTokens,
-            hourlyTokens: hourlyTokens,
-            sessions: sessions
+            todayTokens: snap.tokens,
+            todayMessages: snap.messages,
+            isActive: snap.active,
+            cacheRate: snap.cacheRate,
+            recentTokens: snap.recent,
+            hourlyTokens: snap.hourly,
+            sessions: snap.sessions
         )
-    }
-
-    private func updateMockData() {
-        openclawService.incrementalScan()
-        claudeCodeService.incrementalScan()
-        geminiService.incrementalScan()
-        codexService.incrementalScan()
-        hermesService.incrementalScan()
-        refreshRealData()
-    }
-
-    private func performFullScan() {
-        openclawService.fullScan()
-        claudeCodeService.fullScan()
-        geminiService.fullScan()
-        codexService.fullScan()
-        hermesService.fullScan()
-        refreshRealData()
     }
 
     // MARK: - 窗口持久化

@@ -12,6 +12,15 @@ enum PathConfig {
     private static let envGemini = "GEMINI_HOME"
     private static let envCodex = "CODEX_HOME"
     private static let envHermes = "HERMES_HOME"
+    private static let envOpenCode = "OPENCODE_HOME"
+    private static let envQwen = "QWEN_HOME"
+    private static let envCopilot = "COPILOT_HOME"
+    private static let envGrok = "GROK_HOME"
+    private static let envAider = "AIDER_HOME"
+    private static let envAntigravity = "ANTIGRAVITY_HOME"
+    private static let envCline = "CLINE_HOME"
+    private static let envContinue = "CONTINUE_HOME"
+    private static let envCursorAgent = "CURSOR_AGENT_HOME"
 
     // MARK: - 读取路径（含探测缓存）
 
@@ -35,6 +44,42 @@ enum PathConfig {
         customPath(forKey: "hermesPath") ?? envPath(envHermes) ?? defaultHermesHome()
     }
 
+    static func opencodeHome() -> String {
+        customPath(forKey: "opencodePath") ?? envPath(envOpenCode) ?? defaultOpenCodeHome()
+    }
+
+    static func qwenHome() -> String {
+        customPath(forKey: "qwenPath") ?? envPath(envQwen) ?? defaultQwenHome()
+    }
+
+    static func copilotHome() -> String {
+        customPath(forKey: "copilotPath") ?? envPath(envCopilot) ?? defaultCopilotHome()
+    }
+
+    static func grokHome() -> String {
+        customPath(forKey: "grokPath") ?? envPath(envGrok) ?? defaultGrokHome()
+    }
+
+    static func aiderHome() -> String {
+        customPath(forKey: "aiderPath") ?? envPath(envAider) ?? defaultAiderHome()
+    }
+
+    static func antigravityHome() -> String {
+        customPath(forKey: "antigravityPath") ?? envPath(envAntigravity) ?? defaultAntigravityHome()
+    }
+
+    static func clineHome() -> String {
+        customPath(forKey: "clinePath") ?? envPath(envCline) ?? defaultClineHome()
+    }
+
+    static func continueHome() -> String {
+        customPath(forKey: "continuePath") ?? envPath(envContinue) ?? defaultContinueHome()
+    }
+
+    static func cursorAgentHome() -> String {
+        customPath(forKey: "cursorAgentPath") ?? envPath(envCursorAgent) ?? defaultCursorAgentHome()
+    }
+
     // MARK: - 默认路径
 
     static func defaultOpenclawHome() -> String {
@@ -55,6 +100,42 @@ enum PathConfig {
 
     static func defaultHermesHome() -> String {
         NSHomeDirectory() + "/.hermes"
+    }
+
+    static func defaultOpenCodeHome() -> String {
+        NSHomeDirectory() + "/.local/share/opencode"
+    }
+
+    static func defaultQwenHome() -> String {
+        NSHomeDirectory() + "/.qwen"
+    }
+
+    static func defaultCopilotHome() -> String {
+        NSHomeDirectory() + "/.copilot"
+    }
+
+    static func defaultGrokHome() -> String {
+        NSHomeDirectory() + "/.grok"
+    }
+
+    static func defaultAiderHome() -> String {
+        NSHomeDirectory() + "/.aider"
+    }
+
+    static func defaultAntigravityHome() -> String {
+        NSHomeDirectory() + "/.gemini/antigravity-cli"
+    }
+
+    static func defaultClineHome() -> String {
+        NSHomeDirectory() + "/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev"
+    }
+
+    static func defaultContinueHome() -> String {
+        NSHomeDirectory() + "/.continue"
+    }
+
+    static func defaultCursorAgentHome() -> String {
+        NSHomeDirectory() + "/.cursor"
     }
 
     // MARK: - 备选探测路径（官方文档中的其他常见位置）
@@ -105,6 +186,72 @@ enum PathConfig {
         return candidates
     }
 
+    static func opencodeCandidates() -> [String] {
+        var candidates: [String] = []
+        if let env = envPath(envOpenCode) { candidates.append(env) }
+        candidates.append(defaultOpenCodeHome())
+        candidates.append(NSHomeDirectory() + "/.opencode")
+        return candidates
+    }
+
+    static func qwenCandidates() -> [String] {
+        var candidates: [String] = []
+        if let env = envPath(envQwen) { candidates.append(env) }
+        candidates.append(defaultQwenHome())
+        return candidates
+    }
+
+    static func copilotCandidates() -> [String] {
+        var candidates: [String] = []
+        if let env = envPath(envCopilot) { candidates.append(env) }
+        candidates.append(defaultCopilotHome())
+        return candidates
+    }
+
+    static func grokCandidates() -> [String] {
+        var candidates: [String] = []
+        if let env = envPath(envGrok) { candidates.append(env) }
+        candidates.append(defaultGrokHome())
+        return candidates
+    }
+
+    static func aiderCandidates() -> [String] {
+        var candidates: [String] = []
+        if let env = envPath(envAider) { candidates.append(env) }
+        candidates.append(defaultAiderHome())
+        return candidates
+    }
+
+    static func antigravityCandidates() -> [String] {
+        var candidates: [String] = []
+        if let env = envPath(envAntigravity) { candidates.append(env) }
+        candidates.append(defaultAntigravityHome())
+        return candidates
+    }
+
+    static func clineCandidates() -> [String] {
+        var candidates: [String] = []
+        if let env = envPath(envCline) { candidates.append(env) }
+        candidates.append(defaultClineHome())
+        // Cursor 扩展位置
+        candidates.append(NSHomeDirectory() + "/Library/Application Support/Cursor/User/globalStorage/saoudrizwan.claude-dev")
+        return candidates
+    }
+
+    static func continueCandidates() -> [String] {
+        var candidates: [String] = []
+        if let env = envPath(envContinue) { candidates.append(env) }
+        candidates.append(defaultContinueHome())
+        return candidates
+    }
+
+    static func cursorAgentCandidates() -> [String] {
+        var candidates: [String] = []
+        if let env = envPath(envCursorAgent) { candidates.append(env) }
+        candidates.append(defaultCursorAgentHome())
+        return candidates
+    }
+
     // MARK: - 写入路径
 
     static func setOpenclawPath(_ path: String) { setCustomPath(path, forKey: "openclawPath") }
@@ -112,6 +259,15 @@ enum PathConfig {
     static func setGeminiPath(_ path: String) { setCustomPath(path, forKey: "geminiPath") }
     static func setCodexPath(_ path: String) { setCustomPath(path, forKey: "codexPath") }
     static func setHermesPath(_ path: String) { setCustomPath(path, forKey: "hermesPath") }
+    static func setOpenCodePath(_ path: String) { setCustomPath(path, forKey: "opencodePath") }
+    static func setQwenPath(_ path: String) { setCustomPath(path, forKey: "qwenPath") }
+    static func setCopilotPath(_ path: String) { setCustomPath(path, forKey: "copilotPath") }
+    static func setGrokPath(_ path: String) { setCustomPath(path, forKey: "grokPath") }
+    static func setAiderPath(_ path: String) { setCustomPath(path, forKey: "aiderPath") }
+    static func setAntigravityPath(_ path: String) { setCustomPath(path, forKey: "antigravityPath") }
+    static func setClinePath(_ path: String) { setCustomPath(path, forKey: "clinePath") }
+    static func setContinuePath(_ path: String) { setCustomPath(path, forKey: "continuePath") }
+    static func setCursorAgentPath(_ path: String) { setCustomPath(path, forKey: "cursorAgentPath") }
 
     // MARK: - 首次启动标记
 

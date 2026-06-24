@@ -228,7 +228,7 @@ final class ClaudeCodeUsageService: @unchecked Sendable {
             let (tokens, messages) = findSessionTokens(sessionId: sessionId, today: today)
             guard tokens > 0 || messages > 0 else { continue }
 
-            let displayId = String(sessionId.prefix(7))
+            let displayId = SessionIdDisplay.format(sessionId)
             let cwd = meta["cwd"] as? String ?? ""
             let detail = cwd.isEmpty ? nil : cwd
 

@@ -1,0 +1,287 @@
+import Foundation
+
+/// 从 GitHub Copilot CLI 本地 session 文件读取 token 使用数据
+/// 支持两种数据源：
+/// - OTel JSONL: ~/.copilot/otel/*.jsonl（需设置环境变量，完整 token 细分）
+/// - Session events: ~/.copilot/session-state/{id}/events.jsonl（始终写入，但 token 字段有限）
+final class CopilotUsageService: @unchecked Sendable {
+    private(set) var dailyData: [String: DayUsage] = [:]
+    private(set) var hourlyData: [String: HourlyUsage] = [:]
+    private(set) var dailyCache: [String: Int] = [:]
+    private var fileCache: [String: FileMeta] = [:]
+    private var fileDailyContrib: [String: [String: DayUsage]] = [:]
+    private var fileHourlyContrib: [String: [String: HourlyUsage]] = [:]
+    private var fileCacheContrib: [String: [String: Int]] = [:]
+    private var recentEntries: [RecentEntry] = []
+
+    private let fm = FileManager.default
+    private let copilotHome: String
+
+    init() {
+        copilotHome = PathConfig.copilotHome()
+    }
+
+    func fullScan() {
+        dailyData.removeAll(); hourlyData.removeAll(); dailyCache.removeAll()
+        fileCache.removeAll(); fileDailyContrib.removeAll()
+        fileHourlyContrib.removeAll(); fileCacheContrib.removeAll()
+        recentEntries = []
+        scanOtelDir()
+        scanSessionStateDir()
+    }
+
+    func incrementalScan() {
+        scanOtelDir()
+        scanSessionStateDir()
+    }
+
+    func todayUsage() -> (tokens: Int, messages: Int, cacheRate: Double) {
+        let d = dailyData[DateHelper.todayKey()]
+        let total = d?.tokens ?? 0
+        let cache = dailyCache[DateHelper.todayKey()] ?? 0
+        let rate = total > 0 ? Double(cache) / Double(total) : 0
+        return (total, d?.messages ?? 0, rate)
+    }
+
+    func currentHourTokens() -> Int {
+        hourlyData[DateHelper.currentHourKey()]?.tokens ?? 0
+    }
+
+    func recentUsage(minutes: Int = 10) -> (tokens: Int, messages: Int) {
+        let cutoff = Date().addingTimeInterval(-Double(minutes * 60))
+        var tokens = 0, messages = 0
+        for entry in recentEntries {
+            if entry.timestamp >= cutoff { tokens += entry.tokens; messages += 1 }
+        }
+        return (tokens, messages)
+    }
+
+    func isActive() -> Bool {
+        let cutoff = Date().addingTimeInterval(-600)
+        return recentEntries.contains { $0.timestamp >= cutoff }
+    }
+
+    // MARK: - OTel JSONL 扫描
+
+    private func scanOtelDir() {
+        let otelDir = copilotHome + "/otel"
+        var isDir: ObjCBool = false
+        guard fm.fileExists(atPath: otelDir, isDirectory: &isDir), isDir.boolValue else { return }
+        guard let files = try? fm.contentsOfDirectory(atPath: otelDir) else { return }
+
+        for file in files where file.hasSuffix(".jsonl") {
+            let fullPath = otelDir + "/" + file
+            processJSONLFile(fullPath, parser: parseOtelEvent)
+        }
+    }
+
+    // MARK: - Session events 扫描
+
+    private func scanSessionStateDir() {
+        let stateDir = copilotHome + "/session-state"
+        var isDir: ObjCBool = false
+        guard fm.fileExists(atPath: stateDir, isDirectory: &isDir), isDir.boolValue else { return }
+        guard let sessionDirs = try? fm.contentsOfDirectory(atPath: stateDir) else { return }
+
+        for session in sessionDirs {
+            let eventsPath = stateDir + "/" + session + "/events.jsonl"
+            processJSONLFile(eventsPath, parser: parseSessionEvent)
+        }
+    }
+
+    // MARK: - 通用 JSONL 文件处理
+
+    private func processJSONLFile(_ path: String, parser: ([String: Any]) -> EventResult?) {
+        guard let attrs = try? fm.attributesOfItem(atPath: path),
+              let modDate = attrs[.modificationDate] as? Date else { return }
+
+        let cached = fileCache[path]
+        if cached != nil && cached?.modDate == modDate { return }
+
+        if let old = fileDailyContrib[path] { subtractDay(old, from: &dailyData) }
+        if let old = fileHourlyContrib[path] { subtractHour(old, from: &hourlyData) }
+        if let old = fileCacheContrib[path] { subtractCache(old) }
+
+        var newDaily: [String: DayUsage] = [:]
+        var newHourly: [String: HourlyUsage] = [:]
+        var newCache: [String: Int] = [:]
+
+        guard let stream = InputStream(fileAtPath: path) else { return }
+        stream.open()
+        defer { stream.close() }
+
+        let bufSize = 65536
+        let buf = UnsafeMutablePointer<UInt8>.allocate(capacity: bufSize)
+        defer { buf.deallocate() }
+        var lineBuf = Data()
+        let today = DateHelper.todayKey()
+
+        while stream.hasBytesAvailable {
+            let n = stream.read(buf, maxLength: bufSize)
+            if n <= 0 { break }
+            lineBuf.append(buf, count: n)
+            while let nlRange = lineBuf.range(of: Data([0x0A])) {
+                let lineData = lineBuf[lineBuf.startIndex..<nlRange.lowerBound]
+                lineBuf = lineBuf[nlRange.upperBound...]
+                guard !lineData.isEmpty else { continue }
+                guard let line = String(data: lineData, encoding: .utf8),
+                      let obj = try? JSONSerialization.jsonObject(with: line.data(using: .utf8) ?? Data()) as? [String: Any],
+                      let r = parser(obj) else { continue }
+                accumulate(r, today: today, daily: &newDaily, hourly: &newHourly, cache: &newCache)
+            }
+        }
+
+        fileDailyContrib[path] = newDaily
+        fileHourlyContrib[path] = newHourly
+        fileCacheContrib[path] = newCache
+        fileCache[path] = FileMeta(path: path, modDate: modDate)
+    }
+
+    // MARK: - 事件解析
+
+    private struct EventResult {
+        let tokens: Int
+        let cachedTokens: Int
+        let dateKey: String
+        let hourKey: String
+        let timestamp: Date?
+    }
+
+    /// OTel 格式: attributes 中有 gen_ai.usage.* 字段
+    private func parseOtelEvent(_ obj: [String: Any]) -> EventResult? {
+        guard let attrs = obj["attributes"] as? [String: Any] else { return nil }
+        let input = attrs["gen_ai.usage.input_tokens"] as? Int ?? 0
+        let output = attrs["gen_ai.usage.output_tokens"] as? Int ?? 0
+        let cacheRead = attrs["gen_ai.usage.cache_read.input_tokens"] as? Int ?? 0
+        let total = input + output + cacheRead
+        guard total > 0 else { return nil }
+
+        let ts = obj["startTime"] as? String ?? obj["timestamp"] as? String ?? ""
+        let dateKey = ts.isEmpty ? DateHelper.todayKey() : DateHelper.localDateKey(from: ts)
+        let hourKey = ts.isEmpty ? DateHelper.currentHourKey() : DateHelper.localHourKey(from: ts)
+        guard dateKey.count == 10 else { return nil }
+
+        return EventResult(tokens: total, cachedTokens: cacheRead, dateKey: dateKey, hourKey: hourKey,
+                           timestamp: ts.isEmpty ? Date() : DateHelper.parseISO8601(ts))
+    }
+
+    /// Session events 格式: { "type": "assistant.usage", "usage": { "inputTokens": N, "outputTokens": N } }
+    private func parseSessionEvent(_ obj: [String: Any]) -> EventResult? {
+        guard obj["type"] as? String == "assistant.usage",
+              let usage = obj["usage"] as? [String: Any] else { return nil }
+        let input = usage["inputTokens"] as? Int ?? 0
+        let output = usage["outputTokens"] as? Int ?? 0
+        let cacheRead = usage["cacheReadTokens"] as? Int ?? 0
+        let total = input + output + cacheRead
+        guard total > 0 else { return nil }
+
+        let ts = obj["timestamp"] as? String ?? ""
+        let dateKey = ts.isEmpty ? DateHelper.todayKey() : DateHelper.localDateKey(from: ts)
+        let hourKey = ts.isEmpty ? DateHelper.currentHourKey() : DateHelper.localHourKey(from: ts)
+        guard dateKey.count == 10 else { return nil }
+
+        return EventResult(tokens: total, cachedTokens: cacheRead, dateKey: dateKey, hourKey: hourKey,
+                           timestamp: ts.isEmpty ? Date() : DateHelper.parseISO8601(ts))
+    }
+
+    // MARK: - 累加与减去
+
+    private func subtractDay(_ contrib: [String: DayUsage], from data: inout [String: DayUsage]) {
+        for (k, u) in contrib {
+            if var e = data[k] {
+                e.tokens -= u.tokens; e.messages -= u.messages
+                if e.tokens <= 0 && e.messages <= 0 { data.removeValue(forKey: k) }
+                else { data[k] = e }
+            }
+        }
+    }
+
+    private func subtractHour(_ contrib: [String: HourlyUsage], from data: inout [String: HourlyUsage]) {
+        for (k, u) in contrib {
+            if var e = data[k] {
+                e.tokens -= u.tokens; e.messages -= u.messages
+                if e.tokens <= 0 && e.messages <= 0 { data.removeValue(forKey: k) }
+                else { data[k] = e }
+            }
+        }
+    }
+
+    private func subtractCache(_ contrib: [String: Int]) {
+        for (k, v) in contrib {
+            if var e = dailyCache[k] {
+                e -= v
+                if e <= 0 { dailyCache.removeValue(forKey: k) }
+                else { dailyCache[k] = e }
+            }
+        }
+    }
+
+    private func accumulate(_ r: EventResult, today: String,
+                            daily: inout [String: DayUsage],
+                            hourly: inout [String: HourlyUsage],
+                            cache: inout [String: Int]) {
+        if var e = dailyData[r.dateKey] { e.tokens += r.tokens; e.messages += 1; dailyData[r.dateKey] = e }
+        else { dailyData[r.dateKey] = DayUsage(tokens: r.tokens, messages: 1) }
+        if var e = daily[r.dateKey] { e.tokens += r.tokens; e.messages += 1; daily[r.dateKey] = e }
+        else { daily[r.dateKey] = DayUsage(tokens: r.tokens, messages: 1) }
+
+        if var e = hourlyData[r.hourKey] { e.tokens += r.tokens; e.messages += 1; hourlyData[r.hourKey] = e }
+        else { hourlyData[r.hourKey] = HourlyUsage(tokens: r.tokens, messages: 1) }
+        if var e = hourly[r.hourKey] { e.tokens += r.tokens; e.messages += 1; hourly[r.hourKey] = e }
+        else { hourly[r.hourKey] = HourlyUsage(tokens: r.tokens, messages: 1) }
+
+        dailyCache[r.dateKey, default: 0] += r.cachedTokens
+        cache[r.dateKey, default: 0] += r.cachedTokens
+
+        if r.dateKey == today, let ts = r.timestamp { recentEntries.append(RecentEntry(timestamp: ts, tokens: r.tokens)) }
+    }
+
+    func todaySessions() -> [SessionInfo] {
+        let stateDir = copilotHome + "/session-state"
+        var isDir: ObjCBool = false
+        guard fm.fileExists(atPath: stateDir, isDirectory: &isDir), isDir.boolValue else { return [] }
+        guard let sessionDirs = try? fm.contentsOfDirectory(atPath: stateDir) else { return [] }
+
+        let today = DateHelper.todayKey()
+        var results: [SessionInfo] = []
+
+        for session in sessionDirs {
+            let eventsPath = stateDir + "/" + session + "/events.jsonl"
+            guard let attrs = try? fm.attributesOfItem(atPath: eventsPath),
+                  let modDate = attrs[.modificationDate] as? Date,
+                  DateHelper.dateKey(from: modDate) == today else { continue }
+
+            var totalTokens = 0, msgCount = 0
+            guard let stream = InputStream(fileAtPath: eventsPath) else { continue }
+            stream.open()
+            defer { stream.close() }
+
+            let bufSize = 65536
+            let buf = UnsafeMutablePointer<UInt8>.allocate(capacity: bufSize)
+            defer { buf.deallocate() }
+            var lineBuf = Data()
+
+            while stream.hasBytesAvailable {
+                let n = stream.read(buf, maxLength: bufSize)
+                if n <= 0 { break }
+                lineBuf.append(buf, count: n)
+                while let nlRange = lineBuf.range(of: Data([0x0A])) {
+                    let lineData = lineBuf[lineBuf.startIndex..<nlRange.lowerBound]
+                    lineBuf = lineBuf[nlRange.upperBound...]
+                    guard !lineData.isEmpty else { continue }
+                    guard let line = String(data: lineData, encoding: .utf8),
+                          let obj = try? JSONSerialization.jsonObject(with: line.data(using: .utf8) ?? Data()) as? [String: Any],
+                          let r = parseSessionEvent(obj), r.dateKey == today else { continue }
+                    totalTokens += r.tokens; msgCount += 1
+                }
+            }
+
+            guard totalTokens > 0 else { continue }
+            results.append(SessionInfo(
+                rawId: session, displayName: SessionIdDisplay.format(session), detail: nil,
+                todayTokens: totalTokens, todayMessages: msgCount, isActive: true
+            ))
+        }
+        return results.sorted { $0.todayTokens > $1.todayTokens }
+    }
+}

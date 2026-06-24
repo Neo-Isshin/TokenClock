@@ -10,6 +10,15 @@ final class MockUsageService {
             ("Claude Code", "CC", "✳️"),
             ("Hermes", "HM", "⚕️"),
             ("Codex", "CX", "🤖"),
+            ("OpenCode", "OD", "🐙"),
+            ("Qwen Code", "QW", "🟣"),
+            ("Copilot", "CP", "🐙"),
+            ("Grok", "GK", "⚡"),
+            ("Aider", "AI", "🤝"),
+            ("Antigravity", "AG", "🛡️"),
+            ("Cline", "CL", "🤖"),
+            ("Continue", "CN", "▶️"),
+            ("Cursor Agent", "CA", "🖱️"),
         ]
 
         return tools.map { tool in

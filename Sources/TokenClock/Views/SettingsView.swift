@@ -10,6 +10,15 @@ struct SettingsView: View {
     @State private var geminiPath: String = ""
     @State private var codexPath: String = ""
     @State private var hermesPath: String = ""
+    @State private var opencodePath: String = ""
+    @State private var qwenPath: String = ""
+    @State private var copilotPath: String = ""
+    @State private var grokPath: String = ""
+    @State private var aiderPath: String = ""
+    @State private var antigravityPath: String = ""
+    @State private var clinePath: String = ""
+    @State private var continuePath: String = ""
+    @State private var cursorAgentPath: String = ""
     @State private var detectResults: [PathDetector.DetectionResult] = []
     @State private var detectionSummary: String = ""
 
@@ -38,6 +47,7 @@ struct SettingsView: View {
     @State private var pathsExpanded = false
     @State private var rateThresholdExpanded = false
     @State private var customThemeExpanded = false
+    @State private var toolSelectionExpanded = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -58,38 +68,135 @@ struct SettingsView: View {
                     // 自动探测（始终可见）
                     autoDetectSection()
 
+                    // 工具选择
+                    collapsibleSection(title: L10n.shared.tr("settings.toolSelection"), isExpanded: $toolSelectionExpanded) {
+                        toolSelectionSection()
+                    }
+
                     // 数据源路径
                     collapsibleSection(title: L10n.shared.tr("settings.dataPaths"), isExpanded: $pathsExpanded) {
                         VStack(alignment: .leading, spacing: 10) {
+                            if viewModel.enabledTools.contains("OpenClaw") {
                             pathRow(
                                 emoji: "🦞", name: "OpenClaw",
                                 path: $openclawPath,
                                 service: "openclaw",
                                 browseTitle: L10n.shared.tr("settings.browseOpenClaw")
                             )
+                            }
 
+                            if viewModel.enabledTools.contains("Claude Code") {
                             pathRow(
                                 emoji: "✳️", name: "Claude Code",
                                 path: $claudeCodePath,
                                 service: "claudeCode",
                                 browseTitle: L10n.shared.tr("settings.browseClaudeCode")
                             )
+                            }
 
+                            if viewModel.enabledTools.contains("Gemini CLI") {
                             pathRow(
                                 emoji: "✨", name: "Gemini CLI",
                                 path: $geminiPath,
                                 service: "gemini",
                                 browseTitle: L10n.shared.tr("settings.browseGemini")
                             )
+                            }
 
+                            if viewModel.enabledTools.contains("Codex") {
                             pathRow(
                                 emoji: "🤖", name: "Codex",
                                 path: $codexPath,
                                 service: "codex",
                                 browseTitle: L10n.shared.tr("settings.browseCodex")
                             )
+                            }
 
+                            if viewModel.enabledTools.contains("Hermes") {
                             hermesPathRow()
+                            }
+
+                            if viewModel.enabledTools.contains("OpenCode") {
+                            pathRow(
+                                emoji: "🐙", name: "OpenCode",
+                                path: $opencodePath,
+                                service: "opencode",
+                                browseTitle: L10n.shared.tr("settings.browseOpenCode")
+                            )
+                            }
+
+                            if viewModel.enabledTools.contains("Qwen Code") {
+                            pathRow(
+                                emoji: "🟣", name: "Qwen Code",
+                                path: $qwenPath,
+                                service: "qwen",
+                                browseTitle: L10n.shared.tr("settings.browseQwen")
+                            )
+                            }
+
+                            if viewModel.enabledTools.contains("Copilot") {
+                            pathRow(
+                                emoji: "🐙", name: "Copilot",
+                                path: $copilotPath,
+                                service: "copilot",
+                                browseTitle: L10n.shared.tr("settings.browseCopilot")
+                            )
+                            }
+
+                            if viewModel.enabledTools.contains("Grok") {
+                            pathRow(
+                                emoji: "⚡", name: "Grok",
+                                path: $grokPath,
+                                service: "grok",
+                                browseTitle: L10n.shared.tr("settings.browseGrok")
+                            )
+                            }
+
+                            if viewModel.enabledTools.contains("Aider") {
+                            pathRow(
+                                emoji: "🤝", name: "Aider",
+                                path: $aiderPath,
+                                service: "aider",
+                                browseTitle: L10n.shared.tr("settings.browseAider")
+                            )
+                            }
+
+                            if viewModel.enabledTools.contains("Antigravity") {
+                            pathRow(
+                                emoji: "🛡️", name: "Antigravity",
+                                path: $antigravityPath,
+                                service: "antigravity",
+                                browseTitle: L10n.shared.tr("settings.browseAntigravity")
+                            )
+                            }
+
+                            if viewModel.enabledTools.contains("Cline") {
+                            pathRow(
+                                emoji: "🤖", name: "Cline",
+                                path: $clinePath,
+                                service: "cline",
+                                browseTitle: L10n.shared.tr("settings.browseCline")
+                            )
+                            }
+
+                            if viewModel.enabledTools.contains("Continue") {
+                            pathRow(
+                                emoji: "▶️", name: "Continue",
+                                path: $continuePath,
+                                service: "continue",
+                                browseTitle: L10n.shared.tr("settings.browseContinue")
+                            )
+                            }
+
+                            if viewModel.enabledTools.contains("Cursor Agent") {
+                            pathRow(
+                                emoji: "🖱️", name: "Cursor Agent",
+                                path: $cursorAgentPath,
+                                service: "cursorAgent",
+                                browseTitle: L10n.shared.tr("settings.browseCursorAgent")
+                            )
+                            }
+
                             hintText()
                         }
                     }
@@ -165,6 +272,64 @@ struct SettingsView: View {
                 .background(Color.secondary.opacity(0.08))
                 .cornerRadius(6)
             }
+        }
+    }
+
+    // MARK: - 工具选择
+
+    private let toolOptions: [(emoji: String, name: String, service: String)] = [
+        ("🦞", "OpenClaw", "openclaw"),
+        ("✳️", "Claude Code", "claudeCode"),
+        ("✨", "Gemini CLI", "gemini"),
+        ("🤖", "Codex", "codex"),
+        ("⚕️", "Hermes", "hermes"),
+        ("🐙", "OpenCode", "opencode"),
+        ("🟣", "Qwen Code", "qwen"),
+        ("🐙", "Copilot", "copilot"),
+        ("⚡", "Grok", "grok"),
+        ("🤝", "Aider", "aider"),
+        ("🛡️", "Antigravity", "antigravity"),
+        ("🤖", "Cline", "cline"),
+        ("▶️", "Continue", "continue"),
+        ("🖱️", "Cursor Agent", "cursorAgent"),
+    ]
+
+    /// 工具是否已探测到有效数据路径
+    private func isToolDetected(_ service: String) -> Bool {
+        detectResults.contains { $0.service == service && $0.exists }
+    }
+
+    private func toolSelectionSection() -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            let cols = [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)]
+            LazyVGrid(columns: cols, spacing: 4) {
+                ForEach(toolOptions, id: \.name) { tool in
+                    let isEnabled = viewModel.enabledTools.contains(tool.name)
+                    let detected = isToolDetected(tool.service)
+                    HStack(spacing: 6) {
+                        Text("\(tool.emoji) \(tool.name)")
+                            .font(.system(size: 12))
+                            .foregroundColor(detected ? .primary : .secondary.opacity(0.5))
+                            .lineLimit(1)
+                        Spacer()
+                        Toggle("", isOn: Binding(
+                            get: { isEnabled },
+                            set: { _ in viewModel.toggleTool(tool.name) }
+                        ))
+                        .toggleStyle(.switch)
+                        .controlSize(.small)
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 5)
+                    .background(isEnabled ? Color.accentColor.opacity(0.08) : Color.clear)
+                    .cornerRadius(6)
+                    .opacity(detected ? 1.0 : 0.5)
+                    .allowsHitTesting(detected)
+                }
+            }
+            .padding(10)
+            .background(Color.secondary.opacity(0.06))
+            .cornerRadius(8)
         }
     }
 
@@ -852,6 +1017,15 @@ struct SettingsView: View {
         geminiPath = UserDefaults.standard.string(forKey: "TC_geminiPath") ?? ""
         codexPath = UserDefaults.standard.string(forKey: "TC_codexPath") ?? ""
         hermesPath = UserDefaults.standard.string(forKey: "TC_hermesPath") ?? ""
+        opencodePath = UserDefaults.standard.string(forKey: "TC_opencodePath") ?? ""
+        qwenPath = UserDefaults.standard.string(forKey: "TC_qwenPath") ?? ""
+        copilotPath = UserDefaults.standard.string(forKey: "TC_copilotPath") ?? ""
+        grokPath = UserDefaults.standard.string(forKey: "TC_grokPath") ?? ""
+        aiderPath = UserDefaults.standard.string(forKey: "TC_aiderPath") ?? ""
+        antigravityPath = UserDefaults.standard.string(forKey: "TC_antigravityPath") ?? ""
+        clinePath = UserDefaults.standard.string(forKey: "TC_clinePath") ?? ""
+        continuePath = UserDefaults.standard.string(forKey: "TC_continuePath") ?? ""
+        cursorAgentPath = UserDefaults.standard.string(forKey: "TC_cursorAgentPath") ?? ""
     }
 
     private func savePaths() {
@@ -860,6 +1034,15 @@ struct SettingsView: View {
         setPath("TC_geminiPath", geminiPath)
         setPath("TC_codexPath", codexPath)
         setPath("TC_hermesPath", hermesPath)
+        setPath("TC_opencodePath", opencodePath)
+        setPath("TC_qwenPath", qwenPath)
+        setPath("TC_copilotPath", copilotPath)
+        setPath("TC_grokPath", grokPath)
+        setPath("TC_aiderPath", aiderPath)
+        setPath("TC_antigravityPath", antigravityPath)
+        setPath("TC_clinePath", clinePath)
+        setPath("TC_continuePath", continuePath)
+        setPath("TC_cursorAgentPath", cursorAgentPath)
     }
 
     private func setPath(_ key: String, _ value: String) {
@@ -883,6 +1066,15 @@ struct SettingsView: View {
             case "gemini": geminiPath = result.detectedPath
             case "codex": codexPath = result.detectedPath
             case "hermes": hermesPath = result.detectedPath
+            case "opencode": opencodePath = result.detectedPath
+            case "qwen": qwenPath = result.detectedPath
+            case "copilot": copilotPath = result.detectedPath
+            case "grok": grokPath = result.detectedPath
+            case "aider": aiderPath = result.detectedPath
+            case "antigravity": antigravityPath = result.detectedPath
+            case "cline": clinePath = result.detectedPath
+            case "continue": continuePath = result.detectedPath
+            case "cursorAgent": cursorAgentPath = result.detectedPath
             default: break
             }
         }
@@ -908,6 +1100,15 @@ struct SettingsView: View {
             "gemini":     ("✨", "Gemini CLI"),
             "codex":      ("🤖", "Codex"),
             "hermes":     ("⚕️", "Hermes"),
+            "opencode":   ("🐙", "OpenCode"),
+            "qwen":       ("🟣", "Qwen Code"),
+            "copilot":    ("🐙", "Copilot"),
+            "grok":       ("⚡", "Grok"),
+            "aider":      ("🤝", "Aider"),
+            "antigravity":("🛡️", "Antigravity"),
+            "cline":      ("🤖", "Cline"),
+            "continue":   ("▶️", "Continue"),
+            "cursorAgent":("🖱️", "Cursor Agent"),
         ]
         let label = toolLabels[service] ?? ("", service)
 
@@ -919,6 +1120,15 @@ struct SettingsView: View {
                 case "gemini": geminiPath = result.detectedPath
                 case "codex": codexPath = result.detectedPath
                 case "hermes": hermesPath = result.detectedPath
+                case "opencode": opencodePath = result.detectedPath
+                case "qwen": qwenPath = result.detectedPath
+                case "copilot": copilotPath = result.detectedPath
+                case "grok": grokPath = result.detectedPath
+                case "aider": aiderPath = result.detectedPath
+                case "antigravity": antigravityPath = result.detectedPath
+                case "cline": clinePath = result.detectedPath
+                case "continue": continuePath = result.detectedPath
+                case "cursorAgent": cursorAgentPath = result.detectedPath
                 default: break
                 }
                 detectionSummary = String(format: L10n.shared.tr("settings.detectUpdated"), label.emoji, label.name, timeStr)
@@ -945,6 +1155,42 @@ struct SettingsView: View {
             let fm = FileManager.default
             var isDir: ObjCBool = false
             return fm.fileExists(atPath: dbPath, isDirectory: &isDir) && !isDir.boolValue
+        case "opencode":
+            let dbPath = basePath + "/opencode.db"
+            let fm = FileManager.default
+            var isDir: ObjCBool = false
+            return fm.fileExists(atPath: dbPath, isDirectory: &isDir) && !isDir.boolValue
+        case "qwen":
+            return PathDetector.findJSONLFiles(in: basePath, subpath: "projects", recursive: true)
+        case "copilot":
+            let fm = FileManager.default
+            var isDir: ObjCBool = false
+            return (fm.fileExists(atPath: basePath + "/otel", isDirectory: &isDir) && isDir.boolValue)
+                || (fm.fileExists(atPath: basePath + "/session-state", isDirectory: &isDir) && isDir.boolValue)
+        case "grok":
+            let fm = FileManager.default
+            var isDir: ObjCBool = false
+            return fm.fileExists(atPath: basePath + "/sessions", isDirectory: &isDir) && isDir.boolValue
+        case "aider":
+            return PathDetector.findJSONLFiles(in: basePath)
+        case "antigravity":
+            let fm = FileManager.default
+            var isDir: ObjCBool = false
+            return fm.fileExists(atPath: basePath + "/conversations", isDirectory: &isDir) && isDir.boolValue
+        case "cline":
+            let fm = FileManager.default
+            var isDir: ObjCBool = false
+            return fm.fileExists(atPath: basePath + "/tasks", isDirectory: &isDir) && isDir.boolValue
+        case "continue":
+            let fm = FileManager.default
+            var isDir: ObjCBool = false
+            return (fm.fileExists(atPath: basePath + "/dev_data", isDirectory: &isDir) && isDir.boolValue)
+                || (fm.fileExists(atPath: basePath + "/sessions", isDirectory: &isDir) && isDir.boolValue)
+        case "cursorAgent":
+            let fm = FileManager.default
+            return fm.fileExists(atPath: basePath + "/hooks/log-token-usage.sh")
+                || fm.fileExists(atPath: basePath + "/token-usage.jsonl")
+                || fm.fileExists(atPath: basePath + "/cli-config.json")
         default:
             return false
         }
@@ -973,6 +1219,15 @@ struct SettingsView: View {
         case "gemini": geminiPath = selectedPath
         case "codex": codexPath = selectedPath
         case "hermes": hermesPath = selectedPath
+        case "opencode": opencodePath = selectedPath
+        case "qwen": qwenPath = selectedPath
+        case "copilot": copilotPath = selectedPath
+        case "grok": grokPath = selectedPath
+        case "aider": aiderPath = selectedPath
+        case "antigravity": antigravityPath = selectedPath
+        case "cline": clinePath = selectedPath
+        case "continue": continuePath = selectedPath
+        case "cursorAgent": cursorAgentPath = selectedPath
         default: break
         }
         savePaths()
