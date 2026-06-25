@@ -1,9 +1,12 @@
 import Foundation
 
 /// 模拟 AI 工具 token 消耗数据
+///
+/// 仅作为首次启动时的占位数据，让 UI 有东西可显示。真实扫描结果到达后会通过
+/// `ViewModel.applySnapshot` 覆盖。**禁用的工具不生成 mock 数据**，避免误导。
 final class MockUsageService {
-    /// 初始化4个工具的随机数据
-    static func generateInitialData() -> [ToolUsage] {
+    /// 为启用的工具生成随机初始数据；禁用的工具返回 0
+    static func generateInitialData(enabledTools: Set<String> = .init()) -> [ToolUsage] {
         let tools: [(name: String, abbr: String, emoji: String)] = [
             ("OpenClaw", "OC", "🦞"),
             ("Gemini CLI", "GC", "✨"),
@@ -21,14 +24,18 @@ final class MockUsageService {
             ("Cursor Agent", "CA", "🖱️"),
         ]
 
+        let isEnabled = { (name: String) in
+            enabledTools.isEmpty || enabledTools.contains(name)
+        }
+
         return tools.map { tool in
             ToolUsage(
                 name: tool.name,
                 abbreviation: tool.abbr,
                 emoji: tool.emoji,
-                todayTokens: Int.random(in: 50_000...500_000),
-                todayMessages: Int.random(in: 50...500),
-                isActive: Bool.random(),
+                todayTokens: isEnabled(tool.name) ? Int.random(in: 50_000...500_000) : 0,
+                todayMessages: isEnabled(tool.name) ? Int.random(in: 50...500) : 0,
+                isActive: false,
                 recentTokens: 0,
                 hourlyTokens: 0
             )

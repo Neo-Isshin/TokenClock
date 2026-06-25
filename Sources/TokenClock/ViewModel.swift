@@ -107,10 +107,11 @@ final class ViewModel: ObservableObject {
     init() {
         // 加载启用的工具集合
         let saved = UserDefaults.standard.stringArray(forKey: "TC_enabledTools")
-        self.enabledTools = Set(saved ?? Self.allToolNames)
+        let enabledTools = Set(saved ?? Self.allToolNames)
+        self.enabledTools = enabledTools
 
-        // 先生成初始结构，再被真实数据覆盖
-        self.tools = MockUsageService.generateInitialData()
+        // 为启用的工具生成占位 mock 数据，禁用的工具留 0（避免误导）
+        self.tools = MockUsageService.generateInitialData(enabledTools: enabledTools)
         updateSortedTools()
         loadTheme()
         loadRateWindow()
