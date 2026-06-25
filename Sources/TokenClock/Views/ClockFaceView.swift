@@ -7,38 +7,46 @@ struct ClockFaceView: View {
     let seconds: Int
     var theme: ClockFaceTheme = .classic
 
+    enum Role { case face, hands, full }
+    var role: Role = .full
+
     var body: some View {
         Canvas { context, size in
             let center = CGPoint(x: size.width / 2, y: size.height / 2)
             let radius = min(size.width, size.height) / 2 - 4
 
-            drawDial(context: context, center: center, radius: radius)
+            if role == .face || role == .full {
+                drawDial(context: context, center: center, radius: radius)
 
-            if theme.hasDialDecoration {
-                drawDialDecoration(context: context, center: center, radius: radius)
+                if theme.hasDialDecoration {
+                    drawDialDecoration(context: context, center: center, radius: radius)
+                }
+
+                if theme.hasTickMarks {
+                    drawTickMarks(context: context, center: center, radius: radius)
+                }
+
+                if theme.showNumbers {
+                    drawNumbers(context: context, center: center, radius: radius)
+                }
             }
 
-            if theme.hasTickMarks {
-                drawTickMarks(context: context, center: center, radius: radius)
+            if role == .hands || role == .full {
+                drawHands(context: context, center: center, radius: radius)
+                drawCenterDot(context: context, center: center)
             }
-
-            if theme.showNumbers {
-                drawNumbers(context: context, center: center, radius: radius)
-            }
-
-            drawHands(context: context, center: center, radius: radius)
-            drawCenterDot(context: context, center: center)
         }
     }
 
     // MARK: - 表盘
 
     private func drawDial(context: GraphicsContext, center: CGPoint, radius: CGFloat) {
+        // 玻璃盘体由 ClockContentView 的 .glassEffect 提供；
+        // 表盘不再填充不透明色，仅描出外环，让玻璃折射壁纸透出。
         let circle = Path(ellipseIn: CGRect(
             x: center.x - radius, y: center.y - radius,
             width: radius * 2, height: radius * 2
         ))
-        context.fill(circle, with: .color(theme.dialColor))
 
         // 外环（直接描边，避免 strokedPath 导致的双层叠加）
         context.stroke(
@@ -79,6 +87,7 @@ struct ClockFaceView: View {
     private func drawNumbers(context: GraphicsContext, center: CGPoint, radius: CGFloat) {
         let numberRadius = radius * 0.84
         for i in 1...12 {
+            if theme.showsCardinalNumbersOnly && i % 3 != 0 { continue }
             let angle = Angle.degrees(Double(i) * 30 - 90)
             let x = center.x + numberRadius * cos(angle.radians)
             let y = center.y + numberRadius * sin(angle.radians)

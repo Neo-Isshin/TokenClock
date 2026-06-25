@@ -6,6 +6,9 @@ struct CustomThemeConfig: Codable, Equatable {
     var dialRimColor: CodableColor = CodableColor(red: 0.82, green: 0.82, blue: 0.82)
     var dialRimWidth: CGFloat = 6
 
+    /// 玻璃盘体着色（nil = 纯净玻璃）。可选字段：旧配置缺失时解码为 nil。
+    var glassTint: CodableColor? = nil
+
     var hourHandColor: CodableColor = CodableColor(red: 0.718, green: 0.110, blue: 0.110)
     var minuteHandColor: CodableColor = CodableColor(red: 0.898, green: 0.224, blue: 0.208)
     var secondHandColor: CodableColor = CodableColor(red: 1.0, green: 0.322, blue: 0.322)

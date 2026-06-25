@@ -269,8 +269,7 @@ struct SettingsView: View {
                     Spacer()
                 }
                 .padding(8)
-                .background(Color.secondary.opacity(0.08))
-                .cornerRadius(6)
+                .glassEffect(in: .rect(cornerRadius: 6, style: .continuous))
             }
         }
     }
@@ -328,8 +327,7 @@ struct SettingsView: View {
                 }
             }
             .padding(10)
-            .background(Color.secondary.opacity(0.06))
-            .cornerRadius(8)
+            .glassEffect(in: .rect(cornerRadius: 8, style: .continuous))
         }
     }
 
@@ -528,8 +526,7 @@ struct SettingsView: View {
             }
         }
         .padding(12)
-        .background(Color.secondary.opacity(0.06))
-        .cornerRadius(8)
+        .glassEffect(in: .rect(cornerRadius: 8, style: .continuous))
     }
 
     private func thresholdRow(emoji: String, label: String, value: Binding<String>, unit: Binding<String>) -> some View {
@@ -693,8 +690,7 @@ struct SettingsView: View {
                     }
                 }
                 .padding(8)
-                .background(Color.secondary.opacity(0.05))
-                .cornerRadius(6)
+                .glassEffect(in: .rect(cornerRadius: 6, style: .continuous))
             }
 
             if !isEditingCustomTheme {

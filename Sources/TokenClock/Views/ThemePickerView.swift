@@ -45,14 +45,7 @@ struct ThemePickerView: View {
             }
         }
         .padding(16)
-        .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(.ultraThinMaterial)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 12)
-                .stroke(Color.primary.opacity(0.1), lineWidth: 1)
-        )
+        .glassEffect(in: .rect(cornerRadius: 12, style: .continuous))
     }
 
     private func themeCard(theme: ClockFaceTheme) -> some View {
@@ -68,8 +61,12 @@ struct ThemePickerView: View {
                         .frame(width: 78, height: 78)
                 }
 
-                ThemePreviewClock(theme: theme)
-                    .frame(width: 72, height: 72)
+                ZStack {
+                    GlassAurora(theme: theme, size: 72, animates: false)
+                    ThemePreviewClock(theme: theme)
+                }
+                .frame(width: 72, height: 72)
+                .glassEffect(.clear.tint(theme.glassTint), in: .circle)
             }
 
             Text(theme.displayName)
@@ -107,8 +104,12 @@ struct ThemePickerView: View {
                 }
 
                 // 用保存的配置渲染预览（通过临时替换 custom 配置）
-                ThemePreviewClockWithConfig(config: theme.config)
-                    .frame(width: 72, height: 72)
+                ZStack {
+                    GlassAurora(theme: previewTheme, size: 72, animates: false)
+                    ThemePreviewClockWithConfig(config: theme.config)
+                }
+                .frame(width: 72, height: 72)
+                .glassEffect(.clear.tint(previewTheme.glassTint), in: .circle)
             }
 
             Text(theme.name)
@@ -152,7 +153,7 @@ struct ThemePreviewClock: View {
                 x: center.x - radius, y: center.y - radius,
                 width: radius * 2, height: radius * 2
             ))
-            context.fill(circle, with: .color(theme.dialColor))
+            // 玻璃盘体由外层 .glassEffect 提供；预览不填充不透明底色，仅描外环。
             context.stroke(circle.strokedPath(StrokeStyle(lineWidth: theme.dialRimWidth)),
                            with: .color(theme.dialRimColor))
 
@@ -272,6 +273,7 @@ struct ThemePreviewClock: View {
     private func drawNumbers(context: GraphicsContext, center: CGPoint, radius: CGFloat, fontSize: CGFloat) {
         let numberRadius = radius * 0.72
         for i in 1...12 {
+            if theme.showsCardinalNumbersOnly && i % 3 != 0 { continue }
             let angle = Angle.degrees(Double(i) * 30 - 90)
             let x = center.x + numberRadius * cos(angle.radians)
             let y = center.y + numberRadius * sin(angle.radians)
@@ -467,7 +469,7 @@ struct ThemePreviewClockWithConfig: View {
             let circle = Path(ellipseIn: CGRect(
                 x: center.x - radius, y: center.y - radius,
                 width: radius * 2, height: radius * 2))
-            context.fill(circle, with: .color(config.dialColor.swiftUIColor))
+            // 玻璃盘体由外层 .glassEffect 提供；预览不填充不透明底色，仅描外环。
             context.stroke(circle.strokedPath(StrokeStyle(lineWidth: config.dialRimWidth)),
                            with: .color(config.dialRimColor.swiftUIColor))
 

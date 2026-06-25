@@ -29,7 +29,7 @@ final class FloatingPanel: NSPanel {
         // 无标题栏，背景透明
         self.isOpaque = false
         self.backgroundColor = .clear
-        self.hasShadow = false
+        self.hasShadow = true
         self.isMovableByWindowBackground = true
 
         // 不拦截其他应用的激活事件
@@ -46,7 +46,7 @@ final class FloatingPanel: NSPanel {
     }
 
     // 点击背景可拖拽，不激活
-    override var canBecomeKey: Bool { true }
+    override var canBecomeKey: Bool { false }
     override var canBecomeMain: Bool { false }
 
     // 右键菜单：直接在 panel 层拦截，用屏幕坐标定位
@@ -92,13 +92,13 @@ final class DropdownPanel: NSPanel {
         level = .normal
         isOpaque = false
         backgroundColor = .clear
-        hasShadow = false
+        hasShadow = true
         isMovableByWindowBackground = false
         becomesKeyOnlyIfNeeded = true
         collectionBehavior = [.canJoinAllSpaces]
     }
 
-    override var canBecomeKey: Bool { true }
+    override var canBecomeKey: Bool { false }
     override var canBecomeMain: Bool { false }
 
     func configureLevel(alwaysOnTop: Bool) {

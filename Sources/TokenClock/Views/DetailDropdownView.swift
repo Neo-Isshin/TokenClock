@@ -55,13 +55,9 @@ struct DetailDropdownView: View {
             .frame(maxHeight: .infinity)
         }
         .frame(maxHeight: .infinity, alignment: .top)
-        .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(theme.dropdownBgColor)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 12)
-                .stroke(theme.dropdownBorderColor, lineWidth: 1.5)
+        .glassEffect(
+            .regular.tint(theme.glassTint),
+            in: .rect(cornerRadius: 12, style: .continuous)
         )
         .padding(.horizontal, 8)
         .padding(.bottom, 10)
