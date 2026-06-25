@@ -404,11 +404,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         pickerPanel.level = .floating
         pickerPanel.contentView = hostingView
 
-        // 定位到时钟面板下方
+        // 定位到时钟面板的左侧（避免被表盘遮挡），垂直居中对齐；
+        // 左侧空间不足时自动改放到右侧，并整体夹在屏幕可见区内。
         if let panelFrame = panel?.frame {
-            var origin = panelFrame.origin
-            origin.y -= 170  // 面板下方
-            origin.x += 10   // 稍微右移
+            let pickerSize = pickerPanel.frame.size
+            let margin: CGFloat = 12
+            var origin = NSPoint(
+                x: panelFrame.minX - pickerSize.width - margin,
+                y: panelFrame.midY - pickerSize.height / 2
+            )
+            if let visible = (panel?.screen ?? NSScreen.main)?.visibleFrame {
+                if origin.x < visible.minX {
+                    // 左侧放不下 → 放到表盘右侧
+                    origin.x = panelFrame.maxX + margin
+                }
+                origin.y = max(visible.minY, min(origin.y, visible.maxY - pickerSize.height))
+            }
             pickerPanel.setFrameOrigin(origin)
         }
 
