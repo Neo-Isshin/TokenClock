@@ -50,7 +50,7 @@ final class HermesUsageService: @unchecked Sendable {
     }
 
     func isActive() -> Bool {
-        let cutoff = Date().addingTimeInterval(-600)
+        let cutoff = Date().addingTimeInterval(-AppConfig.Scan.activeThresholdSeconds)
         return recentEntries.contains { $0.timestamp >= cutoff }
     }
 
@@ -147,7 +147,7 @@ final class HermesUsageService: @unchecked Sendable {
             dailyCache[dateKey, default: 0] += cacheTokens
 
             // Recent (今天内的 session)
-            if dateKey == today && date >= now.addingTimeInterval(-86400) {
+            if dateKey == today && date >= now.addingTimeInterval(-AppConfig.Scan.oneDaySeconds) {
                 recentEntries.append(RecentEntry(timestamp: date, tokens: tokens))
             }
         }
@@ -164,7 +164,7 @@ final class HermesUsageService: @unchecked Sendable {
         guard sqlite3_open(dbFile, &db) == SQLITE_OK else { return [] }
         defer { sqlite3_close(db) }
 
-        let todayStart = Date().addingTimeInterval(-86400)
+        let todayStart = Date().addingTimeInterval(-AppConfig.Scan.oneDaySeconds)
         let query = """
         SELECT session_id, started_at,
                input_tokens, output_tokens,

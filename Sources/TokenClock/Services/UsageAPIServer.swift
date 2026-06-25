@@ -11,7 +11,7 @@ final class UsageAPIServer: @unchecked Sendable {
 
     var isRunning: Bool { listener?.state == .ready }
 
-    init(port: UInt16 = 9988) {
+    init(port: UInt16 = AppConfig.LocalServer.defaultPort) {
         self.port = NWEndpoint.Port(integerLiteral: port)
     }
 

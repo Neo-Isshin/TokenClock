@@ -566,11 +566,11 @@ struct SettingsView: View {
     // MARK: - 阈值读写
 
     private func loadRateSettings() {
-        let burst = UserDefaults.standard.integer(forKey: "TC_rateBurst")
-        let hot = UserDefaults.standard.integer(forKey: "TC_rateHot")
-        let active = UserDefaults.standard.integer(forKey: "TC_rateActive")
-        let calm = UserDefaults.standard.integer(forKey: "TC_rateCalm")
-        let window = UserDefaults.standard.integer(forKey: "TC_rateWindow")
+        let burst = UserDefaults.standard.int(for: .rateBurst)
+        let hot = UserDefaults.standard.int(for: .rateHot)
+        let active = UserDefaults.standard.int(for: .rateActive)
+        let calm = UserDefaults.standard.int(for: .rateCalm)
+        let window = UserDefaults.standard.int(for: .rateWindow)
 
         let b = decomposeTokens(burst > 0 ? burst : 500_000)
         let h = decomposeTokens(hot > 0 ? hot : 100_000)
@@ -600,11 +600,11 @@ struct SettingsView: View {
         if h <= a { h = a + 1 }
         if b <= h { b = h + 1 }
 
-        UserDefaults.standard.set(b, forKey: "TC_rateBurst")
-        UserDefaults.standard.set(h, forKey: "TC_rateHot")
-        UserDefaults.standard.set(a, forKey: "TC_rateActive")
-        UserDefaults.standard.set(c, forKey: "TC_rateCalm")
-        UserDefaults.standard.set(rateWindow, forKey: "TC_rateWindow")
+        UserDefaults.standard.setInt(b, for: .rateBurst)
+        UserDefaults.standard.setInt(h, for: .rateHot)
+        UserDefaults.standard.setInt(a, for: .rateActive)
+        UserDefaults.standard.setInt(c, for: .rateCalm)
+        UserDefaults.standard.setInt(rateWindow, for: .rateWindow)
 
         // 如果发生了调整，回写 UI 让用户看见
         let bNew = decomposeTokens(b)
@@ -1012,20 +1012,20 @@ struct SettingsView: View {
     // MARK: - Actions
 
     private func loadCurrentPaths() {
-        openclawPath = UserDefaults.standard.string(forKey: "TC_openclawPath") ?? ""
-        claudeCodePath = UserDefaults.standard.string(forKey: "TC_claudeCodePath") ?? ""
-        geminiPath = UserDefaults.standard.string(forKey: "TC_geminiPath") ?? ""
-        codexPath = UserDefaults.standard.string(forKey: "TC_codexPath") ?? ""
-        hermesPath = UserDefaults.standard.string(forKey: "TC_hermesPath") ?? ""
-        opencodePath = UserDefaults.standard.string(forKey: "TC_opencodePath") ?? ""
-        qwenPath = UserDefaults.standard.string(forKey: "TC_qwenPath") ?? ""
-        copilotPath = UserDefaults.standard.string(forKey: "TC_copilotPath") ?? ""
-        grokPath = UserDefaults.standard.string(forKey: "TC_grokPath") ?? ""
-        aiderPath = UserDefaults.standard.string(forKey: "TC_aiderPath") ?? ""
-        antigravityPath = UserDefaults.standard.string(forKey: "TC_antigravityPath") ?? ""
-        clinePath = UserDefaults.standard.string(forKey: "TC_clinePath") ?? ""
-        continuePath = UserDefaults.standard.string(forKey: "TC_continuePath") ?? ""
-        cursorAgentPath = UserDefaults.standard.string(forKey: "TC_cursorAgentPath") ?? ""
+        openclawPath = UserDefaults.standard.string(for: .openclawPath) ?? ""
+        claudeCodePath = UserDefaults.standard.string(for: .claudeCodePath) ?? ""
+        geminiPath = UserDefaults.standard.string(for: .geminiPath) ?? ""
+        codexPath = UserDefaults.standard.string(for: .codexPath) ?? ""
+        hermesPath = UserDefaults.standard.string(for: .hermesPath) ?? ""
+        opencodePath = UserDefaults.standard.string(for: .opencodePath) ?? ""
+        qwenPath = UserDefaults.standard.string(for: .qwenPath) ?? ""
+        copilotPath = UserDefaults.standard.string(for: .copilotPath) ?? ""
+        grokPath = UserDefaults.standard.string(for: .grokPath) ?? ""
+        aiderPath = UserDefaults.standard.string(for: .aiderPath) ?? ""
+        antigravityPath = UserDefaults.standard.string(for: .antigravityPath) ?? ""
+        clinePath = UserDefaults.standard.string(for: .clinePath) ?? ""
+        continuePath = UserDefaults.standard.string(for: .continuePath) ?? ""
+        cursorAgentPath = UserDefaults.standard.string(for: .cursorAgentPath) ?? ""
     }
 
     private func savePaths() {

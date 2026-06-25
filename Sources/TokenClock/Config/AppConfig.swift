@@ -1,0 +1,76 @@
+import Foundation
+
+/// 应用级开发者配置（编译期常量）
+///
+/// 这里放不该让用户随意改、但开发者需要能快速调整的值：
+/// API endpoint、HTTP 超时、缓冲区大小、扫描频率等。
+///
+/// 用户可配置项走 UserDefaults，见 `SettingsKeys.swift`。
+/// 文件路径走 `PathConfig.swift`（已存在，不动）。
+enum AppConfig {
+
+    // MARK: - 外部 API endpoint
+
+    enum API {
+        /// Cursor 官方 usage API base
+        static let cursorBase = "https://cursor.com/api"
+        /// Cursor dashboard URL（用于 Origin/Referer header）
+        static let cursorOrigin = "https://cursor.com"
+        static let cursorDashboard = "https://cursor.com/dashboard"
+        /// 天气查询（wttr.in 公开服务，无需 key）
+        static let weatherBase = "https://wttr.in"
+        /// IP 地理定位（中国境内可访问）
+        static let ipLookup = "http://myip.ipip.net/"
+    }
+
+    // MARK: - HTTP / 网络
+
+    enum HTTP {
+        static let requestTimeout: TimeInterval = 10
+        static let resourceTimeout: TimeInterval = 30
+        /// Cursor API 最小拉取间隔（避免被限流）
+        static let cursorMinFetchInterval: TimeInterval = 60
+        /// 默认 User-Agent
+        static let userAgent = "TokenClock/1.0 (macOS)"
+    }
+
+    // MARK: - 数据扫描参数
+
+    enum Scan {
+        /// Cursor API 全量扫描的天数范围
+        static let cursorFullScanDays = 30
+        /// Cursor API 增量扫描的天数范围（今天 + 昨天）
+        static let cursorIncrementalDays = 2
+        /// Cursor API 单次分页大小
+        static let cursorPageSize = 200
+        /// JSONL 流式读取缓冲（64KB，平衡内存和 IO 效率）
+        static let jsonlBufferSize = 65_536
+        /// "活跃工具" 判定窗口（10 分钟内有调用算活跃）
+        static let activeThresholdSeconds: TimeInterval = 600
+        /// "最近 token" 默认窗口（分钟）
+        static let defaultRecentWindowMinutes = 10
+        static let oneDaySeconds: TimeInterval = 86_400
+    }
+
+    // MARK: - 定时器间隔
+
+    enum Timers {
+        /// 时钟刷新（1s，驱动秒针动画）
+        static let clock: TimeInterval = 1.0
+        /// 数据扫描（30s）
+        static let dataScan: TimeInterval = 30.0
+        /// 天气刷新（5min）
+        static let weather: TimeInterval = 300.0
+        /// recentTokens 重置（10min）
+        static let recentReset: TimeInterval = 600.0
+    }
+
+    // MARK: - 本地 API 服务
+
+    enum LocalServer {
+        /// 默认监听端口
+        static let defaultPort: UInt16 = 9988
+        /// 暴露给外部集成的 endpoint 路径
+        static let usageEndpoint = "/api/usage"
+    }
+}

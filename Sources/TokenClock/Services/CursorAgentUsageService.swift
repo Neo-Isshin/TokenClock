@@ -24,14 +24,11 @@ final class CursorAgentUsageService: @unchecked Sendable {
     private var sessionToken: String?
     private var userId: String?
     private var lastFetchTime: Date = .distantPast
-    private let minFetchInterval: TimeInterval = 60  // 至少 60s 一次，避免频繁请求
-
-    private let apiBaseURL = "https://cursor.com/api"
 
     init() {
         let config = URLSessionConfiguration.default
-        config.timeoutIntervalForRequest = 10
-        config.timeoutIntervalForResource = 30
+        config.timeoutIntervalForRequest = AppConfig.HTTP.requestTimeout
+        config.timeoutIntervalForResource = AppConfig.HTTP.resourceTimeout
         config.httpCookieStorage = nil  // 不使用系统 cookie storage
         session = URLSession(configuration: config)
     }
@@ -40,19 +37,19 @@ final class CursorAgentUsageService: @unchecked Sendable {
         // 不清空已有数据，等 API 返回后原子替换
         Task.detached { [weak self] in
             await self?.refreshCredentialsIfNeeded()
-            await self?.fetchUsageData(timeRangeDays: 30)
+            await self?.fetchUsageData(timeRangeDays: AppConfig.Scan.cursorFullScanDays)
         }
     }
 
     func incrementalScan() {
         // 节流：避免高频请求
         let now = Date()
-        if now.timeIntervalSince(lastFetchTime) < minFetchInterval { return }
+        if now.timeIntervalSince(lastFetchTime) < AppConfig.HTTP.cursorMinFetchInterval { return }
 
         Task.detached { [weak self] in
             await self?.refreshCredentialsIfNeeded()
             // 增量只拉今天 + 昨天的数据，避免大请求
-            await self?.fetchUsageData(timeRangeDays: 2)
+            await self?.fetchUsageData(timeRangeDays: AppConfig.Scan.cursorIncrementalDays)
         }
     }
 
@@ -78,7 +75,7 @@ final class CursorAgentUsageService: @unchecked Sendable {
     }
 
     func isActive() -> Bool {
-        let cutoff = Date().addingTimeInterval(-600)
+        let cutoff = Date().addingTimeInterval(-AppConfig.Scan.activeThresholdSeconds)
         return recentEntries.contains { $0.timestamp >= cutoff }
     }
 
@@ -155,15 +152,15 @@ final class CursorAgentUsageService: @unchecked Sendable {
         let nowMs = Int(Date().timeIntervalSince1970 * 1000)
         let startMs = nowMs - timeRangeDays * 24 * 60 * 60 * 1000
 
-        guard let url = URL(string: "\(apiBaseURL)/dashboard/get-filtered-usage-events") else { return }
+        guard let url = URL(string: "\(AppConfig.API.cursorBase)/dashboard/get-filtered-usage-events") else { return }
 
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
-        request.setValue("https://cursor.com", forHTTPHeaderField: "Origin")
-        request.setValue("https://cursor.com/dashboard", forHTTPHeaderField: "Referer")
-        request.setValue("TokenClock/1.0 (macOS)", forHTTPHeaderField: "User-Agent")
+        request.setValue(AppConfig.API.cursorOrigin, forHTTPHeaderField: "Origin")
+        request.setValue(AppConfig.API.cursorDashboard, forHTTPHeaderField: "Referer")
+        request.setValue(AppConfig.HTTP.userAgent, forHTTPHeaderField: "User-Agent")
 
         // Cookie 格式：WorkosCursorSessionToken=user_XXX%3A%3AJWT
         let cookieValue: String
@@ -179,7 +176,7 @@ final class CursorAgentUsageService: @unchecked Sendable {
             "startDate": String(startMs),
             "endDate": String(nowMs),
             "page": 1,
-            "pageSize": 200
+            "pageSize": AppConfig.Scan.cursorPageSize
         ]
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
 

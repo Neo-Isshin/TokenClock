@@ -55,7 +55,7 @@ final class ClaudeCodeUsageService: @unchecked Sendable {
     }
 
     func isActive() -> Bool {
-        let cutoff = Date().addingTimeInterval(-600)
+        let cutoff = Date().addingTimeInterval(-AppConfig.Scan.activeThresholdSeconds)
         return recentEntries.contains { $0.timestamp >= cutoff }
     }
 
@@ -130,7 +130,7 @@ final class ClaudeCodeUsageService: @unchecked Sendable {
         defer { stream.close() }
 
         let today = DateHelper.todayKey()
-        let bufSize = 65536
+        let bufSize = AppConfig.Scan.jsonlBufferSize
         let buf = UnsafeMutablePointer<UInt8>.allocate(capacity: bufSize)
         defer { buf.deallocate() }
         var lineBuf = Data()
@@ -299,7 +299,7 @@ final class ClaudeCodeUsageService: @unchecked Sendable {
         stream.open()
         defer { stream.close() }
 
-        let bufSize = 65536
+        let bufSize = AppConfig.Scan.jsonlBufferSize
         let buf = UnsafeMutablePointer<UInt8>.allocate(capacity: bufSize)
         defer { buf.deallocate() }
         var lineBuf = Data()

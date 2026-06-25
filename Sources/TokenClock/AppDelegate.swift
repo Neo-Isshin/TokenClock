@@ -283,7 +283,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             dropdownPanel.configureLevel(alwaysOnTop: true)
             viewModel.alwaysOnTop = true
         }
-        UserDefaults.standard.set(viewModel.alwaysOnTop, forKey: "TC_alwaysOnTop")
+        UserDefaults.standard.set(viewModel.alwaysOnTop, forKey: SettingsKey.alwaysOnTop.rawValue)
     }
 
     @objc private func toggleLaunchAtLogin(_ sender: NSMenuItem) {
@@ -345,7 +345,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     @objc private func copyAPIEndpoint(_ sender: NSMenuItem) {
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
-        pasteboard.setString("http://localhost:9988/api/usage", forType: .string)
+        pasteboard.setString("http://localhost:\(AppConfig.LocalServer.defaultPort)\(AppConfig.LocalServer.usageEndpoint)", forType: .string)
     }
 
     @objc private func quitApp(_ sender: NSMenuItem) {

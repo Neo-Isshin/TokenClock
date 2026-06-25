@@ -65,7 +65,7 @@ final class AntigravityUsageService: @unchecked Sendable {
     }
 
     func isActive() -> Bool {
-        let cutoff = Date().addingTimeInterval(-600)
+        let cutoff = Date().addingTimeInterval(-AppConfig.Scan.activeThresholdSeconds)
         return recentEntries.contains { $0.timestamp >= cutoff }
     }
 

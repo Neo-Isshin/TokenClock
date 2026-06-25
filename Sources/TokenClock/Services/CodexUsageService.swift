@@ -77,7 +77,7 @@ final class CodexUsageService: @unchecked Sendable {
     }
 
     func isActive() -> Bool {
-        let cutoff = Date().addingTimeInterval(-600)
+        let cutoff = Date().addingTimeInterval(-AppConfig.Scan.activeThresholdSeconds)
         return recentEntries.contains { $0.timestamp >= cutoff }
     }
 
@@ -110,7 +110,7 @@ final class CodexUsageService: @unchecked Sendable {
         stream.open()
         defer { stream.close() }
 
-        let bufSize = 65536
+        let bufSize = AppConfig.Scan.jsonlBufferSize
         let buf = UnsafeMutablePointer<UInt8>.allocate(capacity: bufSize)
         defer { buf.deallocate() }
         var lineBuf = Data()
@@ -229,7 +229,7 @@ private func extractInt(from str: String, key: String) -> Int {
         guard sqlite3_open(dbPath, &db) == SQLITE_OK else { return [] }
         defer { sqlite3_close(db) }
 
-        let todayStart = Date().addingTimeInterval(-86400)
+        let todayStart = Date().addingTimeInterval(-AppConfig.Scan.oneDaySeconds)
         let query = """
         SELECT id, updated_at_ms, cwd
         FROM threads

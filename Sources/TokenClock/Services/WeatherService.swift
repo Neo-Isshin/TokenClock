@@ -82,7 +82,7 @@ final class WeatherService: NSObject, CLLocationManagerDelegate {
             }
         } else {
             let encoded = city.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? city
-            let urlString = "https://wttr.in/\(encoded)?format=j1&m"
+            let urlString = "\(AppConfig.API.weatherBase)/\(encoded)?format=j1&m"
             guard let url = URL(string: urlString) else { return }
 
             URLSession.shared.dataTask(with: url) { data, _, _ in
@@ -97,7 +97,7 @@ final class WeatherService: NSObject, CLLocationManagerDelegate {
     // MARK: - wttr.in JSON API
 
     private func fetchWeatherFromAPI(lat: Double, lon: Double, cityName: String) async {
-        let urlString = "https://wttr.in/\(lat)+\(lon)?format=j1&m"
+        let urlString = "\(AppConfig.API.weatherBase)/\(lat)+\(lon)?format=j1&m"
         guard let url = URL(string: urlString) else { return }
         do {
             let (data, _) = try await URLSession.shared.data(from: url)
@@ -109,7 +109,7 @@ final class WeatherService: NSObject, CLLocationManagerDelegate {
     }
 
     private func fetchWeatherFromAPI(lat: Double, lon: Double, cityName: String, completion: @escaping @MainActor (WeatherInfo) -> Void) {
-        let urlString = "https://wttr.in/\(lat)+\(lon)?format=j1&m"
+        let urlString = "\(AppConfig.API.weatherBase)/\(lat)+\(lon)?format=j1&m"
         guard let url = URL(string: urlString) else { return }
         URLSession.shared.dataTask(with: url) { data, _, _ in
             let info = Self.parseJSON(data: data, fallbackCity: cityName)
@@ -244,7 +244,7 @@ final class WeatherService: NSObject, CLLocationManagerDelegate {
 
     private func fetchCityFromIPService() async -> String? {
         // 使用 IPIP.net 获取国内真实 IP 位置（绕过代理）
-        guard let url = URL(string: "http://myip.ipip.net/") else { return nil }
+        guard let url = URL(string: AppConfig.API.ipLookup) else { return nil }
         do {
             let (data, _) = try await URLSession.shared.data(from: url)
             guard let text = String(data: data, encoding: .utf8) else { return nil }
@@ -270,7 +270,7 @@ final class WeatherService: NSObject, CLLocationManagerDelegate {
     }
 
     private func fetchWeatherByAutoLocation() async {
-        let urlString = "https://wttr.in/?format=j1&m"
+        let urlString = "\(AppConfig.API.weatherBase)/?format=j1&m"
         guard let url = URL(string: urlString) else { return }
         do {
             let (data, _) = try await URLSession.shared.data(from: url)
@@ -283,7 +283,7 @@ final class WeatherService: NSObject, CLLocationManagerDelegate {
 
     private func fetchWeatherByCityName(_ cityName: String) async {
         let encoded = cityName.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? cityName
-        let urlString = "https://wttr.in/\(encoded)?format=j1&m"
+        let urlString = "\(AppConfig.API.weatherBase)/\(encoded)?format=j1&m"
         guard let url = URL(string: urlString) else { return }
         do {
             let (data, _) = try await URLSession.shared.data(from: url)

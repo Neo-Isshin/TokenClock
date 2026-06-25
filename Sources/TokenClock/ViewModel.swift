@@ -32,10 +32,7 @@ final class ViewModel: ObservableObject {
 
     @Published var windowOpacity: Double = 1.0
     @Published var alwaysOnTop: Bool = {
-        if UserDefaults.standard.object(forKey: "TC_alwaysOnTop") != nil {
-            return UserDefaults.standard.bool(forKey: "TC_alwaysOnTop")
-        }
-        return true
+        UserDefaults.standard.bool(for: .alwaysOnTop, default: true)
     }()
     @Published var launchAtLogin = false
 
@@ -106,7 +103,7 @@ final class ViewModel: ObservableObject {
 
     init() {
         // 加载启用的工具集合
-        let saved = UserDefaults.standard.stringArray(forKey: "TC_enabledTools")
+        let saved = UserDefaults.standard.stringArray(for: .enabledTools)
         let enabledTools = Set(saved ?? Self.allToolNames)
         self.enabledTools = enabledTools
 
@@ -219,24 +216,24 @@ final class ViewModel: ObservableObject {
         } else {
             enabledTools.insert(name)
         }
-        UserDefaults.standard.set(Array(enabledTools), forKey: "TC_enabledTools")
+        UserDefaults.standard.setStringArray(Array(enabledTools), for: .enabledTools)
     }
 
     // MARK: - 主题持久化
 
     func saveTheme() {
-        UserDefaults.standard.set(selectedTheme.rawValue, forKey: "TC_selectedTheme")
+        UserDefaults.standard.setString(selectedTheme.rawValue, for: .selectedTheme)
     }
 
     private func loadTheme() {
-        if let saved = UserDefaults.standard.string(forKey: "TC_selectedTheme"),
+        if let saved = UserDefaults.standard.string(for: .selectedTheme),
            let theme = ClockFaceTheme(rawValue: saved) {
             selectedTheme = theme
         }
     }
 
     private func loadRateWindow() {
-        let saved = UserDefaults.standard.integer(forKey: "TC_rateWindow")
+        let saved = UserDefaults.standard.int(for: .rateWindow)
         rateWindowMinutes = saved > 0 ? saved : 10
     }
 
@@ -244,7 +241,7 @@ final class ViewModel: ObservableObject {
 
     private func loadSavedCustomThemes() {
         savedCustomThemes = SavedCustomTheme.loadAll()
-        if let savedIdString = UserDefaults.standard.string(forKey: "TC_activeCustomThemeId"),
+        if let savedIdString = UserDefaults.standard.string(for: .activeCustomThemeId),
            let savedId = UUID(uuidString: savedIdString) {
             activeCustomThemeId = savedId
         }
@@ -261,14 +258,14 @@ final class ViewModel: ObservableObject {
         SavedCustomTheme.saveAll(savedCustomThemes)
         if activeCustomThemeId == id {
             activeCustomThemeId = nil
-            UserDefaults.standard.removeObject(forKey: "TC_activeCustomThemeId")
+            UserDefaults.standard.remove(.activeCustomThemeId)
         }
     }
 
     func applyCustomTheme(id: UUID) {
         guard let theme = savedCustomThemes.first(where: { $0.id == id }) else { return }
         activeCustomThemeId = id
-        UserDefaults.standard.set(id.uuidString, forKey: "TC_activeCustomThemeId")
+        UserDefaults.standard.setString(id.uuidString, for: .activeCustomThemeId)
         // 将配置同步到 CustomThemeConfig 的默认存储，供 ClockFaceTheme.custom 读取
         theme.config.save()
     }
@@ -408,21 +405,21 @@ final class ViewModel: ObservableObject {
 
     private func startTimers() {
         // 时钟：每秒更新
-        clockTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+        clockTimer = Timer.scheduledTimer(withTimeInterval: AppConfig.Timers.clock, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 self?.currentTime = Date()
             }
         }
 
-        // 模拟数据：每30秒更新
-        dataTimer = Timer.scheduledTimer(withTimeInterval: 30.0, repeats: true) { [weak self] _ in
+        // 模拟数据：每 30s 更新
+        dataTimer = Timer.scheduledTimer(withTimeInterval: AppConfig.Timers.dataScan, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 self?.updateMockData()
             }
         }
 
-        // 重置 recentTokens：每10分钟
-        recentResetTimer = Timer.scheduledTimer(withTimeInterval: 600.0, repeats: true) { [weak self] _ in
+        // 重置 recentTokens：每 10 分钟
+        recentResetTimer = Timer.scheduledTimer(withTimeInterval: AppConfig.Timers.recentReset, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 guard var tools = self?.tools else { return }
                 UsageAggregator.resetRecentTokens(tools: &tools)
@@ -430,8 +427,8 @@ final class ViewModel: ObservableObject {
             }
         }
 
-        // 天气刷新：每5分钟
-        weatherTimer = Timer.scheduledTimer(withTimeInterval: 300.0, repeats: true) { [weak self] _ in
+        // 天气刷新：每 5 分钟
+        weatherTimer = Timer.scheduledTimer(withTimeInterval: AppConfig.Timers.weather, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 self?.refreshWeather()
             }
@@ -592,16 +589,14 @@ final class ViewModel: ObservableObject {
 
     // MARK: - 窗口持久化
 
-    private static let positionKey = "TokenClockWindowPosition"
-
     static func saveWindowPosition(_ point: NSPoint) {
-        UserDefaults.standard.set(CGFloat(point.x), forKey: "\(positionKey)X")
-        UserDefaults.standard.set(CGFloat(point.y), forKey: "\(positionKey)Y")
+        UserDefaults.standard.set(CGFloat(point.x), forKey: "\(SettingsKey.windowPosition.rawValue)X")
+        UserDefaults.standard.set(CGFloat(point.y), forKey: "\(SettingsKey.windowPosition.rawValue)Y")
     }
 
     static func loadWindowPosition(screenSize: NSSize) -> NSPoint {
-        let x = UserDefaults.standard.double(forKey: "\(positionKey)X")
-        let y = UserDefaults.standard.double(forKey: "\(positionKey)Y")
+        let x = UserDefaults.standard.double(forKey: "\(SettingsKey.windowPosition.rawValue)X")
+        let y = UserDefaults.standard.double(forKey: "\(SettingsKey.windowPosition.rawValue)Y")
         if x != 0 || y != 0 {
             return NSPoint(x: x, y: y)
         }

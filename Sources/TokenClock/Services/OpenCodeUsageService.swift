@@ -50,7 +50,7 @@ final class OpenCodeUsageService: @unchecked Sendable {
     }
 
     func isActive() -> Bool {
-        let cutoff = Date().addingTimeInterval(-600)
+        let cutoff = Date().addingTimeInterval(-AppConfig.Scan.activeThresholdSeconds)
         return recentEntries.contains { $0.timestamp >= cutoff }
     }
 
@@ -131,7 +131,7 @@ final class OpenCodeUsageService: @unchecked Sendable {
             let cacheTokens = Int(cacheRead) + Int(cacheWrite)
             dailyCache[dateKey, default: 0] += cacheTokens
 
-            if dateKey == today && date >= now.addingTimeInterval(-86400) {
+            if dateKey == today && date >= now.addingTimeInterval(-AppConfig.Scan.oneDaySeconds) {
                 recentEntries.append(RecentEntry(timestamp: date, tokens: tokens))
             }
         }
@@ -147,7 +147,7 @@ final class OpenCodeUsageService: @unchecked Sendable {
         guard sqlite3_open(dbFile, &db) == SQLITE_OK else { return [] }
         defer { sqlite3_close(db) }
 
-        let todayStart = Date().addingTimeInterval(-86400)
+        let todayStart = Date().addingTimeInterval(-AppConfig.Scan.oneDaySeconds)
         let todayStartMs = Int64(todayStart.timeIntervalSince1970 * 1000)
 
         let query = """

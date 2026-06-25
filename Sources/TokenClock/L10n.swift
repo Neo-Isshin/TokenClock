@@ -18,7 +18,7 @@ enum AppLanguage: String, CaseIterable, Identifiable {
 
 final class L10n: @unchecked Sendable {
     static let shared = L10n()
-    private static let storageKey = "TC_language"
+    private static let storageKey = SettingsKey.language.rawValue
 
     var language: AppLanguage {
         didSet { UserDefaults.standard.set(language.rawValue, forKey: Self.storageKey) }
