@@ -1,0 +1,163 @@
+#!/usr/bin/env bash
+#
+# install.sh — TokenClock 一键安装器
+#
+# 自动：检查环境 → 按 macOS 版本构建对应变体（26+ 液态玻璃 / 15+ 普通）→
+#      安装到 ~/.tokenclock → 安装 tokenclock CLI 到 PATH → 首次启动（自动扫描 AI 工具路径）。
+#
+# 用法:
+#   ./cli/install.sh              # 自动检测变体 · release 构建 · 装完即启动
+#   ./cli/install.sh --debug      # debug 构建（更快，适合试用）
+#   ./cli/install.sh --normal     # 强制 normal 变体
+#   ./cli/install.sh --glass      # 强制 liquid-glass 变体
+#   ./cli/install.sh --no-start   # 装完不自动启动
+#
+# 一行安装（公开托管后替换 <your-host>）:
+#   curl -fsSL https://<your-host>/raw/liquid-glass/cli/install.sh | bash
+#
+# 可用环境变量覆盖默认值:
+#   TOKENCLOCK_REPO     git 仓库地址            （默认: 仓库 origin）
+#   TOKENCLOCK_HOME     安装根目录              （默认: ~/.tokenclock）
+#   TOKENCLOCK_BIN_DIR  CLI 安装目录            （默认: ~/.local/bin）
+#   TOKENCLOCK_BUILD    克隆 + 构建目录         （默认: $TOKENCLOCK_HOME/src）
+#
+set -uo pipefail
+export LC_ALL=C      # bash 3.2 在 UTF-8 locale 下会把紧跟 $var 的多字节字符(如中文括号)误并入变量名;C locale 按字节解析可避免。中文字符串仍按 UTF-8 字节正常输出。
+
+DEFAULT_REPO="http://localhost:3000/nxc8335/TokenClock.git"
+REPO_URL="${TOKENCLOCK_REPO:-$DEFAULT_REPO}"
+HOME_DIR="${TOKENCLOCK_HOME:-$HOME/.tokenclock}"
+BIN_DIR="${TOKENCLOCK_BIN_DIR:-$HOME/.local/bin}"
+BUILD_DIR="${TOKENCLOCK_BUILD:-$HOME_DIR/src}"
+
+CONFIG="release"
+VARIANT=""          # "" = 按系统版本自动
+NO_START=0
+
+say()  { printf '%s\n' "$*"; }
+step() { printf '\n🛠  %s\n' "$*"; }
+die()  { printf '\n❌ %s\n' "$*" >&2; exit 1; }
+
+usage() {
+  sed -n '3,22p' "$0" 2>/dev/null || true
+  exit 0
+}
+
+# ── 参数 ──
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --glass)     VARIANT=glass ;;
+    --normal)    VARIANT=normal ;;
+    --debug)     CONFIG=debug ;;
+    --release)   CONFIG=release ;;
+    --no-start)  NO_START=1 ;;
+    -h|--help)   usage ;;
+    *)           die "未知参数: $1（可用 --glass / --normal / --debug / --release / --no-start）" ;;
+  esac
+  shift
+done
+
+# ── 1. 前置检查 ──
+step "检查环境"
+command -v sw_vers >/dev/null || die "需要 macOS（未找到 sw_vers）。"
+command -v git    >/dev/null || die "未找到 git。请先安装 Xcode 命令行工具：xcode-select --install"
+command -v swift  >/dev/null || die "未找到 Swift 工具链。请先安装 Xcode 或命令行工具：xcode-select --install"
+
+OS_MAJOR="$(sw_vers -productVersion | cut -d. -f1)"
+say "  macOS $(sw_vers -productVersion) · 主版本 $OS_MAJOR · 工具链 $(swift --version 2>/dev/null | head -1)"
+
+# ── 2. 选变体 ──
+if [ -z "$VARIANT" ]; then
+  if   [ "$OS_MAJOR" -ge 26 ]; then VARIANT=glass;  BRANCH=liquid-glass
+  elif [ "$OS_MAJOR" -ge 15 ]; then VARIANT=normal; BRANCH=main
+  else die "需要 macOS 15 或更高版本（当前主版本 $OS_MAJOR）。"
+  fi
+else
+  case "$VARIANT" in glass) BRANCH=liquid-glass ;; normal) BRANCH=main ;; esac
+fi
+say "  变体: $VARIANT（分支 $BRANCH）· 构建: $CONFIG"
+
+# ── 3. 获取源码 ──
+step "获取源码（$REPO_URL · $BRANCH）"
+if [ -d "$BUILD_DIR/.git" ]; then
+  git -C "$BUILD_DIR" fetch --depth 1 origin "$BRANCH" >/dev/null 2>&1 || die "git fetch 失败（检查网络或 TOKENCLOCK_REPO）"
+  git -C "$BUILD_DIR" checkout "$BRANCH" >/dev/null 2>&1 || die "切换分支 $BRANCH 失败"
+  git -C "$BUILD_DIR" reset --hard "origin/$BRANCH" >/dev/null 2>&1
+  say "  已更新: $BUILD_DIR"
+else
+  mkdir -p "$BUILD_DIR"
+  git clone --depth 1 --branch "$BRANCH" "$REPO_URL" "$BUILD_DIR" >/dev/null 2>&1 \
+    || die "git clone 失败（检查 TOKENCLOCK_REPO=$REPO_URL 或网络）"
+  say "  已克隆: $BUILD_DIR"
+fi
+
+# ── 4. 构建 ──
+step "构建（swift build -c $CONFIG · 首次可能需要几分钟）"
+( cd "$BUILD_DIR" && swift build -c "$CONFIG" ) || die "构建失败"
+BIN_PATH="$BUILD_DIR/.build/$CONFIG/TokenClock"
+[ -f "$BIN_PATH" ] || die "找不到构建产物: $BIN_PATH"
+
+# ── 5. 暂存二进制 ──
+step "安装时钟到 $HOME_DIR"
+mkdir -p "$HOME_DIR/$VARIANT"
+cp "$BIN_PATH" "$HOME_DIR/$VARIANT/TokenClock"
+chmod +x "$HOME_DIR/$VARIANT/TokenClock"
+say "  ✓ $HOME_DIR/$VARIANT/TokenClock"
+
+# ── 6. 安装 tokenclock CLI ──
+step "安装 tokenclock CLI"
+mkdir -p "$BIN_DIR"
+cp "$BUILD_DIR/cli/tokenclock" "$BIN_DIR/tokenclock"
+chmod +x "$BIN_DIR/tokenclock"
+say "  ✓ $BIN_DIR/tokenclock"
+export PATH="$BIN_DIR:$PATH"   # 让本脚本后续命令能直接用 tokenclock
+
+# ── 7. 确保 PATH（写入 shell rc，幂等）──
+ensure_in_path() {
+  case ":$PATH:" in *":$BIN_DIR:"*) return 0 ;; esac      # 当前 shell 已在 PATH
+  local rc
+  for rc in "$HOME/.zshrc" "$HOME/.bash_profile"; do
+    [ -f "$rc" ] && grep -qF "$BIN_DIR" "$rc" && return 0  # 某个 rc 已配置
+  done
+  printf '\n# Added by tokenclock installer\nexport PATH="%s:$PATH"\n' "$BIN_DIR" >> "$HOME/.zshrc"
+  say "  已把 $BIN_DIR 加入 ~/.zshrc（新开终端生效）"
+}
+ensure_in_path
+
+# ── 8. 首次启动（= 初始化：首次扫描各 AI 工具本地路径）──
+if [ "$NO_START" -eq 1 ]; then
+  say "  ⏭  跳过自动启动（--no-start）"
+else
+  step "首次启动并扫描 AI 工具路径"
+  tokenclock stop >/dev/null 2>&1 || true                    # 停掉旧实例，确保用新二进制
+  tokenclock start --"$VARIANT" >/dev/null 2>&1 || die "启动失败"
+  say "  已启动 $VARIANT 版"
+  sleep 3                                                    # 等待首次扫描
+  enabled="$(defaults read TokenClock TC_enabledTools 2>/dev/null \
+             | tr -d '()"' | tr ',' '\n' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' | grep -v '^$' | paste -sd ',' - | sed 's/,/, /g')"
+  if [ -n "$enabled" ]; then
+    say "  🔍 检测到已启用工具: $enabled"
+  else
+    say "  🔍 首次扫描已完成（如未列出工具，可在时钟右键 → 设置中手动启用 / 指定路径）"
+  fi
+fi
+
+# ── 9. 完成 ──
+cat <<EOF
+
+🎉 TokenClock 安装完成！
+
+  变体:   $VARIANT（$BRANCH）
+  时钟:   $HOME_DIR/$VARIANT/TokenClock
+  CLI:    $BIN_DIR/tokenclock
+  源码:   $BUILD_DIR
+
+常用命令（新开终端或 source ~/.zshrc 后即可直接用）:
+  tokenclock doctor      # 查看环境与已安装版本
+  tokenclock restart     # 重启
+  tokenclock stop        # 停止
+
+一行安装（公开托管后替换 <your-host>）:
+  curl -fsSL https://<your-host>/raw/$BRANCH/cli/install.sh | bash
+
+EOF

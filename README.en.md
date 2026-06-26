@@ -105,6 +105,22 @@ TokenClock reads the **JSONL / SQLite usage files** that each tool writes locall
 
 ## 🚀 Quick start
 
+### One-line install (easiest)
+
+Auto-detects the macOS version → builds the matching variant → installs to `~/.tokenclock` → puts `tokenclock` on your PATH → launches and scans each AI tool's local paths — no manual steps.
+
+```bash
+# if you've cloned this repo, run it directly:
+./cli/install.sh
+
+# or (once publicly hosted, replace <your-host>) one-line install:
+curl -fsSL https://<your-host>/raw/liquid-glass/cli/install.sh | bash
+```
+
+Options: `--debug` (faster build) / `--normal` / `--glass` / `--no-start` (don't auto-launch).
+
+> Or build manually from source below.
+
 ### Prerequisites
 - **macOS 15+** (normal build); **macOS 26+** (Liquid Glass build)
 - Swift 6 toolchain (Xcode 16+ / Command Line Tools)
