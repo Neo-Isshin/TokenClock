@@ -1,5 +1,7 @@
 <div align="center">
 
+**简体中文** · [English](README.en.md)
+
 # 🕰️ TokenClock
 
 **一个浮在桌面上的 macOS 时钟，一眼看清你所有 AI 编程工具的实时 token 用量。**
@@ -10,6 +12,7 @@
 [![SwiftUI](https://img.shields.io/static/v1?label=UI&message=SwiftUI%20%2B%20AppKit&color=blueviolet)](https://developer.apple.com/xcode/swiftui/)
 [![SwiftPM](https://img.shields.io/static/v1?label=Build&message=SwiftPM&color=FA7343)](https://www.swift.org/package-manager/)
 [![Privacy](https://img.shields.io/static/v1?label=Privacy&message=local%20only&color=success)](#-隐私--privacy)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 </div>
 
@@ -216,6 +219,12 @@ GET http://127.0.0.1:9988/api/usage
 | **平台** | macOS 26 SDK（`liquid-glass` 分支）/ macOS 15 SDK（`main` 分支） |
 | **定位** | 自研 `L10n` 引擎（zh-Hans / zh-Hant / en，无 `.xcstrings`） |
 | **规模** | 约 10,700 行 Swift |
+
+---
+
+## 📄 许可证
+
+TokenClock 基于 **[MIT 协议](LICENSE)** 开源 —— © 2026 nxc8335。可自由使用、修改与再分发，仅需保留版权声明。
 
 ---
 
