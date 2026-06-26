@@ -46,6 +46,7 @@ find_glass() {
   first_existing \
     "${TOKENCLOCK_GLASS:-}" \
     "$HOME/.tokenclock/TokenClock Glass.app" \
+    "$HOME/.tokenclock/tokenclock-glass" \
     "/Applications/TokenClock Glass.app" \
     ${repo:+"$repo/.build/debug/TokenClock"}
 }
@@ -54,6 +55,7 @@ find_normal() {
   first_existing \
     "${TOKENCLOCK_NORMAL:-}" \
     "$HOME/.tokenclock/TokenClock.app" \
+    "$HOME/.tokenclock/tokenclock-normal" \
     "/Applications/TokenClock.app"
 }
 
