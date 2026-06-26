@@ -1,0 +1,192 @@
+#!/usr/bin/env bash
+#
+# tokenclock — TokenClock 轻量命令行
+#
+# 管理浮动时钟的启动：按 macOS 版本自动选 liquid-glass（26+）或 normal（15+）构建，
+# 以及 stop / restart / doctor / update（占位）。
+#
+# 设计为 POSIX/bash-3.2 兼容（macOS 自带 /bin/bash 即可），无需编译。
+# 安装：sudo install -m755 cli/tokenclock /usr/local/bin/tokenclock
+#
+set -u
+
+CLI_VERSION="0.1.0"
+APP_PROCESS="TokenClock"   # 运行中时钟的进程名（comm），用于精确 pgrep/pkill
+
+# ─────────────────────────── 辅助函数 ───────────────────────────
+
+die() { echo "tokenclock: $*" >&2; exit 1; }
+
+# macOS 主版本号（15 / 26 …）
+os_major() { sw_vers -productVersion 2>/dev/null | cut -d. -f1; }
+
+# 运行中的 TokenClock pid（可能多行）；用 -x 精确匹配进程名，避免误伤 shell/脚本
+running_pids() { pgrep -x "$APP_PROCESS" 2>/dev/null; }
+
+# 打印第一个真实存在的路径，否则返回非零（不输出）
+first_existing() {
+  local p
+  for p in "$@"; do
+    [ -e "$p" ] && { echo "$p"; return 0; }
+  done
+  return 1
+}
+
+# 若脚本位于 <repo>/cli 下，返回仓库根（用于开发态的 .build/debug 构建）；否则空
+repo_dev_build() {
+  local d p
+  d="$(cd "$(dirname "$0")" 2>/dev/null && pwd)" || return 0
+  p="$d/../.build/debug/TokenClock"
+  if [ -f "$p" ]; then (cd "$d/.." && pwd); return; fi
+  return 0
+}
+
+find_glass() {
+  local repo; repo="$(repo_dev_build)"
+  first_existing \
+    "${TOKENCLOCK_GLASS:-}" \
+    "$HOME/.tokenclock/TokenClock Glass.app" \
+    "/Applications/TokenClock Glass.app" \
+    ${repo:+"$repo/.build/debug/TokenClock"}
+}
+
+find_normal() {
+  first_existing \
+    "${TOKENCLOCK_NORMAL:-}" \
+    "$HOME/.tokenclock/TokenClock.app" \
+    "/Applications/TokenClock.app"
+}
+
+# 启动给定路径：.app 用 open（自动去重/激活），裸二进制用 nohup 后台拉起
+launch_path() {
+  case "$1" in
+    *.app) open "$1" ;;
+    *) nohup "$1" >/dev/null 2>&1 & ;;
+  esac
+}
+
+env_var_for() { case "$1" in glass) echo TOKENCLOCK_GLASS ;; normal) echo TOKENCLOCK_NORMAL ;; esac; }
+
+# ─────────────────────────── 命令实现 ───────────────────────────
+
+cmd_start() {
+  local variant="" force=0
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --glass|--liquid-glass) variant=glass ;;
+      --normal|--classic)     variant=normal ;;
+      --force)                force=1 ;;
+      -h|--help)              echo "用法: tokenclock start [--glass|--normal] [--force]"; return 0 ;;
+      *)                      die "未知参数: $1（可用 --glass / --normal / --force）" ;;
+    esac
+    shift
+  done
+
+  # 已在运行？默认拒绝重复拉起（解决「同时两个实例」问题）
+  local pids; pids="$(running_pids)"
+  if [ -n "$pids" ] && [ "$force" -eq 0 ]; then
+    echo "TokenClock 已在运行（pid $(echo $pids | tr '\n' ' ')）。"
+    echo "重启请用: tokenclock restart    另开一份请用: tokenclock start --force"
+    return 0
+  fi
+
+  # 未显式指定则按系统版本自动选
+  if [ -z "$variant" ]; then
+    local m; m="$(os_major)"
+    if   [ "$m" -ge 26 ]; then variant=glass;  echo "检测到 macOS $m → 自动选择 liquid-glass 版"
+    elif [ "$m" -ge 15 ]; then variant=normal; echo "检测到 macOS $m → 自动选择 normal 版"
+    else die "需要 macOS 15 或更高版本（当前主版本 ${m:-未知}）。"
+    fi
+  fi
+
+  local path
+  case "$variant" in
+    glass)  path="$(find_glass)" ;;
+    normal) path="$(find_normal)" ;;
+  esac
+
+  if [ -z "$path" ]; then
+    die "未找到 $variant 版可执行文件。请设置 \$$(env_var_for "$variant") 环境变量，或安装到 ~/.tokenclock 或 /Applications。"
+  fi
+
+  launch_path "$path"
+  echo "已启动 $variant 版: $path"
+}
+
+cmd_stop() {
+  local pids; pids="$(running_pids)"
+  if [ -z "$pids" ]; then echo "TokenClock 未在运行。"; return 0; fi
+  pkill -x "$APP_PROCESS" 2>/dev/null
+  sleep 0.5
+  if [ -n "$(running_pids)" ]; then pkill -9 -x "$APP_PROCESS" 2>/dev/null; sleep 0.3; fi
+  if [ -n "$(running_pids)" ]; then
+    echo "警告：部分进程未能停止（pid $(running_pids | tr '\n' ' ')）。" >&2
+    return 1
+  fi
+  echo "已停止 TokenClock。"
+}
+
+cmd_restart() {
+  cmd_stop
+  cmd_start "$@"
+}
+
+cmd_doctor() {
+  local m path pids
+  m="$(os_major)"
+  echo "TokenClock CLI v$CLI_VERSION"
+  echo "macOS $(sw_vers -productVersion 2>/dev/null)（主版本 ${m:-未知}）"
+  if   [ "$m" -ge 26 ]; then echo "→ 自动选择: liquid-glass 版"
+  elif [ "$m" -ge 15 ]; then echo "→ 自动选择: normal 版"
+  else echo "→ ⚠ 系统版本过低（需 macOS 15+）"
+  fi
+  echo
+
+  path="$(find_glass)";  [ -n "$path" ] && echo "liquid-glass:  ✓ $path" || echo "liquid-glass:  ✗ 未找到"
+  path="$(find_normal)"; [ -n "$path" ] && echo "normal:        ✓ $path" || echo "normal:        ✗ 未找到"
+  echo
+
+  pids="$(running_pids)"
+  if [ -n "$pids" ]; then echo "运行中: pid $(echo $pids | tr '\n' ' ')"; else echo "运行中: 无"; fi
+  echo
+  echo "环境变量: TOKENCLOCK_GLASS=${TOKENCLOCK_GLASS:-（未设置）}  TOKENCLOCK_NORMAL=${TOKENCLOCK_NORMAL:-（未设置）}"
+}
+
+cmd_update() {
+  echo "tokenclock update 暂未配置（更新服务器待部署）。"
+  echo "当前 CLI 版本: $CLI_VERSION"
+  echo "服务器就绪后，此命令将拉取并安装对应版本。"
+  return 0
+}
+
+usage() {
+  cat <<EOF
+tokenclock v$CLI_VERSION — TokenClock 轻量命令行
+
+用法:
+  tokenclock start [--glass|--normal] [--force]   启动（按系统版本自动选；flag 强制）
+  tokenclock stop                                 停止所有实例
+  tokenclock restart [--glass|--normal]           重启
+  tokenclock doctor                               诊断环境与已安装版本
+  tokenclock update                               更新（占位，服务器待部署）
+  tokenclock help                                 显示此帮助
+
+每个变体的定位顺序:
+  \$TOKENCLOCK_GLASS / \$TOKENCLOCK_NORMAL  →  ~/.tokenclock/  →  /Applications/  →  仓库 .build/debug/
+
+安装到 PATH: sudo install -m755 cli/tokenclock /usr/local/bin/tokenclock
+EOF
+}
+
+# ─────────────────────────── 分发 ───────────────────────────
+
+case "${1:-help}" in
+  start)              [ $# -gt 0 ] && shift; cmd_start "$@" ;;
+  stop)               cmd_stop ;;
+  restart)            [ $# -gt 0 ] && shift; cmd_restart "$@" ;;
+  doctor|dr)          cmd_doctor ;;
+  update)             cmd_update ;;
+  help|-h|--help)     usage ;;
+  "")                 usage ;;
+  *)                  die "未知命令: $1（用 'tokenclock help' 查看用法）" ;;
+esac
