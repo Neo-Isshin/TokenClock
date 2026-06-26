@@ -11,7 +11,10 @@
 set -u
 
 CLI_VERSION="0.1.0"
-APP_PROCESS="TokenClock"   # 运行中时钟的进程名（comm），用于精确 pgrep/pkill
+# 运行中时钟的进程名（comm）。**所有变体的可执行文件都必须叫 TokenClock**
+#（放在 glass/ normal/ 子目录里区分变体），这样无论启动哪个变体，进程名都是 TokenClock，
+# 下面的 pgrep/pkill -x 才能精确命中、且不会误伤 shell/脚本本身。
+APP_PROCESS="TokenClock"
 
 # ─────────────────────────── 辅助函数 ───────────────────────────
 
@@ -46,7 +49,7 @@ find_glass() {
   first_existing \
     "${TOKENCLOCK_GLASS:-}" \
     "$HOME/.tokenclock/TokenClock Glass.app" \
-    "$HOME/.tokenclock/tokenclock-glass" \
+    "$HOME/.tokenclock/glass/TokenClock" \
     "/Applications/TokenClock Glass.app" \
     ${repo:+"$repo/.build/debug/TokenClock"}
 }
@@ -55,7 +58,7 @@ find_normal() {
   first_existing \
     "${TOKENCLOCK_NORMAL:-}" \
     "$HOME/.tokenclock/TokenClock.app" \
-    "$HOME/.tokenclock/tokenclock-normal" \
+    "$HOME/.tokenclock/normal/TokenClock" \
     "/Applications/TokenClock.app"
 }
 
