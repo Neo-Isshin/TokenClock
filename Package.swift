@@ -8,6 +8,7 @@ let package = Package(
         .executableTarget(
             name: "TokenClock",
             path: "Sources/TokenClock",
+            resources: [.copy("Resources/glass_disc.png")],
             swiftSettings: [.unsafeFlags(["-parse-as-library"])]
         )
     ]
