@@ -1025,27 +1025,27 @@ struct SettingsView: View {
     }
 
     private func savePaths() {
-        setPath("TC_openclawPath", openclawPath)
-        setPath("TC_claudeCodePath", claudeCodePath)
-        setPath("TC_geminiPath", geminiPath)
-        setPath("TC_codexPath", codexPath)
-        setPath("TC_hermesPath", hermesPath)
-        setPath("TC_opencodePath", opencodePath)
-        setPath("TC_qwenPath", qwenPath)
-        setPath("TC_copilotPath", copilotPath)
-        setPath("TC_grokPath", grokPath)
-        setPath("TC_aiderPath", aiderPath)
-        setPath("TC_antigravityPath", antigravityPath)
-        setPath("TC_clinePath", clinePath)
-        setPath("TC_continuePath", continuePath)
-        setPath("TC_cursorAgentPath", cursorAgentPath)
+        setPath(.openclawPath, openclawPath)
+        setPath(.claudeCodePath, claudeCodePath)
+        setPath(.geminiPath, geminiPath)
+        setPath(.codexPath, codexPath)
+        setPath(.hermesPath, hermesPath)
+        setPath(.opencodePath, opencodePath)
+        setPath(.qwenPath, qwenPath)
+        setPath(.copilotPath, copilotPath)
+        setPath(.grokPath, grokPath)
+        setPath(.aiderPath, aiderPath)
+        setPath(.antigravityPath, antigravityPath)
+        setPath(.clinePath, clinePath)
+        setPath(.continuePath, continuePath)
+        setPath(.cursorAgentPath, cursorAgentPath)
     }
 
-    private func setPath(_ key: String, _ value: String) {
+    private func setPath(_ key: SettingsKey, _ value: String) {
         if value.isEmpty {
-            UserDefaults.standard.removeObject(forKey: key)
+            UserDefaults.standard.removeObject(forKey: key.rawValue)
         } else {
-            UserDefaults.standard.set(value, forKey: key)
+            UserDefaults.standard.set(value, forKey: key.rawValue)
         }
     }
 
