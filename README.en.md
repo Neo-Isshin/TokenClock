@@ -69,12 +69,16 @@ It's built with the macOS 26 **Liquid Glass** material for a crystal clock disc,
     <td width="50%" align="center"><img src="docs/screenshots/dropdown_en.png" alt="dropdown"></td>
   </tr>
   <tr>
-    <td width="50%" align="center"><b>Overview</b><br>clock + panel together on the desktop</td>
-    <td width="50%" align="center"><b>Theme picker</b> · 6 built-in faces + custom</td>
+    <td colspan="2" align="center"><b>Overview</b> · clock + expanded panel together on the desktop</td>
   </tr>
   <tr>
-    <td width="50%" align="center"><img src="docs/screenshots/overview.png" alt="overview"></td>
-    <td width="50%" align="center"><img src="docs/screenshots/themes_en.png" alt="themes"></td>
+    <td colspan="2" align="center"><img src="docs/screenshots/overview.png" alt="overview"></td>
+  </tr>
+  <tr>
+    <td colspan="2" align="center"><b>Theme picker</b> · 6 built-in faces + custom</td>
+  </tr>
+  <tr>
+    <td colspan="2" align="center"><img src="docs/screenshots/themes_en.png" alt="themes"></td>
   </tr>
 </table>
 
