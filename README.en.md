@@ -133,7 +133,7 @@ Options: `--debug` (faster build) / `--normal` / `--glass` / `--no-start` (don't
 ### Build & run from source
 
 ```bash
-git clone <your-repo-url> TokenClock
+git clone https://gitea.nxc8335.cloud/nxc8335/TokenClock.git TokenClock
 cd TokenClock
 
 # debug build and run directly
