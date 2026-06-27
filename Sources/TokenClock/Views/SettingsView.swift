@@ -306,6 +306,9 @@ struct SettingsView: View {
                 ForEach(toolOptions, id: \.name) { tool in
                     let isEnabled = viewModel.enabledTools.contains(tool.name)
                     let detected = isToolDetected(tool.service)
+                    // 视觉 on/off = detected && enabled:未探测到的工具即便被用户启用也显示灰色,
+                    // 让用户清楚知道哪些工具当前真正在统计;点击仍可切换 enabledTools(以便后续指向自定义路径)。
+                    let shownOn = detected && isEnabled
                     HStack(spacing: 6) {
                         Text("\(tool.emoji) \(tool.name)")
                             .font(.system(size: 12))
@@ -313,11 +316,12 @@ struct SettingsView: View {
                             .lineLimit(1)
                         Spacer()
                         Toggle("", isOn: Binding(
-                            get: { isEnabled },
+                            get: { shownOn },
                             set: { _ in viewModel.toggleTool(tool.name) }
                         ))
                         .toggleStyle(.switch)
                         .controlSize(.small)
+                        .tint(.accentColor)
                     }
                     .padding(.horizontal, 8)
                     .padding(.vertical, 5)
