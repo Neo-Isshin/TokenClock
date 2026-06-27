@@ -13,7 +13,7 @@
 #   ./cli/install.sh --no-start   # 装完不自动启动
 #
 # 一行安装（公开托管后替换 <your-host>）:
-#   curl -fsSL https://<your-host>/raw/liquid-glass/cli/install.sh | bash
+#   curl -fsSL https://<your-host>/raw/main/cli/install.sh | bash
 #
 # 可用环境变量覆盖默认值:
 #   TOKENCLOCK_REPO     git 仓库地址            （默认: 仓库 origin）
@@ -68,12 +68,12 @@ say "  macOS $(sw_vers -productVersion) · 主版本 $OS_MAJOR · 工具链 $(sw
 
 # ── 2. 选变体 ──
 if [ -z "$VARIANT" ]; then
-  if   [ "$OS_MAJOR" -ge 26 ]; then VARIANT=glass;  BRANCH=liquid-glass
-  elif [ "$OS_MAJOR" -ge 15 ]; then VARIANT=normal; BRANCH=main
+  if   [ "$OS_MAJOR" -ge 26 ]; then VARIANT=glass;  BRANCH=main
+  elif [ "$OS_MAJOR" -ge 15 ]; then VARIANT=normal; BRANCH=normal
   else die "需要 macOS 15 或更高版本（当前主版本 $OS_MAJOR）。"
   fi
 else
-  case "$VARIANT" in glass) BRANCH=liquid-glass ;; normal) BRANCH=main ;; esac
+  case "$VARIANT" in glass) BRANCH=main ;; normal) BRANCH=normal ;; esac
 fi
 say "  变体: $VARIANT（分支 $BRANCH）· 构建: $CONFIG"
 

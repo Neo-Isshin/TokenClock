@@ -40,7 +40,7 @@ TokenClock 是一个常驻桌面的 **悬浮时钟**（置顶 · 可拖拽 · �
 ### 🧊 液态玻璃（Liquid Glass）
 - macOS 26 上以原生 **Liquid Glass** 材质渲染，玻璃盘体随壁纸自适应、带氛围着色。
 - **自适应高对比墨色文字**：浅色 tint 主题自动切换近黑刻度 / 数字，保证可读性。
-- 提供 `liquid-glass`（macOS 26）与 `normal`（macOS 15）**双版本**，由 `tokenclock` CLI 按系统版本自动选用。
+- 提供 `main`（macOS 26）与 `normal`（macOS 15）**双版本**，由 `tokenclock` CLI 按系统版本自动选用。
 
 ### 🎨 多表盘 + 美观设计
 - 6 款内置表盘（经典 / 深夜 / 暗金 / 古风 / 超电磁炮 / 天空），风格各异。
@@ -114,7 +114,7 @@ TokenClock 通过读取各工具在本地写入的 **JSONL / SQLite 用量文件
 ./cli/install.sh
 
 # 或（公开托管后替换 <your-host>）一行安装：
-curl -fsSL https://<your-host>/raw/liquid-glass/cli/install.sh | bash
+curl -fsSL https://<your-host>/raw/main/cli/install.sh | bash
 ```
 
 可选参数：`--debug`（构建更快）/ `--normal` / `--glass` / `--no-start`（装完不自动启动）。
@@ -140,7 +140,7 @@ swift build -c release # 发布
 .build/debug/TokenClock      # 或 .build/release/TokenClock
 ```
 
-> 当前 `Package.swift` 声明平台为 `.macOS(.v26)`，故 `swift run` 直接产出 Liquid Glass 版。`main` 分支为兼容 macOS 15 的普通版本。
+> `main` 分支的 `Package.swift` 声明为 `.macOS(.v26)`，`swift run` 直接产出 Liquid Glass 版；兼容 macOS 15 的经典（不透明）版本位于 `normal` 分支。
 
 ### 使用 `tokenclock` CLI
 
@@ -187,8 +187,8 @@ TokenClock 提供两套构建：
 
 | 分支 | 目标系统 | 渲染 |
 |------|---------|------|
-| `liquid-glass` | **macOS 26+** | 原生 Liquid Glass 材质，玻璃盘体随壁纸自适应、带氛围着色 |
-| `main`         | macOS 15+     | 普通半透明 / 不透明渲染，向前兼容 |
+| `main`   | **macOS 26+** | 原生 Liquid Glass 材质，玻璃盘体随壁纸自适应、带氛围着色 |
+| `normal` | macOS 15+     | 经典不透明主题表盘，向前兼容 |
 
 - 玻璃表盘采用 **氛围着色（glass tint）** 取代旧版不透明底色：纯净玻璃基础上叠加主题提示色，保留各表盘个性又不遮挡壁纸。
 - 浅色 tint 主题（暗金 / 超电磁炮 / 天空）自动使用 **高对比近黑墨色** 文字、刻度与数字；深 / 中 tint 主题（经典 / 深夜 / 古风）使用纯白。
@@ -232,7 +232,7 @@ GET http://127.0.0.1:9988/api/usage
 | **语言** | Swift 6（`-parse-as-library`） |
 | **UI** | SwiftUI + AppKit（无锁 NSPanel 双窗口架构） |
 | **构建** | Swift Package Manager（无 `.xcodeproj`） |
-| **平台** | macOS 26 SDK（`liquid-glass` 分支）/ macOS 15 SDK（`main` 分支） |
+| **平台** | macOS 26 SDK（`main` 分支）/ macOS 15 SDK（`normal` 分支） |
 | **定位** | 自研 `L10n` 引擎（zh-Hans / zh-Hant / en，无 `.xcstrings`） |
 | **规模** | 约 10,700 行 Swift |
 

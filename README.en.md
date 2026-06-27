@@ -40,7 +40,7 @@ It's built with the macOS 26 **Liquid Glass** material for a crystal clock disc,
 ### 🧊 Liquid Glass
 - On macOS 26 the disc renders with the native **Liquid Glass** material — it adapts to your wallpaper and carries a subtle theme tint.
 - **Adaptive high-contrast ink**: lighter-tinted themes automatically switch to near-black ticks / numerals for legibility.
-- Ships in **two variants** — `liquid-glass` (macOS 26) and `normal` (macOS 15) — and the `tokenclock` CLI picks the right one for your OS automatically.
+- Ships in **two variants** — `main` (macOS 26) and `normal` (macOS 15) — and the `tokenclock` CLI picks the right one for your OS automatically.
 
 ### 🎨 Multiple faces & thoughtful design
 - 6 built-in faces (Classic / Midnight / Luxe / Gu Feng / Railgun / Sky), each with its own personality.
@@ -114,7 +114,7 @@ Auto-detects the macOS version → builds the matching variant → installs to `
 ./cli/install.sh
 
 # or (once publicly hosted, replace <your-host>) one-line install:
-curl -fsSL https://<your-host>/raw/liquid-glass/cli/install.sh | bash
+curl -fsSL https://<your-host>/raw/main/cli/install.sh | bash
 ```
 
 Options: `--debug` (faster build) / `--normal` / `--glass` / `--no-start` (don't auto-launch).
@@ -140,7 +140,7 @@ swift build -c release # release
 .build/debug/TokenClock      # or .build/release/TokenClock
 ```
 
-> `Package.swift` currently declares `.macOS(.v26)`, so `swift run` produces the Liquid Glass build. The `main` branch is the macOS 15-compatible normal build.
+> The `main` branch's `Package.swift` declares `.macOS(.v26)`, so `swift run` produces the Liquid Glass build; the classic (opaque) macOS 15-compatible build lives on the `normal` branch.
 
 ### Use the `tokenclock` CLI
 
@@ -187,8 +187,8 @@ TokenClock ships in two builds:
 
 | Branch | Target | Rendering |
 |--------|--------|-----------|
-| `liquid-glass` | **macOS 26+** | Native Liquid Glass material; the disc adapts to the wallpaper and carries a subtle tint |
-| `main`         | macOS 15+     | Normal translucent / opaque rendering, for backward compatibility |
+| `main`   | **macOS 26+** | Native Liquid Glass material; the disc adapts to the wallpaper and carries a subtle tint |
+| `normal` | macOS 15+     | Classic opaque themed dial, for backward compatibility |
 
 - The glass disc uses an **ambient tint (glass tint)** instead of the old opaque dial fill: a clean glass base plus a theme hint color, preserving each face's character without hiding your wallpaper.
 - Lighter-tinted themes (Luxe / Railgun / Sky) automatically use **high-contrast near-black ink** for text, ticks, and numerals; darker/mid tints (Classic / Midnight / Gu Feng) use pure white.
@@ -232,7 +232,7 @@ It returns the aggregated JSON usage of all tools, handy for external scripts / 
 | **Language** | Swift 6 (`-parse-as-library`) |
 | **UI** | SwiftUI + AppKit (lock-free dual-`NSPanel` architecture) |
 | **Build** | Swift Package Manager (no `.xcodeproj`) |
-| **Platforms** | macOS 26 SDK (`liquid-glass` branch) / macOS 15 SDK (`main` branch) |
+| **Platforms** | macOS 26 SDK (`main` branch) / macOS 15 SDK (`normal` branch) |
 | **i18n** | Custom `L10n` engine (zh-Hans / zh-Hant / en, no `.xcstrings`) |
 | **Size** | ~10,700 lines of Swift |
 
