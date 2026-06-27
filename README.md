@@ -43,7 +43,7 @@ TokenClock 是一个常驻桌面的 **悬浮时钟**（置顶 · 可拖拽 · �
 - 提供 `main`（macOS 26）与 `normal`（macOS 15）**双版本**，由 `tokenclock` CLI 按系统版本自动选用。
 
 ### 📦 一行安装 & CLI
-- `normal` 适用于 **macOS 15+**，液态玻璃适用于 **macOS 26+**。一行安装脚本会根据系统自动选变体，简单的 `tokenclock` CLI 即可启动 / 停止 / 切换 / 诊断。详见 [安装指南](https://PLACEHOLDER/install)（链接待补）。
+- `normal` 适用于 **macOS 15+**，液态玻璃适用于 **macOS 26+**。一行安装脚本会根据系统自动选变体，简单的 `tokenclock` CLI 即可启动 / 停止 / 切换 / 诊断。详见 [安装指南](https://gitea.nxc8335.cloud/nxc8335/TokenClock)。
 
 ### 🎨 多表盘 + 美观设计
 - 6 款内置表盘（经典 / 深夜 / 暗金 / 古风 / 超电磁炮 / 天空），风格各异。
@@ -118,8 +118,8 @@ TokenClock 通过读取各工具在本地写入的 **JSONL / SQLite 用量文件
 # 已克隆本仓库时直接运行：
 ./cli/install.sh
 
-# 或（公开托管后替换 <your-host>）一行安装：
-curl -fsSL https://<your-host>/raw/main/cli/install.sh | bash
+# 或一行安装：
+curl -fsSL https://gitea.nxc8335.cloud/nxc8335/TokenClock/raw/main/cli/install.sh | bash
 ```
 
 可选参数：`--debug`（构建更快）/ `--normal` / `--glass` / `--no-start`（装完不自动启动）。
