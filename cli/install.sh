@@ -24,7 +24,7 @@
 set -uo pipefail
 export LC_ALL=C      # bash 3.2 在 UTF-8 locale 下会把紧跟 $var 的多字节字符(如中文括号)误并入变量名;C locale 按字节解析可避免。中文字符串仍按 UTF-8 字节正常输出。
 
-DEFAULT_REPO="http://localhost:3000/nxc8335/TokenClock.git"
+DEFAULT_REPO="https://gitea.nxc8335.cloud/nxc8335/TokenClock.git"
 REPO_URL="${TOKENCLOCK_REPO:-$DEFAULT_REPO}"
 HOME_DIR="${TOKENCLOCK_HOME:-$HOME/.tokenclock}"
 BIN_DIR="${TOKENCLOCK_BIN_DIR:-$HOME/.local/bin}"
