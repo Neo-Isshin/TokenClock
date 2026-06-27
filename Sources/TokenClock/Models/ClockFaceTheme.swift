@@ -7,6 +7,7 @@ enum ClockFaceTheme: String, CaseIterable, Identifiable {
     case gufeng       // 古风
     case railgun      // 超电磁炮
     case sky          // 天空
+    case glass        // 玻璃（normal 分支：玻璃质感固定背景，模拟液态玻璃）
     case custom       // 自定义
 
     var id: String { rawValue }
@@ -19,6 +20,7 @@ enum ClockFaceTheme: String, CaseIterable, Identifiable {
         case .gufeng: return L10n.shared.tr("themeName.gufeng")
         case .railgun: return L10n.shared.tr("themeName.railgun")
         case .sky: return L10n.shared.tr("themeName.sky")
+        case .glass: return L10n.shared.tr("themeName.glass")
         case .custom: return L10n.shared.tr("themeName.custom")
         }
     }
@@ -31,6 +33,7 @@ enum ClockFaceTheme: String, CaseIterable, Identifiable {
         case .gufeng: return L10n.shared.tr("themeDesc.gufeng")
         case .railgun: return L10n.shared.tr("themeDesc.railgun")
         case .sky: return L10n.shared.tr("themeDesc.sky")
+        case .glass: return L10n.shared.tr("themeDesc.glass")
         case .custom: return L10n.shared.tr("themeDesc.custom")
         }
     }
@@ -47,6 +50,7 @@ enum ClockFaceTheme: String, CaseIterable, Identifiable {
         case .gufeng: return Color(red: 0.925, green: 0.886, blue: 0.812)
         case .railgun: return Color(red: 0.918, green: 0.898, blue: 0.855)
         case .sky: return Color(red: 0.529, green: 0.745, blue: 0.922)
+        case .glass: return Color(red: 0.91, green: 0.93, blue: 0.96)   // 仅作兜底；drawDial 用渐变绘制玻璃盘体
         case .custom: return custom.dialColor.swiftUIColor
         }
     }
@@ -59,6 +63,7 @@ enum ClockFaceTheme: String, CaseIterable, Identifiable {
         case .gufeng: return Color(red: 0.580, green: 0.400, blue: 0.247)
         case .railgun: return Color(red: 0.620, green: 0.470, blue: 0.380)
         case .sky: return Color(red: 0.420, green: 0.620, blue: 0.820)
+        case .glass: return Color(white: 0.85)
         case .custom: return custom.dialRimColor.swiftUIColor
         }
     }
@@ -71,6 +76,7 @@ enum ClockFaceTheme: String, CaseIterable, Identifiable {
         case .gufeng: return 3
         case .railgun: return 2.5
         case .sky: return 2.5
+        case .glass: return 1.5
         case .custom: return custom.dialRimWidth
         }
     }
@@ -80,6 +86,7 @@ enum ClockFaceTheme: String, CaseIterable, Identifiable {
     var hasDialDecoration: Bool {
         switch self {
         case .sky: return true
+        case .glass: return false
         case .custom: return custom.hasDialDecoration
         default: return false
         }
@@ -95,6 +102,7 @@ enum ClockFaceTheme: String, CaseIterable, Identifiable {
         case .gufeng: return Color(red: 0.200, green: 0.180, blue: 0.160)
         case .railgun: return Color(red: 0.820, green: 0.580, blue: 0.560)
         case .sky: return Color(red: 0.960, green: 0.878, blue: 0.400)
+        case .glass: return Color(red: 0.16, green: 0.16, blue: 0.18)   // 墨色：浅玻璃盘上高对比
         case .custom: return custom.hourHandColor.swiftUIColor
         }
     }
@@ -107,6 +115,7 @@ enum ClockFaceTheme: String, CaseIterable, Identifiable {
         case .gufeng: return Color(red: 0.350, green: 0.280, blue: 0.220)
         case .railgun: return Color(red: 0.850, green: 0.650, blue: 0.600)
         case .sky: return Color(red: 0.980, green: 0.910, blue: 0.520)
+        case .glass: return Color(red: 0.16, green: 0.16, blue: 0.18)
         case .custom: return custom.minuteHandColor.swiftUIColor
         }
     }
@@ -119,6 +128,7 @@ enum ClockFaceTheme: String, CaseIterable, Identifiable {
         case .gufeng: return Color(red: 0.722, green: 0.184, blue: 0.184)
         case .railgun: return Color(red: 0.400, green: 0.620, blue: 0.950)
         case .sky: return Color(red: 1.0, green: 0.580, blue: 0.200)
+        case .glass: return Color(red: 0.90, green: 0.42, blue: 0.18)   // 琥珀秒针
         case .custom: return custom.secondHandColor.swiftUIColor
         }
     }
@@ -140,6 +150,7 @@ enum ClockFaceTheme: String, CaseIterable, Identifiable {
         case .gufeng: return .sword
         case .railgun: return .tapered
         case .sky: return .tapered
+        case .glass: return .round
         case .custom: return custom.handStyle
         }
     }
@@ -154,6 +165,7 @@ enum ClockFaceTheme: String, CaseIterable, Identifiable {
         case .gufeng: return Color(red: 0.580, green: 0.400, blue: 0.247)
         case .railgun: return Color(red: 0.820, green: 0.580, blue: 0.560)
         case .sky: return Color(red: 0.960, green: 0.878, blue: 0.400)
+        case .glass: return Color(red: 0.16, green: 0.16, blue: 0.18)
         case .custom: return custom.centerDotOuterColor.swiftUIColor
         }
     }
@@ -166,6 +178,7 @@ enum ClockFaceTheme: String, CaseIterable, Identifiable {
         case .gufeng: return Color(red: 0.722, green: 0.184, blue: 0.184)
         case .railgun: return Color(red: 0.400, green: 0.620, blue: 0.950)
         case .sky: return Color(red: 1.0, green: 0.580, blue: 0.200)
+        case .glass: return Color(red: 0.90, green: 0.42, blue: 0.18)
         case .custom: return custom.centerDotInnerColor.swiftUIColor
         }
     }
@@ -182,6 +195,7 @@ enum ClockFaceTheme: String, CaseIterable, Identifiable {
         case .gufeng: return Color(red: 0.650, green: 0.500, blue: 0.350)
         case .railgun: return Color(red: 0.750, green: 0.650, blue: 0.580)
         case .sky: return Color(red: 0.620, green: 0.780, blue: 0.920)
+        case .glass: return Color(white: 0.62)                          // 柔和灰刻度
         case .custom: return custom.tickMarkColor.swiftUIColor
         }
     }
@@ -194,6 +208,7 @@ enum ClockFaceTheme: String, CaseIterable, Identifiable {
         case .gufeng: return Color(red: 0.350, green: 0.220, blue: 0.160)
         case .railgun: return Color(red: 0.620, green: 0.470, blue: 0.380)
         case .sky: return Color(red: 0.960, green: 0.920, blue: 0.780)
+        case .glass: return Color(red: 0.16, green: 0.16, blue: 0.18)
         case .custom: return custom.majorTickMarkColor.swiftUIColor
         }
     }
@@ -210,6 +225,7 @@ enum ClockFaceTheme: String, CaseIterable, Identifiable {
         case .gufeng: return Color(red: 0.300, green: 0.200, blue: 0.150)
         case .railgun: return Color(red: 0.500, green: 0.350, blue: 0.300)
         case .sky: return Color(red: 0.220, green: 0.380, blue: 0.560)
+        case .glass: return .clear                                        // 玻璃盘保持简洁，不画数字
         case .custom: return custom.numberColor.swiftUIColor
         }
     }
@@ -251,6 +267,7 @@ enum ClockFaceTheme: String, CaseIterable, Identifiable {
         case .gufeng: return 5.0
         case .railgun: return 5.5
         case .sky: return 5.0
+        case .glass: return 4.5
         case .custom: return custom.hourHandWidth
         }
     }
@@ -263,6 +280,7 @@ enum ClockFaceTheme: String, CaseIterable, Identifiable {
         case .gufeng: return 3.5
         case .railgun: return 3.5
         case .sky: return 3.5
+        case .glass: return 3.0
         case .custom: return custom.minuteHandWidth
         }
     }
@@ -275,6 +293,7 @@ enum ClockFaceTheme: String, CaseIterable, Identifiable {
         case .gufeng: return 1.5
         case .railgun: return 1.8
         case .sky: return 1.5
+        case .glass: return 1.5
         case .custom: return custom.secondHandWidth
         }
     }
@@ -289,6 +308,7 @@ enum ClockFaceTheme: String, CaseIterable, Identifiable {
         case .gufeng: return Color(red: 0.250, green: 0.180, blue: 0.130)
         case .railgun: return Color(red: 0.500, green: 0.350, blue: 0.300)
         case .sky: return Color(red: 0.180, green: 0.340, blue: 0.520)
+        case .glass: return Color(red: 0.16, green: 0.16, blue: 0.18)
         case .custom: return custom.textPrimaryColor.swiftUIColor
         }
     }
@@ -301,6 +321,7 @@ enum ClockFaceTheme: String, CaseIterable, Identifiable {
         case .gufeng: return Color(red: 0.500, green: 0.380, blue: 0.280)
         case .railgun: return Color(red: 0.680, green: 0.560, blue: 0.480)
         case .sky: return Color(red: 0.380, green: 0.520, blue: 0.660)
+        case .glass: return Color(red: 0.45, green: 0.45, blue: 0.48)
         case .custom: return custom.textSecondaryColor.swiftUIColor
         }
     }
@@ -315,6 +336,7 @@ enum ClockFaceTheme: String, CaseIterable, Identifiable {
         case .gufeng: return Color(red: 0.910, green: 0.878, blue: 0.812)
         case .railgun: return Color(red: 0.925, green: 0.906, blue: 0.875)
         case .sky: return Color(red: 0.600, green: 0.780, blue: 0.920)
+        case .glass: return Color(red: 0.93, green: 0.95, blue: 0.97)    // 浅蓝灰，呼应玻璃盘
         case .custom: return custom.dropdownBgColor.swiftUIColor
         }
     }
@@ -327,6 +349,7 @@ enum ClockFaceTheme: String, CaseIterable, Identifiable {
         case .gufeng: return Color(red: 0.450, green: 0.320, blue: 0.220)
         case .railgun: return Color(red: 0.620, green: 0.470, blue: 0.380)
         case .sky: return Color(red: 0.300, green: 0.480, blue: 0.660)
+        case .glass: return Color(red: 0.55, green: 0.55, blue: 0.58)
         case .custom: return custom.dropdownSubtextColor.swiftUIColor
         }
     }
@@ -339,6 +362,7 @@ enum ClockFaceTheme: String, CaseIterable, Identifiable {
         case .gufeng: return Color(red: 0.280, green: 0.200, blue: 0.150)
         case .railgun: return Color(red: 0.500, green: 0.350, blue: 0.300)
         case .sky: return Color(red: 0.180, green: 0.340, blue: 0.520)
+        case .glass: return Color(red: 0.18, green: 0.18, blue: 0.20)
         case .custom: return custom.dropdownTextColor.swiftUIColor
         }
     }
@@ -351,6 +375,7 @@ enum ClockFaceTheme: String, CaseIterable, Identifiable {
         case .gufeng: return Color(red: 0.520, green: 0.400, blue: 0.300)
         case .railgun: return Color(red: 0.680, green: 0.560, blue: 0.480)
         case .sky: return Color(red: 0.380, green: 0.520, blue: 0.660)
+        case .glass: return Color(red: 0.45, green: 0.45, blue: 0.48)
         case .custom: return custom.dropdownSubtextColor.swiftUIColor
         }
     }
@@ -363,6 +388,7 @@ enum ClockFaceTheme: String, CaseIterable, Identifiable {
         case .gufeng: return Color(red: 0.650, green: 0.480, blue: 0.320)
         case .railgun: return Color(red: 0.780, green: 0.680, blue: 0.600)
         case .sky: return Color(red: 0.500, green: 0.680, blue: 0.840)
+        case .glass: return Color(white: 0.82)
         case .custom: return custom.dropdownBorderColor.swiftUIColor
         }
     }
@@ -375,6 +401,7 @@ enum ClockFaceTheme: String, CaseIterable, Identifiable {
         case .gufeng: return Color(red: 0.700, green: 0.540, blue: 0.380)
         case .railgun: return Color(red: 0.820, green: 0.730, blue: 0.660)
         case .sky: return Color(red: 0.650, green: 0.780, blue: 0.900)
+        case .glass: return Color(white: 0.85)
         case .custom: return custom.dropdownDividerColor.swiftUIColor
         }
     }

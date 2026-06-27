@@ -148,13 +148,18 @@ struct ThemePreviewClock: View {
             let radius = min(size.width, size.height) / 2 - 3
 
             // 表盘
-            let circle = Path(ellipseIn: CGRect(
+            let rect = CGRect(
                 x: center.x - radius, y: center.y - radius,
                 width: radius * 2, height: radius * 2
-            ))
-            context.fill(circle, with: .color(theme.dialColor))
-            context.stroke(circle.strokedPath(StrokeStyle(lineWidth: theme.dialRimWidth)),
-                           with: .color(theme.dialRimColor))
+            )
+            let circle = Path(ellipseIn: rect)
+            if theme == .glass {
+                ClockFaceView.drawGlassDial(context: context, circle: circle, rect: rect, radius: radius)
+            } else {
+                context.fill(circle, with: .color(theme.dialColor))
+                context.stroke(circle.strokedPath(StrokeStyle(lineWidth: theme.dialRimWidth)),
+                               with: .color(theme.dialRimColor))
+            }
 
             // 刻度
             if theme.hasTickMarks {

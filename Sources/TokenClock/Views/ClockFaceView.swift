@@ -34,10 +34,17 @@ struct ClockFaceView: View {
     // MARK: - 表盘
 
     private func drawDial(context: GraphicsContext, center: CGPoint, radius: CGFloat) {
-        let circle = Path(ellipseIn: CGRect(
+        let rect = CGRect(
             x: center.x - radius, y: center.y - radius,
             width: radius * 2, height: radius * 2
-        ))
+        )
+        let circle = Path(ellipseIn: rect)
+
+        if theme == .glass {
+            Self.drawGlassDial(context: context, circle: circle, rect: rect, radius: radius)
+            return
+        }
+
         context.fill(circle, with: .color(theme.dialColor))
 
         // 外环（直接描边，避免 strokedPath 导致的双层叠加）
@@ -46,6 +53,52 @@ struct ClockFaceView: View {
             with: .color(theme.dialRimColor),
             style: StrokeStyle(lineWidth: theme.dialRimWidth, lineCap: .round, lineJoin: .round)
         )
+    }
+
+    /// 玻璃质感表盘（normal 分支）：用渐变 + 高光模拟液态玻璃的「固定背景」。
+    /// 非真实 Liquid Glass（需 macOS 26），而是预绘的玻璃观感——不随壁纸变化。
+    static func drawGlassDial(context: GraphicsContext, circle: Path, rect: CGRect, radius: CGFloat) {
+        // 1. 底色：柔和多色斜向渐变（模拟折射后的丰富壁纸：冷蓝 → 浅灰 → 暖米色）
+        context.fill(circle, with: .linearGradient(
+            Gradient(colors: [
+                Color(red: 0.83, green: 0.89, blue: 0.97),
+                Color(red: 0.90, green: 0.91, blue: 0.93),
+                Color(red: 0.95, green: 0.92, blue: 0.88),
+            ]),
+            startPoint: CGPoint(x: rect.minX, y: rect.minY),
+            endPoint: CGPoint(x: rect.maxX, y: rect.maxY)
+        ))
+
+        // 2. 右下暖色径向辉光（折射进来的暖色环境光，让玻璃「活」起来）
+        context.fill(circle, with: .radialGradient(
+            Gradient(colors: [Color(red: 1.0, green: 0.92, blue: 0.82).opacity(0.32), Color.white.opacity(0.0)]),
+            center: CGPoint(x: rect.maxX - radius * 0.35, y: rect.maxY - radius * 0.35),
+            startRadius: 0,
+            endRadius: radius * 0.9
+        ))
+
+        // 3. 左上径向高光（玻璃主反光）
+        context.fill(circle, with: .radialGradient(
+            Gradient(colors: [Color.white.opacity(0.58), Color.white.opacity(0.0)]),
+            center: CGPoint(x: rect.minX + radius * 0.4, y: rect.minY + radius * 0.3),
+            startRadius: 0,
+            endRadius: radius * 0.95
+        ))
+
+        // 4. 对角线流动高光带（液态玻璃的湿润/通透质感）
+        context.fill(circle, with: .linearGradient(
+            Gradient(stops: [
+                .init(color: Color.white.opacity(0.0), location: 0.0),
+                .init(color: Color.white.opacity(0.34), location: 0.5),
+                .init(color: Color.white.opacity(0.0), location: 1.0),
+            ]),
+            startPoint: CGPoint(x: rect.minX, y: rect.maxY),
+            endPoint: CGPoint(x: rect.maxX, y: rect.minY)
+        ))
+
+        // 4. 边缘高光（让盘体从背景中浮出）
+        context.stroke(circle, with: .color(Color.white.opacity(0.65)),
+                       style: StrokeStyle(lineWidth: 1.5))
     }
 
     // MARK: - 刻度
