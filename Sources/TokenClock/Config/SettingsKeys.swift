@@ -15,7 +15,12 @@ enum SettingsKey: String {
     // MARK: - 通用
     case enabledTools = "TC_enabledTools"
     case alwaysOnTop = "TC_alwaysOnTop"
+    case launchAtLogin = "TC_launchAtLogin"
     case language = "TC_language"
+
+    // MARK: - 本地 API 服务
+    case apiServerEnabled = "TC_apiServerEnabled"
+    case apiServerPort    = "TC_apiServerPort"
 
     // MARK: - 主题
     case selectedTheme = "TC_selectedTheme"

@@ -34,7 +34,9 @@ final class ViewModel: ObservableObject {
     @Published var alwaysOnTop: Bool = {
         UserDefaults.standard.bool(for: .alwaysOnTop, default: true)
     }()
-    @Published var launchAtLogin = false
+    @Published var launchAtLogin: Bool = UserDefaults.standard.bool(for: .launchAtLogin, default: false) {
+        didSet { UserDefaults.standard.setBool(launchAtLogin, for: .launchAtLogin) }
+    }
 
     /// 表盘主题
     @Published var selectedTheme: ClockFaceTheme = .classic

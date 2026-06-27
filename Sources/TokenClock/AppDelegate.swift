@@ -1,6 +1,5 @@
 import SwiftUI
 import AppKit
-import ServiceManagement
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
@@ -84,16 +83,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             name: .weatherUpdated, object: nil
         )
 
-        // 启动本地 API 服务器
-        UsageAPIServer.shared.bind(viewModel: viewModel)
-        UsageAPIServer.shared.start()
+        // 启动本地 API 服务器（按用户偏好决定是否启用 + 端口）
+        let apiEnabled = UserDefaults.standard.bool(
+            for: .apiServerEnabled, default: true
+        )
+        if apiEnabled {
+            // 端口缺省 / 越界时回退到 AppConfig.LocalServer.defaultPort
+            let port = AppDelegate.resolveAPIServerPort()
+            UsageAPIServer.shared.configure(port: port)
+            UsageAPIServer.shared.bind(viewModel: viewModel)
+            UsageAPIServer.shared.start()
+        }
 
         panel.makeKeyAndOrderFront(nil)
         setupRightClickMenu()
+        // 兜底迁移：清理旧的 installer plist / SMAppService 残留
+        LaunchAgentHelper.cleanupLegacy()
     }
 
     private var activeToolCount: Int {
         viewModel.visibleTools.filter { $0.todayTokens > 0 }.count
+    }
+
+    /// 从 UserDefaults 读取 API 服务器端口，越界或缺省时回退到 AppConfig 默认值
+    private static func resolveAPIServerPort() -> UInt16 {
+        let raw = UserDefaults.standard.integer(forKey: SettingsKey.apiServerPort.rawValue)
+        if raw > 0, raw <= UInt16.max {
+            return UInt16(raw)
+        }
+        return AppConfig.LocalServer.defaultPort
     }
 
     private func showDropdownPanel() {
@@ -231,7 +249,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
         let launchItem = NSMenuItem(title: tr("menu.launchAtLogin"),
                                     action: #selector(toggleLaunchAtLogin(_:)), keyEquivalent: "")
-        if SMAppService.mainApp.status == .enabled { launchItem.state = .on }
+        if let variant = LaunchAgentHelper.detectVariant(),
+           LaunchAgentHelper.isRegistered(variant: variant) {
+            launchItem.state = .on
+        }
         menu.addItem(launchItem)
         menu.addItem(.separator())
 
@@ -287,18 +308,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     @objc private func toggleLaunchAtLogin(_ sender: NSMenuItem) {
-        do {
-            if sender.state == .on {
-                try SMAppService.mainApp.unregister()
-                sender.state = .off
-                viewModel.launchAtLogin = false
-            } else {
-                try SMAppService.mainApp.register()
+        guard let variant = LaunchAgentHelper.detectVariant() else {
+            // 路径无法识别 —— 用一个 NSAlert 提示,不要静默失败
+            let alert = NSAlert()
+            alert.messageText = "无法识别当前 TokenClock 变体"
+            alert.informativeText = "开机自启动仅在通过 `tokenclock` CLI 安装的 TokenClock 上可用(路径形如 ~/.tokenclock/glass/TokenClock)。"
+            alert.alertStyle = .warning
+            alert.addButton(withTitle: "好的")
+            alert.runModal()
+            return
+        }
+
+        let binaryPath = ProcessInfo.processInfo.arguments.first ?? Bundle.main.executablePath ?? ""
+        if sender.state == .on {
+            LaunchAgentHelper.disable(variant: variant)
+            sender.state = .off
+            viewModel.launchAtLogin = false
+        } else {
+            do {
+                try LaunchAgentHelper.enable(variant: variant, binaryPath: binaryPath)
                 sender.state = .on
                 viewModel.launchAtLogin = true
+            } catch {
+                let alert = NSAlert()
+                alert.messageText = "启用开机自启动失败"
+                alert.informativeText = "\(error.localizedDescription)"
+                alert.alertStyle = .warning
+                alert.addButton(withTitle: "好的")
+                alert.runModal()
             }
-        } catch {
-            print("Failed to toggle launch at login: \(error)")
         }
     }
 
@@ -345,7 +383,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     @objc private func copyAPIEndpoint(_ sender: NSMenuItem) {
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
-        pasteboard.setString("http://localhost:\(AppConfig.LocalServer.defaultPort)\(AppConfig.LocalServer.usageEndpoint)", forType: .string)
+        pasteboard.setString("http://localhost:\(AppDelegate.resolveAPIServerPort())\(AppConfig.LocalServer.usageEndpoint)", forType: .string)
     }
 
     @objc private func quitApp(_ sender: NSMenuItem) {

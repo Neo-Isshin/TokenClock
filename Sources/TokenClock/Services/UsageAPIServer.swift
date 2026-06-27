@@ -6,12 +6,18 @@ import Network
 final class UsageAPIServer: @unchecked Sendable {
     static let shared = UsageAPIServer()
     private var listener: NWListener?
-    private let port: NWEndpoint.Port
+    private var port: NWEndpoint.Port
     private weak var viewModel: ViewModel?
 
     var isRunning: Bool { listener?.state == .ready }
 
     init(port: UInt16 = AppConfig.LocalServer.defaultPort) {
+        self.port = NWEndpoint.Port(integerLiteral: port)
+    }
+
+    /// 在 start() 之前覆盖监听端口。start() 之后调用无效。
+    /// 选这个最小侵入方案，避免改变现有 `start()` 签名。
+    func configure(port: UInt16) {
         self.port = NWEndpoint.Port(integerLiteral: port)
     }
 

@@ -10,7 +10,7 @@
 #   ./cli/install.sh --debug      # debug 构建（更快，适合试用）
 #   ./cli/install.sh --normal     # 强制 normal 变体
 #   ./cli/install.sh --glass      # 强制 liquid-glass 变体
-#   ./cli/install.sh --no-start   # 装完不自动启动
+#   ./cli/install.sh --no-start       # 装完不自动启动
 #
 # 一行安装（公开托管后替换 <your-host>）:
 #   curl -fsSL https://<your-host>/raw/main/cli/install.sh | bash
@@ -50,9 +50,9 @@ while [ $# -gt 0 ]; do
     --normal)    VARIANT=normal ;;
     --debug)     CONFIG=debug ;;
     --release)   CONFIG=release ;;
-    --no-start)  NO_START=1 ;;
-    -h|--help)   usage ;;
-    *)           die "未知参数: $1（可用 --glass / --normal / --debug / --release / --no-start）" ;;
+    --no-start)     NO_START=1 ;;
+    -h|--help)      usage ;;
+    *)              die "未知参数: $1（可用 --glass / --normal / --debug / --release / --no-start）" ;;
   esac
   shift
 done
@@ -112,7 +112,76 @@ chmod +x "$BIN_DIR/tokenclock"
 say "  ✓ $BIN_DIR/tokenclock"
 export PATH="$BIN_DIR:$PATH"   # 让本脚本后续命令能直接用 tokenclock
 
-# ── 7. 确保 PATH（写入 shell rc，幂等）──
+# ── 7. 开机自启动（LaunchAgent） ──
+# 启动器不再注册 plist；LaunchAgent 由 Swift 时钟的右键菜单统一管理。
+# 选一个空闲端口：先试 $1，往后顺延 N 次
+find_free_port() {
+  local start="$1" tries="$2" p
+  for p in $(seq "$start" $((start + tries))); do
+    if ! lsof -nP -iTCP:"$p" -sTCP:LISTEN >/dev/null 2>&1; then
+      echo "$p"; return 0
+    fi
+  done
+  return 1
+}
+
+# y/N 提示；默认 N（最少惊喜）。非交互（curl | bash）下跳过。
+prompt_api_server() {
+  local API_PORT_DEFAULT=9988
+  local API_PORT_TRIES=5
+  local API_PORT_FALLBACK_MSG="（启动可能失败）"
+  local API_PORT_RANGE_END=$((API_PORT_DEFAULT + API_PORT_TRIES))   # 9993
+
+  # 非交互模式（pipe / 无 TTY）：默认关闭，安静跳过
+  if [ ! -t 0 ]; then
+    defaults delete TokenClock TC_apiServerEnabled 2>/dev/null || true
+    say "  ⏭ API 服务器: 跳过（非交互模式，默认关闭）"
+    return 0
+  fi
+
+  local ans
+  printf '  启用本地 API 服务器（监听 127.0.0.1:%d）? [y/N] ' "$API_PORT_DEFAULT"
+  IFS= read -r ans || ans=""
+  ans="$(printf '%s' "$ans" | tr 'A-Z' 'a-z')"
+  case "$ans" in
+    y|yes)
+      local chosen_port
+      if chosen_port="$(find_free_port "$API_PORT_DEFAULT" "$API_PORT_TRIES")"; then
+        if [ "$chosen_port" != "$API_PORT_DEFAULT" ]; then
+          say "  ⚠ $API_PORT_DEFAULT 被占用 → 改用 $chosen_port"
+        fi
+      else
+        chosen_port="$API_PORT_DEFAULT"
+        say "  ⚠ ${API_PORT_DEFAULT}–${API_PORT_RANGE_END} 全部被占用，仍使用 $chosen_port$API_PORT_FALLBACK_MSG"
+      fi
+
+      defaults write TokenClock TC_apiServerEnabled -bool true \
+        || die "defaults write TC_apiServerEnabled 失败"
+      defaults write TokenClock TC_apiServerPort -int "$chosen_port" \
+        || die "defaults write TC_apiServerPort 失败"
+
+      API_ENABLED=1
+      API_CHOSEN_PORT="$chosen_port"
+      say "  ✓ API 服务器: 已启用（端口 $chosen_port，$HOME_DIR/$VARIANT/TokenClock 启动后生效）"
+      ;;
+    *)
+      defaults delete TokenClock TC_apiServerEnabled 2>/dev/null || true
+      say "  ⏭ API 服务器: 未启用（默认）"
+      ;;
+  esac
+}
+
+# ── 7b. 询问是否启用本地 API 服务 ──
+API_ENABLED=0
+API_CHOSEN_PORT=9988
+if [ "$NO_START" -eq 1 ]; then
+  say "  ⏭ API 服务器: 跳过（--no-start，未启动应用）"
+else
+  step "配置本地 API 服务器（可选）"
+  prompt_api_server
+fi
+
+# ── 8. 确保 PATH（写入 shell rc，幂等）──
 ensure_in_path() {
   case ":$PATH:" in *":$BIN_DIR:"*) return 0 ;; esac      # 当前 shell 已在 PATH
   local rc
@@ -124,7 +193,7 @@ ensure_in_path() {
 }
 ensure_in_path
 
-# ── 8. 首次启动（= 初始化：首次扫描各 AI 工具本地路径）──
+# ── 9. 首次启动（= 初始化：首次扫描各 AI 工具本地路径）──
 if [ "$NO_START" -eq 1 ]; then
   say "  ⏭  跳过自动启动（--no-start）"
 else
@@ -140,9 +209,38 @@ else
   else
     say "  🔍 首次扫描已完成（如未列出工具，可在时钟右键 → 设置中手动启用 / 指定路径）"
   fi
+
+  # API 服务器烟雾测试（若启用）。TokenClock 启动后端口才会 listen。
+  if [ "${API_ENABLED:-0}" -eq 1 ] && [ -n "${API_CHOSEN_PORT:-}" ]; then
+    sleep 1
+    if out="$(curl -fsS --max-time 2 "http://127.0.0.1:${API_CHOSEN_PORT}/api/usage" 2>/dev/null | head -c 80)"; then
+      say "  ✓ API 烟雾测试: http://127.0.0.1:${API_CHOSEN_PORT}/api/usage → ${out}…"
+    else
+      say "  ⚠ API 烟雾测试失败（端口 ${API_CHOSEN_PORT} 未在监听；检查防火墙或稍后重试）"
+    fi
+  fi
 fi
 
-# ── 9. 完成 ──
+# ── 10. 完成 ──
+step "安装完成 · 生成摘要"
+
+# 1. 收集 doctor 输出（PATH 已在 step 6 export 过，tokenclock 可直接调用）
+DOCTOR_OUT=""
+if command -v tokenclock >/dev/null 2>&1; then
+  DOCTOR_OUT="$(tokenclock doctor 2>&1 || true)"
+else
+  DOCTOR_OUT="（tokenclock 不在 PATH，跳过 doctor）"
+fi
+
+# 2. API 状态行
+if [ "${API_ENABLED:-0}" -eq 1 ]; then
+  API_LINE="✓ 已启用 · 端口 ${API_CHOSEN_PORT}"
+  API_URL="http://127.0.0.1:${API_CHOSEN_PORT}/api/usage"
+else
+  API_LINE="⏭ 未启用（默认）"
+  API_URL=""
+fi
+
 cat <<EOF
 
 🎉 TokenClock 安装完成！
@@ -152,10 +250,28 @@ cat <<EOF
   CLI:    $BIN_DIR/tokenclock
   源码:   $BUILD_DIR
 
+  开机自启动:  默认开启（在时钟右键菜单中可关闭）
+  API 服务器: $API_LINE
+EOF
+
+[ -n "$API_URL" ] && printf '  API 端点:   %s\n' "$API_URL"
+
+cat <<EOF
+
 常用命令（新开终端或 source ~/.zshrc 后即可直接用）:
-  tokenclock doctor      # 查看环境与已安装版本
-  tokenclock restart     # 重启
-  tokenclock stop        # 停止
+  tokenclock start [--glass|--normal]   启动（按系统版本自动选）
+  tokenclock stop                       停止
+  tokenclock restart [--glass|--normal] 重启
+  tokenclock doctor                     诊断环境与已安装版本
+  tokenclock update                     更新（占位，服务器待部署）
+
+关闭开机自启: 在时钟上右键 → 取消勾选「开机自启」
+
+── tokenclock doctor ──
+EOF
+printf '%s\n' "$DOCTOR_OUT"
+
+cat <<EOF
 
 一行安装（公开托管后替换 <your-host>）:
   curl -fsSL https://<your-host>/raw/$BRANCH/cli/install.sh | bash
