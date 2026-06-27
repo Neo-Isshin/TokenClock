@@ -172,47 +172,52 @@ find_free_port() {
   return 1
 }
 
-# y/N 提示；默认 N（最少惊喜）。非交互（curl | bash）下跳过。
+# y/N 提示；默认 Y（推荐 · API 服务器占用极小，启用后可被脚本 / 仪表盘消费）。
+# 非交互（curl | bash）下也默认开启（自动选端口）。
 prompt_api_server() {
   local API_PORT_TRIES=5
   local API_PORT_FALLBACK_MSG="（启动可能失败）"
   local API_PORT_RANGE_END=$((API_PORT_DEFAULT + API_PORT_TRIES))   # 9993
 
-  # 非交互模式（pipe / 无 TTY）：默认关闭，安静跳过
+  # 把"挑端口 + 写 defaults"抽出来,非交互路径与交互路径的 y 分支共用
+  enable_api_server() {
+    local chosen_port
+    if chosen_port="$(find_free_port "$API_PORT_DEFAULT" "$API_PORT_TRIES")"; then
+      if [ "$chosen_port" != "$API_PORT_DEFAULT" ]; then
+        say "  ⚠ $API_PORT_DEFAULT 被占用 → 改用 $chosen_port"
+      fi
+    else
+      chosen_port="$API_PORT_DEFAULT"
+      say "  ⚠ ${API_PORT_DEFAULT}–${API_PORT_RANGE_END} 全部被占用，仍使用 $chosen_port$API_PORT_FALLBACK_MSG"
+    fi
+
+    defaults write "$DOMAIN" TC_apiServerEnabled -bool true \
+      || die "defaults write TC_apiServerEnabled 失败"
+    defaults write "$DOMAIN" TC_apiServerPort -int "$chosen_port" \
+      || die "defaults write TC_apiServerPort 失败"
+
+    API_ENABLED=1
+    API_CHOSEN_PORT="$chosen_port"
+    say "  ✓ API 服务器: 已启用（端口 $chosen_port，$HOME_DIR/$PRIMARY_VARIANT/TokenClock 启动后生效）"
+  }
+
+  # 非交互模式（pipe / 无 TTY）：默认开启,安静写入 defaults
   if [ ! -t 0 ]; then
-    defaults delete "$DOMAIN" TC_apiServerEnabled 2>/dev/null || true
-    say "  ⏭ API 服务器: 跳过（非交互模式，默认关闭）"
+    enable_api_server
     return 0
   fi
 
   local ans
-  printf '  启用本地 API 服务器（监听 127.0.0.1:%d）? [y/N] ' "$API_PORT_DEFAULT"
+  printf '  启用本地 API 服务器（监听 127.0.0.1:%d）? [Y/n] ' "$API_PORT_DEFAULT"
   IFS= read -r ans || ans=""
   ans="$(printf '%s' "$ans" | tr 'A-Z' 'a-z')"
   case "$ans" in
-    y|yes)
-      local chosen_port
-      if chosen_port="$(find_free_port "$API_PORT_DEFAULT" "$API_PORT_TRIES")"; then
-        if [ "$chosen_port" != "$API_PORT_DEFAULT" ]; then
-          say "  ⚠ $API_PORT_DEFAULT 被占用 → 改用 $chosen_port"
-        fi
-      else
-        chosen_port="$API_PORT_DEFAULT"
-        say "  ⚠ ${API_PORT_DEFAULT}–${API_PORT_RANGE_END} 全部被占用，仍使用 $chosen_port$API_PORT_FALLBACK_MSG"
-      fi
-
-      defaults write "$DOMAIN" TC_apiServerEnabled -bool true \
-        || die "defaults write TC_apiServerEnabled 失败"
-      defaults write "$DOMAIN" TC_apiServerPort -int "$chosen_port" \
-        || die "defaults write TC_apiServerPort 失败"
-
-      API_ENABLED=1
-      API_CHOSEN_PORT="$chosen_port"
-      say "  ✓ API 服务器: 已启用（端口 $chosen_port，$HOME_DIR/$PRIMARY_VARIANT/TokenClock 启动后生效）"
+    n|no)
+      defaults delete "$DOMAIN" TC_apiServerEnabled 2>/dev/null || true
+      say "  ⏭ API 服务器: 未启用（已选 n）"
       ;;
     *)
-      defaults delete "$DOMAIN" TC_apiServerEnabled 2>/dev/null || true
-      say "  ⏭ API 服务器: 未启用（默认）"
+      enable_api_server
       ;;
   esac
 }
@@ -226,6 +231,30 @@ else
   step "配置本地 API 服务器（可选）"
   prompt_api_server
 fi
+
+# ── 7c. 检测系统语言 → 写 TC_language（首启前）──
+# Swift 端 L10n.init() 读取 UserDefaults TC_language,缺省回退到 zh-Hans,
+# 这就是英文 locale 用户首启看到中文的根因。安装时先把系统语言写进去,首启即正确。
+detect_and_set_language() {
+  local first_lang
+  first_lang="$(defaults read -g AppleLanguages 2>/dev/null \
+                | tr -d '()"' | tr ',' '\n' \
+                | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' \
+                | grep -v '^$' | head -n 1)"
+  [ -z "$first_lang" ] && first_lang="${LANG:-}"
+
+  local detected="zh-Hans"   # 与 L10n.swift 默认一致
+  case "$first_lang" in
+    en*)                 detected="en" ;;
+    zh-Hant|zh-TW|zh-HK) detected="zh-Hant" ;;
+    zh*)                 detected="zh-Hans" ;;
+  esac
+
+  defaults write "$DOMAIN" TC_language -string "$detected" \
+    || die "defaults write TC_language 失败"
+  say "  🌐 系统语言: $first_lang → TC_language=$detected"
+}
+detect_and_set_language
 
 # ── 8. 确保 PATH（写入 shell rc，幂等）──
 ensure_in_path() {
@@ -283,7 +312,7 @@ if [ "${API_ENABLED:-0}" -eq 1 ]; then
   API_LINE="✓ 已启用 · 端口 ${API_CHOSEN_PORT}"
   API_URL="http://127.0.0.1:${API_CHOSEN_PORT}/api/usage"
 else
-  API_LINE="⏭ 未启用（默认）"
+  API_LINE="⏭ 未启用（已选 n）"
   API_URL=""
 fi
 
