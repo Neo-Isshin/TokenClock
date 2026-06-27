@@ -66,6 +66,10 @@ final class ViewModel: ObservableObject {
     /// 当前激活的自定义主题 ID（nil 表示使用默认未命名配置）
     @Published var activeCustomThemeId: UUID? = nil
 
+    /// 首次真实数据扫描完成前的加载状态：true 期间不展示（基于 mock 占位生成的）数字，
+    /// 避免启动瞬间显示假用量造成误导。首次 runBackgroundScan 完成后置 false。
+    @Published var isInitialLoading = true
+
     /// 可用时区列表（label 为 L10n key，运行时通过 tr() 解析）
     static let timezoneOptions: [(label: String, identifier: String)] = [
         ("tz.auto", "auto"),
@@ -273,6 +277,7 @@ final class ViewModel: ObservableObject {
     // MARK: - 聚合属性
 
     var totalTokensFormatted: String {
+        if isInitialLoading { return "—" }
         let total = UsageAggregator.totalTokens(visibleTools)
         if total >= 1_000_000 {
             return String(format: "%.1fM", Double(total) / 1_000_000)
@@ -283,6 +288,7 @@ final class ViewModel: ObservableObject {
     }
 
     var totalMessagesFormatted: String {
+        if isInitialLoading { return "—" }
         let total = UsageAggregator.totalMessages(visibleTools)
         return L10n.shared.tr("clock.messagesCount", total)
     }
@@ -292,11 +298,11 @@ final class ViewModel: ObservableObject {
     }
 
     var activeToolsList: [ToolUsage] {
-        UsageAggregator.topToolsByTokens(visibleTools, limit: 2)
+        isInitialLoading ? [] : UsageAggregator.topToolsByTokens(visibleTools, limit: 2)
     }
 
     var rateEmoji: String {
-        UsageAggregator.rateEmoji(visibleTools)
+        isInitialLoading ? "" : UsageAggregator.rateEmoji(visibleTools)
     }
 
     // MARK: - 时间属性
@@ -555,6 +561,8 @@ final class ViewModel: ObservableObject {
                 for (name, snap) in results {
                     self.applySnapshot(name: name, snap: snap)
                 }
+                // 首次真实数据已就绪，退出加载态
+                self.isInitialLoading = false
             }
         }
     }

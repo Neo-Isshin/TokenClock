@@ -79,6 +79,7 @@ final class L10n: @unchecked Sendable {
         "detail.messages":  [.zhHans: "消息数",    .zhHant: "消息數",    .en: "Msgs"],
         "detail.cacheRate": [.zhHans: "缓存率",    .zhHant: "緩存率",    .en: "Cache"],
         "detail.forecast":  [.zhHans: "未来趋势",  .zhHant: "未來趨勢",  .en: "Forecast"],
+        "detail.loading":   [.zhHans: "正在读取数据…", .zhHant: "正在讀取資料…", .en: "Reading data…"],
 
         // MARK: Theme picker
         "themePicker.title": [.zhHans: "选择表盘", .zhHant: "選擇錶盤", .en: "Select Clock Face"],
