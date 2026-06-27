@@ -18,7 +18,7 @@
 
 <div align="center">
 
-![TokenClock — floating Liquid Glass desktop clock](docs/screenshots/hero.png)
+![TokenClock — floating Liquid Glass desktop clock](docs/screenshots/hero_en.png)
 
 </div>
 
@@ -65,7 +65,7 @@ It's built with the macOS 26 **Liquid Glass** material for a crystal clock disc,
     <td width="50%" align="center"><b>Expanded detail panel</b><br>usage broken down by tool → session / agent</td>
   </tr>
   <tr>
-    <td width="50%" align="center"><img src="docs/screenshots/hero.png" alt="hero"></td>
+    <td width="50%" align="center"><img src="docs/screenshots/hero_en.png" alt="hero"></td>
     <td width="50%" align="center"><img src="docs/screenshots/dropdown_en.png" alt="dropdown"></td>
   </tr>
   <tr>
