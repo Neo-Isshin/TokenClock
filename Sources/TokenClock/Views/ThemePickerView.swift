@@ -20,7 +20,7 @@ struct ThemePickerView: View {
                 .buttonStyle(.plain)
             }
 
-            ScrollView([.horizontal, .vertical], showsIndicators: false) {
+            ScrollView([.horizontal], showsIndicators: false) {   // 仅横向滚动；纵向按行自适应高度
                 let standardThemes = ClockFaceTheme.allCases
                 let customThemes = viewModel.savedCustomThemes
                 let totalCount = standardThemes.count + customThemes.count
