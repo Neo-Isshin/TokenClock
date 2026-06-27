@@ -12,8 +12,8 @@
 #   ./cli/install.sh --glass      # 强制 liquid-glass 变体
 #   ./cli/install.sh --no-start       # 装完不自动启动
 #
-# 一行安装（公开托管后替换 <your-host>）:
-#   curl -fsSL https://<your-host>/raw/main/cli/install.sh | bash
+# 一行安装:
+#   curl -fsSL https://gitea.nxc8335.cloud/nxc8335/TokenClock/raw/main/cli/install.sh | bash
 #
 # 可用环境变量覆盖默认值:
 #   TOKENCLOCK_REPO     git 仓库地址            （默认: 仓库 origin）
@@ -325,7 +325,7 @@ printf '%s\n' "$DOCTOR_OUT"
 
 cat <<EOF
 
-一行安装（公开托管后替换 <your-host>）:
-  curl -fsSL https://<your-host>/raw/main/cli/install.sh | bash
+一行安装:
+  curl -fsSL https://gitea.nxc8335.cloud/nxc8335/TokenClock/raw/main/cli/install.sh | bash
 
 EOF

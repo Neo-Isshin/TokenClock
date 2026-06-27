@@ -43,7 +43,7 @@ It's built with the macOS 26 **Liquid Glass** material for a crystal clock disc,
 - Ships in **two variants** — `main` (macOS 26) and `normal` (macOS 15) — and the `tokenclock` CLI picks the right one for your OS automatically.
 
 ### 📦 One-line install & CLI
-- The normal build runs on **macOS 15+**, the Liquid Glass build on **macOS 26+**. The one-liner picks the right variant for your OS automatically, and the lightweight `tokenclock` CLI handles start / stop / switch / diagnose. See the [install guide](https://PLACEHOLDER/install) (link TBD).
+- The normal build runs on **macOS 15+**, the Liquid Glass build on **macOS 26+**. The one-liner picks the right variant for your OS automatically, and the lightweight `tokenclock` CLI handles start / stop / switch / diagnose. See the [install guide](https://gitea.nxc8335.cloud/nxc8335/TokenClock).
 
 ### 🎨 Multiple faces & thoughtful design
 - 6 built-in faces (Classic / Midnight / Luxe / Gu Feng / Railgun / Sky), each with its own personality.
@@ -118,8 +118,8 @@ Auto-detects the macOS version → builds the matching variant → installs to `
 # if you've cloned this repo, run it directly:
 ./cli/install.sh
 
-# or (once publicly hosted, replace <your-host>) one-line install:
-curl -fsSL https://<your-host>/raw/main/cli/install.sh | bash
+# or one-line install:
+curl -fsSL https://gitea.nxc8335.cloud/nxc8335/TokenClock/raw/main/cli/install.sh | bash
 ```
 
 Options: `--debug` (faster build) / `--normal` / `--glass` / `--no-start` (don't auto-launch).
