@@ -4,7 +4,7 @@
 
 # 🕰️ TokenClock
 
-**一个浮在桌面上的 macOS 时钟，一眼看清你所有 AI 编程工具的实时 token 用量。**
+**精心设计的液态玻璃 token 时钟，随时掌握你所有 Agent 的消耗**
 
 [![macOS 15+](https://img.shields.io/static/v1?label=macOS&message=15%2B&color=000000&logo=apple&logoColor=white)](https://www.apple.com/macos/)
 [![macOS 26 Liquid Glass](https://img.shields.io/static/v1?label=macOS%2026&message=Liquid%20Glass&color=00B0F0)](https://developer.apple.com/macos/)
@@ -42,6 +42,9 @@ TokenClock 是一个常驻桌面的 **悬浮时钟**（置顶 · 可拖拽 · �
 - **自适应高对比墨色文字**：浅色 tint 主题自动切换近黑刻度 / 数字，保证可读性。
 - 提供 `main`（macOS 26）与 `normal`（macOS 15）**双版本**，由 `tokenclock` CLI 按系统版本自动选用。
 
+### 📦 一行安装 & CLI
+- `normal` 适用于 **macOS 15+**，液态玻璃适用于 **macOS 26+**。一行安装脚本会根据系统自动选变体，简单的 `tokenclock` CLI 即可启动 / 停止 / 切换 / 诊断。详见 [安装指南](https://PLACEHOLDER/install)（链接待补）。
+
 ### 🎨 多表盘 + 美观设计
 - 6 款内置表盘（经典 / 深夜 / 暗金 / 古风 / 超电磁炮 / 天空），风格各异。
 - 4 种指针样式（圆头 / 锥形 / 菱形 / 剑形），数字风格含阿拉伯数字与中文数字。
@@ -69,16 +72,12 @@ TokenClock 是一个常驻桌面的 **悬浮时钟**（置顶 · 可拖拽 · �
     <td width="50%" align="center"><img src="docs/screenshots/dropdown_zh.png" alt="dropdown"></td>
   </tr>
   <tr>
-    <td colspan="2" align="center"><b>总览</b> · 时钟与展开面板同框</td>
+    <td width="50%" align="center"><b>总览</b><br>时钟与展开面板同框</td>
+    <td width="50%" align="center"><b>表盘主题选择器</b> · 6 款内置 + 自定义</td>
   </tr>
   <tr>
-    <td colspan="2" align="center"><img src="docs/screenshots/overview_zh.png" alt="overview"></td>
-  </tr>
-  <tr>
-    <td colspan="2" align="center"><b>表盘主题选择器</b> · 6 款内置 + 自定义</td>
-  </tr>
-  <tr>
-    <td colspan="2" align="center"><img src="docs/screenshots/themes_zh.png" alt="themes"></td>
+    <td width="50%" align="center"><img src="docs/screenshots/overview.png" alt="overview"></td>
+    <td width="50%" align="center"><img src="docs/screenshots/themes_zh.png" alt="themes"></td>
   </tr>
 </table>
 
@@ -222,7 +221,7 @@ GET http://127.0.0.1:9988/api/usage
 
 ---
 
-## 🛣 路线图
+## 🛣 未来支持计划
 
 - [ ] `tokenclock update` —— 部署更新服务器，实现一键拉取 / 安装新版本
 - [ ] 支持更多 AI 编程工具（持续扩展检测器）
@@ -246,7 +245,7 @@ GET http://127.0.0.1:9988/api/usage
 
 ## 📄 许可证
 
-TokenClock 基于 **[MIT 协议](LICENSE)** 开源 —— © 2026 nxc8335。可自由使用、修改与再分发，仅需保留版权声明。
+TokenClock 基于 **[MIT 协议](LICENSE)** 开源 —— © 2026 Neo-Isshin。可自由使用、修改与再分发，仅需保留版权声明。
 
 ---
 

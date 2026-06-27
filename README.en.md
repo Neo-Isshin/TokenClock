@@ -4,7 +4,7 @@
 
 # 🕰️ TokenClock
 
-**A floating macOS desktop clock that shows the real-time token usage of all your AI coding tools at a glance.**
+**A thoughtfully crafted Liquid Glass token clock — see every agent's consumption at a glance**
 
 [![macOS 15+](https://img.shields.io/static/v1?label=macOS&message=15%2B&color=000000&logo=apple&logoColor=white)](https://www.apple.com/macos/)
 [![macOS 26 Liquid Glass](https://img.shields.io/static/v1?label=macOS%2026&message=Liquid%20Glass&color=00B0F0)](https://developer.apple.com/macos/)
@@ -42,6 +42,9 @@ It's built with the macOS 26 **Liquid Glass** material for a crystal clock disc,
 - **Adaptive high-contrast ink**: lighter-tinted themes automatically switch to near-black ticks / numerals for legibility.
 - Ships in **two variants** — `main` (macOS 26) and `normal` (macOS 15) — and the `tokenclock` CLI picks the right one for your OS automatically.
 
+### 📦 One-line install & CLI
+- The normal build runs on **macOS 15+**, the Liquid Glass build on **macOS 26+**. The one-liner picks the right variant for your OS automatically, and the lightweight `tokenclock` CLI handles start / stop / switch / diagnose. See the [install guide](https://PLACEHOLDER/install) (link TBD).
+
 ### 🎨 Multiple faces & thoughtful design
 - 6 built-in faces (Classic / Midnight / Luxe / Gu Feng / Railgun / Sky), each with its own personality.
 - 4 hand styles (round / tapered / lance / sword); numerals in Arabic or Chinese.
@@ -69,16 +72,12 @@ It's built with the macOS 26 **Liquid Glass** material for a crystal clock disc,
     <td width="50%" align="center"><img src="docs/screenshots/dropdown_en.png" alt="dropdown"></td>
   </tr>
   <tr>
-    <td colspan="2" align="center"><b>Overview</b> · clock + expanded panel together on the desktop</td>
+    <td width="50%" align="center"><b>Overview</b><br>clock + panel together on the desktop</td>
+    <td width="50%" align="center"><b>Theme picker</b> · 6 built-in faces + custom</td>
   </tr>
   <tr>
-    <td colspan="2" align="center"><img src="docs/screenshots/overview_en.png" alt="overview"></td>
-  </tr>
-  <tr>
-    <td colspan="2" align="center"><b>Theme picker</b> · 6 built-in faces + custom</td>
-  </tr>
-  <tr>
-    <td colspan="2" align="center"><img src="docs/screenshots/themes_en.png" alt="themes"></td>
+    <td width="50%" align="center"><img src="docs/screenshots/overview.png" alt="overview"></td>
+    <td width="50%" align="center"><img src="docs/screenshots/themes_en.png" alt="themes"></td>
   </tr>
 </table>
 
@@ -246,7 +245,7 @@ It returns the aggregated JSON usage of all tools, handy for external scripts / 
 
 ## 📄 License
 
-TokenClock is open-sourced under the **[MIT License](LICENSE)** — © 2026 nxc8335. Use it, modify it, ship it freely; just keep the copyright notice.
+TokenClock is open-sourced under the **[MIT License](LICENSE)** — © 2026 Neo-Isshin. Use it, modify it, ship it freely; just keep the copyright notice.
 
 ---
 
