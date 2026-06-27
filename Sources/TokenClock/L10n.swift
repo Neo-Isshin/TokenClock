@@ -44,7 +44,7 @@ final class L10n: @unchecked Sendable {
         // MARK: Menu
         "menu.clockFace":        [.zhHans: "🎨 表盘",               .zhHant: "🎨 錶盤",              .en: "🎨 Clock Face"],
         "menu.myClockFaces":     [.zhHans: "✏️ 我的表盘",            .zhHant: "✏️ 我的錶盤",           .en: "✏️ My Clock Faces"],
-        "menu.api":              [.zhHans: "🔌 API: localhost:9988/api/usage", .zhHant: "🔌 API: localhost:9988/api/usage", .en: "🔌 API: localhost:9988/api/usage"],
+        "menu.api":              [.zhHans: "🔌 API: localhost:%d/api/usage", .zhHant: "🔌 API: localhost:%d/api/usage", .en: "🔌 API: localhost:%d/api/usage"],
         "menu.opacity":          [.zhHans: "透明度",                .zhHant: "透明度",              .en: "Opacity"],
         "menu.alwaysOnTop":      [.zhHans: "始终置于顶层",           .zhHant: "始終置於頂層",          .en: "Always on Top"],
         "menu.temperature":      [.zhHans: "🌡️ 温度",              .zhHant: "🌡️ 溫度",             .en: "🌡️ Temperature"],

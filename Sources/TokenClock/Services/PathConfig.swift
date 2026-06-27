@@ -127,7 +127,7 @@ enum PathConfig {
     }
 
     static func defaultClineHome() -> String {
-        NSHomeDirectory() + "/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev"
+        AppPaths.appSupport("Code", "User", "globalStorage", "saoudrizwan.claude-dev")
     }
 
     static func defaultContinueHome() -> String {
@@ -156,7 +156,7 @@ enum PathConfig {
         if let env = envPath(envClaudeCode) { candidates.append(env) }
         candidates.append(defaultClaudeCodeHome())
         // Claude Desktop 日志位置（部分 session 数据可能在此）
-        candidates.append(NSHomeDirectory() + "/Library/Application Support/Claude")
+        candidates.append(AppPaths.appSupport("Claude"))
         return candidates
     }
 
@@ -234,7 +234,7 @@ enum PathConfig {
         if let env = envPath(envCline) { candidates.append(env) }
         candidates.append(defaultClineHome())
         // Cursor 扩展位置
-        candidates.append(NSHomeDirectory() + "/Library/Application Support/Cursor/User/globalStorage/saoudrizwan.claude-dev")
+        candidates.append(AppPaths.appSupport("Cursor", "User", "globalStorage", "saoudrizwan.claude-dev"))
         return candidates
     }
 

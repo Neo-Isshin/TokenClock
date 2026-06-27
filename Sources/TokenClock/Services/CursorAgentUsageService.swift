@@ -111,7 +111,7 @@ final class CursorAgentUsageService: @unchecked Sendable {
 
     /// macOS 上 Cursor IDE 的 state.vscdb 路径
     private func cursorStateDbPath() -> String {
-        NSHomeDirectory() + "/Library/Application Support/Cursor/User/globalStorage/state.vscdb"
+        AppPaths.appSupport("Cursor", "User", "globalStorage", "state.vscdb")
     }
 
     /// 从 token 提取 userId

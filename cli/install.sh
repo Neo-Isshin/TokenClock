@@ -64,23 +64,29 @@ command -v sw_vers >/dev/null || die "需要 macOS（未找到 sw_vers）。"
 command -v git    >/dev/null || die "未找到 git。请先安装 Xcode 命令行工具：xcode-select --install"
 command -v swift  >/dev/null || die "未找到 Swift 工具链。请先安装 Xcode 或命令行工具：xcode-select --install"
 
+# 跨脚本共享常量（与 cli/tokenclock 保持同步）
+MIN_MACOS=15              # 最低支持 macOS 主版本
+LIQUID_GLASS_MIN_MACOS=26 # liquid-glass 变体最低主版本
+API_PORT_DEFAULT=9988     # 与 AppConfig.LocalServer.defaultPort 一致
+DOMAIN="TokenClock"       # UserDefaults 域（defaults 命令）
+
 OS_MAJOR="$(sw_vers -productVersion | cut -d. -f1)"
 say "  macOS $(sw_vers -productVersion) · 主版本 $OS_MAJOR · 工具链 $(swift --version 2>/dev/null | head -1)"
 
 # ── 2. 选变体 ──
 if [ -z "$VARIANT" ]; then
-  if [ "$OS_MAJOR" -ge 26 ]; then
+  if [ "$OS_MAJOR" -ge "$LIQUID_GLASS_MIN_MACOS" ]; then
     # macOS 26+:同时拉两个变体(Liquid Glass + normal)
     VARIANTS=(glass normal)
     BRANCHES=(main normal)
     PRIMARY_VARIANT=glass    # 默认/首启变体
-  elif [ "$OS_MAJOR" -ge 15 ]; then
+  elif [ "$OS_MAJOR" -ge "$MIN_MACOS" ]; then
     # macOS 15-25:只 normal(经典不透明版)
     VARIANTS=(normal)
     BRANCHES=(normal)
     PRIMARY_VARIANT=normal
   else
-    die "需要 macOS 15 或更高版本（当前主版本 $OS_MAJOR）。"
+    die "需要 macOS $MIN_MACOS 或更高版本（当前主版本 $OS_MAJOR）。"
   fi
 else
   # 手动 --glass / --normal 时,只装指定那一个
@@ -144,7 +150,11 @@ done
 # ── 6. 安装 tokenclock CLI ──
 step "安装 tokenclock CLI"
 mkdir -p "$BIN_DIR"
-cp "$BUILD_DIR/cli/tokenclock" "$BIN_DIR/tokenclock"
+# 双分支 layout 下：CLI 在 $BUILD_DIR/$primary_branch/cli/tokenclock
+# BRANCHES 已在前文（变体选择）初始化，primary branch 是第一个
+primary_branch="${BRANCHES[0]:-}"
+[ -n "$primary_branch" ] || die "BRANCHES 未初始化（变体选择逻辑异常）"
+cp "$BUILD_DIR/$primary_branch/cli/tokenclock" "$BIN_DIR/tokenclock"
 chmod +x "$BIN_DIR/tokenclock"
 say "  ✓ $BIN_DIR/tokenclock"
 export PATH="$BIN_DIR:$PATH"   # 让本脚本后续命令能直接用 tokenclock
@@ -164,14 +174,13 @@ find_free_port() {
 
 # y/N 提示；默认 N（最少惊喜）。非交互（curl | bash）下跳过。
 prompt_api_server() {
-  local API_PORT_DEFAULT=9988
   local API_PORT_TRIES=5
   local API_PORT_FALLBACK_MSG="（启动可能失败）"
   local API_PORT_RANGE_END=$((API_PORT_DEFAULT + API_PORT_TRIES))   # 9993
 
   # 非交互模式（pipe / 无 TTY）：默认关闭，安静跳过
   if [ ! -t 0 ]; then
-    defaults delete TokenClock TC_apiServerEnabled 2>/dev/null || true
+    defaults delete "$DOMAIN" TC_apiServerEnabled 2>/dev/null || true
     say "  ⏭ API 服务器: 跳过（非交互模式，默认关闭）"
     return 0
   fi
@@ -192,9 +201,9 @@ prompt_api_server() {
         say "  ⚠ ${API_PORT_DEFAULT}–${API_PORT_RANGE_END} 全部被占用，仍使用 $chosen_port$API_PORT_FALLBACK_MSG"
       fi
 
-      defaults write TokenClock TC_apiServerEnabled -bool true \
+      defaults write "$DOMAIN" TC_apiServerEnabled -bool true \
         || die "defaults write TC_apiServerEnabled 失败"
-      defaults write TokenClock TC_apiServerPort -int "$chosen_port" \
+      defaults write "$DOMAIN" TC_apiServerPort -int "$chosen_port" \
         || die "defaults write TC_apiServerPort 失败"
 
       API_ENABLED=1
@@ -202,7 +211,7 @@ prompt_api_server() {
       say "  ✓ API 服务器: 已启用（端口 $chosen_port，$HOME_DIR/$PRIMARY_VARIANT/TokenClock 启动后生效）"
       ;;
     *)
-      defaults delete TokenClock TC_apiServerEnabled 2>/dev/null || true
+      defaults delete "$DOMAIN" TC_apiServerEnabled 2>/dev/null || true
       say "  ⏭ API 服务器: 未启用（默认）"
       ;;
   esac
@@ -210,7 +219,7 @@ prompt_api_server() {
 
 # ── 7b. 询问是否启用本地 API 服务 ──
 API_ENABLED=0
-API_CHOSEN_PORT=9988
+API_CHOSEN_PORT="$API_PORT_DEFAULT"
 if [ "$NO_START" -eq 1 ]; then
   say "  ⏭ API 服务器: 跳过（--no-start，未启动应用）"
 else
@@ -239,7 +248,7 @@ else
   tokenclock start --"$PRIMARY_VARIANT" >/dev/null 2>&1 || die "启动失败"
   say "  已启动 $PRIMARY_VARIANT 版"
   sleep 3                                                    # 等待首次扫描
-  enabled="$(defaults read TokenClock TC_enabledTools 2>/dev/null \
+  enabled="$(defaults read "$DOMAIN" TC_enabledTools 2>/dev/null \
              | tr -d '()"' | tr ',' '\n' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' | grep -v '^$' | paste -sd ',' - | sed 's/,/, /g')"
   if [ -n "$enabled" ]; then
     say "  🔍 检测到已启用工具: $enabled"

@@ -114,6 +114,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         return AppConfig.LocalServer.defaultPort
     }
 
+    /// 构造本地 API 端点 URL（端口来自用户偏好，路径来自 AppConfig）
+    static func apiEndpointURL() -> String {
+        "http://localhost:\(resolveAPIServerPort())\(AppConfig.LocalServer.usageEndpoint)"
+    }
+
     private func showDropdownPanel() {
         dropdownPanel.show(
             below: panel.frame,
@@ -156,7 +161,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             menu.addItem(savedItem)
         }
 
-        let apiItem = NSMenuItem(title: tr("menu.api"),
+        let apiItem = NSMenuItem(title: L10n.shared.tr("menu.api", Int(AppDelegate.resolveAPIServerPort())),
                                  action: #selector(copyAPIEndpoint(_:)), keyEquivalent: "")
         menu.addItem(apiItem)
         menu.addItem(.separator())
@@ -383,7 +388,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     @objc private func copyAPIEndpoint(_ sender: NSMenuItem) {
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
-        pasteboard.setString("http://localhost:\(AppDelegate.resolveAPIServerPort())\(AppConfig.LocalServer.usageEndpoint)", forType: .string)
+        pasteboard.setString(AppDelegate.apiEndpointURL(), forType: .string)
     }
 
     @objc private func quitApp(_ sender: NSMenuItem) {
