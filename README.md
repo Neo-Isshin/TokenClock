@@ -69,6 +69,12 @@ TokenClock 是一个常驻桌面的 **悬浮时钟**（置顶 · 可拖拽 · �
     <td width="50%" align="center"><img src="docs/screenshots/dropdown_zh.png" alt="dropdown"></td>
   </tr>
   <tr>
+    <td colspan="2" align="center"><b>总览</b> · 时钟与展开面板同框</td>
+  </tr>
+  <tr>
+    <td colspan="2" align="center"><img src="docs/screenshots/overview_zh.png" alt="overview"></td>
+  </tr>
+  <tr>
     <td colspan="2" align="center"><b>表盘主题选择器</b> · 6 款内置 + 自定义</td>
   </tr>
   <tr>
