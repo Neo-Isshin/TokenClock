@@ -195,7 +195,7 @@ enum ClockFaceTheme: String, CaseIterable, Identifiable {
         case .gufeng: return Color(red: 0.650, green: 0.500, blue: 0.350)
         case .railgun: return Color(red: 0.750, green: 0.650, blue: 0.580)
         case .sky: return Color(red: 0.620, green: 0.780, blue: 0.920)
-        case .glass: return Color(white: 0.62)                          // 柔和灰刻度
+        case .glass: return Color(white: 1.0).opacity(0.7)                    // 白刻度（次）
         case .custom: return custom.tickMarkColor.swiftUIColor
         }
     }
@@ -208,7 +208,7 @@ enum ClockFaceTheme: String, CaseIterable, Identifiable {
         case .gufeng: return Color(red: 0.350, green: 0.220, blue: 0.160)
         case .railgun: return Color(red: 0.620, green: 0.470, blue: 0.380)
         case .sky: return Color(red: 0.960, green: 0.920, blue: 0.780)
-        case .glass: return Color(red: 0.16, green: 0.16, blue: 0.18)
+        case .glass: return Color.white                                       // 白刻度（主，12/3/6/9）
         case .custom: return custom.majorTickMarkColor.swiftUIColor
         }
     }
