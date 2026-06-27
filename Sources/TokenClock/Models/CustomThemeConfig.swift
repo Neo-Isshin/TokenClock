@@ -108,7 +108,7 @@ struct SavedCustomTheme: Codable, Identifiable, Equatable {
 }
 
 extension SavedCustomTheme {
-    static let userDefaultsKey = "TC_savedCustomThemes"
+    static var userDefaultsKey: String { SettingsKey.savedCustomThemes.rawValue }
 
     static func loadAll() -> [SavedCustomTheme] {
         guard let data = UserDefaults.standard.data(forKey: userDefaultsKey),
@@ -126,7 +126,7 @@ extension SavedCustomTheme {
 }
 
 extension CustomThemeConfig {
-    static let userDefaultsKey = "TC_customThemeConfig"
+    static var userDefaultsKey: String { SettingsKey.customThemeConfig.rawValue }
 
     static func load() -> CustomThemeConfig {
         guard let data = UserDefaults.standard.data(forKey: userDefaultsKey),

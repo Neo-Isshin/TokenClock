@@ -20,10 +20,10 @@ enum UsageAggregator {
     /// 根据近 N 分钟 token 消耗判断热力 emoji（阈值可自定义）
     static func rateEmoji(_ tools: [ToolUsage]) -> String {
         let recentTotal = tools.reduce(0) { $0 + $1.recentTokens }
-        let burst = UserDefaults.standard.integer(forKey: "TC_rateBurst")
-        let hot = UserDefaults.standard.integer(forKey: "TC_rateHot")
-        let active = UserDefaults.standard.integer(forKey: "TC_rateActive")
-        let calm = UserDefaults.standard.integer(forKey: "TC_rateCalm")
+        let burst = UserDefaults.standard.int(for: .rateBurst, default: 0)
+        let hot = UserDefaults.standard.int(for: .rateHot, default: 0)
+        let active = UserDefaults.standard.int(for: .rateActive, default: 0)
+        let calm = UserDefaults.standard.int(for: .rateCalm, default: 0)
 
         let b = burst > 0 ? burst : 500_000
         let h = hot > 0 ? hot : 100_000

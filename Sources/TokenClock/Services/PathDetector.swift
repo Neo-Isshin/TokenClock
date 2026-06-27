@@ -64,7 +64,7 @@ enum PathDetector {
     // MARK: - 逐项检测
 
     private static func detectOpenClaw() -> DetectionResult {
-        let custom = UserDefaults.standard.string(forKey: "TC_openclawPath")
+        let custom = UserDefaults.standard.string(for: .openclawPath)
         let candidates = buildCandidates(
             custom: custom,
             envName: PathConfig.openclawCandidates(),
@@ -86,7 +86,7 @@ enum PathDetector {
     }
 
     private static func detectClaudeCode() -> DetectionResult {
-        let custom = UserDefaults.standard.string(forKey: "TC_claudeCodePath")
+        let custom = UserDefaults.standard.string(for: .claudeCodePath)
         let candidates = buildCandidates(
             custom: custom,
             envName: PathConfig.claudeCodeCandidates(),
@@ -110,7 +110,7 @@ enum PathDetector {
     }
 
     private static func detectGemini() -> DetectionResult {
-        let custom = UserDefaults.standard.string(forKey: "TC_geminiPath")
+        let custom = UserDefaults.standard.string(for: .geminiPath)
         let candidates = buildCandidates(
             custom: custom,
             envName: PathConfig.geminiCandidates(),
@@ -132,7 +132,7 @@ enum PathDetector {
     }
 
     private static func detectCodex() -> DetectionResult {
-        let custom = UserDefaults.standard.string(forKey: "TC_codexPath")
+        let custom = UserDefaults.standard.string(for: .codexPath)
         let candidates = buildCandidates(
             custom: custom,
             envName: PathConfig.codexCandidates(),
@@ -156,7 +156,7 @@ enum PathDetector {
     }
 
     private static func detectHermes() -> DetectionResult {
-        let custom = UserDefaults.standard.string(forKey: "TC_hermesPath")
+        let custom = UserDefaults.standard.string(for: .hermesPath)
         let candidates = buildCandidates(
             custom: custom,
             envName: PathConfig.hermesCandidates(),
@@ -180,7 +180,7 @@ enum PathDetector {
     }
 
     private static func detectOpenCode() -> DetectionResult {
-        let custom = UserDefaults.standard.string(forKey: "TC_opencodePath")
+        let custom = UserDefaults.standard.string(for: .opencodePath)
         let candidates = buildCandidates(
             custom: custom,
             envName: PathConfig.opencodeCandidates(),
@@ -204,7 +204,7 @@ enum PathDetector {
     }
 
     private static func detectQwen() -> DetectionResult {
-        let custom = UserDefaults.standard.string(forKey: "TC_qwenPath")
+        let custom = UserDefaults.standard.string(for: .qwenPath)
         let candidates = buildCandidates(
             custom: custom, envName: PathConfig.qwenCandidates(),
             defaults: [PathConfig.defaultQwenHome()], alternates: [])
@@ -215,7 +215,7 @@ enum PathDetector {
     }
 
     private static func detectCopilot() -> DetectionResult {
-        let custom = UserDefaults.standard.string(forKey: "TC_copilotPath")
+        let custom = UserDefaults.standard.string(for: .copilotPath)
         let candidates = buildCandidates(
             custom: custom, envName: PathConfig.copilotCandidates(),
             defaults: [PathConfig.defaultCopilotHome()], alternates: [])
@@ -229,7 +229,7 @@ enum PathDetector {
     }
 
     private static func detectGrok() -> DetectionResult {
-        let custom = UserDefaults.standard.string(forKey: "TC_grokPath")
+        let custom = UserDefaults.standard.string(for: .grokPath)
         let candidates = buildCandidates(
             custom: custom, envName: PathConfig.grokCandidates(),
             defaults: [PathConfig.defaultGrokHome()], alternates: [])
@@ -242,7 +242,7 @@ enum PathDetector {
     }
 
     private static func detectAider() -> DetectionResult {
-        let custom = UserDefaults.standard.string(forKey: "TC_aiderPath")
+        let custom = UserDefaults.standard.string(for: .aiderPath)
         let candidates = buildCandidates(
             custom: custom, envName: PathConfig.aiderCandidates(),
             defaults: [PathConfig.defaultAiderHome()], alternates: [])
@@ -256,7 +256,7 @@ enum PathDetector {
     }
 
     private static func detectAntigravity() -> DetectionResult {
-        let custom = UserDefaults.standard.string(forKey: "TC_antigravityPath")
+        let custom = UserDefaults.standard.string(for: .antigravityPath)
         let candidates = buildCandidates(
             custom: custom, envName: PathConfig.antigravityCandidates(),
             defaults: [PathConfig.defaultAntigravityHome()], alternates: [])
@@ -269,7 +269,7 @@ enum PathDetector {
     }
 
     private static func detectCline() -> DetectionResult {
-        let custom = UserDefaults.standard.string(forKey: "TC_clinePath")
+        let custom = UserDefaults.standard.string(for: .clinePath)
         let candidates = buildCandidates(
             custom: custom, envName: PathConfig.clineCandidates(),
             defaults: [PathConfig.defaultClineHome()], alternates: [])
@@ -282,7 +282,7 @@ enum PathDetector {
     }
 
     private static func detectContinue() -> DetectionResult {
-        let custom = UserDefaults.standard.string(forKey: "TC_continuePath")
+        let custom = UserDefaults.standard.string(for: .continuePath)
         let candidates = buildCandidates(
             custom: custom, envName: PathConfig.continueCandidates(),
             defaults: [PathConfig.defaultContinueHome()], alternates: [])
@@ -296,7 +296,7 @@ enum PathDetector {
     }
 
     private static func detectCursorAgent() -> DetectionResult {
-        let custom = UserDefaults.standard.string(forKey: "TC_cursorAgentPath")
+        let custom = UserDefaults.standard.string(for: .cursorAgentPath)
         let candidates = buildCandidates(
             custom: custom, envName: PathConfig.cursorAgentCandidates(),
             defaults: [PathConfig.defaultCursorAgentHome()], alternates: [])
