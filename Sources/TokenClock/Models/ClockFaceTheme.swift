@@ -1,13 +1,13 @@
 import SwiftUI
 
 enum ClockFaceTheme: String, CaseIterable, Identifiable {
+    case glass        // 玻璃（normal 分支：玻璃质感固定背景，模拟液态玻璃）
     case classic
     case midnight
     case luxe
     case gufeng       // 古风
     case railgun      // 超电磁炮
     case sky          // 天空
-    case glass        // 玻璃（normal 分支：玻璃质感固定背景，模拟液态玻璃）
     case custom       // 自定义
 
     var id: String { rawValue }

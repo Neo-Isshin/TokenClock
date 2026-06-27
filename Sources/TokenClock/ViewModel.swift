@@ -37,7 +37,7 @@ final class ViewModel: ObservableObject {
     @Published var launchAtLogin = false
 
     /// 表盘主题
-    @Published var selectedTheme: ClockFaceTheme = .classic
+    @Published var selectedTheme: ClockFaceTheme = .glass   // 默认表盘：玻璃（normal）
 
     /// 天气数据
     @Published var weather = WeatherInfo()
