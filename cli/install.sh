@@ -12,8 +12,8 @@
 #   ./cli/install.sh --glass      # 强制 liquid-glass 变体
 #   ./cli/install.sh --no-start       # 装完不自动启动
 #
-# 一行安装:
-#   curl -fsSL https://gitea.nxc8335.cloud/nxc8335/TokenClock/raw/main/cli/install.sh | bash
+# 一行安装（公开托管后替换 <your-host>）:
+#   curl -fsSL https://<your-host>/raw/main/cli/install.sh | bash
 #
 # 可用环境变量覆盖默认值:
 #   TOKENCLOCK_REPO     git 仓库地址            （默认: 仓库 origin）
@@ -24,7 +24,7 @@
 set -uo pipefail
 export LC_ALL=C      # bash 3.2 在 UTF-8 locale 下会把紧跟 $var 的多字节字符(如中文括号)误并入变量名;C locale 按字节解析可避免。中文字符串仍按 UTF-8 字节正常输出。
 
-DEFAULT_REPO="https://gitea.nxc8335.cloud/nxc8335/TokenClock.git"
+DEFAULT_REPO="http://localhost:3000/nxc8335/TokenClock.git"
 REPO_URL="${TOKENCLOCK_REPO:-$DEFAULT_REPO}"
 HOME_DIR="${TOKENCLOCK_HOME:-$HOME/.tokenclock}"
 BIN_DIR="${TOKENCLOCK_BIN_DIR:-$HOME/.local/bin}"
@@ -64,29 +64,23 @@ command -v sw_vers >/dev/null || die "需要 macOS（未找到 sw_vers）。"
 command -v git    >/dev/null || die "未找到 git。请先安装 Xcode 命令行工具：xcode-select --install"
 command -v swift  >/dev/null || die "未找到 Swift 工具链。请先安装 Xcode 或命令行工具：xcode-select --install"
 
-# 跨脚本共享常量（与 cli/tokenclock 保持同步）
-MIN_MACOS=15              # 最低支持 macOS 主版本
-LIQUID_GLASS_MIN_MACOS=26 # liquid-glass 变体最低主版本
-API_PORT_DEFAULT=9988     # 与 AppConfig.LocalServer.defaultPort 一致
-DOMAIN="TokenClock"       # UserDefaults 域（defaults 命令）
-
 OS_MAJOR="$(sw_vers -productVersion | cut -d. -f1)"
 say "  macOS $(sw_vers -productVersion) · 主版本 $OS_MAJOR · 工具链 $(swift --version 2>/dev/null | head -1)"
 
 # ── 2. 选变体 ──
 if [ -z "$VARIANT" ]; then
-  if [ "$OS_MAJOR" -ge "$LIQUID_GLASS_MIN_MACOS" ]; then
+  if [ "$OS_MAJOR" -ge 26 ]; then
     # macOS 26+:同时拉两个变体(Liquid Glass + normal)
     VARIANTS=(glass normal)
     BRANCHES=(main normal)
     PRIMARY_VARIANT=glass    # 默认/首启变体
-  elif [ "$OS_MAJOR" -ge "$MIN_MACOS" ]; then
+  elif [ "$OS_MAJOR" -ge 15 ]; then
     # macOS 15-25:只 normal(经典不透明版)
     VARIANTS=(normal)
     BRANCHES=(normal)
     PRIMARY_VARIANT=normal
   else
-    die "需要 macOS $MIN_MACOS 或更高版本（当前主版本 $OS_MAJOR）。"
+    die "需要 macOS 15 或更高版本（当前主版本 $OS_MAJOR）。"
   fi
 else
   # 手动 --glass / --normal 时,只装指定那一个
@@ -136,41 +130,22 @@ for i in "${!VARIANTS[@]}"; do
   BUILT_BINS+=("$BIN_PATH:$variant")
 done
 
-# 原子安装二进制:写到临时文件 → chmod → mv 原子替换。
-# 写入中途失败不会污染目标文件(目标保持上一版完整,下次启动还是旧版)。
-# mv 是 rename(2) 系统调用,在同一文件系统内 POSIX 保证原子性。
-# EXDEV(跨设备 rename 不行)时回退到裸 cp,覆盖极少数边界(例如 $BUILD_DIR 在外置盘)。
-install_binary() {
-  local src="$1" dst="$2"
-  local tmp="${dst}.new.$$"
-  if ! cp "$src" "$tmp"; then rm -f "$tmp"; die "复制 $src → $tmp 失败"; fi
-  chmod +x "$tmp" || { rm -f "$tmp"; die "chmod $tmp 失败"; }
-  if ! mv -f "$tmp" "$dst"; then
-    rm -f "$tmp"
-    # EXDEV fallback:跨设备时 rename 不行,直接 cp 覆盖
-    cp "$src" "$dst" && chmod +x "$dst" \
-      || die "安装 $dst 失败(atomic 和 fallback 都失败)"
-  fi
-}
-
 # ── 5. 暂存二进制 ──
 for entry in "${BUILT_BINS[@]}"; do
   bin_path="${entry%:*}"
   variant="${entry##*:}"
   step "安装时钟 [$variant] 到 $HOME_DIR/$variant"
   mkdir -p "$HOME_DIR/$variant"
-  install_binary "$bin_path" "$HOME_DIR/$variant/TokenClock"
+  cp "$bin_path" "$HOME_DIR/$variant/TokenClock"
+  chmod +x "$HOME_DIR/$variant/TokenClock"
   say "  ✓ $HOME_DIR/$variant/TokenClock"
 done
 
 # ── 6. 安装 tokenclock CLI ──
 step "安装 tokenclock CLI"
 mkdir -p "$BIN_DIR"
-# 双分支 layout 下：CLI 在 $BUILD_DIR/$primary_branch/cli/tokenclock
-# BRANCHES 已在前文（变体选择）初始化，primary branch 是第一个
-primary_branch="${BRANCHES[0]:-}"
-[ -n "$primary_branch" ] || die "BRANCHES 未初始化（变体选择逻辑异常）"
-install_binary "$BUILD_DIR/$primary_branch/cli/tokenclock" "$BIN_DIR/tokenclock"
+cp "$BUILD_DIR/cli/tokenclock" "$BIN_DIR/tokenclock"
+chmod +x "$BIN_DIR/tokenclock"
 say "  ✓ $BIN_DIR/tokenclock"
 export PATH="$BIN_DIR:$PATH"   # 让本脚本后续命令能直接用 tokenclock
 
@@ -187,90 +162,61 @@ find_free_port() {
   return 1
 }
 
-# y/N 提示；默认 Y（推荐 · API 服务器占用极小，启用后可被脚本 / 仪表盘消费）。
-# 非交互（curl | bash）下也默认开启（自动选端口）。
+# y/N 提示；默认 N（最少惊喜）。非交互（curl | bash）下跳过。
 prompt_api_server() {
+  local API_PORT_DEFAULT=9988
   local API_PORT_TRIES=5
   local API_PORT_FALLBACK_MSG="（启动可能失败）"
   local API_PORT_RANGE_END=$((API_PORT_DEFAULT + API_PORT_TRIES))   # 9993
 
-  # 把"挑端口 + 写 defaults"抽出来,非交互路径与交互路径的 y 分支共用
-  enable_api_server() {
-    local chosen_port
-    if chosen_port="$(find_free_port "$API_PORT_DEFAULT" "$API_PORT_TRIES")"; then
-      if [ "$chosen_port" != "$API_PORT_DEFAULT" ]; then
-        say "  ⚠ $API_PORT_DEFAULT 被占用 → 改用 $chosen_port"
-      fi
-    else
-      chosen_port="$API_PORT_DEFAULT"
-      say "  ⚠ ${API_PORT_DEFAULT}–${API_PORT_RANGE_END} 全部被占用，仍使用 $chosen_port$API_PORT_FALLBACK_MSG"
-    fi
-
-    defaults write "$DOMAIN" TC_apiServerEnabled -bool true \
-      || die "defaults write TC_apiServerEnabled 失败"
-    defaults write "$DOMAIN" TC_apiServerPort -int "$chosen_port" \
-      || die "defaults write TC_apiServerPort 失败"
-
-    API_ENABLED=1
-    API_CHOSEN_PORT="$chosen_port"
-    say "  ✓ API 服务器: 已启用（端口 $chosen_port，$HOME_DIR/$PRIMARY_VARIANT/TokenClock 启动后生效）"
-  }
-
-  # 非交互模式（pipe / 无 TTY）：默认开启,安静写入 defaults
+  # 非交互模式（pipe / 无 TTY）：默认关闭，安静跳过
   if [ ! -t 0 ]; then
-    enable_api_server
+    defaults delete TokenClock TC_apiServerEnabled 2>/dev/null || true
+    say "  ⏭ API 服务器: 跳过（非交互模式，默认关闭）"
     return 0
   fi
 
   local ans
-  printf '  启用本地 API 服务器（监听 127.0.0.1:%d）? [Y/n] ' "$API_PORT_DEFAULT"
+  printf '  启用本地 API 服务器（监听 127.0.0.1:%d）? [y/N] ' "$API_PORT_DEFAULT"
   IFS= read -r ans || ans=""
   ans="$(printf '%s' "$ans" | tr 'A-Z' 'a-z')"
   case "$ans" in
-    n|no)
-      defaults delete "$DOMAIN" TC_apiServerEnabled 2>/dev/null || true
-      say "  ⏭ API 服务器: 未启用（已选 n）"
+    y|yes)
+      local chosen_port
+      if chosen_port="$(find_free_port "$API_PORT_DEFAULT" "$API_PORT_TRIES")"; then
+        if [ "$chosen_port" != "$API_PORT_DEFAULT" ]; then
+          say "  ⚠ $API_PORT_DEFAULT 被占用 → 改用 $chosen_port"
+        fi
+      else
+        chosen_port="$API_PORT_DEFAULT"
+        say "  ⚠ ${API_PORT_DEFAULT}–${API_PORT_RANGE_END} 全部被占用，仍使用 $chosen_port$API_PORT_FALLBACK_MSG"
+      fi
+
+      defaults write TokenClock TC_apiServerEnabled -bool true \
+        || die "defaults write TC_apiServerEnabled 失败"
+      defaults write TokenClock TC_apiServerPort -int "$chosen_port" \
+        || die "defaults write TC_apiServerPort 失败"
+
+      API_ENABLED=1
+      API_CHOSEN_PORT="$chosen_port"
+      say "  ✓ API 服务器: 已启用（端口 $chosen_port，$HOME_DIR/$PRIMARY_VARIANT/TokenClock 启动后生效）"
       ;;
     *)
-      enable_api_server
+      defaults delete TokenClock TC_apiServerEnabled 2>/dev/null || true
+      say "  ⏭ API 服务器: 未启用（默认）"
       ;;
   esac
 }
 
 # ── 7b. 询问是否启用本地 API 服务 ──
 API_ENABLED=0
-API_CHOSEN_PORT="$API_PORT_DEFAULT"
+API_CHOSEN_PORT=9988
 if [ "$NO_START" -eq 1 ]; then
   say "  ⏭ API 服务器: 跳过（--no-start，未启动应用）"
 else
   step "配置本地 API 服务器（可选）"
   prompt_api_server
 fi
-
-# ── 7c. 检测系统语言 → 写 TC_language（首启前）──
-# Swift 端 L10n.init() 读取 UserDefaults TC_language,缺省回退到 zh-Hans,
-# 这就是英文 locale 用户首启看到中文的根因。安装时先把系统语言写进去,首启即正确。
-detect_and_set_language() {
-  local first_lang
-  first_lang="$(defaults read -g AppleLanguages 2>/dev/null \
-                | tr -d '()"' | tr ',' '\n' \
-                | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' \
-                | grep -v '^$' | head -n 1)"
-  [ -z "$first_lang" ] && first_lang="${LANG:-}"
-
-  local detected="zh-Hans"   # 与 L10n.swift 默认一致
-  case "$first_lang" in
-    en*)                 detected="en" ;;
-    zh-Hant|zh-TW|zh-HK) detected="zh-Hant" ;;
-    zh*)                 detected="zh-Hans" ;;
-  esac
-
-  defaults write "$DOMAIN" TC_language -string "$detected" \
-    || die "defaults write TC_language 失败"
-  say "  🌐 系统语言: $first_lang → TC_language=$detected"
-}
-# 仅首次安装执行;upgrade 路径(--no-start)跳过,避免覆盖用户已切换的语言。
-[ "$NO_START" -eq 0 ] && detect_and_set_language
 
 # ── 8. 确保 PATH（写入 shell rc，幂等）──
 ensure_in_path() {
@@ -293,7 +239,7 @@ else
   tokenclock start --"$PRIMARY_VARIANT" >/dev/null 2>&1 || die "启动失败"
   say "  已启动 $PRIMARY_VARIANT 版"
   sleep 3                                                    # 等待首次扫描
-  enabled="$(defaults read "$DOMAIN" TC_enabledTools 2>/dev/null \
+  enabled="$(defaults read TokenClock TC_enabledTools 2>/dev/null \
              | tr -d '()"' | tr ',' '\n' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' | grep -v '^$' | paste -sd ',' - | sed 's/,/, /g')"
   if [ -n "$enabled" ]; then
     say "  🔍 检测到已启用工具: $enabled"
@@ -328,7 +274,7 @@ if [ "${API_ENABLED:-0}" -eq 1 ]; then
   API_LINE="✓ 已启用 · 端口 ${API_CHOSEN_PORT}"
   API_URL="http://127.0.0.1:${API_CHOSEN_PORT}/api/usage"
 else
-  API_LINE="⏭ 未启用（已选 n）"
+  API_LINE="⏭ 未启用（默认）"
   API_URL=""
 fi
 
@@ -379,7 +325,7 @@ printf '%s\n' "$DOCTOR_OUT"
 
 cat <<EOF
 
-一行安装:
-  curl -fsSL https://gitea.nxc8335.cloud/nxc8335/TokenClock/raw/main/cli/install.sh | bash
+一行安装（公开托管后替换 <your-host>）:
+  curl -fsSL https://<your-host>/raw/main/cli/install.sh | bash
 
 EOF
