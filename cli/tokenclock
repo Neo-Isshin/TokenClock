@@ -23,6 +23,22 @@ die() { echo "tokenclock: $*" >&2; exit 1; }
 # macOS 主版本号（15 / 26 …）
 os_major() { sw_vers -productVersion 2>/dev/null | cut -d. -f1; }
 
+# 校验变体与系统版本兼容性,失败时 die。
+validate_variant_compat() {
+  local variant="$1"
+  case "$variant" in
+    glass)
+      local m; m="$(os_major)"
+      if [ "${m:-0}" -lt 26 ]; then
+        die "glass 变体需要 macOS 26+（液态玻璃材质），当前 macOS ${m:-未知}。请用 --normal 启动 classic 版。"
+      fi
+      ;;
+    normal)
+      # macOS 15+ 都支持
+      ;;
+  esac
+}
+
 # 运行中的 TokenClock pid（可能多行）。
 # 双重命中，互为兜底：
 #   ① 可执行路径位于 ~/.tokenclock/ 下 —— 覆盖当前 glass/normal 子目录布局，也覆盖
@@ -111,6 +127,9 @@ cmd_start() {
     fi
   fi
 
+  # 校验变体与系统版本兼容性（glass 必须 macOS 26+；normal 通用）
+  validate_variant_compat "$variant"
+
   local path
   case "$variant" in
     glass)  path="$(find_glass)" ;;
@@ -190,6 +209,8 @@ tokenclock v$CLI_VERSION — TokenClock 轻量命令行
 
 每个变体的定位顺序:
   \$TOKENCLOCK_GLASS / \$TOKENCLOCK_NORMAL  →  ~/.tokenclock/  →  /Applications/  →  仓库 .build/debug/
+
+注意: --glass 需要 macOS 26+; --normal 适用 macOS 15+。
 
 安装到 PATH: sudo install -m755 cli/tokenclock /usr/local/bin/tokenclock
 EOF
