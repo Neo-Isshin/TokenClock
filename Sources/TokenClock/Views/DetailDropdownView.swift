@@ -6,6 +6,8 @@ struct DetailDropdownView: View {
     var theme: ClockFaceTheme = .classic
     var weather: WeatherInfo = WeatherInfo()
     var localizedCityName: String = ""
+    /// 首次数据读取中：为 true 时用加载提示取代（基于 mock 的）工具列表，避免误导
+    var isLoading: Bool = false
 
     /// 过滤掉今日消耗为 0 的工具
     private var activeTools: [ToolUsage] {
@@ -22,37 +24,48 @@ struct DetailDropdownView: View {
                     .padding(.horizontal, 8)
             }
 
-            // 表头
-            HStack(spacing: 0) {
-                Text(L10n.shared.tr("detail.instance"))
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                Text(L10n.shared.tr("detail.todayUsage"))
-                    .frame(width: 62, alignment: .trailing)
-                Text(L10n.shared.tr("detail.messages"))
-                    .frame(width: 36, alignment: .trailing)
-                Text(L10n.shared.tr("detail.cacheRate"))
-                    .frame(width: 40, alignment: .trailing)
-            }
-            .font(.system(size: 9, weight: .medium))
-            .foregroundColor(theme.dropdownHeaderColor)
-            .padding(.horizontal, 16)
-            .padding(.top, 8)
-            .padding(.bottom, 4)
+            if isLoading {
+                // 首次数据读取中：显示加载提示（不展示 mock 占位工具，避免误导）
+                HStack(spacing: 6) {
+                    ProgressView().controlSize(.small)
+                    Text(L10n.shared.tr("detail.loading"))
+                        .font(.system(size: 11))
+                        .foregroundColor(theme.dropdownSubtextColor)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                // 表头
+                HStack(spacing: 0) {
+                    Text(L10n.shared.tr("detail.instance"))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    Text(L10n.shared.tr("detail.todayUsage"))
+                        .frame(width: 62, alignment: .trailing)
+                    Text(L10n.shared.tr("detail.messages"))
+                        .frame(width: 36, alignment: .trailing)
+                    Text(L10n.shared.tr("detail.cacheRate"))
+                        .frame(width: 40, alignment: .trailing)
+                }
+                .font(.system(size: 9, weight: .medium))
+                .foregroundColor(theme.dropdownHeaderColor)
+                .padding(.horizontal, 16)
+                .padding(.top, 8)
+                .padding(.bottom, 4)
 
-            // 工具列表（过滤消耗为 0 的）
-            ScrollView(.vertical, showsIndicators: true) {
-                VStack(spacing: 0) {
-                    ForEach(Array(activeTools.enumerated()), id: \.element.id) { index, tool in
-                        if index > 0 {
-                            Divider()
-                                .background(theme.dropdownDividerColor)
+                // 工具列表（过滤消耗为 0 的）
+                ScrollView(.vertical, showsIndicators: true) {
+                    VStack(spacing: 0) {
+                        ForEach(Array(activeTools.enumerated()), id: \.element.id) { index, tool in
+                            if index > 0 {
+                                Divider()
+                                    .background(theme.dropdownDividerColor)
+                            }
+
+                            ToolExpandableRow(tool: tool, theme: theme)
                         }
-
-                        ToolExpandableRow(tool: tool, theme: theme)
                     }
                 }
+                .frame(maxHeight: .infinity)
             }
-            .frame(maxHeight: .infinity)
         }
         .frame(maxHeight: .infinity, alignment: .top)
         .glassEffect(

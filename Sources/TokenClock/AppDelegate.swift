@@ -494,7 +494,8 @@ private struct DropdownPanelView: View {
                 tools: viewModel.visibleTools,
                 theme: viewModel.selectedTheme,
                 weather: viewModel.weather,
-                localizedCityName: viewModel.localizedCityName
+                localizedCityName: viewModel.localizedCityName,
+                isLoading: viewModel.isInitialLoading
             )
             .frame(maxHeight: .infinity, alignment: .top)
 
