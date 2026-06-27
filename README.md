@@ -133,7 +133,7 @@ curl -fsSL https://gitea.nxc8335.cloud/nxc8335/TokenClock/raw/main/cli/install.s
 ### 从源码构建运行
 
 ```bash
-git clone <你的仓库地址> TokenClock
+git clone https://gitea.nxc8335.cloud/nxc8335/TokenClock.git TokenClock
 cd TokenClock
 
 # 调试构建并直接运行
