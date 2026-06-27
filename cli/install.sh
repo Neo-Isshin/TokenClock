@@ -2,7 +2,7 @@
 #
 # install.sh — TokenClock 一键安装器
 #
-# 自动：检查环境 → 按 macOS 版本构建对应变体（26+ 液态玻璃 / 15+ 普通）→
+# 自动：检查环境 → 按 macOS 版本构建对应变体（26+ 双变体:液态玻璃 + 普通 / 15+ 普通）→
 #      安装到 ~/.tokenclock → 安装 tokenclock CLI 到 PATH → 首次启动（自动扫描 AI 工具路径）。
 #
 # 用法:
@@ -33,6 +33,7 @@ BUILD_DIR="${TOKENCLOCK_BUILD:-$HOME_DIR/src}"
 CONFIG="release"
 VARIANT=""          # "" = 按系统版本自动
 NO_START=0
+BUILT_BINS=()       # 收集所有变体的 构建产物路径:variant
 
 say()  { printf '%s\n' "$*"; }
 step() { printf '\n🛠  %s\n' "$*"; }
@@ -68,41 +69,77 @@ say "  macOS $(sw_vers -productVersion) · 主版本 $OS_MAJOR · 工具链 $(sw
 
 # ── 2. 选变体 ──
 if [ -z "$VARIANT" ]; then
-  if   [ "$OS_MAJOR" -ge 26 ]; then VARIANT=glass;  BRANCH=main
-  elif [ "$OS_MAJOR" -ge 15 ]; then VARIANT=normal; BRANCH=normal
-  else die "需要 macOS 15 或更高版本（当前主版本 $OS_MAJOR）。"
+  if [ "$OS_MAJOR" -ge 26 ]; then
+    # macOS 26+:同时拉两个变体(Liquid Glass + normal)
+    VARIANTS=(glass normal)
+    BRANCHES=(main normal)
+    PRIMARY_VARIANT=glass    # 默认/首启变体
+  elif [ "$OS_MAJOR" -ge 15 ]; then
+    # macOS 15-25:只 normal(经典不透明版)
+    VARIANTS=(normal)
+    BRANCHES=(normal)
+    PRIMARY_VARIANT=normal
+  else
+    die "需要 macOS 15 或更高版本（当前主版本 $OS_MAJOR）。"
   fi
 else
-  case "$VARIANT" in glass) BRANCH=main ;; normal) BRANCH=normal ;; esac
+  # 手动 --glass / --normal 时,只装指定那一个
+  case "$VARIANT" in
+    glass)  VARIANTS=(glass);  BRANCHES=(main);   PRIMARY_VARIANT=glass ;;
+    normal) VARIANTS=(normal); BRANCHES=(normal); PRIMARY_VARIANT=normal ;;
+  esac
 fi
-say "  变体: $VARIANT（分支 $BRANCH）· 构建: $CONFIG"
+VARIANT_LABELS=""
+for i in "${!VARIANTS[@]}"; do
+  if [ -z "$VARIANT_LABELS" ]; then
+    VARIANT_LABELS="${VARIANTS[$i]} (${BRANCHES[$i]})"
+  else
+    VARIANT_LABELS="$VARIANT_LABELS + ${VARIANTS[$i]} (${BRANCHES[$i]})"
+  fi
+done
+say "  变体: $VARIANT_LABELS · 构建: $CONFIG"
 
 # ── 3. 获取源码 ──
-step "获取源码（$REPO_URL · $BRANCH）"
-if [ -d "$BUILD_DIR/.git" ]; then
-  git -C "$BUILD_DIR" fetch --depth 1 origin "$BRANCH" >/dev/null 2>&1 || die "git fetch 失败（检查网络或 TOKENCLOCK_REPO）"
-  git -C "$BUILD_DIR" checkout "$BRANCH" >/dev/null 2>&1 || die "切换分支 $BRANCH 失败"
-  git -C "$BUILD_DIR" reset --hard "origin/$BRANCH" >/dev/null 2>&1
-  say "  已更新: $BUILD_DIR"
-else
-  mkdir -p "$BUILD_DIR"
-  git clone --depth 1 --branch "$BRANCH" "$REPO_URL" "$BUILD_DIR" >/dev/null 2>&1 \
-    || die "git clone 失败（检查 TOKENCLOCK_REPO=$REPO_URL 或网络）"
-  say "  已克隆: $BUILD_DIR"
-fi
+for i in "${!VARIANTS[@]}"; do
+  variant="${VARIANTS[$i]}"
+  branch="${BRANCHES[$i]}"
+  subdir="$BUILD_DIR/$branch"
+  step "获取源码 [$variant]（$REPO_URL · $branch）"
+  if [ -d "$subdir/.git" ]; then
+    git -C "$subdir" fetch --depth 1 origin "$branch" >/dev/null 2>&1 || die "git fetch [$variant] 失败（检查网络或 TOKENCLOCK_REPO）"
+    git -C "$subdir" checkout "$branch" >/dev/null 2>&1 || die "切换分支 $branch 失败（[$variant]）"
+    git -C "$subdir" reset --hard "origin/$branch" >/dev/null 2>&1
+    say "  已更新: $subdir"
+  else
+    mkdir -p "$subdir"
+    git clone --depth 1 --branch "$branch" "$REPO_URL" "$subdir" >/dev/null 2>&1 \
+      || die "git clone [$variant] 失败（检查 TOKENCLOCK_REPO=$REPO_URL 或网络）"
+    say "  已克隆: $subdir"
+  fi
+done
 
 # ── 4. 构建 ──
-step "构建（swift build -c $CONFIG · 首次可能需要几分钟）"
-( cd "$BUILD_DIR" && swift build -c "$CONFIG" ) || die "构建失败"
-BIN_PATH="$BUILD_DIR/.build/$CONFIG/TokenClock"
-[ -f "$BIN_PATH" ] || die "找不到构建产物: $BIN_PATH"
+for i in "${!VARIANTS[@]}"; do
+  variant="${VARIANTS[$i]}"
+  branch="${BRANCHES[$i]}"
+  subdir="$BUILD_DIR/$branch"
+  step "构建 [$variant]（swift build -c $CONFIG · 首次可能需要几分钟）"
+  ( cd "$subdir" && swift build -c "$CONFIG" ) || die "[$variant] 构建失败"
+  BIN_PATH="$subdir/.build/$CONFIG/TokenClock"
+  [ -f "$BIN_PATH" ] || die "找不到构建产物: $BIN_PATH"
+  BUILT_BINS+=("$BIN_PATH:$variant")
+done
 
 # ── 5. 暂存二进制 ──
-step "安装时钟到 $HOME_DIR"
-mkdir -p "$HOME_DIR/$VARIANT"
-cp "$BIN_PATH" "$HOME_DIR/$VARIANT/TokenClock"
-chmod +x "$HOME_DIR/$VARIANT/TokenClock"
-say "  ✓ $HOME_DIR/$VARIANT/TokenClock"
+for entry in "${BUILT_BINS[@]}"; do
+  bin_path="${entry%:*}"
+  variant="${entry##*:}"
+  step "安装时钟 [$variant] 到 $HOME_DIR/$variant"
+  mkdir -p "$HOME_DIR/$variant"
+  cp "$bin_path" "$HOME_DIR/$variant/TokenClock"
+  chmod +x "$HOME_DIR/$variant/TokenClock"
+  say "  ✓ $HOME_DIR/$variant/TokenClock"
+done
 
 # ── 6. 安装 tokenclock CLI ──
 step "安装 tokenclock CLI"
@@ -162,7 +199,7 @@ prompt_api_server() {
 
       API_ENABLED=1
       API_CHOSEN_PORT="$chosen_port"
-      say "  ✓ API 服务器: 已启用（端口 $chosen_port，$HOME_DIR/$VARIANT/TokenClock 启动后生效）"
+      say "  ✓ API 服务器: 已启用（端口 $chosen_port，$HOME_DIR/$PRIMARY_VARIANT/TokenClock 启动后生效）"
       ;;
     *)
       defaults delete TokenClock TC_apiServerEnabled 2>/dev/null || true
@@ -197,10 +234,10 @@ ensure_in_path
 if [ "$NO_START" -eq 1 ]; then
   say "  ⏭  跳过自动启动（--no-start）"
 else
-  step "首次启动并扫描 AI 工具路径"
+  step "首次启动 $PRIMARY_VARIANT 版并扫描 AI 工具路径"
   tokenclock stop >/dev/null 2>&1 || true                    # 停掉旧实例，确保用新二进制
-  tokenclock start --"$VARIANT" >/dev/null 2>&1 || die "启动失败"
-  say "  已启动 $VARIANT 版"
+  tokenclock start --"$PRIMARY_VARIANT" >/dev/null 2>&1 || die "启动失败"
+  say "  已启动 $PRIMARY_VARIANT 版"
   sleep 3                                                    # 等待首次扫描
   enabled="$(defaults read TokenClock TC_enabledTools 2>/dev/null \
              | tr -d '()"' | tr ',' '\n' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' | grep -v '^$' | paste -sd ',' - | sed 's/,/, /g')"
@@ -245,10 +282,25 @@ cat <<EOF
 
 🎉 TokenClock 安装完成！
 
-  变体:   $VARIANT（$BRANCH）
-  时钟:   $HOME_DIR/$VARIANT/TokenClock
+  变体:   $VARIANT_LABELS
+  时钟:   $HOME_DIR/${VARIANTS[0]}/TokenClock
+EOF
+# 多变体时,挨个列路径（单变体已在上行覆盖）
+if [ "${#VARIANTS[@]}" -gt 1 ]; then
+  for v in "${VARIANTS[@]:1}"; do
+    printf '         + %s\n' "$HOME_DIR/$v/TokenClock"
+  done
+fi
+
+cat <<EOF
   CLI:    $BIN_DIR/tokenclock
-  源码:   $BUILD_DIR
+EOF
+# 源码:每个分支的子目录各一行
+for branch in "${BRANCHES[@]}"; do
+  printf '  源码:   %s/%s\n' "$BUILD_DIR" "$branch"
+done
+
+cat <<EOF
 
   开机自启动:  默认开启（在时钟右键菜单中可关闭）
   API 服务器: $API_LINE
@@ -274,6 +326,6 @@ printf '%s\n' "$DOCTOR_OUT"
 cat <<EOF
 
 一行安装（公开托管后替换 <your-host>）:
-  curl -fsSL https://<your-host>/raw/$BRANCH/cli/install.sh | bash
+  curl -fsSL https://<your-host>/raw/main/cli/install.sh | bash
 
 EOF
