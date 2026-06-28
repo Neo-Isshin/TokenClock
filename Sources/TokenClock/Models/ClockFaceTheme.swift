@@ -2,12 +2,12 @@ import SwiftUI
 
 enum ClockFaceTheme: String, CaseIterable, Identifiable {
     case classic
+    case glacier      // 冰川 · 清澈透亮液态玻璃
     case midnight
     case luxe
     case gufeng       // 古风
     case railgun      // 超电磁炮
     case sky          // 天空
-    case glacier      // 冰川 · 清澈透亮液态玻璃
     case custom       // 自定义
 
     var id: String { rawValue }
