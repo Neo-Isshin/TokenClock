@@ -1,5 +1,6 @@
 import Foundation
 import CoreLocation
+@preconcurrency import MapKit
 
 /// 逐小时预报（3小时间隔）
 struct HourlyForecast: Sendable {
@@ -298,15 +299,22 @@ final class WeatherService: NSObject, CLLocationManagerDelegate {
 
     private func reverseGeocode(lat: Double, lon: Double) async -> String {
         let location = CLLocation(latitude: lat, longitude: lon)
-        let geocoder = CLGeocoder()
-        do {
-            let placemarks = try await geocoder.reverseGeocodeLocation(location, preferredLocale: Locale(identifier: "zh_CN"))
-            if let placemark = placemarks.first {
-                return placemark.locality ?? placemark.administrativeArea ?? "未知位置"
-            }
-        } catch {
-            print("Reverse geocode error: \(error)")
+        guard let request = MKReverseGeocodingRequest(location: location) else {
+            return "未知位置"
         }
+        request.preferredLocale = Locale(identifier: "zh_CN")
+        // MKMapItem 非 Sendable,callback 内就地提取 Sendable 字段再 resume,
+        // 避免跨 continuation 边界发送非 Sendable 值
+        let extracted: (city: String?, regionID: String?) = await withCheckedContinuation { cont in
+            request.getMapItems { items, _ in
+                let first = items?.first
+                let city = first?.addressRepresentations?.cityName
+                let region = first?.addressRepresentations?.region?.identifier
+                cont.resume(returning: (city, region))
+            }
+        }
+        if let city = extracted.city, !city.isEmpty { return city }
+        if let regionID = extracted.regionID, !regionID.isEmpty { return regionID }
         return "未知位置"
     }
 }
