@@ -136,14 +136,30 @@ for i in "${!VARIANTS[@]}"; do
   BUILT_BINS+=("$BIN_PATH:$variant")
 done
 
+# 原子安装二进制:写到临时文件 → chmod → mv 原子替换。
+# 写入中途失败不会污染目标文件(目标保持上一版完整,下次启动还是旧版)。
+# mv 是 rename(2) 系统调用,在同一文件系统内 POSIX 保证原子性。
+# EXDEV(跨设备 rename 不行)时回退到裸 cp,覆盖极少数边界(例如 $BUILD_DIR 在外置盘)。
+install_binary() {
+  local src="$1" dst="$2"
+  local tmp="${dst}.new.$$"
+  if ! cp "$src" "$tmp"; then rm -f "$tmp"; die "复制 $src → $tmp 失败"; fi
+  chmod +x "$tmp" || { rm -f "$tmp"; die "chmod $tmp 失败"; }
+  if ! mv -f "$tmp" "$dst"; then
+    rm -f "$tmp"
+    # EXDEV fallback:跨设备时 rename 不行,直接 cp 覆盖
+    cp "$src" "$dst" && chmod +x "$dst" \
+      || die "安装 $dst 失败(atomic 和 fallback 都失败)"
+  fi
+}
+
 # ── 5. 暂存二进制 ──
 for entry in "${BUILT_BINS[@]}"; do
   bin_path="${entry%:*}"
   variant="${entry##*:}"
   step "安装时钟 [$variant] 到 $HOME_DIR/$variant"
   mkdir -p "$HOME_DIR/$variant"
-  cp "$bin_path" "$HOME_DIR/$variant/TokenClock"
-  chmod +x "$HOME_DIR/$variant/TokenClock"
+  install_binary "$bin_path" "$HOME_DIR/$variant/TokenClock"
   say "  ✓ $HOME_DIR/$variant/TokenClock"
 done
 
@@ -154,8 +170,7 @@ mkdir -p "$BIN_DIR"
 # BRANCHES 已在前文（变体选择）初始化，primary branch 是第一个
 primary_branch="${BRANCHES[0]:-}"
 [ -n "$primary_branch" ] || die "BRANCHES 未初始化（变体选择逻辑异常）"
-cp "$BUILD_DIR/$primary_branch/cli/tokenclock" "$BIN_DIR/tokenclock"
-chmod +x "$BIN_DIR/tokenclock"
+install_binary "$BUILD_DIR/$primary_branch/cli/tokenclock" "$BIN_DIR/tokenclock"
 say "  ✓ $BIN_DIR/tokenclock"
 export PATH="$BIN_DIR:$PATH"   # 让本脚本后续命令能直接用 tokenclock
 
@@ -254,7 +269,8 @@ detect_and_set_language() {
     || die "defaults write TC_language 失败"
   say "  🌐 系统语言: $first_lang → TC_language=$detected"
 }
-detect_and_set_language
+# 仅首次安装执行;upgrade 路径(--no-start)跳过,避免覆盖用户已切换的语言。
+[ "$NO_START" -eq 0 ] && detect_and_set_language
 
 # ── 8. 确保 PATH（写入 shell rc，幂等）──
 ensure_in_path() {
