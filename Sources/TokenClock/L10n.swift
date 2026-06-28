@@ -189,6 +189,7 @@ final class L10n: @unchecked Sendable {
         "themeName.railgun":    [.zhHans: "超電磁砲", .zhHant: "超電磁砲", .en: "Railgun"],
         "themeName.sky":        [.zhHans: "天空",   .zhHant: "天空",   .en: "Sky"],
         "themeName.glass":      [.zhHans: "玻璃",   .zhHant: "玻璃",   .en: "Glass"],
+        "themeName.glacier":    [.zhHans: "冰川",   .zhHant: "冰川",   .en: "Glacier"],
         "themeName.custom":     [.zhHans: "自定义", .zhHant: "自訂",   .en: "Custom"],
 
         "themeDesc.classic":    [.zhHans: "浅灰表盘 · 红色层次指针", .zhHant: "淺灰錶盤 · 紅色層次指針", .en: "Light gray dial · Red layered hands"],
@@ -198,6 +199,7 @@ final class L10n: @unchecked Sendable {
         "themeDesc.railgun":    [.zhHans: "米白表盘 · 电弧蓝秒针",   .zhHant: "米白錶盤 · 電弧藍秒針",   .en: "Off-white dial · Arc blue second hand"],
         "themeDesc.sky":        [.zhHans: "蓝天白云 · 阳光金色指针", .zhHant: "藍天白雲 · 陽光金色指針", .en: "Blue sky · Sunlit gold hands"],
         "themeDesc.glass":      [.zhHans: "玻璃质感固定背景 · 墨色指针", .zhHant: "玻璃質感固定背景 · 墨色指針", .en: "Glassy fixed background · Ink hands"],
+        "themeDesc.glacier":    [.zhHans: "清澈透亮的液态玻璃 · 冰青 tint", .zhHant: "清澈透亮的液態玻璃 · 冰青 tint", .en: "Crystal-clear liquid glass · icy cyan"],
         "themeDesc.custom":     [.zhHans: "用户自定义配色与样式",     .zhHant: "用戶自訂配色與樣式",     .en: "User-defined colors and style"],
 
         // MARK: Path detector
