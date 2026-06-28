@@ -444,8 +444,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         pickerPanel.backgroundColor = .clear
         pickerPanel.isOpaque = false
         pickerPanel.hasShadow = true
-        pickerPanel.level = .floating
+        pickerPanel.level = .statusBar   // 最前：高于时钟（即使常驻置顶）与下拉面板
         pickerPanel.contentView = hostingView
+
+        // 按内容自适应高度，避免截断第二行表盘预览
+        let measureView = NSHostingView(rootView: themeView)
+        measureView.frame = NSRect(x: 0, y: 0, width: 300, height: 4000)
+        let fitHeight = measureView.fittingSize.height
+        pickerPanel.setContentSize(NSSize(width: 300, height: max(250, fitHeight)))
 
         // 定位到时钟面板的左侧（避免被表盘遮挡），垂直居中对齐；
         // 左侧空间不足时自动改放到右侧，并整体夹在屏幕可见区内。
@@ -466,7 +472,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             pickerPanel.setFrameOrigin(origin)
         }
 
-        pickerPanel.orderFront(nil)
+        pickerPanel.orderFrontRegardless()  // 强制置前（即使 App 未激活）
         self.themePickerPanel = pickerPanel
 
         // 点击外部关闭
