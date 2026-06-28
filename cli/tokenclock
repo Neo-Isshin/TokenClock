@@ -3,7 +3,7 @@
 # tokenclock — TokenClock 轻量命令行
 #
 # 管理浮动时钟的启动：按 macOS 版本自动选 liquid-glass（26+）或 normal（15+）构建，
-# 以及 stop / restart / doctor / update（占位）。
+# 以及 stop / restart / doctor / update。
 #
 # 设计为 POSIX/bash-3.2 兼容（macOS 自带 /bin/bash 即可），无需编译。
 # 安装：sudo install -m755 cli/tokenclock /usr/local/bin/tokenclock
@@ -21,8 +21,11 @@ MIN_MACOS=15              # 最低支持 macOS 主版本
 LIQUID_GLASS_MIN_MACOS=26 # liquid-glass 变体最低主版本
 
 # 更新源：cmd_update 从这里拉取最新 install.sh。
+# 走 gitea API（/api/v1/repos/<owner>/<repo>/raw/<path>?ref=<branch>）而非
+# /<owner>/<repo>/raw/<branch>/<path>，因为后者被 CDN（腾讯 EdgeOne）6h 缓存，
+# push 完要等缓存过期才能拿到新版；前者直连源站（也走 CDN，但 query string 不在缓存键里）。
 # 可通过 TOKENCLOCK_INSTALL_URL 环境变量覆盖（LAN 用户指向 localhost:3000）。
-INSTALL_URL="${TOKENCLOCK_INSTALL_URL:-https://gitea.nxc8335.cloud/nxc8335/TokenClock/raw/main/cli/install.sh}"
+INSTALL_URL="${TOKENCLOCK_INSTALL_URL:-https://gitea.nxc8335.cloud/api/v1/repos/nxc8335/TokenClock/raw/cli/install.sh?ref=main}"
 
 # ─────────────────────────── 辅助函数 ───────────────────────────
 
@@ -218,10 +221,21 @@ cmd_update() {
   local tmp_script
   tmp_script="$(umask 077; mktemp -t tokenclock-install.XXXXXX)" \
     || die "创建临时文件失败"
-  if ! curl -fsSL "$INSTALL_URL" -o "$tmp_script"; then
-    rm -f "$tmp_script"
-    die "下载安装器失败（检查网络或 TOKENCLOCK_INSTALL_URL）"
-  fi
+  # CDN 边缘偶发 TCP/TLS 握手断（SSL_ERROR_SYSCALL，约 30% 失败率），
+  # 重试 3 次 + 短退避可消除瞬时抖动。
+  local attempt=1 max_attempts=3
+  while [ "$attempt" -le "$max_attempts" ]; do
+    if curl -fsSL --http2 --max-time 60 "$INSTALL_URL" -o "$tmp_script"; then
+      break
+    fi
+    if [ "$attempt" -eq "$max_attempts" ]; then
+      rm -f "$tmp_script"
+      die "下载安装器失败（$max_attempts 次重试均失败，检查网络或 TOKENCLOCK_INSTALL_URL）"
+    fi
+    say "  ⚠ 下载失败,重试 $((attempt+1))/$max_attempts..."
+    sleep $((attempt * 2))
+    attempt=$((attempt+1))
+  done
   chmod +x "$tmp_script" || { rm -f "$tmp_script"; die "chmod 临时文件失败"; }
   say "✓ 已下载最新安装器"
 
