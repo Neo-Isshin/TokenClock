@@ -173,7 +173,7 @@ final class OpenCodeUsageService: @unchecked Sendable {
             let sessionIdPtr = sqlite3_column_text(stmt, 0)
             let sessionId = sessionIdPtr != nil ? String(cString: sessionIdPtr!) : ""
             let titlePtr = sqlite3_column_text(stmt, 1)
-            let title = titlePtr != nil ? String(cString: titlePtr!) : ""
+            _ = titlePtr != nil ? String(cString: titlePtr!) : ""   // 保留列;当前 UI 不展示 session 标题
             let dirPtr = sqlite3_column_text(stmt, 2)
             let directory = dirPtr != nil ? String(cString: dirPtr!) : ""
 
@@ -181,7 +181,7 @@ final class OpenCodeUsageService: @unchecked Sendable {
             let outputTokens = sqlite3_column_int(stmt, 4)
             let reasoningTokens = sqlite3_column_int(stmt, 5)
             let cacheRead = sqlite3_column_int(stmt, 6)
-            let cacheWrite = sqlite3_column_int(stmt, 7)
+            _ = sqlite3_column_int(stmt, 7)   // cacheWrite: 故意不计,避免计数膨胀（其他工具也不计 cacheWrite）
             let timeCreatedMs = sqlite3_column_int64(stmt, 8)
 
             let tokens = Int(inputTokens) + Int(outputTokens) + Int(reasoningTokens) + Int(cacheRead)

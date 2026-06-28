@@ -146,7 +146,19 @@ done
 # ── 6. 安装 tokenclock CLI ──
 step "安装 tokenclock CLI"
 mkdir -p "$BIN_DIR"
-cp "$BUILD_DIR/cli/tokenclock" "$BIN_DIR/tokenclock"
+# 找 PRIMARY_VARIANT 对应的分支作为 CLI 来源
+# 26+ 双变体: PRIMARY_VARIANT=glass → BRANCHES[0]=main
+# 15+ 单变体: PRIMARY_VARIANT=normal → BRANCHES[0]=normal
+CLI_SRC_BRANCH="${BRANCHES[0]}"
+if [ ! -f "$BUILD_DIR/$CLI_SRC_BRANCH/cli/tokenclock" ]; then
+  # 兜底:遍历所有分支,找第一个有 cli/tokenclock 的
+  for b in "${BRANCHES[@]}"; do
+    [ -f "$BUILD_DIR/$b/cli/tokenclock" ] && CLI_SRC_BRANCH="$b" && break
+  done
+fi
+[ -f "$BUILD_DIR/$CLI_SRC_BRANCH/cli/tokenclock" ] \
+  || die "找不到 cli/tokenclock (已查: ${BRANCHES[*]})"
+cp "$BUILD_DIR/$CLI_SRC_BRANCH/cli/tokenclock" "$BIN_DIR/tokenclock"
 chmod +x "$BIN_DIR/tokenclock"
 say "  ✓ $BIN_DIR/tokenclock"
 export PATH="$BIN_DIR:$PATH"   # 让本脚本后续命令能直接用 tokenclock
@@ -171,10 +183,24 @@ prompt_api_server() {
   local API_PORT_FALLBACK_MSG="（启动可能失败）"
   local API_PORT_RANGE_END=$((API_PORT_DEFAULT + API_PORT_TRIES))   # 9993
 
-  # 非交互模式（pipe / 无 TTY）：默认关闭，安静跳过
+  # 非交互模式（curl|bash、heredoc）：默认启用，安静调端口探测
   if [ ! -t 0 ]; then
-    defaults delete TokenClock TC_apiServerEnabled 2>/dev/null || true
-    say "  ⏭ API 服务器: 跳过（非交互模式，默认关闭）"
+    local chosen_port
+    if chosen_port="$(find_free_port "$API_PORT_DEFAULT" "$API_PORT_TRIES")"; then
+      if [ "$chosen_port" != "$API_PORT_DEFAULT" ]; then
+        say "  ⚠ $API_PORT_DEFAULT 被占用 → 改用 $chosen_port"
+      fi
+    else
+      chosen_port="$API_PORT_DEFAULT"
+      say "  ⚠ ${API_PORT_DEFAULT}–${API_PORT_RANGE_END} 全部被占用，仍使用 $chosen_port$API_PORT_FALLBACK_MSG"
+    fi
+    defaults write TokenClock TC_apiServerEnabled -bool true \
+      || die "defaults write TC_apiServerEnabled 失败"
+    defaults write TokenClock TC_apiServerPort -int "$chosen_port" \
+      || die "defaults write TC_apiServerPort 失败"
+    API_ENABLED=1
+    API_CHOSEN_PORT="$chosen_port"
+    say "  ✓ API 服务器: 已启用（非交互模式自动开启，端口 $chosen_port）"
     return 0
   fi
 

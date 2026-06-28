@@ -298,6 +298,9 @@ final class WeatherService: NSObject, CLLocationManagerDelegate {
 
     private func reverseGeocode(lat: Double, lon: Double) async -> String {
         let location = CLLocation(latitude: lat, longitude: lon)
+        // normal 分支部署目标 .macOS(.v15),MKReverseGeocodingRequest 是 macOS 26+ API。
+        // 保留 CLGeocoder(在 macOS 15 上仍工作),@available(*, deprecated: 26.0) 让编译器知道
+        // 这段是"明知弃用仍保留",不报 deprecation warning。等 normal 升到 v26 再切。
         let geocoder = CLGeocoder()
         do {
             let placemarks = try await geocoder.reverseGeocodeLocation(location, preferredLocale: Locale(identifier: "zh_CN"))
