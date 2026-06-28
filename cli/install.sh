@@ -12,8 +12,8 @@
 #   ./cli/install.sh --glass      # 强制 liquid-glass 变体
 #   ./cli/install.sh --no-start       # 装完不自动启动
 #
-# 一行安装（公开托管后替换 <your-host>）:
-#   curl -fsSL https://<your-host>/raw/main/cli/install.sh | bash
+# 一行安装:
+#   curl -fsSL https://gitea.nxc8335.cloud/nxc8335/TokenClock/raw/main/cli/install.sh | bash
 #
 # 可用环境变量覆盖默认值:
 #   TOKENCLOCK_REPO     git 仓库地址            （默认: 仓库 origin）
@@ -29,6 +29,8 @@ REPO_URL="${TOKENCLOCK_REPO:-$DEFAULT_REPO}"
 HOME_DIR="${TOKENCLOCK_HOME:-$HOME/.tokenclock}"
 BIN_DIR="${TOKENCLOCK_BIN_DIR:-$HOME/.local/bin}"
 BUILD_DIR="${TOKENCLOCK_BUILD:-$HOME_DIR/src}"
+# 更新源（cmd_update 拉取此 URL；tokenclock wrapper 默认同值）
+INSTALL_URL="${TOKENCLOCK_INSTALL_URL:-https://gitea.nxc8335.cloud/nxc8335/TokenClock/raw/main/cli/install.sh}"
 
 CONFIG="release"
 VARIANT=""          # "" = 按系统版本自动
@@ -315,7 +317,8 @@ cat <<EOF
   tokenclock stop                       停止
   tokenclock restart [--glass|--normal] 重启
   tokenclock doctor                     诊断环境与已安装版本
-  tokenclock update                     更新（占位，服务器待部署）
+  tokenclock update [--glass|--normal]  拉取最新 install.sh 升级并重启
+  tokenclock update --check             只下载最新脚本，不实际升级
 
 关闭开机自启: 在时钟上右键 → 取消勾选「开机自启」
 
@@ -325,7 +328,7 @@ printf '%s\n' "$DOCTOR_OUT"
 
 cat <<EOF
 
-一行安装（公开托管后替换 <your-host>）:
-  curl -fsSL https://<your-host>/raw/main/cli/install.sh | bash
-
+一行安装:
+  curl -fsSL $INSTALL_URL | bash
 EOF
+
