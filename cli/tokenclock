@@ -20,9 +20,14 @@ APP_PROCESS="TokenClock"
 MIN_MACOS=15              # 最低支持 macOS 主版本
 LIQUID_GLASS_MIN_MACOS=26 # liquid-glass 变体最低主版本
 
+# 更新源：cmd_update 从这里拉取最新 install.sh。
+# 可通过 TOKENCLOCK_INSTALL_URL 环境变量覆盖（LAN 用户指向 localhost:3000）。
+INSTALL_URL="${TOKENCLOCK_INSTALL_URL:-https://gitea.nxc8335.cloud/nxc8335/TokenClock/raw/main/cli/install.sh}"
+
 # ─────────────────────────── 辅助函数 ───────────────────────────
 
 die() { echo "tokenclock: $*" >&2; exit 1; }
+say() { printf '%s\n' "$*"; }
 
 # macOS 主版本号（15 / 26 …）
 os_major() { sw_vers -productVersion 2>/dev/null | cut -d. -f1; }
@@ -193,10 +198,60 @@ cmd_doctor() {
 }
 
 cmd_update() {
-  echo "tokenclock update 暂未配置（更新服务器待部署）。"
-  echo "当前 CLI 版本: $CLI_VERSION"
-  echo "服务器就绪后，此命令将拉取并安装对应版本。"
-  return 0
+  local variant="" check_only=0
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --glass|--liquid-glass) variant=glass ;;
+      --normal|--classic)     variant=normal ;;
+      --check)                check_only=1 ;;
+      -h|--help)              echo "用法: tokenclock update [--glass|--normal] [--check]"; return 0 ;;
+      *)                      die "未知参数: $1（可用 --glass / --normal / --check）" ;;
+    esac
+    shift
+  done
+
+  say "当前 CLI 版本: v$CLI_VERSION"
+  say "更新源: $INSTALL_URL"
+
+  # 下载 install.sh 到临时文件（umask 077 保证只有当前用户能读）。
+  # 走公开 URL 直通 CDN,保护源站带宽;CDN 缓存由运营侧维护。
+  local tmp_script
+  tmp_script="$(umask 077; mktemp -t tokenclock-install.XXXXXX)" \
+    || die "创建临时文件失败"
+  if ! curl -fsSL "$INSTALL_URL" -o "$tmp_script"; then
+    rm -f "$tmp_script"
+    die "下载安装器失败（检查网络或 TOKENCLOCK_INSTALL_URL）"
+  fi
+  chmod +x "$tmp_script" || { rm -f "$tmp_script"; die "chmod 临时文件失败"; }
+  say "✓ 已下载最新安装器"
+
+  if [ "$check_only" -eq 1 ]; then
+    say "已检查（未执行升级）"
+    rm -f "$tmp_script"
+    return 0
+  fi
+
+  # 停旧实例，释放二进制句柄（macOS unlink 语义允许覆盖运行中文件，
+  # 但 stop 让"正在升级"语义清晰，避免 cmd_restart 内部重复 stop）
+  cmd_stop
+
+  # 执行安装器的 --no-start 路径：fetch + build + atomic-replace。
+  # --no-start 跳过 API prompt（保留已有 UserDefaults）和首启扫描；
+  # detect_and_set_language 也在该路径下被守卫跳过，尊重用户已选语言。
+  if ! bash "$tmp_script" --no-start; then
+    rm -f "$tmp_script"
+    die "升级失败（已恢复原状态，旧二进制未被替换）"
+  fi
+  rm -f "$tmp_script"
+  say "✓ 二进制已替换"
+
+  # 重启：不指定 variant 时按当前默认（系统版本）自动选；
+  # 用户 --glass/--normal 限定时传递。
+  if [ -n "$variant" ]; then
+    cmd_restart "--$variant"
+  else
+    cmd_restart
+  fi
 }
 
 usage() {
@@ -208,7 +263,7 @@ tokenclock v$CLI_VERSION — TokenClock 轻量命令行
   tokenclock stop                                 停止所有实例
   tokenclock restart [--glass|--normal]           重启
   tokenclock doctor                               诊断环境与已安装版本
-  tokenclock update                               更新（占位，服务器待部署）
+  tokenclock update [--glass|--normal] [--check]  更新（拉取最新 install.sh 升级 + 重启）
   tokenclock help                                 显示此帮助
 
 每个变体的定位顺序:
@@ -227,7 +282,7 @@ case "${1:-help}" in
   stop)               cmd_stop ;;
   restart)            [ $# -gt 0 ] && shift; cmd_restart "$@" ;;
   doctor|dr)          cmd_doctor ;;
-  update)             cmd_update ;;
+  update)             [ $# -gt 0 ] && shift; cmd_update "$@" ;;
   help|-h|--help)     usage ;;
   "")                 usage ;;
   *)                  die "未知命令: $1（用 'tokenclock help' 查看用法）" ;;
