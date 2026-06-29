@@ -6,6 +6,15 @@ struct DayUsage: Sendable {
     var messages: Int
 }
 
+/// 单个工具的日结快照：每天 00:01 抓 viewModel.tools 写入 history.sqlite
+struct ToolSnapshot: Sendable {
+    let name: String
+    let tokens: Int
+    let messages: Int
+    let cacheRate: Double
+    let isActive: Bool
+}
+
 /// 共享的文件缓存元数据
 struct FileMeta: Hashable, Sendable {
     let path: String

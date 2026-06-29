@@ -56,6 +56,9 @@ enum SettingsKey: String {
 
     // MARK: - 首次启动标记
     case hasRunInitialDetection = "TC_hasRunInitialDetection"
+
+    // MARK: - 日结历史
+    case historyLastSettledDateKey = "TC_historyLastSettledDateKey"
 }
 
 extension UserDefaults {
