@@ -88,6 +88,7 @@ final class ViewModel: ObservableObject {
     private var dataTimer: Timer?
     private var recentResetTimer: Timer?
     private var weatherTimer: Timer?
+    private var historyTimer: Timer?
 
     // 真实数据服务
     private let openclawService = OpenClawUsageService()
@@ -122,6 +123,9 @@ final class ViewModel: ObservableObject {
         // 首次启动时自动探测各工具日志路径
         runInitialPathDetection()
         startTimers()
+        // 日结历史:启动时检查上次结算日(漏了不补打,SQLite 有啥返回啥)
+        performStartupHistoryCatchup()
+        scheduleNextDailySettlement()
         fetchInitialWeather()
         // 首次全量扫描
         performFullScan()
@@ -446,6 +450,79 @@ final class ViewModel: ObservableObject {
         RunLoop.main.add(dataTimer!, forMode: .common)
         RunLoop.main.add(recentResetTimer!, forMode: .common)
         RunLoop.main.add(weatherTimer!, forMode: .common)
+    }
+
+    // MARK: - 日结历史(每天 00:01 落盘 viewModel.tools 快照)
+
+    /// 调度下一个 00:01 触发(本地时区)。repeats: false,触发后重新调度。
+    private func scheduleNextDailySettlement() {
+        historyTimer?.invalidate()
+        historyTimer = nil
+        let cal = Calendar.current
+        let now = Date()
+        // 今天的 00:01
+        var comps = cal.dateComponents([.year, .month, .day], from: now)
+        comps.hour = 0
+        comps.minute = 1
+        let todayMidnight = cal.date(from: comps) ?? now
+        // 如果今天 00:01 已过,下一个是明天 00:01
+        let next: Date
+        if todayMidnight > now {
+            next = todayMidnight
+        } else if let tomorrow = cal.date(byAdding: .day, value: 1, to: todayMidnight) {
+            next = tomorrow
+        } else {
+            next = now.addingTimeInterval(86_400)
+        }
+        let interval = next.timeIntervalSince(now)
+        let timer = Timer.scheduledTimer(withTimeInterval: interval, repeats: false) { [weak self] _ in
+            Task { @MainActor in
+                self?.performDailySettlement()
+                self?.scheduleNextDailySettlement()  // 重新调度下一个 24h
+            }
+        }
+        historyTimer = timer
+        RunLoop.main.add(timer, forMode: .common)
+        let intervalMin = Int(interval / 60)
+        print("[History] 下次日结: \(DateHelper.dateKey(from: next)) 00:01 (\(intervalMin) 分钟后)")
+    }
+
+    /// 抓当前 viewModel.tools 快照,落盘为"昨天"
+    private func performDailySettlement() {
+        let cal = Calendar.current
+        guard let yesterday = cal.date(byAdding: .day, value: -1, to: Date()) else { return }
+        let dateKey = DateHelper.dateKey(from: yesterday)
+
+        // 注:ViewModel 内部有自己的 nested ToolSnapshot 私有 struct
+        // (L576 附近,14 个 service 的扫描结果用),字段不同。
+        // 这里用 module-level 的 UsageServiceProtocol.ToolSnapshot(HistoryStore 需要),
+        // 走全限定避免命名冲突。
+        let snapshots: [TokenClock.ToolSnapshot] = tools.map { tool in
+            TokenClock.ToolSnapshot(
+                name: tool.name,
+                tokens: tool.todayTokens,
+                messages: tool.todayMessages,
+                cacheRate: tool.cacheRate,
+                isActive: tool.isActive
+            )
+        }
+        HistoryStore.shared.upsertDay(dateKey: dateKey, snapshots: snapshots)
+        UserDefaults.standard.setString(dateKey, for: .historyLastSettledDateKey)
+        let totalTokens = snapshots.reduce(0) { $0 + $1.tokens }
+        print("[History] 落盘 \(dateKey): \(snapshots.count) 工具,\(totalTokens) tokens")
+    }
+
+    /// 启动时检查上次结算日;按用户决定"漏了就漏了",不补打
+    private func performStartupHistoryCatchup() {
+        let lastSettled = UserDefaults.standard.string(for: .historyLastSettledDateKey)
+        let today = DateHelper.todayKey()
+        guard let last = lastSettled, last < today else { return }
+        let cal = Calendar.current
+        let lastDate = cal.date(from: DateComponents(year: Int(last.prefix(4)),
+                                                      month: Int(last.dropFirst(5).prefix(2)),
+                                                      day: Int(last.suffix(2)))) ?? Date()
+        let daysBehind = cal.dateComponents([.day], from: lastDate, to: Date()).day ?? 0
+        print("[History] 启动检测:上次结算 \(last),今天 \(today),缺 \(max(0, daysBehind)) 天(不补打,SQLite 有啥返回啥)")
     }
 
     private func stopTimers() {

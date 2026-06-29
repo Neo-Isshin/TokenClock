@@ -73,4 +73,13 @@ enum AppConfig {
         /// 暴露给外部集成的 endpoint 路径
         static let usageEndpoint = "/api/usage"
     }
+
+    // MARK: - 日结历史
+
+    enum History {
+        /// 历史保留天数(API 默认 + clamp 上限)
+        static let retentionDays = 30
+        /// history endpoint 路径
+        static let historyEndpoint = "/api/history"
+    }
 }

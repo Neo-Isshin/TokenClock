@@ -86,9 +86,13 @@ final class UsageAPIServer: @unchecked Sendable {
                 return
             }
 
-            let path = self.extractPath(from: request)
+            let parsed = self.extractPathAndQuery(from: request)
+            let path = parsed.path
+            let query = parsed.query
             if path == "/api/usage" || path == "/api/usage/" {
                 self.sendUsageJSON(connection)
+            } else if path == "/api/history" || path == "/api/history/" {
+                self.sendHistoryJSON(connection, query: query)
             } else {
                 self.send404(connection)
             }
@@ -99,12 +103,23 @@ final class UsageAPIServer: @unchecked Sendable {
         }
     }
 
-    private func extractPath(from request: String) -> String {
-        let lines = request.split(separator: "\r\n", omittingEmptySubsequences: true)
-        guard let first = lines.first else { return "" }
-        let parts = first.split(separator: " ", omittingEmptySubsequences: true)
-        guard parts.count >= 2 else { return "" }
-        return String(parts[1])
+    /// 解析 "GET /path?key=value HTTP/1.1" 形式,返回 (path, query dict)
+    private func extractPathAndQuery(from request: String) -> (path: String, query: [String: String]) {
+        let firstLine = request.split(separator: "\r\n", omittingEmptySubsequences: true).first.map(String.init) ?? ""
+        let parts = firstLine.split(separator: " ", omittingEmptySubsequences: true).map(String.init)
+        guard parts.count >= 2 else { return ("", [:]) }
+        let raw = parts[1]
+        let split = raw.split(separator: "?", maxSplits: 1).map(String.init)
+        let path = split[0]
+        var query: [String: String] = [:]
+        if split.count > 1 {
+            for pair in split[1].split(separator: "&") {
+                let kv = pair.split(separator: "=", maxSplits: 1).map(String.init)
+                guard kv.count == 2 else { continue }
+                query[kv[0]] = kv[1].removingPercentEncoding ?? kv[1]
+            }
+        }
+        return (path, query)
     }
 
     private func sendUsageJSON(_ connection: NWConnection) {
@@ -156,6 +171,65 @@ final class UsageAPIServer: @unchecked Sendable {
 
             self.sendJSON(connection, status: 200, body: body)
         }
+    }
+
+    private func sendHistoryJSON(_ connection: NWConnection, query: [String: String]) {
+        // 解析 days 参数:clamp 到 [1, AppConfig.History.retentionDays]
+        // 给了非数字 → 400;给负数/0 → clamp 到 1(避免误报错)
+        let maxDays = AppConfig.History.retentionDays
+        let requested: Int
+        if let raw = query["days"] {
+            guard let v = Int(raw) else {
+                self.sendJSON(connection, status: 400, body: [
+                    "error": "Invalid 'days' value: \(raw). Expected integer."
+                ])
+                return
+            }
+            requested = v
+        } else {
+            requested = maxDays
+        }
+        let days = min(maxDays, max(1, requested))
+
+        // 查 DB 拿真实存在的快照
+        let snapshots = HistoryStore.shared.queryRecent(days: days)
+
+        // 补 0:连续 N 天,缺数据日填 0
+        let cal = Calendar.current
+        var padded: [[String: Any]] = []
+        for offset in 0..<days {
+            guard let d = cal.date(byAdding: .day, value: -offset, to: Date()) else { continue }
+            let key = DateHelper.dateKey(from: d)
+            if let snap = snapshots.first(where: { $0.date == key }) {
+                padded.append([
+                    "date": snap.date,
+                    "totalTokens": snap.totalTokens,
+                    "totalMessages": snap.totalMessages,
+                    "tools": snap.tools.map { t -> [String: Any] in
+                        [
+                            "name": t.name,
+                            "tokens": t.tokens,
+                            "messages": t.messages,
+                            "cacheRate": t.cacheRate,
+                            "isActive": t.isActive,
+                        ]
+                    },
+                ])
+            } else {
+                padded.append([
+                    "date": key,
+                    "totalTokens": 0,
+                    "totalMessages": 0,
+                    "tools": [],
+                ])
+            }
+        }
+
+        let body: [String: Any] = [
+            "windowDays": days,
+            "days": padded,
+        ]
+        self.sendJSON(connection, status: 200, body: body)
     }
 
     private func sendJSON(_ connection: NWConnection, status: Int, body: [String: Any]) {
