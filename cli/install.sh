@@ -164,7 +164,10 @@ say "  ✓ $BIN_DIR/tokenclock"
 export PATH="$BIN_DIR:$PATH"   # 让本脚本后续命令能直接用 tokenclock
 
 # ── 7. 开机自启动（LaunchAgent） ──
-# 启动器不再注册 plist；LaunchAgent 由 Swift 时钟的右键菜单统一管理。
+# 与 Swift 端 LaunchAgentHelper 同格式写 plist：label / ProgramArguments /
+# RunAtLoad=true / ProcessType=Interactive。Swift 端 cleanupLegacy() 会
+# "继承" 这个 plist 视为用户已选自启,保证右键菜单 toggle 状态正确。
+# 用户在时钟右键菜单里关掉时,Swift 端 enable/disable 会再覆盖本 plist。
 # 选一个空闲端口：先试 $1，往后顺延 N 次
 find_free_port() {
   local start="$1" tries="$2" p
@@ -174,6 +177,51 @@ find_free_port() {
     fi
   done
   return 1
+}
+
+# 注册 PRIMARY_VARIANT 的 LaunchAgent plist。Swift 端 LaunchAgentHelper 的
+# enable() 写 plist 用 ProcessInfo.arguments[0] 作为 binaryPath —— 本脚本
+# 上下文里就是 $HOME_DIR/$PRIMARY_VARIANT/TokenClock,等价。
+enable_launch_agent() {
+  local variant="$1" binary_path="$2"
+  local plist_dir="$HOME/Library/LaunchAgents"
+  local plist_path="$plist_dir/com.tokenclock.app.${variant}.plist"
+  local label="com.tokenclock.app.${variant}"
+
+  mkdir -p "$plist_dir" || die "创建 $plist_dir 失败"
+
+  # 幂等:plist 已存在且 RunAtLoad=true → 跳过,避免重新 load 引起 launchd 抖动
+  if [ -f "$plist_path" ] && /usr/libexec/PlistBuddy -c "Print :RunAtLoad" "$plist_path" 2>/dev/null | grep -q "true"; then
+    say "  ⏭ LaunchAgent 已注册: $plist_path"
+    return 0
+  fi
+
+  # 写 plist:与 Swift 端 LaunchAgentHelper.renderPlist 同字段 / 同顺序
+  cat > "$plist_path" <<EOF || die "写 $plist_path 失败"
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>$label</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>$binary_path</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>ProcessType</key>
+    <string>Interactive</string>
+</dict>
+</plist>
+EOF
+
+  # launchctl load -w:加载并标记为 "enable across reboots"（即 RunAtLoad 持久化）
+  if launchctl load -w "$plist_path" 2>/dev/null; then
+    say "  ✓ LaunchAgent 已注册: $plist_path"
+  else
+    say "  ⚠ launchctl load 失败（$plist_path 已写,Swift 端右键菜单可恢复）"
+  fi
 }
 
 # y/N 提示；默认 N（最少惊喜）。非交互（curl | bash）下跳过。
@@ -258,6 +306,19 @@ ensure_in_path() {
 }
 ensure_in_path
 
+# ── 8b. 注册开机自启 LaunchAgent ──
+# 显式注册 plist 让 install.sh 的"默认开启自启"承诺落到磁盘上。
+# Swift 端 LaunchAgentHelper.cleanupLegacy() 会"继承"本 plist,避免右键菜单 toggle 状态不一致。
+LAUNCH_AGENT_OK=0
+LAUNCH_AGENT_PATH="$HOME/Library/LaunchAgents/com.tokenclock.app.${PRIMARY_VARIANT}.plist"
+if [ "$NO_START" -eq 1 ]; then
+  say "  ⏭ LaunchAgent: 跳过（--no-start）"
+else
+  step "注册开机自启 LaunchAgent ($PRIMARY_VARIANT)"
+  enable_launch_agent "$PRIMARY_VARIANT" "$HOME_DIR/$PRIMARY_VARIANT/TokenClock"
+  LAUNCH_AGENT_OK=1
+fi
+
 # ── 9. 首次启动（= 初始化：首次扫描各 AI 工具本地路径）──
 if [ "$NO_START" -eq 1 ]; then
   say "  ⏭  跳过自动启动（--no-start）"
@@ -330,11 +391,18 @@ done
 
 cat <<EOF
 
-  开机自启动:  默认开启（在时钟右键菜单中可关闭）
   API 服务器: $API_LINE
 EOF
 
 [ -n "$API_URL" ] && printf '  API 端点:   %s\n' "$API_URL"
+
+# 开机自启 banner:反映真实状态
+if [ "$LAUNCH_AGENT_OK" -eq 1 ] && [ -f "$LAUNCH_AGENT_PATH" ]; then
+  printf '  开机自启动:  ✓ 已启用（%s）\n' "$LAUNCH_AGENT_PATH"
+  printf '              在时钟右键 → 设置中可关闭\n'
+else
+  printf '  开机自启动:  ⏭ 未启用\n'
+fi
 
 cat <<EOF
 
