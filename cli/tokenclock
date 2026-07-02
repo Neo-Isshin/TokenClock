@@ -201,14 +201,15 @@ cmd_doctor() {
 }
 
 cmd_update() {
-  local variant="" check_only=0
+  local variant="" check_only=0 force=0
   while [ $# -gt 0 ]; do
     case "$1" in
       --glass|--liquid-glass) variant=glass ;;
       --normal|--classic)     variant=normal ;;
       --check)                check_only=1 ;;
-      -h|--help)              echo "用法: tokenclock update [--glass|--normal] [--check]"; return 0 ;;
-      *)                      die "未知参数: $1（可用 --glass / --normal / --check）" ;;
+      --force)                force=1 ;;
+      -h|--help)              echo "用法: tokenclock update [--glass|--normal] [--check] [--force]"; return 0 ;;
+      *)                      die "未知参数: $1（可用 --glass / --normal / --check / --force）" ;;
     esac
     shift
   done
@@ -245,26 +246,37 @@ cmd_update() {
     return 0
   fi
 
-  # 停旧实例，释放二进制句柄（macOS unlink 语义允许覆盖运行中文件，
-  # 但 stop 让"正在升级"语义清晰，避免 cmd_restart 内部重复 stop）
-  cmd_stop
+  # 不预先 stop：install.sh 的 cp 可覆盖运行中二进制（macOS unlink 语义允许），
+  # 仅在确实部署了变更（或 --force）时才 restart（restart 内部 stop+start），
+  # 避免无变化时打断正在运行的时钟。
+  local status_file force_arg=""
+  status_file="$(umask 077; mktemp -t tokenclock-status.XXXXXX)" || die "创建状态文件失败"
+  [ "$force" -eq 1 ] && force_arg="--force"
 
-  # 执行安装器的 --no-start 路径：fetch + build + atomic-replace。
+  # 执行安装器 --no-start：fetch + build + 按需 cp；通过状态文件回报 DEPLOYED。
   # --no-start 跳过 API prompt（保留已有 UserDefaults）和首启扫描；
   # detect_and_set_language 也在该路径下被守卫跳过，尊重用户已选语言。
-  if ! bash "$tmp_script" --no-start; then
-    rm -f "$tmp_script"
+  if ! TOKENCLOCK_STATUS_FILE="$status_file" bash "$tmp_script" --no-start $force_arg; then
+    rm -f "$tmp_script" "$status_file"
     die "升级失败（已恢复原状态，旧二进制未被替换）"
   fi
   rm -f "$tmp_script"
-  say "✓ 二进制已替换"
 
-  # 重启：不指定 variant 时按当前默认（系统版本）自动选；
-  # 用户 --glass/--normal 限定时传递。
-  if [ -n "$variant" ]; then
-    cmd_restart "--$variant"
+  # 读 install.sh 回报的部署状态
+  local deployed=0
+  [ -f "$status_file" ] && deployed=$(grep -oE 'DEPLOYED=[01]' "$status_file" | tail -1 | cut -d= -f2)
+  rm -f "$status_file"
+
+  if [ "$force" -eq 1 ] || [ "$deployed" = "1" ]; then
+    say "✓ 已部署更新，重启中…"
+    # 重启：不指定 variant 时按当前默认（系统版本）自动选；用户 --glass/--normal 限定时传递。
+    if [ -n "$variant" ]; then
+      cmd_restart "--$variant"
+    else
+      cmd_restart
+    fi
   else
-    cmd_restart
+    say "✓ 已是最新版本，无需重启（运行中的时钟未受影响）"
   fi
 }
 
@@ -277,7 +289,7 @@ tokenclock v$CLI_VERSION — TokenClock 轻量命令行
   tokenclock stop                                 停止所有实例
   tokenclock restart [--glass|--normal]           重启
   tokenclock doctor                               诊断环境与已安装版本
-  tokenclock update [--glass|--normal] [--check]  更新（拉取最新 install.sh 升级 + 重启）
+  tokenclock update [--glass|--normal] [--check] [--force]  更新（仅在有变更时重建+重启；--force 强制）
   tokenclock help                                 显示此帮助
 
 每个变体的定位顺序:

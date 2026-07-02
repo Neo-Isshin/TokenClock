@@ -35,6 +35,8 @@ INSTALL_URL="${TOKENCLOCK_INSTALL_URL:-https://gitea.nxc8335.cloud/nxc8335/Token
 CONFIG="release"
 VARIANT=""          # "" = 按系统版本自动
 NO_START=0
+FORCE=0             # --force：跳过"无变化"短路，强制重新部署二进制
+DEPLOYED_ANYTHING=0 # 本次是否真的部署了变更（回报给 tokenclock update 决定是否重启）
 BUILT_BINS=()       # 收集所有变体的 构建产物路径:variant
 
 say()  { printf '%s\n' "$*"; }
@@ -54,8 +56,9 @@ while [ $# -gt 0 ]; do
     --debug)     CONFIG=debug ;;
     --release)   CONFIG=release ;;
     --no-start)     NO_START=1 ;;
+    --force)        FORCE=1 ;;
     -h|--help)      usage ;;
-    *)              die "未知参数: $1（可用 --glass / --normal / --debug / --release / --no-start）" ;;
+    *)              die "未知参数: $1（可用 --glass / --normal / --debug / --release / --no-start / --force）" ;;
   esac
   shift
 done
@@ -132,16 +135,47 @@ for i in "${!VARIANTS[@]}"; do
   BUILT_BINS+=("$BIN_PATH:$variant")
 done
 
-# ── 5. 暂存二进制 ──
+# ── 5. 暂存二进制 + 资源 bundle（仅在变化时更新；--force 强制）──
 for entry in "${BUILT_BINS[@]}"; do
   bin_path="${entry%:*}"
   variant="${entry##*:}"
-  step "安装时钟 [$variant] 到 $HOME_DIR/$variant"
+  dest_bin="$HOME_DIR/$variant/TokenClock"
   mkdir -p "$HOME_DIR/$variant"
-  cp "$bin_path" "$HOME_DIR/$variant/TokenClock"
-  chmod +x "$HOME_DIR/$variant/TokenClock"
-  say "  ✓ $HOME_DIR/$variant/TokenClock"
+  step "安装时钟 [$variant] 到 $HOME_DIR/$variant"
+
+  # 二进制：哈希比对决定是否覆盖（--force / 首次部署 / 哈希不同 → 覆盖）
+  bin_changed=0
+  if [ "$FORCE" -eq 1 ] || [ ! -f "$dest_bin" ]; then
+    bin_changed=1
+  elif [ "$(shasum -a 256 "$bin_path" | cut -d' ' -f1)" != "$(shasum -a 256 "$dest_bin" | cut -d' ' -f1)" ]; then
+    bin_changed=1
+  fi
+  if [ "$bin_changed" -eq 1 ]; then
+    cp "$bin_path" "$dest_bin"
+    chmod +x "$dest_bin"
+    say "  ✓ $dest_bin"
+    DEPLOYED_ANYTHING=1
+  else
+    say "  · [$variant] 二进制未变化，跳过"
+  fi
+
+  # 资源 bundle：构建产物里有就部署到二进制旁（让运行时 Bundle.module 的 mainPath 命中；
+  # 否则非开发机切 .glass 主题会因找不到 bundle 而 fatalError）。缺失时计入 DEPLOYED 触发重启。
+  bundle_src="$(dirname "$bin_path")/TokenClock_TokenClock.bundle"
+  if [ -d "$bundle_src" ]; then
+    dest_bundle="$HOME_DIR/$variant/TokenClock_TokenClock.bundle"
+    bundle_missing=0; [ -d "$dest_bundle" ] || bundle_missing=1
+    rm -rf "$dest_bundle"
+    cp -R "$bundle_src" "$dest_bundle"
+    say "  ✓ $dest_bundle（资源）"
+    [ "$bundle_missing" -eq 1 ] && DEPLOYED_ANYTHING=1
+  fi
 done
+
+# 把"是否真的部署了变更"回报给调用方（tokenclock update 据此决定是否重启）
+if [ -n "${TOKENCLOCK_STATUS_FILE:-}" ]; then
+  echo "DEPLOYED=$DEPLOYED_ANYTHING" > "$TOKENCLOCK_STATUS_FILE"
+fi
 
 # ── 6. 安装 tokenclock CLI ──
 step "安装 tokenclock CLI"
