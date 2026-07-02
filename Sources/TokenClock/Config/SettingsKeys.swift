@@ -22,6 +22,11 @@ enum SettingsKey: String {
     case apiServerEnabled = "TC_apiServerEnabled"
     case apiServerPort    = "TC_apiServerPort"
 
+    // MARK: - 表盘大小
+    case clockSize = "TC_clockSize"
+    /// 用户是否手动选择过表盘大小（置 true 后不再自动按分辨率调整）
+    case clockSizeUserChosen = "TC_clockSizeUserChosen"
+
     // MARK: - 主题
     case selectedTheme = "TC_selectedTheme"
     case activeCustomThemeId = "TC_activeCustomThemeId"

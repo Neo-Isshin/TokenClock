@@ -77,6 +77,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             }
         }
 
+        // 表盘大小变化：重设浮动面板尺寸（updateSize 保持视觉中心不变），
+        // 并在展开态下重新定位下拉详情面板，使其继续贴合表盘底部、横向居中。
+        viewModel.onClockSizeChanged = { [weak self] in
+            guard let self else { return }
+            self.panel.updateSize(
+                expanded: self.viewModel.isExpanded,
+                activeToolCount: self.activeToolCount,
+                showsWeather: !self.viewModel.weather.cityName.isEmpty
+            )
+            if self.viewModel.isExpanded {
+                self.dropdownPanel.reposition(below: self.panel.frame)
+            }
+        }
+
         // 监听天气更新（城市解析后刷新菜单标签）
         NotificationCenter.default.addObserver(
             self, selector: #selector(handleWeatherResolved(_:)),
@@ -160,6 +174,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             savedItem.submenu = savedMenu
             menu.addItem(savedItem)
         }
+
+        // 表盘大小子菜单（小/中/大/特大）
+        let sizeMenu = NSMenu()
+        for size in ClockSize.allCases {
+            let item = NSMenuItem(title: size.localizedName,
+                                  action: #selector(selectClockSize(_:)), keyEquivalent: "")
+            item.representedObject = size.rawValue
+            if viewModel.clockSize == size { item.state = .on }
+            sizeMenu.addItem(item)
+        }
+        let sizeItem = NSMenuItem(title: tr("size.title"), action: nil, keyEquivalent: "")
+        sizeItem.submenu = sizeMenu
+        menu.addItem(sizeItem)
 
         let apiItem = NSMenuItem(title: L10n.shared.tr("menu.api", Int(AppDelegate.resolveAPIServerPort())),
                                  action: #selector(copyAPIEndpoint(_:)), keyEquivalent: "")
@@ -269,6 +296,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     // MARK: - 菜单 Actions
+
+    @objc private func selectClockSize(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String,
+              let size = ClockSize(rawValue: raw) else { return }
+        viewModel.setClockSize(size)
+        setupRightClickMenu()  // 刷新子菜单勾选状态
+    }
 
     @objc private func openThemePicker(_ sender: NSMenuItem) {
         showThemePicker()

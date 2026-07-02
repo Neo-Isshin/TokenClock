@@ -5,12 +5,18 @@ struct ClockContentView: View {
     @ObservedObject var viewModel: ViewModel
 
     var body: some View {
+        // 表盘大小随用户设置缩放：d = 直径，s = 相对中档(240)的缩放比。
+        let d = viewModel.clockSize.diameter
+        let s = viewModel.clockSize.scale
+
         // 外层：流动柔光在底，圆形玻璃盘体在上。
         // `.clear` 玻璃会透出 / 折射底层柔光，呈现晶莹剔透 + 微微流动的质感，
         // 不依赖桌面壁纸是否有内容。
         ZStack {
-            GlassAurora(theme: viewModel.selectedTheme, enhanced: viewModel.selectedTheme == .glacier)
-                .frame(width: 240, height: 240)
+            GlassAurora(theme: viewModel.selectedTheme,
+                        size: d,
+                        enhanced: viewModel.selectedTheme == .glacier)
+                .frame(width: d, height: d)
 
             ZStack {
                 // 表盘
@@ -19,38 +25,39 @@ struct ClockContentView: View {
                     minutes: viewModel.minutes,
                     seconds: viewModel.seconds,
                     theme: viewModel.selectedTheme,
-                    role: .face
+                    role: .face,
+                    scale: s
                 )
-                .frame(width: 240, height: 240)
+                .frame(width: d, height: d)
 
                 // 叠加信息：位于中心到边缘中点位置
                 VStack(spacing: 0) {
                     // 上方：日期 + 天气（中心到上部中点）
                     VStack(spacing: 3) {
                         Text(viewModel.dateString)
-                            .font(.system(size: 11, weight: .medium))
+                            .font(.system(size: 11 * s, weight: .medium))
                             .foregroundColor(viewModel.selectedTheme.textSecondaryColor)
                         Text(viewModel.weatherString)
-                            .font(.system(size: 13))
+                            .font(.system(size: 13 * s))
                             .foregroundColor(viewModel.selectedTheme.textPrimaryColor)
                     }
-                    .padding(.top, 55)
+                    .padding(.top, 55 * s)
 
                     Spacer()
 
                     // 下方：tokens + 消息数（中心到下部中点）
                     VStack(spacing: 2) {
                         Text(L10n.shared.tr("clock.todayTokens"))
-                            .font(.system(size: 9))
+                            .font(.system(size: 9 * s))
                             .foregroundColor(viewModel.selectedTheme.textSecondaryColor)
                         Text(viewModel.totalTokensFormatted)
-                            .font(.system(size: 20, weight: .bold, design: .rounded))
+                            .font(.system(size: 20 * s, weight: .bold, design: .rounded))
                             .foregroundColor(viewModel.selectedTheme.textPrimaryColor)
                         Text(viewModel.totalMessagesFormatted)
-                            .font(.system(size: 10))
+                            .font(.system(size: 10 * s))
                             .foregroundColor(viewModel.selectedTheme.textSecondaryColor)
                     }
-                    .padding(.bottom, 48)
+                    .padding(.bottom, 48 * s)
                 }
 
                 // 左侧：活跃工具标签
@@ -58,11 +65,11 @@ struct ClockContentView: View {
                     VStack(alignment: .leading, spacing: 4) {
                         ForEach(viewModel.activeToolsList) { tool in
                             Text("\(tool.emoji) \(tool.abbreviation)")
-                                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                                .font(.system(size: 13 * s, weight: .semibold, design: .rounded))
                                 .foregroundColor(viewModel.selectedTheme.textPrimaryColor)
                         }
                     }
-                    .padding(.leading, 28)
+                    .padding(.leading, 28 * s)
                     Spacer()
                 }
 
@@ -70,8 +77,8 @@ struct ClockContentView: View {
                 HStack {
                     Spacer()
                     Text(viewModel.rateEmoji)
-                        .font(.system(size: 28))
-                        .padding(.trailing, 28)
+                        .font(.system(size: 28 * s))
+                        .padding(.trailing, 28 * s)
                 }
 
                 // 指针置于文字之上：单独一层只渲染指针 + 中心点
@@ -80,11 +87,12 @@ struct ClockContentView: View {
                     minutes: viewModel.minutes,
                     seconds: viewModel.seconds,
                     theme: viewModel.selectedTheme,
-                    role: .hands
+                    role: .hands,
+                    scale: s
                 )
-                .frame(width: 240, height: 240)
+                .frame(width: d, height: d)
             }
-            .frame(width: 240, height: 240)
+            .frame(width: d, height: d)
             // glacier 主题：跳过 .glassEffect（macOS 26 的 .clear 仍有最低档 backdrop blur，
             // glacier 想要"完全无磨砂"必须走纯色背景 + 圆形裁剪 + 依赖 GlassAurora 流动光）。
             // 其他主题保持 .glassEffect(.clear.tint(...)) 以享受系统 glass 高光 / 折射。
@@ -94,7 +102,7 @@ struct ClockContentView: View {
                 viewModel.isExpanded.toggle()
             }
         }
-        .frame(width: 240, height: 240)
+        .frame(width: d, height: d)
     }
 }
 
