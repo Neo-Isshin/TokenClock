@@ -48,6 +48,7 @@ struct SettingsView: View {
     @State private var rateThresholdExpanded = false
     @State private var customThemeExpanded = false
     @State private var toolSelectionExpanded = false
+    @State private var clockSizeExpanded = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -67,6 +68,11 @@ struct SettingsView: View {
                 VStack(alignment: .leading, spacing: 12) {
                     // 自动探测（始终可见）
                     autoDetectSection()
+
+                    // 表盘大小
+                    collapsibleSection(title: L10n.shared.tr("size.title"), isExpanded: $clockSizeExpanded) {
+                        clockSizeSection()
+                    }
 
                     // 工具选择
                     collapsibleSection(title: L10n.shared.tr("settings.toolSelection"), isExpanded: $toolSelectionExpanded) {
@@ -273,6 +279,31 @@ struct SettingsView: View {
                 .cornerRadius(6)
             }
         }
+    }
+
+    // MARK: - 表盘大小
+
+    private func clockSizeSection() -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Picker("", selection: Binding(
+                get: { viewModel.clockSize },
+                set: { viewModel.setClockSize($0) }
+            )) {
+                ForEach(ClockSize.allCases) { size in
+                    Text(size.localizedName).tag(size)
+                }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+
+            Text(L10n.shared.tr("size.hint"))
+                .font(.system(size: 10))
+                .foregroundColor(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(10)
+        .background(Color.secondary.opacity(0.06))
+        .cornerRadius(8)
     }
 
     // MARK: - 工具选择

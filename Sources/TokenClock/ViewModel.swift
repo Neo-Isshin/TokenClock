@@ -1,5 +1,6 @@
 import SwiftUI
 import Combine
+import AppKit
 
 @MainActor
 final class ViewModel: ObservableObject {
@@ -40,6 +41,12 @@ final class ViewModel: ObservableObject {
 
     /// 表盘主题
     @Published var selectedTheme: ClockFaceTheme = .classic
+
+    /// 表盘大小（4 档）。首启按主屏分辨率自动选；手动改过后不再自动调整。
+    @Published var clockSize: ClockSize = .medium
+
+    /// 表盘大小变化回调（AppDelegate 据此重设浮动面板尺寸 + 重定位下拉详情面板）。
+    var onClockSizeChanged: (() -> Void)?
 
     /// 天气数据
     @Published var weather = WeatherInfo()
@@ -118,6 +125,9 @@ final class ViewModel: ObservableObject {
         self.tools = MockUsageService.generateInitialData(enabledTools: enabledTools)
         updateSortedTools()
         loadTheme()
+        // 表盘大小：首启按主屏分辨率自动选档（用户手动改过后跳过），再加载到 @Published
+        runInitialClockSizeDetection()
+        loadClockSize()
         loadRateWindow()
         loadSavedCustomThemes()
         // 首次启动时自动探测各工具日志路径
@@ -241,6 +251,33 @@ final class ViewModel: ObservableObject {
             selectedTheme = theme
         }
     }
+
+    // MARK: - 表盘大小持久化
+
+    /// 首启（或用户未手动选择时）按当前主屏可用高度自动选档并写入 UserDefaults。
+    /// 未手动选择则每次启动都重评一次，从而支持接/拔外接屏后下一启自适应。
+    private func runInitialClockSizeDetection() {
+        guard !UserDefaults.standard.bool(for: .clockSizeUserChosen) else { return }
+        let screenHeight = NSScreen.main?.visibleFrame.height ?? 900
+        let detected = ClockSize.autoDetect(screenHeight: screenHeight)
+        UserDefaults.standard.setString(detected.rawValue, for: .clockSize)
+    }
+
+    private func loadClockSize() {
+        if let saved = UserDefaults.standard.string(for: .clockSize),
+           let size = ClockSize(rawValue: saved) {
+            clockSize = size
+        }
+    }
+
+    /// 用户在设置中手动选择表盘大小。写入后置 userChosen，停止后续自动调整。
+    func setClockSize(_ size: ClockSize) {
+        clockSize = size
+        UserDefaults.standard.setString(size.rawValue, for: .clockSize)
+        UserDefaults.standard.setBool(true, for: .clockSizeUserChosen)
+        onClockSizeChanged?()
+    }
+
 
     private func loadRateWindow() {
         let saved = UserDefaults.standard.int(for: .rateWindow)

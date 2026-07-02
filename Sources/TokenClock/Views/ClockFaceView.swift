@@ -18,6 +18,9 @@ struct ClockFaceView: View {
     let seconds: Int
     var theme: ClockFaceTheme = .classic
 
+    /// 相对中档(240)的缩放比，用于缩放表盘数字字号（其余几何已按 radius 自动缩放）。
+    var scale: CGFloat = 1.0
+
     var body: some View {
         Canvas { context, size in
             let center = CGPoint(x: size.width / 2, y: size.height / 2)
@@ -116,7 +119,7 @@ struct ClockFaceView: View {
             }
 
             let text = Text(label)
-                .font(.system(size: 13, weight: .medium, design: theme.numberFontDesign))
+                .font(.system(size: 13 * scale, weight: .medium, design: theme.numberFontDesign))
                 .foregroundColor(theme.numberColor)
             let resolved = context.resolve(text)
             context.draw(resolved, at: CGPoint(x: x, y: y), anchor: .center)

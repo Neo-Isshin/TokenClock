@@ -2,14 +2,24 @@ import AppKit
 
 /// 自定义浮动面板：无标题栏、始终置顶、可拖拽
 final class FloatingPanel: NSPanel {
-    static let panelWidth: CGFloat = 320
-    static let collapsedHeight: CGFloat = 240
+    /// 面板宽 / 高由用户选择的表盘大小（ClockSize）派生，读取 UserDefaults，随设置实时变化。
+    static var panelWidth: CGFloat { currentClockSize.panelWidth }
+    static var collapsedHeight: CGFloat { currentClockSize.diameter }
     static let resizeGripHeight: CGFloat = 18
-    static let clockHeight: CGFloat = 240
+    static var clockHeight: CGFloat { currentClockSize.diameter }
     static let dropdownVerticalMargin: CGFloat = 10
     static let forecastHeight: CGFloat = 76
     static let headerHeight: CGFloat = 25
     static let toolRowHeight: CGFloat = 37
+
+    /// 当前表盘大小（缺省 / 越界回退 medium）。
+    private static var currentClockSize: ClockSize {
+        if let raw = UserDefaults.standard.string(for: .clockSize),
+           let size = ClockSize(rawValue: raw) {
+            return size
+        }
+        return .medium
+    }
 
     init(viewModel: ViewModel) {
         super.init(
@@ -54,16 +64,15 @@ final class FloatingPanel: NSPanel {
         self.menu?.popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
     }
 
-    /// 表盘窗口保持固定高度；展开内容由独立详情面板承载。
+    /// 表盘窗口保持当前档位尺寸；展开内容由独立详情面板承载。
+    /// 尺寸变化时保持视觉中心（midX）与顶部（maxY）不变，表盘不会"跳位"。
     func updateSize(expanded: Bool, activeToolCount: Int = 0, showsWeather: Bool = false) {
+        let midX = frame.midX
         let topY = frame.maxY
+        let width = Self.panelWidth
+        let height = Self.collapsedHeight
         setFrame(
-            NSRect(
-                x: frame.origin.x,
-                y: topY - Self.collapsedHeight,
-                width: Self.panelWidth,
-                height: Self.collapsedHeight
-            ),
+            NSRect(x: midX - width / 2, y: topY - height, width: width, height: height),
             display: true
         )
     }

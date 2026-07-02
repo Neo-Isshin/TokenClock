@@ -84,6 +84,16 @@ final class L10n: @unchecked Sendable {
         // MARK: Theme picker
         "themePicker.title": [.zhHans: "选择表盘", .zhHant: "選擇錶盤", .en: "Select Clock Face"],
 
+        // MARK: Clock size
+        "size.title":      [.zhHans: "📐 表盘大小", .zhHant: "📐 錶盤大小", .en: "📐 Clock Size"],
+        "size.small":      [.zhHans: "小",   .zhHant: "小",   .en: "Small"],
+        "size.medium":     [.zhHans: "中",   .zhHant: "中",   .en: "Medium"],
+        "size.large":      [.zhHans: "大",   .zhHant: "大",   .en: "Large"],
+        "size.extraLarge": [.zhHans: "特大", .zhHant: "特大", .en: "X-Large"],
+        "size.hint":       [.zhHans: "首次启动按屏幕分辨率自动选择；手动选择后将不再自动调整。",
+                            .zhHant: "首次啟動依螢幕解析度自動選擇；手動選擇後將不再自動調整。",
+                            .en: "Auto-selected by screen resolution on first launch; a manual choice disables auto-adjustment."],
+
         // MARK: Settings
         "settings.title":           [.zhHans: "TokenClock 设置",          .zhHant: "TokenClock 設定",          .en: "TokenClock Settings"],
         "settings.done":            [.zhHans: "完成",                     .zhHant: "完成",                     .en: "Done"],
