@@ -246,6 +246,10 @@ enable_launch_agent() {
     <true/>
     <key>ProcessType</key>
     <string>Interactive</string>
+    <key>StandardOutPath</key>
+    <string>/dev/null</string>
+    <key>StandardErrorPath</key>
+    <string>/dev/null</string>
 </dict>
 </plist>
 EOF

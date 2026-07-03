@@ -138,6 +138,8 @@ enum LaunchAgentHelper {
             "ProgramArguments": [binaryPath],
             "RunAtLoad": true,
             "ProcessType": "Interactive",
+            "StandardOutPath": "/dev/null",
+            "StandardErrorPath": "/dev/null",
         ]
         return try PropertyListSerialization.data(
             fromPropertyList: dict,
