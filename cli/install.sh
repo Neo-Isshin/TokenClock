@@ -353,6 +353,17 @@ else
   LAUNCH_AGENT_OK=1
 fi
 
+# ── 8c. 清理残留的"经典 Login Item" ──
+# 旧版菜单（SMAppService）或开发期从 .build 运行时，可能注册过"经典 Login Item"指向
+# 裸可执行文件 —— macOS 会用 Terminal 打开它，导致每次登录弹出终端窗、显示启动 stdout、
+# 关闭终端还会杀进程。自启现由上面的 LaunchAgent（launchd 直接拉起、无终端）独占，
+# 这里 best-effort 删掉名为 TokenClock 的经典 login item（需"自动化"权限，失败静默忽略）。
+if [ "$NO_START" -eq 0 ]; then
+  if osascript -e 'tell application "System Events" to delete (every login item whose name is "TokenClock")' >/dev/null 2>&1; then
+    say "  ✓ 已清理残留的经典 Login Item（若有）"
+  fi
+fi
+
 # ── 9. 首次启动（= 初始化：首次扫描各 AI 工具本地路径）──
 if [ "$NO_START" -eq 1 ]; then
   say "  ⏭  跳过自动启动（--no-start）"
