@@ -330,6 +330,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     @objc private func toggleAlwaysOnTop(_ sender: NSMenuItem) {
+        // macOS 不会对"已显示"窗口的 level/collectionBehavior 变更重新评估全屏 Space 归属，
+        // 必须先 orderOut → 改属性 → 再 orderFront，"取消置顶"才能真正退出全屏视频覆盖。
+        panel.orderOut(nil)
         if sender.state == .on {
             sender.state = .off
             panel.level = .normal
@@ -343,6 +346,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             dropdownPanel.configureLevel(alwaysOnTop: true)
             viewModel.alwaysOnTop = true
         }
+        // 以新属性重显：OFF 时不再进入全屏 Space（不覆盖全屏视频），ON 时进入
+        panel.orderFrontRegardless()
         UserDefaults.standard.set(viewModel.alwaysOnTop, forKey: SettingsKey.alwaysOnTop.rawValue)
     }
 
