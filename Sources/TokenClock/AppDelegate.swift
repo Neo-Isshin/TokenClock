@@ -346,8 +346,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             dropdownPanel.configureLevel(alwaysOnTop: true)
             viewModel.alwaysOnTop = true
         }
-        // 以新属性重显：OFF 时不再进入全屏 Space（不覆盖全屏视频），ON 时进入
-        panel.orderFrontRegardless()
+        // 以新属性重显（用 orderFront 而非 orderFrontRegardless：后者会无视 collectionBehavior
+        // 强制把窗口塞进当前全屏 Space，导致"取消置顶"瞬间又被拉回）。orderFront 尊重规则：
+        // OFF 时 .normal + 仅 canJoinAllSpaces → 不进入全屏 Space（不覆盖全屏视频）；ON 时进入。
+        panel.orderFront(nil)
         UserDefaults.standard.set(viewModel.alwaysOnTop, forKey: SettingsKey.alwaysOnTop.rawValue)
     }
 
