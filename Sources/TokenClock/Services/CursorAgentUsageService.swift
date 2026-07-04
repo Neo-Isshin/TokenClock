@@ -147,6 +147,8 @@ final class CursorAgentUsageService: @unchecked Sendable {
     // MARK: - API 请求
 
     private func fetchUsageData(timeRangeDays: Int) async {
+        // 用户可在设置中关闭 Cursor 云端获取，避免凭证外发 cursor.com
+        guard UserDefaults.standard.bool(for: .cursorCloudFetchEnabled, default: true) else { return }
         guard let token = sessionToken, let uid = userId else { return }
 
         let nowMs = Int(Date().timeIntervalSince1970 * 1000)
@@ -267,6 +269,11 @@ final class CursorAgentUsageService: @unchecked Sendable {
 
             if dateKey == today {
                 recentEntries.append(RecentEntry(timestamp: date, tokens: total))
+                // L4: 限制 recentEntries 增长，只保留 active 窗口 3 倍内的条目
+                if recentEntries.count > 64 {
+                    let cutoff = Date().addingTimeInterval(-AppConfig.Scan.activeThresholdSeconds * 3)
+                    recentEntries = recentEntries.filter { $0.timestamp >= cutoff }
+                }
             }
         }
     }

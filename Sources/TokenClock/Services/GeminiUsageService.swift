@@ -261,7 +261,14 @@ final class GeminiUsageService: @unchecked Sendable {
         dailyCache[r.dateKey, default: 0] += r.cachedTokens
         cache[r.dateKey, default: 0] += r.cachedTokens
         // recent
-        if r.dateKey == today, let ts = r.timestamp { recentEntries.append(RecentEntry(timestamp: ts, tokens: r.tokens)) }
+        if r.dateKey == today, let ts = r.timestamp {
+            recentEntries.append(RecentEntry(timestamp: ts, tokens: r.tokens))
+            // L4: 限制 recentEntries 增长，只保留 active 窗口 3 倍内的条目
+            if recentEntries.count > 64 {
+                let cutoff = Date().addingTimeInterval(-AppConfig.Scan.activeThresholdSeconds * 3)
+                recentEntries = recentEntries.filter { $0.timestamp >= cutoff }
+            }
+        }
     }
 
     // MARK: - 今日活跃 Session 列表

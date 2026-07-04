@@ -288,6 +288,11 @@ final class OpenClawUsageService: @unchecked Sendable {
         // recentEntries（只记录今日）
         if result.dateKey == today, let ts = result.timestamp {
             recentEntries.append(RecentEntry(timestamp: ts, tokens: result.tokens))
+            // L4: 限制 recentEntries 增长，只保留 active 窗口 3 倍内的条目
+            if recentEntries.count > 64 {
+                let cutoff = Date().addingTimeInterval(-AppConfig.Scan.activeThresholdSeconds * 3)
+                recentEntries = recentEntries.filter { $0.timestamp >= cutoff }
+            }
         }
     }
 

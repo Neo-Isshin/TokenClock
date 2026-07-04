@@ -250,6 +250,11 @@ enable_launch_agent() {
     <string>/dev/null</string>
     <key>StandardErrorPath</key>
     <string>/dev/null</string>
+    <key>KeepAlive</key>
+    <dict>
+        <key>Crashed</key>
+        <true/>
+    </dict>
 </dict>
 </plist>
 EOF
@@ -365,6 +370,12 @@ fi
 if [ "$NO_START" -eq 0 ]; then
   if osascript -e 'tell application "System Events" to delete (every login item whose name is "TokenClock")' >/dev/null 2>&1; then
     say "  ✓ 已清理残留的经典 Login Item（若有）"
+  else
+    # osascript 非零退出（常见:自动化权限被拒）。best-effort 不终止安装,
+    # 提示用户手动处理:授权自动化 或 在系统设置里删掉残留 login item。
+    say "  ⚠ 未能自动清理经典 Login Item（可能缺少「自动化」权限）。"
+    say "    请在 系统设置 → 隐私与安全性 → 自动化 中授予终端「系统事件」权限,"
+    say "    或在 系统设置 → 通用 → 登录项 中手动删除名为「TokenClock」的项目。"
   fi
 fi
 

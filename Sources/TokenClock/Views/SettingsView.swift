@@ -41,6 +41,8 @@ struct SettingsView: View {
     @State private var editingConfig = CustomThemeConfig()
     @State private var editingThemeName: String = ""
     @State private var themeBeforeEdit: ClockFaceTheme = .classic
+    // 取消编辑时用于恢复编辑前的 customThemeConfig 快照
+    @State private var editingConfigBeforeEdit: CustomThemeConfig? = nil
     @State private var expandedColorRow: String? = nil
 
     // MARK: - 折叠状态
@@ -270,6 +272,24 @@ struct SettingsView: View {
                 }
                 .padding(8)
                 .glassEffect(in: .rect(cornerRadius: 6, style: .continuous))
+            }
+
+            Divider().padding(.vertical, 2)
+
+            // Cursor 云端获取开关：告知用户会带凭证请求 cursor.com，可关
+            HStack(alignment: .top, spacing: 8) {
+                Toggle(isOn: $viewModel.cursorCloudFetchEnabled) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(L10n.shared.tr("dataFetch.cursorCloud"))
+                            .font(.system(size: 12))
+                        Text(L10n.shared.tr("dataFetch.cursorCloudHint"))
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .toggleStyle(.switch)
+                .controlSize(.small)
             }
         }
     }
@@ -763,6 +783,8 @@ struct SettingsView: View {
     private func startEditingCustomTheme() {
         themeBeforeEdit = viewModel.selectedTheme
         editingConfig = CustomThemeConfig.load()
+        // 在用户编辑前快照当前已保存的 customThemeConfig，以便取消时恢复
+        editingConfigBeforeEdit = editingConfig
         editingThemeName = ""
         isEditingCustomTheme = true
         viewModel.selectedTheme = .custom
@@ -773,6 +795,12 @@ struct SettingsView: View {
         isEditingCustomTheme = false
         viewModel.selectedTheme = themeBeforeEdit
         viewModel.saveTheme()
+        // 恢复编辑前持久化的 customThemeConfig，丢弃半编辑状态
+        if let snapshot = editingConfigBeforeEdit {
+            editingConfig = snapshot
+            editingConfig.save()
+            editingConfigBeforeEdit = nil
+        }
     }
 
     private func saveEditingCustomTheme() {

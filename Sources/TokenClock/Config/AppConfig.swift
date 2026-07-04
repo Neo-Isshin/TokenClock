@@ -20,7 +20,8 @@ enum AppConfig {
         /// 天气查询（wttr.in 公开服务，无需 key）
         static let weatherBase = "https://wttr.in"
         /// IP 地理定位（中国境内可访问）
-        static let ipLookup = "http://myip.ipip.net/"
+        // 使用 https 避免 MITM 风险（明文 http 易被中间人篡改）
+        static let ipLookup = "https://myip.ipip.net/"
     }
 
     // MARK: - HTTP / 网络

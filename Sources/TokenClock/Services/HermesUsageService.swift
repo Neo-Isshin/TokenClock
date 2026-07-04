@@ -149,6 +149,11 @@ final class HermesUsageService: @unchecked Sendable {
             // Recent (今天内的 session)
             if dateKey == today && date >= now.addingTimeInterval(-AppConfig.Scan.oneDaySeconds) {
                 recentEntries.append(RecentEntry(timestamp: date, tokens: tokens))
+                // L4: 限制 recentEntries 增长，只保留 active 窗口 3 倍内的条目
+                if recentEntries.count > 64 {
+                    let cutoff = Date().addingTimeInterval(-AppConfig.Scan.activeThresholdSeconds * 3)
+                    recentEntries = recentEntries.filter { $0.timestamp >= cutoff }
+                }
             }
         }
 

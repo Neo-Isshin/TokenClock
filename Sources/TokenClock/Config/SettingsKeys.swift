@@ -59,6 +59,14 @@ enum SettingsKey: String {
     // MARK: - 窗口位置（历史命名，无 TC_ 前缀，保持兼容）
     case windowPosition = "TokenClockWindowPosition"
 
+    // MARK: - 启动持久化设置（窗口透明度 / 城市 / 时区 / 华氏度）
+    case windowOpacity = "TC_windowOpacity"
+    case selectedCity = "TC_selectedCity"
+    case selectedTimezone = "TC_selectedTimezone"
+    case useFahrenheit = "TC_useFahrenheit"
+    /// Cursor 用量是否从云端获取（关闭则不向 cursor.com 发凭证请求）
+    case cursorCloudFetchEnabled = "TC_cursorCloudFetchEnabled"
+
     // MARK: - 首次启动标记
     case hasRunInitialDetection = "TC_hasRunInitialDetection"
 

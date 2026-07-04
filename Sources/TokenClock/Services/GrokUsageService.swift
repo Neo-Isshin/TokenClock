@@ -150,6 +150,11 @@ final class GrokUsageService: @unchecked Sendable {
                 if dateKey == today {
                     let date = ts.isEmpty ? Date() : (DateHelper.parseISO8601(ts) ?? Date())
                     recentEntries.append(RecentEntry(timestamp: date, tokens: totalTokens))
+                    // L4: 限制 recentEntries 增长，只保留 active 窗口 3 倍内的条目
+                    if recentEntries.count > 64 {
+                        let cutoff = Date().addingTimeInterval(-AppConfig.Scan.activeThresholdSeconds * 3)
+                        recentEntries = recentEntries.filter { $0.timestamp >= cutoff }
+                    }
                 }
             }
         }

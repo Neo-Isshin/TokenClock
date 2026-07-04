@@ -140,6 +140,7 @@ enum LaunchAgentHelper {
             "ProcessType": "Interactive",
             "StandardOutPath": "/dev/null",
             "StandardErrorPath": "/dev/null",
+            "KeepAlive": ["Crashed": true],
         ]
         return try PropertyListSerialization.data(
             fromPropertyList: dict,

@@ -32,6 +32,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         contentView.autoresizingMask = [.width, .height]
         panel.contentView = contentView
         panel.delegate = self
+        // 启动即应用持久化的透明度（否则要等用户首次右键设置才生效）
+        panel.alphaValue = viewModel.windowOpacity
 
         let detailView = DropdownPanelView(
             viewModel: viewModel,
@@ -143,6 +145,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     nonisolated func applicationWillTerminate(_ notification: Notification) {
         Task { @MainActor in
+            // 先停 ViewModel 定时器（含 historyTimer），再处理其余清理
+            viewModel?.shutdown()
             UsageAPIServer.shared.stop()
             panel?.savePosition()
             removeThemePickerMonitor()
@@ -561,6 +565,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
               movedWindow == panel,
               viewModel.isExpanded else { return }
         dropdownPanel.reposition(below: panel.frame)
+    }
+
+    // MARK: - 清理
+
+    /// 移除 NotificationCenter 观察者（setup 注册了 .weatherResolved）
+    nonisolated deinit {
+        NotificationCenter.default.removeObserver(self)
     }
 }
 

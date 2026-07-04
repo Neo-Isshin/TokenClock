@@ -191,6 +191,11 @@ final class CodexUsageService: @unchecked Sendable {
 
         if let ts = lastTimestamp {
             recentEntries.append(RecentEntry(timestamp: ts, tokens: totalTokens))
+            // L4: 限制 recentEntries 增长，只保留 active 窗口 3 倍内的条目
+            if recentEntries.count > 64 {
+                let cutoff = Date().addingTimeInterval(-AppConfig.Scan.activeThresholdSeconds * 3)
+                recentEntries = recentEntries.filter { $0.timestamp >= cutoff }
+            }
         }
         if let sessionId = sessionId(fromJSONLPath: path), !sessionId.isEmpty {
             for (dateKey, tokens) in dailyTokens {
