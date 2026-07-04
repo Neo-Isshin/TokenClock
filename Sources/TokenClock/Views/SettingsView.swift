@@ -561,6 +561,18 @@ struct SettingsView: View {
                 }
                 .padding(.top, 2)
             }
+
+            // 独立保存按钮：底部 Done 按钮用 .keyboardShortcut(.return) 劫持了回车，
+            // TextField 的 onSubmit 永不触发，故阈值需要一个显式保存入口。
+            HStack {
+                Spacer()
+                Button(L10n.shared.tr("rate.save")) {
+                    saveRateSettings()
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+            }
+            .padding(.top, 2)
         }
         .padding(12)
         .background(Color.secondary.opacity(0.06))
@@ -577,7 +589,6 @@ struct SettingsView: View {
                 .textFieldStyle(.roundedBorder)
                 .font(.system(size: 12, design: .monospaced))
                 .frame(width: 80)
-                .onSubmit { saveRateSettings() }
 
             Picker("", selection: unit) {
                 ForEach(rateUnits, id: \.self) { u in
