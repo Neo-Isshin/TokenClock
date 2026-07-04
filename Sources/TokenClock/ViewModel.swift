@@ -31,7 +31,7 @@ final class ViewModel: ObservableObject {
     /// 展开状态变化时的回调（由 AppDelegate 设置）
     var onExpandChanged: ((Bool) -> Void)?
 
-    @Published var windowOpacity: Double = 1.0
+    @Published var windowOpacity: Double = 1.0 { didSet { UserDefaults.standard.set(windowOpacity, forKey: SettingsKey.windowOpacity.rawValue) } }
     @Published var alwaysOnTop: Bool = {
         UserDefaults.standard.bool(for: .alwaysOnTop, default: true)
     }()
@@ -50,8 +50,10 @@ final class ViewModel: ObservableObject {
 
     /// 天气数据
     @Published var weather = WeatherInfo()
-    @Published var useFahrenheit = false
-    @Published var selectedCity: String = "auto"
+    @Published var useFahrenheit = false { didSet { UserDefaults.standard.setBool(useFahrenheit, for: .useFahrenheit) } }
+    /// Cursor 用量是否从云端获取（默认开；关闭则不向 cursor.com 发凭证请求）
+    @Published var cursorCloudFetchEnabled: Bool = true { didSet { UserDefaults.standard.setBool(cursorCloudFetchEnabled, for: .cursorCloudFetchEnabled) } }
+    @Published var selectedCity: String = "auto" { didSet { UserDefaults.standard.setString(selectedCity, for: .selectedCity) } }
     /// IP 定位解析到的城市名（用于菜单动态标签）
     @Published var resolvedCityName: String = ""
 
@@ -65,7 +67,7 @@ final class ViewModel: ObservableObject {
     ]
 
     /// 时区设置
-    @Published var selectedTimezone: String = "auto"
+    @Published var selectedTimezone: String = "auto" { didSet { UserDefaults.standard.setString(selectedTimezone, for: .selectedTimezone) } }
 
     /// 热力统计周期（分钟）
     @Published var rateWindowMinutes: Int = 10
@@ -97,6 +99,9 @@ final class ViewModel: ObservableObject {
     private var weatherTimer: Timer?
     private var historyTimer: Timer?
 
+    /// 后台扫描重入守卫：防止 dataTimer/全量扫描并发触发同一时刻多扫描
+    private var isScanning = false
+
     // 真实数据服务
     private let openclawService = OpenClawUsageService()
     private let claudeCodeService = ClaudeCodeUsageService()
@@ -124,6 +129,14 @@ final class ViewModel: ObservableObject {
         // 为启用的工具生成占位 mock 数据，禁用的工具留 0（避免误导）
         self.tools = MockUsageService.generateInitialData(enabledTools: enabledTools)
         updateSortedTools()
+
+        // 加载持久化用户设置（透明度 / 城市 / 时区 / 华氏度）—— 启动前注入，避免每次重启归零
+        if UserDefaults.standard.object(forKey: SettingsKey.useFahrenheit.rawValue) != nil { useFahrenheit = UserDefaults.standard.bool(for: .useFahrenheit) }
+        if let s = UserDefaults.standard.string(for: .selectedCity) { selectedCity = s }
+        if let s = UserDefaults.standard.string(for: .selectedTimezone) { selectedTimezone = s }
+        if UserDefaults.standard.object(forKey: SettingsKey.windowOpacity.rawValue) != nil { windowOpacity = UserDefaults.standard.double(forKey: SettingsKey.windowOpacity.rawValue) }
+        if UserDefaults.standard.object(forKey: SettingsKey.cursorCloudFetchEnabled.rawValue) != nil { cursorCloudFetchEnabled = UserDefaults.standard.bool(for: .cursorCloudFetchEnabled) }
+
         loadTheme()
         // 表盘大小：首启按主屏分辨率自动选档（用户手动改过后跳过），再加载到 @Published
         runInitialClockSizeDetection()
@@ -567,6 +580,8 @@ final class ViewModel: ObservableObject {
         dataTimer?.invalidate()
         recentResetTimer?.invalidate()
         weatherTimer?.invalidate()
+        historyTimer?.invalidate()
+        historyTimer = nil
     }
 
     /// 手动刷新天气
@@ -591,11 +606,19 @@ final class ViewModel: ObservableObject {
 
     /// 在后台线程执行扫描 + 数据提取，主线程只负责更新 UI
     private func runBackgroundScan(incremental: Bool) {
+        // 重入守卫：dataTimer(30s) 与首次全量扫描可能并发触发；同一时刻只允许一个扫描
+        guard !isScanning else { return }
+        isScanning = true
+
         let enabled = enabledTools
         let rateWindow = rateWindowMinutes
 
         Task.detached(priority: .utility) { [weak self] in
-            guard let self = self else { return }
+            guard let self = self else {
+                // self 已释放也要重置标志，否则永不能再扫（self 为 weak，这里其实拿不到 self；
+                // 但 self==nil 意味着 ViewModel 已 dealloc，标志位随实例一起消失，无需处理）
+                return
+            }
 
             // 后台线程：执行所有 I/O 密集的扫描
             if enabled.contains("OpenClaw") { incremental ? self.openclawService.incrementalScan() : self.openclawService.fullScan() }
@@ -679,6 +702,8 @@ final class ViewModel: ObservableObject {
                 }
                 // 首次真实数据已就绪，退出加载态
                 self.isInitialLoading = false
+                // 扫描全部完成（含主线程应用快照），释放重入守卫，允许下一次调度
+                self.isScanning = false
             }
         }
     }
@@ -719,12 +744,25 @@ final class ViewModel: ObservableObject {
     }
 
     static func loadWindowPosition(screenSize: NSSize) -> NSPoint {
-        let x = UserDefaults.standard.double(forKey: "\(SettingsKey.windowPosition.rawValue)X")
-        let y = UserDefaults.standard.double(forKey: "\(SettingsKey.windowPosition.rawValue)Y")
-        if x != 0 || y != 0 {
+        // 用 object(forKey:)==nil 区分"从未保存"与"保存为 0"，
+        // 否则用户把窗口拖到屏幕左下角(x≈0,y≈0)会被误判为未保存而弹回右上角。
+        let xKey = "\(SettingsKey.windowPosition.rawValue)X"
+        let yKey = "\(SettingsKey.windowPosition.rawValue)Y"
+        let xSaved = UserDefaults.standard.object(forKey: xKey) != nil
+        let ySaved = UserDefaults.standard.object(forKey: yKey) != nil
+        if xSaved || ySaved {
+            let x = UserDefaults.standard.double(forKey: xKey)
+            let y = UserDefaults.standard.double(forKey: yKey)
             return NSPoint(x: x, y: y)
         }
         // 默认右上角
         return NSPoint(x: screenSize.width - 220, y: screenSize.height - 260)
+    }
+
+    // MARK: - 清理
+
+    /// 移除所有 NotificationCenter 观察者（fetchInitialWeather 注册了 .weatherUpdated）
+    nonisolated deinit {
+        NotificationCenter.default.removeObserver(self)
     }
 }

@@ -58,7 +58,7 @@ validate_variant_compat() {
 #   ② 进程名为 TokenClock —— 覆盖开发态 .build 构建与 /Applications 的 .app。
 # CLI 自身在 ~/.local/bin，两条规则都不会误伤它或 shell。
 running_pids() {
-  { pgrep -f "$HOME/.tokenclock/" 2>/dev/null; pgrep -x "$APP_PROCESS" 2>/dev/null; } | sort -u
+  { pgrep -f "${HOME}/.tokenclock/[^/]*/TokenClock( |$)" 2>/dev/null; pgrep -x "$APP_PROCESS" 2>/dev/null; } | sort -u
 }
 
 # 打印第一个真实存在的路径，否则返回非零（不输出）
@@ -159,11 +159,11 @@ cmd_start() {
 cmd_stop() {
   local pids; pids="$(running_pids)"
   if [ -z "$pids" ]; then echo "TokenClock 未在运行。"; return 0; fi
-  pkill    -f "$HOME/.tokenclock/" 2>/dev/null
+  pkill    -f "${HOME}/.tokenclock/[^/]*/TokenClock( |$)" 2>/dev/null
   pkill    -x "$APP_PROCESS" 2>/dev/null
-  sleep 0.5
+  sleep 2
   if [ -n "$(running_pids)" ]; then
-    pkill -9 -f "$HOME/.tokenclock/" 2>/dev/null
+    pkill -9 -f "${HOME}/.tokenclock/[^/]*/TokenClock( |$)" 2>/dev/null
     pkill -9 -x "$APP_PROCESS" 2>/dev/null
     sleep 0.3
   fi

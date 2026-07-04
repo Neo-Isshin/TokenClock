@@ -130,6 +130,8 @@ final class L10n: @unchecked Sendable {
         // MARK: Rate threshold
         "rate.title":     [.zhHans: "🔥 热力图标阈值",   .zhHant: "🔥 熱力圖標閾值",   .en: "🔥 Heat Thresholds"],
         "rate.save":      [.zhHans: "保存",               .zhHant: "儲存",               .en: "Save"],
+        "dataFetch.cursorCloud":     [.zhHans: "Cursor 用量从云端获取", .zhHant: "Cursor 用量從雲端獲取", .en: "Fetch Cursor usage from cloud"],
+        "dataFetch.cursorCloudHint": [.zhHans: "会用 Cursor 登录凭证请求 cursor.com（默认开启；关闭后 Cursor 不显示用量）", .zhHant: "會用 Cursor 登入憑證請求 cursor.com（預設開啟；關閉後 Cursor 不顯示用量）", .en: "Sends Cursor credentials to cursor.com (on by default; Cursor shows no usage if off)"],
         "rate.period":    [.zhHans: "统计周期",           .zhHant: "統計週期",           .en: "Period"],
         "rate.10min":     [.zhHans: "10分钟",             .zhHant: "10分鐘",             .en: "10 min"],
         "rate.30min":     [.zhHans: "30分钟",             .zhHant: "30分鐘",             .en: "30 min"],

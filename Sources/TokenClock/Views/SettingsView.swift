@@ -41,6 +41,8 @@ struct SettingsView: View {
     @State private var editingConfig = CustomThemeConfig()
     @State private var editingThemeName: String = ""
     @State private var themeBeforeEdit: ClockFaceTheme = .classic
+    // 取消编辑时用于恢复编辑前的 customThemeConfig 快照
+    @State private var editingConfigBeforeEdit: CustomThemeConfig? = nil
     @State private var expandedColorRow: String? = nil
 
     // MARK: - 折叠状态
@@ -271,6 +273,24 @@ struct SettingsView: View {
                 .padding(8)
                 .background(Color.secondary.opacity(0.08))
                 .cornerRadius(6)
+            }
+
+            Divider().padding(.vertical, 2)
+
+            // Cursor 云端获取开关：告知用户会带凭证请求 cursor.com，可关
+            HStack(alignment: .top, spacing: 8) {
+                Toggle(isOn: $viewModel.cursorCloudFetchEnabled) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(L10n.shared.tr("dataFetch.cursorCloud"))
+                            .font(.system(size: 12))
+                        Text(L10n.shared.tr("dataFetch.cursorCloudHint"))
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .toggleStyle(.switch)
+                .controlSize(.small)
             }
         }
     }
@@ -767,6 +787,7 @@ struct SettingsView: View {
     private func startEditingCustomTheme() {
         themeBeforeEdit = viewModel.selectedTheme
         editingConfig = CustomThemeConfig.load()
+        editingConfigBeforeEdit = editingConfig   // 快照编辑前配置，供取消时回写
         editingThemeName = ""
         isEditingCustomTheme = true
         viewModel.selectedTheme = .custom
@@ -777,6 +798,12 @@ struct SettingsView: View {
         isEditingCustomTheme = false
         viewModel.selectedTheme = themeBeforeEdit
         viewModel.saveTheme()
+        // 回写编辑前的 customThemeConfig，撤销编辑期间的实时 save()
+        if let snap = editingConfigBeforeEdit {
+            editingConfig = snap
+            editingConfig.save()
+        }
+        editingConfigBeforeEdit = nil
     }
 
     private func saveEditingCustomTheme() {

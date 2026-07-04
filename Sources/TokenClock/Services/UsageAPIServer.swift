@@ -28,7 +28,10 @@ final class UsageAPIServer: @unchecked Sendable {
     func start() {
         guard listener == nil else { return }
         do {
-            listener = try NWListener(using: .tcp, on: port)
+            // 仅绑定回环地址(127.0.0.1),防止局域网访问(LAN-exposed)
+            let params = NWParameters.tcp
+            params.requiredLocalEndpoint = NWEndpoint.hostPort(host: "127.0.0.1", port: port)
+            listener = try NWListener(using: params, on: port)
         } catch {
             print("[API] Failed to create listener: \(error)")
             return
