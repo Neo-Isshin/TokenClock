@@ -363,6 +363,28 @@ curl http://127.0.0.1:9988/api/history | head -c 200 # 返回历史
 - Swift 端：`unsafeBitCast(OpaquePointer(bitPattern: -1), to: sqlite3_destructor_type.self)`
 - 用 `SQLITE_OPEN_FULLMUTEX` 打开数据库（让 sqlite3_* 调用串行化） + `ioQueue.sync` 双重保护
 
+### 11. NWListener 绑 loopback 不能同时传 `on:`（v1.0.0 审计踩过）
+- `NWListener(using: params, on: port)` + `params.requiredLocalEndpoint = .hostPort(host: "127.0.0.1", port: port)` → 端口重复指定，**listener 创建失败**
+- 错误被 LaunchAgent 的 `StandardOutPath/StandardErrorPath = /dev/null` 静默吞掉 → 本地 API 静默挂（`lsof` 无 LISTEN）
+- 正确写法：端口只由 `requiredLocalEndpoint` 提供，用 `NWListener(using: params)`（不带 `on:`）
+- 验证：`lsof -nP -iTCP:9989 -sTCP:LISTEN` 应见 `TCP 127.0.0.1:9989 (LISTEN)`（非 `*:9989`）
+
+## v1.0.0 全量审计与修复（2026-07-05）
+
+完整报告见 `~/Desktop/TokenClock-v1.0.0-audit.md`。摘要：
+
+- 共 14 项发现（HIGH×2 / MED×4 / LOW×8），全部修复，两分支同步。
+- 关键修复：
+  - **H1 安全**：本地 API 由 `0.0.0.0` 改绑 `127.0.0.1`（原把用量数据暴露到 LAN）。
+  - **H2 持久化**：`windowOpacity`/`selectedCity`/`selectedTimezone`/`useFahrenheit` 加 SettingsKey + didSet + 启动加载（原每次重启归零）。
+  - **M1 Cursor 凭证**：加 `cursorCloudFetchEnabled` 开关（默认开 + 设置页告知），关闭则不发 cursor.com。
+  - **M2 误杀**：`pgrep/pkill -f` 收紧到真实二进制路径 `${HOME}/.tokenclock/[^/]*/TokenClock( |$)`。
+  - **M3 数据竞争**：`runBackgroundScan` 加 `isScanning` 重入守卫。
+  - **M4 主题取消**：编辑前快照 `editingConfigBeforeEdit`，取消时回写。
+  - **L1-L8**：定时器/observer 清理（`historyTimer` + `shutdown()` + `deinit`）、`(0,0)` 位置、`recentEntries` 上限（14 service）、weather https、login-item 清理提示、`KeepAlive{Crashed}`、SIGKILL 延时 0.5→2s。
+- 提交：`628b04f`(main) / `21ba1dd`(normal) 审计批次 + `89008e9` / `4efd984` H1 回归修复。
+- 审计方法：3 并行只读子代理（数据/安全、App/UI、CLI/installer）+ 关键项人工验证；修复用 5 并行编辑子代理（按文件归属不冲突拆分），M1 跨文件留顺序阶段。
+
 ## 待办 / 未来方向
 
 - [ ] **运行时验证 history feature**：用户在 GUI session 启新 binary 跑 1 周，看 SQLite 是否有 7 行
