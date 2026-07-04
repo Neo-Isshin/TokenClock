@@ -129,6 +129,7 @@ final class L10n: @unchecked Sendable {
 
         // MARK: Rate threshold
         "rate.title":     [.zhHans: "🔥 热力图标阈值",   .zhHant: "🔥 熱力圖標閾值",   .en: "🔥 Heat Thresholds"],
+        "rate.save":      [.zhHans: "保存",               .zhHant: "儲存",               .en: "Save"],
         "rate.period":    [.zhHans: "统计周期",           .zhHant: "統計週期",           .en: "Period"],
         "rate.10min":     [.zhHans: "10分钟",             .zhHant: "10分鐘",             .en: "10 min"],
         "rate.30min":     [.zhHans: "30分钟",             .zhHant: "30分鐘",             .en: "30 min"],
