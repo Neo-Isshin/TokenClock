@@ -29,9 +29,10 @@ final class UsageAPIServer: @unchecked Sendable {
         guard listener == nil else { return }
         do {
             // 仅绑定回环地址(127.0.0.1),防止局域网访问(LAN-exposed)
+            // 端口由 requiredLocalEndpoint 提供，不能再传 on:（重复指定会让 listener 启动失败）
             let params = NWParameters.tcp
             params.requiredLocalEndpoint = NWEndpoint.hostPort(host: "127.0.0.1", port: port)
-            listener = try NWListener(using: params, on: port)
+            listener = try NWListener(using: params)
         } catch {
             print("[API] Failed to create listener: \(error)")
             return
