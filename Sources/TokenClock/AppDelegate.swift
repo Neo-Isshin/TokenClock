@@ -439,6 +439,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     // MARK: - 设置窗口
 
     private func showSettingsWindow() {
+        // 时钟面板是非激活的 floating 窗；打开设置时必须显式激活 app，否则前台仍是
+        // 终端等其它 app，设置窗口里的 TextField 收不到键盘输入（敲字全跑到前台 app）。
+        NSApp.activate(ignoringOtherApps: true)
         if let window = settingsWindow {
             window.makeKeyAndOrderFront(nil)
             return
