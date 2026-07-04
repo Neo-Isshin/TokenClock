@@ -10,7 +10,7 @@
 #
 set -u
 
-CLI_VERSION="0.1.0"
+CLI_VERSION="1.0.0"
 # 运行中时钟的进程名（comm）。**所有变体的可执行文件都必须叫 TokenClock**
 #（放在 glass/ normal/ 子目录里区分变体），这样无论启动哪个变体，进程名都是 TokenClock，
 # 下面的 pgrep/pkill -x 才能精确命中、且不会误伤 shell/脚本本身。
