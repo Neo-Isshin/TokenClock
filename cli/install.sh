@@ -6,11 +6,12 @@
 #      安装到 ~/.tokenclock → 安装 tokenclock CLI 到 PATH → 首次启动（自动扫描 AI 工具路径）。
 #
 # 用法:
-#   ./cli/install.sh              # 自动检测变体 · release 构建 · 装完即启动
-#   ./cli/install.sh --debug      # debug 构建（更快，适合试用）
+#   ./cli/install.sh              # 自动检测变体 · 默认下载预编译二进制 · 装完即启动
+#   ./cli/install.sh --debug      # debug 构建（更快，适合试用；隐含 --build-from-source）
 #   ./cli/install.sh --normal     # 强制 normal 变体
 #   ./cli/install.sh --glass      # 强制 liquid-glass 变体
 #   ./cli/install.sh --no-start       # 装完不自动启动
+#   ./cli/install.sh --build-from-source  # 跳过预编译下载，强制本地 swift build
 #
 # 一行安装:
 #   curl -fsSL https://gitea.nxc8335.cloud/nxc8335/TokenClock/raw/main/cli/install.sh | bash
@@ -38,6 +39,7 @@ NO_START=0
 FORCE=0             # --force：跳过"无变化"短路，强制重新部署二进制
 DEPLOYED_ANYTHING=0 # 本次是否真的部署了变更（回报给 tokenclock update 决定是否重启）
 BUILT_BINS=()       # 收集所有变体的 构建产物路径:variant
+BUILD_FROM_SOURCE=0 # --build-from-source：跳过预编译下载，强制本地 swift build
 
 say()  { printf '%s\n' "$*"; }
 step() { printf '\n🛠  %s\n' "$*"; }
@@ -53,12 +55,13 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --glass)     VARIANT=glass ;;
     --normal)    VARIANT=normal ;;
-    --debug)     CONFIG=debug ;;
+    --debug)     CONFIG=debug; BUILD_FROM_SOURCE=1 ;;   # debug 无预编译，走源码
     --release)   CONFIG=release ;;
     --no-start)     NO_START=1 ;;
     --force)        FORCE=1 ;;
+    --build-from-source) BUILD_FROM_SOURCE=1 ;;
     -h|--help)      usage ;;
-    *)              die "未知参数: $1（可用 --glass / --normal / --debug / --release / --no-start / --force）" ;;
+    *)              die "未知参数: $1（可用 --glass / --normal / --debug / --release / --no-start / --force / --build-from-source）" ;;
   esac
   shift
 done
@@ -123,14 +126,89 @@ for i in "${!VARIANTS[@]}"; do
   fi
 done
 
-# ── 4. 构建 ──
+# ── 4. 获取二进制（优先下载预编译，失败 / --build-from-source 则回退源码编译）──
+# 预编译资产来自 Gitea release（universal：arm64+x86_64），免 Xcode / 免编译。
+# 升级 release 时同步更新 RELEASE_TAG 与两个 SHA256。
+RELEASE_TAG="${TOKENCLOCK_RELEASE_TAG:-v1.1.0}"
+RELEASE_URL_BASE="${TOKENCLOCK_RELEASE_BASE:-https://gitea.nxc8335.cloud/nxc8335/TokenClock/releases/download/$RELEASE_TAG}"
+
+# 变体 → tarball 文件名 / 期望 SHA256（bash 3.2 无关联数组，用 case）
+tarball_name() {
+  case "$1" in
+    glass)  echo "TokenClock-glass-universal.tar.gz" ;;
+    normal) echo "TokenClock-normal-universal.tar.gz" ;;
+  esac
+}
+tarball_sha256() {
+  case "$1" in
+    glass)  echo "6741cfdcf605a136ec2fe28c4717c7dc962322d43989986b4c2a7418bdb0d671" ;;
+    normal) echo "bbebd21842a029c342e945778b604a39191d966e18cb90687364bd52d768d3e0" ;;
+  esac
+}
+
+# 下载 + SHA256 校验 + 解压 [$variant]。成功 → 解压目录写入全局 $DL_DIR，返回 0；
+# 失败 → 返回 1（调用方回退源码编译）。临时目录登记到 DOWNLOAD_TMPDIRS，脚本退出时清理。
+DL_DIR=""
+DOWNLOAD_TMPDIRS=()
+trap '[ "${#DOWNLOAD_TMPDIRS[@]}" -gt 0 ] && rm -rf "${DOWNLOAD_TMPDIRS[@]}" 2>/dev/null || true' EXIT
+download_variant() {
+  local variant="$1" name expect url tmp got
+  name="$(tarball_name "$variant")"
+  expect="$(tarball_sha256 "$variant")"
+  [ -n "$name" ] && [ -n "$expect" ] || return 1
+  url="$RELEASE_URL_BASE/$name"
+  step "下载预编译二进制 [$variant]（$RELEASE_TAG）"
+  tmp="$(mktemp -d 2>/dev/null)" || return 1
+  if ! curl -fL --retry 3 --retry-delay 1 -o "$tmp/$name" "$url" 2>/dev/null; then
+    say "  ⚠ [$variant] 预编译下载失败（$url）→ 回退源码编译"
+    rm -rf "$tmp"; return 1
+  fi
+  got="$(shasum -a 256 "$tmp/$name" | cut -d' ' -f1)"
+  if [ "$got" != "$expect" ]; then
+    say "  ⚠ [$variant] SHA256 不符（期望 ${expect:0:12}… 得到 ${got:0:12}…）→ 回退源码编译"
+    rm -rf "$tmp"; return 1
+  fi
+  if ! tar xzf "$tmp/$name" -C "$tmp" 2>/dev/null || [ ! -f "$tmp/TokenClock" ]; then
+    say "  ⚠ [$variant] 解压失败或包内无 TokenClock → 回退源码编译"
+    rm -rf "$tmp"; return 1
+  fi
+  chmod +x "$tmp/TokenClock"
+  say "  ✓ [$variant] 预编译二进制就绪（SHA256 ${got:0:12}…）"
+  DL_DIR="$tmp"
+  DOWNLOAD_TMPDIRS+=("$tmp")
+  return 0
+}
+
+# 本地源码编译：macOS 27 + 仅 CLT 时自动 pin 到 26 SDK（绕过 SwiftUIMacros 缺失）。
+swift_build_fallback() {
+  local subdir="$1"
+  local sdk26="/Library/Developer/CommandLineTools/SDKs/MacOSX26.sdk"
+  if [ "${OS_MAJOR:-0}" -ge 27 ] && [ -d "$sdk26" ] \
+     && [ "$(xcode-select -p 2>/dev/null)" = "/Library/Developer/CommandLineTools" ]; then
+    say "  · 检测到 macOS $OS_MAJOR + 仅 CLT → 自动 SDKROOT=$sdk26 绕过 SwiftUIMacros"
+    ( cd "$subdir" && SDKROOT="$sdk26" swift build -c "$CONFIG" )
+  else
+    ( cd "$subdir" && swift build -c "$CONFIG" )
+  fi
+}
+
 for i in "${!VARIANTS[@]}"; do
   variant="${VARIANTS[$i]}"
   branch="${BRANCHES[$i]}"
   subdir="$BUILD_DIR/$branch"
+
+  # 4a. 优先用预编译二进制
+  if [ "$BUILD_FROM_SOURCE" -eq 0 ] && download_variant "$variant"; then
+    BUILT_BINS+=("$DL_DIR/TokenClock:$variant")
+    continue
+  fi
+
+  # 4b. 回退：本地源码编译
   step "构建 [$variant]（swift build -c $CONFIG · 首次可能需要几分钟）"
-  ( cd "$subdir" && swift build -c "$CONFIG" ) || die "[$variant] 构建失败"
+  swift_build_fallback "$subdir" \
+    || die "[$variant] 构建失败（预编译下载也未成功）。常见原因：未装完整 Xcode（macOS 27 SDK 的 @State 宏需要 SwiftUIMacros，仅 CLT 不带）。请装 Xcode 后重试，或确认本机有 MacOSX26.sdk 由本脚本自动 pin。"
   BIN_PATH="$subdir/.build/$CONFIG/TokenClock"
+  [ -f "$BIN_PATH" ] || BIN_PATH="$subdir/.build/out/Products/$([ "$CONFIG" = release ] && echo Release || echo Debug)/TokenClock"
   [ -f "$BIN_PATH" ] || die "找不到构建产物: $BIN_PATH"
   BUILT_BINS+=("$BIN_PATH:$variant")
 done
