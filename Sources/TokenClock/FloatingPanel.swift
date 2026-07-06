@@ -1,4 +1,5 @@
 import AppKit
+import ObjectiveC
 
 /// 自定义浮动面板：无标题栏、始终置顶、可拖拽
 final class FloatingPanel: NSPanel {
@@ -29,6 +30,7 @@ final class FloatingPanel: NSPanel {
             defer: false
         )
 
+        Self.applyGlassActiveOverrideIfNeeded()
         setupWindow(viewModel: viewModel)
     }
 
@@ -42,8 +44,8 @@ final class FloatingPanel: NSPanel {
         self.hasShadow = true
         self.isMovableByWindowBackground = true
 
-        // 不拦截其他应用的激活事件
-        self.becomesKeyOnlyIfNeeded = true
+        // 不拦截其他应用的激活事件。SPIKE: TC_GLASS_FORCE_KEY 时关掉，便于点击成 key。
+        self.becomesKeyOnlyIfNeeded = !UserDefaults.standard.bool(forKey: "TC_GLASS_FORCE_KEY")
         // 默认只在普通桌面 Space 显示，全屏 Space 中隐藏
         self.collectionBehavior = [.canJoinAllSpaces]
 
@@ -55,8 +57,11 @@ final class FloatingPanel: NSPanel {
         }
     }
 
-    // 点击背景可拖拽，不激活
-    override var canBecomeKey: Bool { false }
+    // 点击背景可拖拽，不激活。SPIKE: TC_GLASS_FORCE_KEY 时允许 panel 成为 key
+    // （nonactivatingPanel 成 key 不激活 app），用于测"玻璃需窗口 active 才折射"理论。
+    override var canBecomeKey: Bool {
+        UserDefaults.standard.bool(forKey: "TC_GLASS_FORCE_KEY")
+    }
     override var canBecomeMain: Bool { false }
 
     // 右键菜单：直接在 panel 层拦截，用屏幕坐标定位
@@ -80,6 +85,43 @@ final class FloatingPanel: NSPanel {
     /// 保存窗口位置
     func savePosition() {
         ViewModel.saveWindowPosition(self.frame.origin)
+    }
+}
+
+// MARK: - 私有 SPI：让窗口永远报告 "active" 以驱动 NSGlassEffectView 折射
+// 社区已知 workaround（r/SwiftUI 1l86rue）：覆写 NSWindow 的 _hasActiveAppearance 系列，
+// 使玻璃渲染不依赖窗口成 key —— 这样 borderless nonactivatingPanel 也能持续折射，
+// 切到别的 app（失焦）也不消失。5 个 selector 在 macOS 27 (26A5368g) 实测存在。
+private let glassActiveOverrideSelectors: [String] = [
+    "_hasActiveAppearance",
+    "_hasActiveAppearanceIgnoringKeyFocus",
+    "_hasActiveControls",
+    "_hasKeyAppearance",
+    "_hasMainAppearance"
+]
+
+extension FloatingPanel {
+    nonisolated(unsafe) private static var didApplyActiveOverride = false
+
+    /// 由 TC_GLASS_FORCE_ACTIVE 开关控制（spike）；产线可去掉开关直接生效。
+    static func applyGlassActiveOverrideIfNeeded() {
+        guard UserDefaults.standard.bool(forKey: "TC_GLASS_FORCE_ACTIVE"),
+              !didApplyActiveOverride else { return }
+        didApplyActiveOverride = true
+        let alwaysTrue: @convention(c) (AnyObject, Selector) -> Bool = { _, _ in true }
+        let newIMP = unsafeBitCast(alwaysTrue, to: IMP.self)
+        for name in glassActiveOverrideSelectors {
+            let sel = NSSelectorFromString(name)
+            // 复用 NSWindow 上同名方法的 type encoding（实测 B16@0:8）。
+            let types: String
+            if let superMethod = class_getInstanceMethod(NSWindow.self, sel),
+               let enc = method_getTypeEncoding(superMethod) {
+                types = String(cString: enc)
+            } else {
+                types = "B@:"
+            }
+            _ = class_replaceMethod(FloatingPanel.self, sel, newIMP, types)
+        }
     }
 }
 

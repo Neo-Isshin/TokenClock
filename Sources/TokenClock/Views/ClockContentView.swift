@@ -26,7 +26,8 @@ struct ClockContentView: View {
                     seconds: viewModel.seconds,
                     theme: viewModel.selectedTheme,
                     role: .face,
-                    scale: s
+                    scale: s,
+                    numberColorOverride: viewModel.effectiveDialNumberColor
                 )
                 .frame(width: d, height: d)
 
@@ -36,10 +37,10 @@ struct ClockContentView: View {
                     VStack(spacing: 3) {
                         Text(viewModel.dateString)
                             .font(.system(size: 11 * s, weight: .medium))
-                            .foregroundColor(viewModel.selectedTheme.textSecondaryColor)
+                            .foregroundColor(viewModel.effectiveDialSecondary)
                         Text(viewModel.weatherString)
                             .font(.system(size: 13 * s))
-                            .foregroundColor(viewModel.selectedTheme.textPrimaryColor)
+                            .foregroundColor(viewModel.effectiveDialPrimary)
                     }
                     .padding(.top, 55 * s)
 
@@ -49,13 +50,13 @@ struct ClockContentView: View {
                     VStack(spacing: 2) {
                         Text(L10n.shared.tr("clock.todayTokens"))
                             .font(.system(size: 9 * s))
-                            .foregroundColor(viewModel.selectedTheme.textSecondaryColor)
+                            .foregroundColor(viewModel.effectiveDialSecondary)
                         Text(viewModel.totalTokensFormatted)
                             .font(.system(size: 20 * s, weight: .bold, design: .rounded))
-                            .foregroundColor(viewModel.selectedTheme.textPrimaryColor)
+                            .foregroundColor(viewModel.effectiveDialPrimary)
                         Text(viewModel.totalMessagesFormatted)
                             .font(.system(size: 10 * s))
-                            .foregroundColor(viewModel.selectedTheme.textSecondaryColor)
+                            .foregroundColor(viewModel.effectiveDialSecondary)
                     }
                     .padding(.bottom, 48 * s)
                 }
@@ -66,7 +67,7 @@ struct ClockContentView: View {
                         ForEach(viewModel.activeToolsList) { tool in
                             Text("\(tool.emoji) \(tool.abbreviation)")
                                 .font(.system(size: 13 * s, weight: .semibold, design: .rounded))
-                                .foregroundColor(viewModel.selectedTheme.textPrimaryColor)
+                                .foregroundColor(viewModel.effectiveDialPrimary)
                         }
                     }
                     .padding(.leading, 28 * s)
@@ -93,10 +94,16 @@ struct ClockContentView: View {
                 .frame(width: d, height: d)
             }
             .frame(width: d, height: d)
-            // glacier 主题：跳过 .glassEffect（macOS 26 的 .clear 仍有最低档 backdrop blur，
+            // glacier 主题：跳过 .glassEffect（.clear/.regular 都有 backdrop blur，
             // glacier 想要"完全无磨砂"必须走纯色背景 + 圆形裁剪 + 依赖 GlassAurora 流动光）。
-            // 其他主题保持 .glassEffect(.clear.tint(...)) 以享受系统 glass 高光 / 折射。
-            .modifier(DialGlassModifier(theme: viewModel.selectedTheme))
+            // 其他主题用 .glassEffect(.regular.tint(...))：macOS 27 Beta 上 .clear 会把 tint
+            // 渲染成近不透明实心色（bug），.regular 在 26/27 都正常（与下拉面板一致）。
+            .modifier(DialGlassModifier(
+                theme: viewModel.selectedTheme,
+                diameter: d,
+                glassVariant: viewModel.glassMaterialVariant,
+                glassTintHex: viewModel.glassTintHex
+            ))
             .contentShape(Rectangle())
             .onTapGesture {
                 viewModel.isExpanded.toggle()
@@ -107,9 +114,14 @@ struct ClockContentView: View {
 }
 
 /// 主盘玻璃修饰：glacier 主题走纯色背景（无 backdrop blur，零磨砂感），
-/// 其他主题保留 `.glassEffect(.clear.tint(_:).interactive())` 享受系统 liquid glass 高光 / 折射。
+/// 其他主题用 `.glassEffect(.regular.tint(_:).interactive())`（macOS 27 Beta 的 .clear 会渲染成实心）。
 struct DialGlassModifier: ViewModifier {
     let theme: ClockFaceTheme
+    let diameter: CGFloat
+    /// 私有 NSGlassEffectView 材质配方（set_variant:）。改变时 .id 触发重建。
+    let glassVariant: Int
+    /// 私有玻璃底色 #RRGGBB（nil = 纯净玻璃）。
+    let glassTintHex: String?
 
     func body(content: Content) -> some View {
         switch theme {
@@ -132,11 +144,25 @@ struct DialGlassModifier: ViewModifier {
                         .blendMode(.overlay)
                 }
         default:
-            content
-                .glassEffect(
-                    .clear.tint(theme.glassTint).interactive(),
-                    in: .circle
-                )
+            if UserDefaults.standard.bool(forKey: "TC_GLASS_PROBE") {
+                // SPIKE：私有 API 折射探针（NSGlassEffectView set_variant:/set_contentLensing:）。
+                // 见 LiquidGlassDial.swift。材质=variant、折射=lensing(锁6)、底色=tintColor。
+                // .id(glassVariant)：换材质时重建 NSGlassEffectView（variant 会重建内部子层，比 in-place 改更可靠）。
+                let tintNS = glassTintHex.flatMap { CodableColor(hex: $0) }?.nsColor
+                content
+                    .background(
+                        LiquidGlassDial(diameter: diameter, variant: glassVariant, tintColor: tintNS)
+                            .id(glassVariant)
+                    )
+            } else {
+                // macOS 27 Beta：.clear.tint(_:) 会把 tint 渲染成实心色（bug），故单用 .clear
+                // 拿最清透的液态玻璃，表盘着色交给背后 GlassAurora 流光。
+                content
+                    .glassEffect(
+                        .clear.interactive(),
+                        in: .circle
+                    )
+            }
         }
     }
 }

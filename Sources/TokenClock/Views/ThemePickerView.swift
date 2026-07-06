@@ -66,7 +66,7 @@ struct ThemePickerView: View {
                     ThemePreviewClock(theme: theme)
                 }
                 .frame(width: 72, height: 72)
-                .glassEffect(.clear.tint(theme.glassTint), in: .circle)
+                .glassEffect(.regular.tint(theme.glassTint), in: .circle)
             }
 
             Text(theme.displayName)
@@ -109,7 +109,7 @@ struct ThemePickerView: View {
                     ThemePreviewClockWithConfig(config: theme.config)
                 }
                 .frame(width: 72, height: 72)
-                .glassEffect(.clear.tint(previewTheme.glassTint), in: .circle)
+                .glassEffect(.regular.tint(previewTheme.glassTint), in: .circle)
             }
 
             Text(theme.name)

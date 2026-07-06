@@ -2,6 +2,14 @@ import SwiftUI
 import Combine
 import AppKit
 
+/// 表盘文字颜色覆盖模式（「表盘外观 ▸ 文字颜色」）
+enum DialTextMode: Int {
+    case theme = 0    // 跟随主题
+    case white = 1
+    case black = 2
+    case custom = 3   // dialTextColorHex
+}
+
 @MainActor
 final class ViewModel: ObservableObject {
     @Published var tools: [ToolUsage] {
@@ -56,6 +64,52 @@ final class ViewModel: ObservableObject {
     @Published var selectedCity: String = "auto" { didSet { UserDefaults.standard.setString(selectedCity, for: .selectedCity) } }
     /// IP 定位解析到的城市名（用于菜单动态标签）
     @Published var resolvedCityName: String = ""
+
+    // MARK: - 表盘外观（液态玻璃：文字颜色 / 材质档位 / 玻璃底色）
+    /// 表盘文字颜色模式。变更触发 SwiftUI 重渲染：数字经 numberColorOverride 重绘，
+    /// 叠加层文字经 effectiveDialPrimary/Secondary 重绘。
+    @Published var dialTextMode: DialTextMode = .theme {
+        didSet { UserDefaults.standard.setInt(dialTextMode.rawValue, for: .dialTextMode) }
+    }
+    /// 自定义文字颜色 #RRGGBB（仅 dialTextMode == .custom 时使用）。
+    @Published var dialTextColorHex: String = "#FFFFFF" {
+        didSet { UserDefaults.standard.setString(dialTextColorHex, for: .dialTextColor) }
+    }
+    /// 私有 NSGlassEffectView 材质配方（set_variant:）。2=标准(dock) 13=清透(clearGlass) 8=磨砂(controlCenter)。
+    /// 经 .id(glassMaterialVariant) 触发 LiquidGlassDial 重建 —— variant 会重建内部子层，重建比 in-place 改更可靠。
+    @Published var glassMaterialVariant: Int = 2 {
+        didSet { UserDefaults.standard.setInt(glassMaterialVariant, for: .glassVariant) }
+    }
+    /// 私有玻璃底色 #RRGGBB（nil = 纯净玻璃，随壁纸自适应）。变更触发 updateNSView 重设 tintColor。
+    @Published var glassTintHex: String? = nil {
+        didSet { UserDefaults.standard.setString(glassTintHex, for: .glassTint) }
+    }
+
+    /// 表盘文字主色（受 dialTextMode 覆盖；custom 解析失败回退主题色）。
+    var effectiveDialPrimary: Color {
+        switch dialTextMode {
+        case .theme:  return selectedTheme.textPrimaryColor
+        case .white:  return .white
+        case .black:  return .black
+        case .custom: return CodableColor(hex: dialTextColorHex)?.swiftUIColor ?? selectedTheme.textPrimaryColor
+        }
+    }
+    /// 表盘文字副色（custom/white/black = 主色 72% 透明，保留主副层级关系）。
+    var effectiveDialSecondary: Color {
+        switch dialTextMode {
+        case .theme:  return selectedTheme.textSecondaryColor
+        case .white, .black, .custom: return effectiveDialPrimary.opacity(0.72)
+        }
+    }
+    /// 表盘数字颜色覆盖（theme = nil 跟随主题；注入 ClockFaceView.numberColorOverride）。
+    var effectiveDialNumberColor: Color? {
+        switch dialTextMode {
+        case .theme:  return nil
+        case .white:  return .white
+        case .black:  return .black
+        case .custom: return CodableColor(hex: dialTextColorHex)?.swiftUIColor
+        }
+    }
 
     /// 可选城市列表（auto = 自动定位）
     static let cityOptions = ["auto", "Hong Kong", "Shanghai", "Beijing", "Tokyo", "Singapore", "New York"]
@@ -136,6 +190,17 @@ final class ViewModel: ObservableObject {
         if let s = UserDefaults.standard.string(for: .selectedTimezone) { selectedTimezone = s }
         if UserDefaults.standard.object(forKey: SettingsKey.windowOpacity.rawValue) != nil { windowOpacity = UserDefaults.standard.double(forKey: SettingsKey.windowOpacity.rawValue) }
         if UserDefaults.standard.object(forKey: SettingsKey.cursorCloudFetchEnabled.rawValue) != nil { cursorCloudFetchEnabled = UserDefaults.standard.bool(for: .cursorCloudFetchEnabled) }
+
+        // 表盘外观（液态玻璃文字/材质/底色）
+        if let raw = UserDefaults.standard.object(forKey: SettingsKey.dialTextMode.rawValue) as? Int,
+           let mode = DialTextMode(rawValue: raw) { dialTextMode = mode }
+        if let hex = UserDefaults.standard.string(for: .dialTextColor) { dialTextColorHex = hex }
+        if UserDefaults.standard.object(forKey: SettingsKey.glassVariant.rawValue) != nil {
+            glassMaterialVariant = UserDefaults.standard.int(for: .glassVariant, default: 2)
+        }
+        if let tintHex = UserDefaults.standard.string(for: .glassTint), CodableColor(hex: tintHex) != nil {
+            glassTintHex = tintHex
+        }
 
         loadTheme()
         // 表盘大小：首启按主屏分辨率自动选档（用户手动改过后跳过），再加载到 @Published

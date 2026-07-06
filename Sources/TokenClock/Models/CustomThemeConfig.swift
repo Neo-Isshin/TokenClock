@@ -97,6 +97,48 @@ struct CodableColor: Codable, Equatable {
     }
 }
 
+extension CodableColor {
+    /// 从 NSColor 构造（拾色器回写用）。
+    init(nsColor: NSColor) {
+        let c = nsColor.usingColorSpace(.deviceRGB) ?? nsColor
+        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        c.getRed(&r, green: &g, blue: &b, alpha: &a)
+        self.init(red: Double(r), green: Double(g), blue: Double(b), opacity: Double(a))
+    }
+
+    /// 转回 NSColor（sRGB，喂给私有 NSGlassEffectView tintColor）。
+    var nsColor: NSColor {
+        NSColor(srgbRed: red, green: green, blue: blue, alpha: opacity)
+    }
+
+    /// 解析 #RRGGBB / #RRGGBBAA / RRGGBB；失败返回 nil。
+    init?(hex: String) {
+        var s = hex.trimmingCharacters(in: .whitespacesAndNewlines)
+        if s.hasPrefix("#") { s.removeFirst() }
+        guard s.count == 6 || s.count == 8 else { return nil }
+        var rgba: UInt64 = 0
+        guard Scanner(string: s).scanHexInt64(&rgba) else { return nil }
+        if s.count == 8 {
+            self.init(red: Double((rgba >> 24) & 0xFF) / 255,
+                      green: Double((rgba >> 16) & 0xFF) / 255,
+                      blue: Double((rgba >> 8) & 0xFF) / 255,
+                      opacity: Double(rgba & 0xFF) / 255)
+        } else {
+            self.init(red: Double((rgba >> 16) & 0xFF) / 255,
+                      green: Double((rgba >> 8) & 0xFF) / 255,
+                      blue: Double(rgba & 0xFF) / 255)
+        }
+    }
+
+    /// 输出 #RRGGBB（菜单 / 拾色器互通；忽略 opacity 通道）。
+    var hexString: String {
+        String(format: "#%02X%02X%02X",
+               Int((red * 255).rounded()),
+               Int((green * 255).rounded()),
+               Int((blue * 255).rounded()))
+    }
+}
+
 /// 已保存的自定义主题
 struct SavedCustomTheme: Codable, Identifiable, Equatable {
     let id: UUID

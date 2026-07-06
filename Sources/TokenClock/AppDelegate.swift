@@ -192,6 +192,50 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         sizeItem.submenu = sizeMenu
         menu.addItem(sizeItem)
 
+        // 表盘外观子菜单（液态玻璃：文字颜色 / 玻璃材质 / 玻璃底色）
+        let appearanceMenu = NSMenu()
+
+        // — 文字颜色（解决浅色壁纸上白色文字不可见）—
+        let textColorMenu = NSMenu()
+        for (mode, title) in [(DialTextMode.theme, tr("menu.dialTextTheme")),
+                              (DialTextMode.white, tr("menu.dialTextWhite")),
+                              (DialTextMode.black, tr("menu.dialTextBlack"))] {
+            let item = NSMenuItem(title: title, action: #selector(setDialTextMode(_:)), keyEquivalent: "")
+            item.tag = mode.rawValue
+            if viewModel.dialTextMode == mode { item.state = .on }
+            textColorMenu.addItem(item)
+        }
+        let customTextItem = NSMenuItem(title: tr("menu.dialTextCustom"),
+                                        action: #selector(pickDialTextColor(_:)), keyEquivalent: "")
+        if viewModel.dialTextMode == .custom { customTextItem.state = .on }
+        textColorMenu.addItem(customTextItem)
+        let textColorItem = NSMenuItem(title: tr("menu.dialTextColor"), action: nil, keyEquivalent: "")
+        textColorItem.submenu = textColorMenu
+        appearanceMenu.addItem(textColorItem)
+
+        // — 玻璃底色（私有 tintColor SPI；27 Beta 可能渲染偏实心）—
+        let tintMenu = NSMenu()
+        let noTintItem = NSMenuItem(title: tr("menu.tintNone"), action: #selector(clearDialTint(_:)), keyEquivalent: "")
+        if viewModel.glassTintHex == nil { noTintItem.state = .on }
+        tintMenu.addItem(noTintItem)
+        let customTintItem = NSMenuItem(title: tr("menu.tintCustom"),
+                                        action: #selector(pickDialTint(_:)), keyEquivalent: "")
+        if viewModel.glassTintHex != nil { customTintItem.state = .on }
+        tintMenu.addItem(customTintItem)
+        let tintSubItem = NSMenuItem(title: tr("menu.dialTint"), action: nil, keyEquivalent: "")
+        tintSubItem.submenu = tintMenu
+        appearanceMenu.addItem(tintSubItem)
+
+        // 一键恢复默认：文字→跟随主题、材质→标准、底色→无
+        appearanceMenu.addItem(.separator())
+        let resetItem = NSMenuItem(title: tr("menu.dialResetDefaults"),
+                                   action: #selector(resetDialAppearance(_:)), keyEquivalent: "")
+        appearanceMenu.addItem(resetItem)
+
+        let appearanceItem = NSMenuItem(title: tr("menu.dialAppearance"), action: nil, keyEquivalent: "")
+        appearanceItem.submenu = appearanceMenu
+        menu.addItem(appearanceItem)
+
         let apiItem = NSMenuItem(title: L10n.shared.tr("menu.api", Int(AppDelegate.resolveAPIServerPort())),
                                  action: #selector(copyAPIEndpoint(_:)), keyEquivalent: "")
         menu.addItem(apiItem)
@@ -306,6 +350,75 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
               let size = ClockSize(rawValue: raw) else { return }
         viewModel.setClockSize(size)
         setupRightClickMenu()  // 刷新子菜单勾选状态
+    }
+
+    // MARK: - 表盘外观（液态玻璃）Actions
+
+    @objc private func setDialTextMode(_ sender: NSMenuItem) {
+        guard let mode = DialTextMode(rawValue: sender.tag) else { return }
+        viewModel.dialTextMode = mode
+        setupRightClickMenu()
+    }
+
+    @objc private func pickDialTextColor(_ sender: NSMenuItem) {
+        openColorPicker(for: .dialText)
+    }
+
+    @objc private func clearDialTint(_ sender: NSMenuItem) {
+        viewModel.glassTintHex = nil
+        setupRightClickMenu()
+    }
+
+    @objc private func pickDialTint(_ sender: NSMenuItem) {
+        openColorPicker(for: .glassTint)
+    }
+
+    private enum ColorPickerTarget { case dialText, glassTint }
+    private var colorPickerTarget: ColorPickerTarget = .dialText
+
+    /// 打开系统拾色器（target/action 实时回写 viewModel）。两类目标复用同一 NSColorPanel。
+    private func openColorPicker(for target: ColorPickerTarget) {
+        colorPickerTarget = target
+        NSLog("TC pickDialColor open target=\(target)")
+        // accessory app 里直接 makeKeyAndOrderFront 会被菜单 modal tracking 吞掉且面板不上前；
+        // dispatch 到下个 runloop + 显式激活 app + 不随失焦隐藏。
+        DispatchQueue.main.async {
+            let picker = NSColorPanel.shared
+            picker.showsAlpha = false
+            picker.hidesOnDeactivate = false
+            switch target {
+            case .dialText:
+                picker.color = CodableColor(hex: self.viewModel.dialTextColorHex)?.nsColor ?? .white
+            case .glassTint:
+                picker.color = self.viewModel.glassTintHex.flatMap { CodableColor(hex: $0)?.nsColor }
+                    ?? NSColor(srgbRed: 0.55, green: 0.72, blue: 0.92, alpha: 1)
+            }
+            picker.setTarget(self)
+            picker.setAction(#selector(self.colorPanelChanged(_:)))
+            NSApp.activate()
+            picker.makeKeyAndOrderFront(nil)
+        }
+    }
+
+    @objc private func colorPanelChanged(_ panel: NSColorPanel) {
+        let hex = CodableColor(nsColor: panel.color).hexString
+        switch colorPickerTarget {
+        case .dialText:
+            viewModel.dialTextMode = .custom
+            viewModel.dialTextColorHex = hex
+        case .glassTint:
+            viewModel.glassTintHex = hex
+        }
+    }
+
+    /// 一键恢复表盘外观默认：文字→跟随主题（hex 复位）、材质→标准(dock)、底色→无。
+    @objc private func resetDialAppearance(_ sender: NSMenuItem) {
+        NSLog("TC resetDialAppearance fired")
+        viewModel.dialTextMode = .theme
+        viewModel.dialTextColorHex = "#FFFFFF"
+        viewModel.glassMaterialVariant = 2
+        viewModel.glassTintHex = nil
+        setupRightClickMenu()
     }
 
     @objc private func openThemePicker(_ sender: NSMenuItem) {

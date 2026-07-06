@@ -64,6 +64,18 @@ enum SettingsKey: String {
     case selectedCity = "TC_selectedCity"
     case selectedTimezone = "TC_selectedTimezone"
     case useFahrenheit = "TC_useFahrenheit"
+
+    // MARK: - 表盘外观（液态玻璃：文字颜色 / 材质档位 / 玻璃底色）
+    /// 0=跟随主题 1=白 2=黑 3=自定义
+    case dialTextMode = "TC_dialTextMode"
+    /// 自定义文字颜色 #RRGGBB
+    case dialTextColor = "TC_dialTextColor"
+    /// 私有 NSGlassEffectView 材质配方 set_variant: 2=标准(dock) 13=清透(clearGlass) 8=磨砂(controlCenter)
+    case glassVariant = "TC_GLASS_VARIANT"
+    /// 折射强度 set_contentLensing: 0–6（默认 6）
+    case glassLensing = "TC_GLASS_LENSING"
+    /// 私有玻璃底色 #RRGGBB（空=纯净玻璃，随壁纸自适应）
+    case glassTint = "TC_GLASS_TINT"
     /// Cursor 用量是否从云端获取（关闭则不向 cursor.com 发凭证请求）
     case cursorCloudFetchEnabled = "TC_cursorCloudFetchEnabled"
 

@@ -13,6 +13,10 @@ struct ClockFaceView: View {
     /// 相对中档(240)的缩放比，用于缩放表盘数字字号（其余几何已按 radius 自动缩放）。
     var scale: CGFloat = 1.0
 
+    /// 表盘数字颜色覆盖（nil = 跟随主题 theme.numberColor）。
+    /// 由「表盘外观 ▸ 文字颜色」注入，解决浅色壁纸上白色数字不可见。
+    var numberColorOverride: Color? = nil
+
     var body: some View {
         Canvas { context, size in
             let center = CGPoint(x: size.width / 2, y: size.height / 2)
@@ -67,7 +71,7 @@ struct ClockFaceView: View {
             let isMajor = (i % 3 == 0)
             let innerR = radius * (isMajor ? 0.91 : 0.935)
             let outerR = radius * 0.97
-            let color = isMajor ? theme.majorTickMarkColor : theme.tickMarkColor
+            let color = numberColorOverride ?? (isMajor ? theme.majorTickMarkColor : theme.tickMarkColor)
             let width: CGFloat = isMajor ? 2 : 1.2
 
             let x1 = center.x + innerR * cos(angle.radians)
@@ -103,7 +107,7 @@ struct ClockFaceView: View {
 
             let text = Text(label)
                 .font(.system(size: 13 * scale, weight: .medium, design: theme.numberFontDesign))
-                .foregroundColor(theme.numberColor)
+                .foregroundColor(numberColorOverride ?? theme.numberColor)
             let resolved = context.resolve(text)
             context.draw(resolved, at: CGPoint(x: x, y: y), anchor: .center)
         }
