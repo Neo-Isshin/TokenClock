@@ -69,11 +69,30 @@ done
 # ── 1. 前置检查 ──
 step "检查环境"
 command -v sw_vers >/dev/null || die "需要 macOS（未找到 sw_vers）。"
-command -v git    >/dev/null || die "未找到 git。请先安装 Xcode 命令行工具：xcode-select --install"
-command -v swift  >/dev/null || die "未找到 Swift 工具链。请先安装 Xcode 或命令行工具：xcode-select --install"
+# git / swift 仅 build-from-source 路径需要；预编译下载路径（默认）完全不依赖它们。
+command -v git   >/dev/null 2>&1 || say "  ⚠ 未找到 git（仅 --build-from-source 需要；默认下载路径不受影响）"
+command -v swift >/dev/null 2>&1 || say "  ⚠ 未找到 swift（仅 --build-from-source 需要；默认下载路径不受影响）"
 
 OS_MAJOR="$(sw_vers -productVersion | cut -d. -f1)"
-say "  macOS $(sw_vers -productVersion) · 主版本 $OS_MAJOR · 工具链 $(swift --version 2>/dev/null | head -1)"
+if command -v swift >/dev/null 2>&1; then
+  TC_TOOLCHAIN="$(swift --version 2>&1 | head -1)"
+else
+  TC_TOOLCHAIN=""
+fi
+case "$TC_TOOLCHAIN" in
+  *Xcode\ license*|*not\ agreed*|*agreeing*|*同意*)
+    say "  macOS $(sw_vers -productVersion) · 主版本 $OS_MAJOR"
+    say "  ⚠ Xcode 未同意 license → git/swift 暂被锁。默认下载预编译路径不受影响。"
+    say "    若要用 --build-from-source，先解决其一："
+    say "      sudo xcodebuild -license          # 同意 license（推荐）"
+    say "      sudo xcode-select -s /Library/Developer/CommandLineTools   # 切回 CLT"
+    ;;
+  *)
+    [ -n "$TC_TOOLCHAIN" ] \
+      && say "  macOS $(sw_vers -productVersion) · 主版本 $OS_MAJOR · 工具链 $TC_TOOLCHAIN" \
+      || say "  macOS $(sw_vers -productVersion) · 主版本 $OS_MAJOR · 工具链（未安装 swift）"
+    ;;
+esac
 
 # ── 2. 选变体 ──
 if [ -z "$VARIANT" ]; then
@@ -107,11 +126,10 @@ for i in "${!VARIANTS[@]}"; do
 done
 say "  变体: $VARIANT_LABELS · 构建: $CONFIG"
 
-# ── 3. 获取源码 ──
-for i in "${!VARIANTS[@]}"; do
-  variant="${VARIANTS[$i]}"
-  branch="${BRANCHES[$i]}"
-  subdir="$BUILD_DIR/$branch"
+# ── 3. 源码获取（lazy：仅 build-from-source / 下载失败回退时才调用）──
+# 预编译下载路径（默认）完全不 clone，避免对 git / Xcode license 的硬依赖。
+ensure_source() {
+  local variant="$1" branch="$2" subdir="$BUILD_DIR/$branch"
   step "获取源码 [$variant]（$REPO_URL · $branch）"
   if [ -d "$subdir/.git" ]; then
     git -C "$subdir" fetch --depth 1 origin "$branch" >/dev/null 2>&1 || die "git fetch [$variant] 失败（检查网络或 TOKENCLOCK_REPO）"
@@ -121,10 +139,10 @@ for i in "${!VARIANTS[@]}"; do
   else
     mkdir -p "$subdir"
     git clone --depth 1 --branch "$branch" "$REPO_URL" "$subdir" >/dev/null 2>&1 \
-      || die "git clone [$variant] 失败（检查 TOKENCLOCK_REPO=$REPO_URL 或网络）"
+      || die "git clone [$variant] 失败（检查 TOKENCLOCK_REPO=$REPO_URL / 网络 / Xcode license。默认下载路径无需 clone——去掉 --build-from-source 重试）"
     say "  已克隆: $subdir"
   fi
-done
+}
 
 # ── 4. 获取二进制（优先下载预编译，失败 / --build-from-source 则回退源码编译）──
 # 预编译资产来自 Gitea release（universal：arm64+x86_64），免 Xcode / 免编译。
@@ -203,7 +221,8 @@ for i in "${!VARIANTS[@]}"; do
     continue
   fi
 
-  # 4b. 回退：本地源码编译
+  # 4b. 回退：本地源码编译（此时才需要 clone）
+  ensure_source "$variant" "$branch"
   step "构建 [$variant]（swift build -c $CONFIG · 首次可能需要几分钟）"
   swift_build_fallback "$subdir" \
     || die "[$variant] 构建失败（预编译下载也未成功）。常见原因：未装完整 Xcode（macOS 27 SDK 的 @State 宏需要 SwiftUIMacros，仅 CLT 不带）。请装 Xcode 后重试，或确认本机有 MacOSX26.sdk 由本脚本自动 pin。"
@@ -258,21 +277,29 @@ fi
 # ── 6. 安装 tokenclock CLI ──
 step "安装 tokenclock CLI"
 mkdir -p "$BIN_DIR"
-# 找 PRIMARY_VARIANT 对应的分支作为 CLI 来源
-# 26+ 双变体: PRIMARY_VARIANT=glass → BRANCHES[0]=main
-# 15+ 单变体: PRIMARY_VARIANT=normal → BRANCHES[0]=normal
-CLI_SRC_BRANCH="${BRANCHES[0]}"
-if [ ! -f "$BUILD_DIR/$CLI_SRC_BRANCH/cli/tokenclock" ]; then
-  # 兜底:遍历所有分支,找第一个有 cli/tokenclock 的
-  for b in "${BRANCHES[@]}"; do
-    [ -f "$BUILD_DIR/$b/cli/tokenclock" ] && CLI_SRC_BRANCH="$b" && break
-  done
+# CLI wrapper 来源：优先用已 clone 的源码树（build 路径），否则 curl 从 raw 拉
+# （下载路径，不依赖 git）。两分支 cli/tokenclock 一致，故 raw 统一从 main 拉。
+WRAPPER_OK=0
+for b in "${BRANCHES[@]}"; do
+  if [ -f "$BUILD_DIR/$b/cli/tokenclock" ]; then
+    cp "$BUILD_DIR/$b/cli/tokenclock" "$BIN_DIR/tokenclock"
+    WRAPPER_OK=1
+    say "  ✓ $BIN_DIR/tokenclock（源: $b/cli）"
+    break
+  fi
+done
+if [ "$WRAPPER_OK" -eq 0 ]; then
+  WRAPPER_URL="${INSTALL_URL%/*}/tokenclock"   # .../raw/main/cli/tokenclock
+  if curl -fL --retry 6 --retry-delay 2 --retry-all-errors --connect-timeout 15 \
+        -o "$BIN_DIR/tokenclock" "$WRAPPER_URL" 2>/dev/null \
+     && [ -s "$BIN_DIR/tokenclock" ]; then
+    say "  ✓ $BIN_DIR/tokenclock（源: raw）"
+  else
+    rm -f "$BIN_DIR/tokenclock"
+    die "找不到 cli/tokenclock（本地未 clone，且下载 $WRAPPER_URL 失败）"
+  fi
 fi
-[ -f "$BUILD_DIR/$CLI_SRC_BRANCH/cli/tokenclock" ] \
-  || die "找不到 cli/tokenclock (已查: ${BRANCHES[*]})"
-cp "$BUILD_DIR/$CLI_SRC_BRANCH/cli/tokenclock" "$BIN_DIR/tokenclock"
 chmod +x "$BIN_DIR/tokenclock"
-say "  ✓ $BIN_DIR/tokenclock"
 export PATH="$BIN_DIR:$PATH"   # 让本脚本后续命令能直接用 tokenclock
 
 # ── 7. 开机自启动（LaunchAgent） ──
@@ -522,9 +549,9 @@ fi
 cat <<EOF
   CLI:    $BIN_DIR/tokenclock
 EOF
-# 源码:每个分支的子目录各一行
+# 源码:每个分支的子目录各一行（仅当确实 clone 了——下载路径可能没有 src）
 for branch in "${BRANCHES[@]}"; do
-  printf '  源码:   %s/%s\n' "$BUILD_DIR" "$branch"
+  [ -d "$BUILD_DIR/$branch" ] && printf '  源码:   %s/%s\n' "$BUILD_DIR" "$branch"
 done
 
 cat <<EOF
