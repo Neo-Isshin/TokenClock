@@ -43,7 +43,19 @@ BUILD_FROM_SOURCE=0 # --build-from-source：跳过预编译下载，强制本地
 
 say()  { printf '%s\n' "$*"; }
 step() { printf '\n🛠  %s\n' "$*"; }
-die()  { printf '\n❌ %s\n' "$*" >&2; exit 1; }
+
+# 彩色输出：仅 TTY 上色（curl|bash 等管道自动去色，避免向日志灌转义码）。
+if [ -t 1 ]; then
+  C_GREEN=$'\033[1;32m'; C_YELLOW=$'\033[1;33m'; C_RED=$'\033[1;31m'; C_CYAN=$'\033[1;36m'; C_RESET=$'\033[0m'
+else
+  C_GREEN=''; C_YELLOW=''; C_RED=''; C_CYAN=''; C_RESET=''
+fi
+warn() { printf '\n%b⚠ %s%b\n' "$C_YELLOW" "$*" "$C_RESET"; }
+die()  { printf '\n%b❌ %s%b\n' "$C_RED" "$*" "$C_RESET" >&2; exit 1; }
+
+# 被 tokenclock update 调用？（它设 TOKENCLOCK_STATUS_FILE）→ 跳过末尾大段摘要，
+# 由 wrapper 自己打印一行结论。区分「全新装」与「升级」两种语境。
+UPDATE_MODE=0; [ -n "${TOKENCLOCK_STATUS_FILE:-}" ] && UPDATE_MODE=1
 
 usage() {
   sed -n '3,22p' "$0" 2>/dev/null || true
@@ -269,16 +281,15 @@ for entry in "${BUILT_BINS[@]}"; do
   fi
 done
 
-# 把"是否真的部署了变更"回报给调用方（tokenclock update 据此决定是否重启）
-if [ -n "${TOKENCLOCK_STATUS_FILE:-}" ]; then
-  echo "DEPLOYED=$DEPLOYED_ANYTHING" > "$TOKENCLOCK_STATUS_FILE"
-fi
-
 # ── 6. 安装 tokenclock CLI ──
 step "安装 tokenclock CLI"
 mkdir -p "$BIN_DIR"
 # CLI wrapper 来源：优先用已 clone 的源码树（build 路径），否则 curl 从 raw 拉
 # （下载路径，不依赖 git）。两分支 cli/tokenclock 一致，故 raw 统一从 main 拉。
+# 记录旧 wrapper SHA，部署后比对 → WRAPPER_CHANGED（仅用于 update 反馈「CLI 已更新」，
+# 不触发 app 重启：wrapper 与运行中的时钟二进制互相独立）。
+WRAPPER_OLD_SHA=""
+[ -f "$BIN_DIR/tokenclock" ] && WRAPPER_OLD_SHA="$(shasum -a 256 "$BIN_DIR/tokenclock" 2>/dev/null | cut -d' ' -f1)"
 WRAPPER_OK=0
 for b in "${BRANCHES[@]}"; do
   if [ -f "$BUILD_DIR/$b/cli/tokenclock" ]; then
@@ -300,7 +311,21 @@ if [ "$WRAPPER_OK" -eq 0 ]; then
   fi
 fi
 chmod +x "$BIN_DIR/tokenclock"
+# 比对新旧 wrapper（首装时旧 SHA 为空 → 视为变化，但首装不走 update 路径，无副作用）
+WRAPPER_CHANGED=0
+WRAPPER_NEW_SHA="$(shasum -a 256 "$BIN_DIR/tokenclock" 2>/dev/null | cut -d' ' -f1)"
+[ "$WRAPPER_NEW_SHA" != "$WRAPPER_OLD_SHA" ] && WRAPPER_CHANGED=1
 export PATH="$BIN_DIR:$PATH"   # 让本脚本后续命令能直接用 tokenclock
+
+# 把部署状态回报给调用方（tokenclock update 据此决定重启 / 仅提示 / 无操作）：
+#   DEPLOYED     时钟二进制变了 → 需要重启运行中的时钟
+#   CLI_UPDATED  仅 wrapper 变了 → 无需重启时钟，但给用户一个「CLI 已更新」的反馈
+if [ -n "${TOKENCLOCK_STATUS_FILE:-}" ]; then
+  {
+    echo "DEPLOYED=$DEPLOYED_ANYTHING"
+    echo "CLI_UPDATED=${WRAPPER_CHANGED:-0}"
+  } > "$TOKENCLOCK_STATUS_FILE"
+fi
 
 # ── 7. 开机自启动（LaunchAgent） ──
 # 与 Swift 端 LaunchAgentHelper 同格式写 plist：label / ProgramArguments /
@@ -513,6 +538,11 @@ else
 fi
 
 # ── 10. 完成 ──
+# update 路径（被 tokenclock update 调用）：跳过「🎉 安装完成！」横幅 + doctor 摘要，
+# 由 wrapper 打印一行结论（已部署重启 / CLI 已更新 / 已是最新）。全新装才走完整摘要。
+if [ "$UPDATE_MODE" -eq 1 ]; then
+  exit 0
+fi
 step "安装完成 · 生成摘要"
 
 # 1. 收集 doctor 输出（PATH 已在 step 6 export 过，tokenclock 可直接调用）
