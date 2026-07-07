@@ -520,7 +520,7 @@ struct SettingsView: View {
                 }
                 .pickerStyle(.segmented)
                 .frame(width: 220)
-                .onChange(of: rateWindow) {
+                .onChange(of: rateWindow) { _ in
                     saveRateSettings()
                 }
                 Spacer()
@@ -586,7 +586,7 @@ struct SettingsView: View {
             }
             .pickerStyle(.segmented)
             .frame(width: 120)
-            .onChange(of: unit.wrappedValue) {
+            .onChange(of: unit.wrappedValue) { _ in
                 saveRateSettings()
             }
 
@@ -776,7 +776,7 @@ struct SettingsView: View {
                         .font(.system(size: 12))
 
                     customThemeEditor()
-                        .onChange(of: editingConfig) {
+                        .onChange(of: editingConfig) { _ in
                             editingConfig.save()
                         }
                 }
@@ -1036,7 +1036,7 @@ struct SettingsView: View {
                 }
             }
             .pickerStyle(.segmented)
-            .onChange(of: selection.wrappedValue) { saveCustomTheme() }
+            .onChange(of: selection.wrappedValue) { _ in saveCustomTheme() }
             Spacer()
         }
         .frame(height: 24)

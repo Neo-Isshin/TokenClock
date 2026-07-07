@@ -124,8 +124,11 @@ enum LaunchAgentHelper {
         }
 
         // 2) 撤销 SMAppService 注册（如果有）。SMAppService.mainApp 仅在当前进程
-        // 的 bundle 标识下有效，try? 安全。
-        try? SMAppService.mainApp.unregister()
+        // 的 bundle 标识下有效，try? 安全。SMAppService 是 macOS 13+ API —— 在 12 上
+        // 我们从没用它注册过（自启一律走 LaunchAgent plist），跳过即可、无副作用。
+        if #available(macOS 13, *) {
+            try? SMAppService.mainApp.unregister()
+        }
     }
 
     // MARK: - 私有：plist 序列化

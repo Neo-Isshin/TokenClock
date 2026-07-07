@@ -3,7 +3,7 @@ import PackageDescription
 
 let package = Package(
     name: "TokenClock",
-    platforms: [.macOS(.v15)],
+    platforms: [.macOS(.v12)],  // Monterey+ —— normal 变体最低支持 macOS 12（glass 仍只在 main/.v26）
     targets: [
         .executableTarget(
             name: "TokenClock",
