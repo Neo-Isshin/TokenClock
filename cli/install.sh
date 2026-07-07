@@ -180,7 +180,7 @@ tarball_sha256() {
 # 失败 → 返回 1（调用方回退源码编译）。临时目录登记到 DOWNLOAD_TMPDIRS，脚本退出时清理。
 DL_DIR=""
 DOWNLOAD_TMPDIRS=()
-trap '[ "${#DOWNLOAD_TMPDIRS[@]}" -gt 0 ] && rm -rf "${DOWNLOAD_TMPDIRS[@]}" 2>/dev/null || true' EXIT
+trap '[ "${#DOWNLOAD_TMPDIRS[@]}" -gt 0 ] && rm -rf "${DOWNLOAD_TMPDIRS[@]}" 2>/dev/null; [ -n "${WRAPPER_TMP:-}" ] && rm -f "$WRAPPER_TMP" 2>/dev/null; true' EXIT
 download_variant() {
   local variant="$1" name expect url tmp got
   name="$(tarball_name "$variant")"
@@ -290,10 +290,15 @@ mkdir -p "$BIN_DIR"
 # 不触发 app 重启：wrapper 与运行中的时钟二进制互相独立）。
 WRAPPER_OLD_SHA=""
 [ -f "$BIN_DIR/tokenclock" ] && WRAPPER_OLD_SHA="$(shasum -a 256 "$BIN_DIR/tokenclock" 2>/dev/null | cut -d' ' -f1)"
+# 原子部署：先写临时文件再 mv 到位。tokenclock update 由 wrapper 调用本脚本，此时
+# 「正在运行的 wrapper」就是 $BIN_DIR/tokenclock；若原地 cp/curl 覆盖，bash 会从新文件
+# 的错误偏移继续读 → 执行注释/碎片（"command not found" + 语法报错）。mv 换 inode，
+# 旧进程继续读旧 inode，互不干扰。
+WRAPPER_TMP="$BIN_DIR/.tokenclock.new.$$"
 WRAPPER_OK=0
 for b in "${BRANCHES[@]}"; do
   if [ -f "$BUILD_DIR/$b/cli/tokenclock" ]; then
-    cp "$BUILD_DIR/$b/cli/tokenclock" "$BIN_DIR/tokenclock"
+    cp "$BUILD_DIR/$b/cli/tokenclock" "$WRAPPER_TMP"
     WRAPPER_OK=1
     say "  ✓ $BIN_DIR/tokenclock（源: $b/cli）"
     break
@@ -302,15 +307,16 @@ done
 if [ "$WRAPPER_OK" -eq 0 ]; then
   WRAPPER_URL="${INSTALL_URL%/*}/tokenclock"   # .../raw/main/cli/tokenclock
   if curl -fL --retry 6 --retry-delay 2 --retry-all-errors --connect-timeout 15 \
-        -o "$BIN_DIR/tokenclock" "$WRAPPER_URL" 2>/dev/null \
-     && [ -s "$BIN_DIR/tokenclock" ]; then
+        -o "$WRAPPER_TMP" "$WRAPPER_URL" 2>/dev/null \
+     && [ -s "$WRAPPER_TMP" ]; then
     say "  ✓ $BIN_DIR/tokenclock（源: raw）"
   else
-    rm -f "$BIN_DIR/tokenclock"
+    rm -f "$WRAPPER_TMP"
     die "找不到 cli/tokenclock（本地未 clone，且下载 $WRAPPER_URL 失败）"
   fi
 fi
-chmod +x "$BIN_DIR/tokenclock"
+chmod +x "$WRAPPER_TMP"
+mv -f "$WRAPPER_TMP" "$BIN_DIR/tokenclock"
 # 比对新旧 wrapper（首装时旧 SHA 为空 → 视为变化，但首装不走 update 路径，无副作用）
 WRAPPER_CHANGED=0
 WRAPPER_NEW_SHA="$(shasum -a 256 "$BIN_DIR/tokenclock" 2>/dev/null | cut -d' ' -f1)"
