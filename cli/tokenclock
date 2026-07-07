@@ -10,7 +10,7 @@
 #
 set -u
 
-CLI_VERSION="1.0.0"
+CLI_VERSION="1.1.1"
 # 运行中时钟的进程名（comm）。**所有变体的可执行文件都必须叫 TokenClock**
 #（放在 glass/ normal/ 子目录里区分变体），这样无论启动哪个变体，进程名都是 TokenClock，
 # 下面的 pgrep/pkill -x 才能精确命中、且不会误伤 shell/脚本本身。
@@ -29,8 +29,15 @@ INSTALL_URL="${TOKENCLOCK_INSTALL_URL:-https://gitea.nxc8335.cloud/api/v1/repos/
 
 # ─────────────────────────── 辅助函数 ───────────────────────────
 
-die() { echo "tokenclock: $*" >&2; exit 1; }
+die() { printf '%btokenclock: %s%b\n' "$C_RED" "$*" "$C_RESET" >&2; exit 1; }
 say() { printf '%s\n' "$*"; }
+
+# 彩色输出：仅 TTY 上色（脚本被管道/重定向时自动去色）。
+if [ -t 1 ]; then
+  C_GREEN=$'\033[1;32m'; C_YELLOW=$'\033[1;33m'; C_RED=$'\033[1;31m'; C_CYAN=$'\033[1;36m'; C_RESET=$'\033[0m'
+else
+  C_GREEN=''; C_YELLOW=''; C_RED=''; C_CYAN=''; C_RESET=''
+fi
 
 # macOS 主版本号（15 / 26 …）
 os_major() { sw_vers -productVersion 2>/dev/null | cut -d. -f1; }
@@ -126,7 +133,7 @@ cmd_start() {
   local pids; pids="$(running_pids)"
   if [ -n "$pids" ] && [ "$force" -eq 0 ]; then
     echo "TokenClock 已在运行（pid $(echo $pids | tr '\n' ' ')）。"
-    echo "重启请用: tokenclock restart    另开一份请用: tokenclock start --force"
+    echo "${C_YELLOW}重启请用: tokenclock restart    另开一份请用: tokenclock start --force${C_RESET}"
     return 0
   fi
 
@@ -233,7 +240,7 @@ cmd_update() {
       rm -f "$tmp_script"
       die "下载安装器失败（$max_attempts 次重试均失败，检查网络或 TOKENCLOCK_INSTALL_URL）"
     fi
-    say "  ⚠ 下载失败,重试 $((attempt+1))/$max_attempts..."
+    say "  ${C_YELLOW}⚠ 下载失败,重试 $((attempt+1))/$max_attempts...${C_RESET}"
     sleep $((attempt * 2))
     attempt=$((attempt+1))
   done
@@ -262,21 +269,29 @@ cmd_update() {
   fi
   rm -f "$tmp_script"
 
-  # 读 install.sh 回报的部署状态
-  local deployed=0
-  [ -f "$status_file" ] && deployed=$(grep -oE 'DEPLOYED=[01]' "$status_file" | tail -1 | cut -d= -f2)
+  # 读 install.sh 回报的部署状态：
+  #   DEPLOYED=1     时钟二进制变了 → 重启运行中的时钟
+  #   CLI_UPDATED=1  仅 wrapper 变了 → 不重启时钟，只提示「CLI 已更新」
+  local deployed=0 cli_updated=0
+  if [ -f "$status_file" ]; then
+    deployed=$(grep -oE 'DEPLOYED=[01]' "$status_file" | tail -1 | cut -d= -f2)
+    cli_updated=$(grep -oE 'CLI_UPDATED=[01]' "$status_file" | tail -1 | cut -d= -f2)
+  fi
   rm -f "$status_file"
 
   if [ "$force" -eq 1 ] || [ "$deployed" = "1" ]; then
-    say "✓ 已部署更新，重启中…"
+    say "${C_GREEN}✓ 已部署更新，重启中…${C_RESET}"
     # 重启：不指定 variant 时按当前默认（系统版本）自动选；用户 --glass/--normal 限定时传递。
     if [ -n "$variant" ]; then
       cmd_restart "--$variant"
     else
       cmd_restart
     fi
+  elif [ "$cli_updated" = "1" ]; then
+    # 仅 CLI wrapper 变了：与运行中的时钟二进制互相独立，无需重启。
+    say "${C_GREEN}✓ CLI 已更新到 v${CLI_VERSION}，运行中的时钟无需重启${C_RESET}"
   else
-    say "✓ 已是最新版本，无需重启（运行中的时钟未受影响）"
+    say "${C_CYAN}✓ 已是最新版本，无需重启（运行中的时钟未受影响）${C_RESET}"
   fi
 }
 
