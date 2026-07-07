@@ -2,7 +2,7 @@
 #
 # tokenclock — TokenClock 轻量命令行
 #
-# 管理浮动时钟的启动：按 macOS 版本自动选 liquid-glass（26+）或 normal（15+）构建，
+# 管理浮动时钟的启动：按 macOS 版本自动选 liquid-glass（26+）或 normal（12+）构建，
 # 以及 stop / restart / doctor / update。
 #
 # 设计为 POSIX/bash-3.2 兼容（macOS 自带 /bin/bash 即可），无需编译。
@@ -10,14 +10,14 @@
 #
 set -u
 
-CLI_VERSION="1.1.1"
+CLI_VERSION="1.2.0"
 # 运行中时钟的进程名（comm）。**所有变体的可执行文件都必须叫 TokenClock**
 #（放在 glass/ normal/ 子目录里区分变体），这样无论启动哪个变体，进程名都是 TokenClock，
 # 下面的 pgrep/pkill -x 才能精确命中、且不会误伤 shell/脚本本身。
 APP_PROCESS="TokenClock"
 
 # 跨脚本共享常量（与 cli/install.sh 保持同步）
-MIN_MACOS=15              # 最低支持 macOS 主版本
+MIN_MACOS=12              # 最低支持 macOS 主版本（Monterey）
 LIQUID_GLASS_MIN_MACOS=26 # liquid-glass 变体最低主版本
 
 # 更新源：cmd_update 从这里拉取最新 install.sh。
@@ -39,7 +39,7 @@ else
   C_GREEN=''; C_YELLOW=''; C_RED=''; C_CYAN=''; C_RESET=''
 fi
 
-# macOS 主版本号（15 / 26 …）
+# macOS 主版本号（12 / 26 …）
 os_major() { sw_vers -productVersion 2>/dev/null | cut -d. -f1; }
 
 # 校验变体与系统版本兼容性,失败时 die。
@@ -53,7 +53,7 @@ validate_variant_compat() {
       fi
       ;;
     normal)
-      # macOS 15+ 都支持
+      # macOS 12+ 都支持
       ;;
   esac
 }
@@ -310,7 +310,7 @@ tokenclock v$CLI_VERSION — TokenClock 轻量命令行
 每个变体的定位顺序:
   \$TOKENCLOCK_GLASS / \$TOKENCLOCK_NORMAL  →  ~/.tokenclock/  →  /Applications/  →  仓库 .build/debug/
 
-注意: --glass 需要 macOS 26+; --normal 适用 macOS 15+。
+注意: --glass 需要 macOS 26+; --normal 适用 macOS 12+。
 
 安装到 PATH: sudo install -m755 cli/tokenclock /usr/local/bin/tokenclock
 EOF
