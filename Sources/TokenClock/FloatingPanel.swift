@@ -44,8 +44,8 @@ final class FloatingPanel: NSPanel {
         self.hasShadow = true
         self.isMovableByWindowBackground = true
 
-        // 不拦截其他应用的激活事件。SPIKE: TC_GLASS_FORCE_KEY 时关掉，便于点击成 key。
-        self.becomesKeyOnlyIfNeeded = !UserDefaults.standard.bool(forKey: "TC_GLASS_FORCE_KEY")
+        // 不拦截其他应用的激活事件；折射靠 _hasActiveAppearance 覆写，无需 panel 成 key。
+        self.becomesKeyOnlyIfNeeded = true
         // 默认只在普通桌面 Space 显示，全屏 Space 中隐藏
         self.collectionBehavior = [.canJoinAllSpaces]
 
@@ -57,11 +57,8 @@ final class FloatingPanel: NSPanel {
         }
     }
 
-    // 点击背景可拖拽，不激活。SPIKE: TC_GLASS_FORCE_KEY 时允许 panel 成为 key
-    // （nonactivatingPanel 成 key 不激活 app），用于测"玻璃需窗口 active 才折射"理论。
-    override var canBecomeKey: Bool {
-        UserDefaults.standard.bool(forKey: "TC_GLASS_FORCE_KEY")
-    }
+    // 点击背景可拖拽，不激活。折射不依赖窗口成 key（_hasActiveAppearance 已覆写）。
+    override var canBecomeKey: Bool { false }
     override var canBecomeMain: Bool { false }
 
     // 右键菜单：直接在 panel 层拦截，用屏幕坐标定位
@@ -103,10 +100,10 @@ private let glassActiveOverrideSelectors: [String] = [
 extension FloatingPanel {
     nonisolated(unsafe) private static var didApplyActiveOverride = false
 
-    /// 由 TC_GLASS_FORCE_ACTIVE 开关控制（spike）；产线可去掉开关直接生效。
+    /// 默认无条件启用（让 borderless 非激活面板持续折射）；TC_GLASS_DISABLE 关闭整套液态玻璃。
     static func applyGlassActiveOverrideIfNeeded() {
-        guard UserDefaults.standard.bool(forKey: "TC_GLASS_FORCE_ACTIVE"),
-              !didApplyActiveOverride else { return }
+        guard !didApplyActiveOverride,
+              !UserDefaults.standard.bool(forKey: "TC_GLASS_DISABLE") else { return }
         didApplyActiveOverride = true
         let alwaysTrue: @convention(c) (AnyObject, Selector) -> Bool = { _, _ in true }
         let newIMP = unsafeBitCast(alwaysTrue, to: IMP.self)

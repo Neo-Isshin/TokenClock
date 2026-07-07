@@ -71,6 +71,7 @@ final class L10n: @unchecked Sendable {
         "menu.tintNone":         [.zhHans: "无",                   .zhHant: "無",                    .en: "None"],
         "menu.tintCustom":       [.zhHans: "自定义…",              .zhHant: "自訂…",                 .en: "Custom…"],
         "menu.dialResetDefaults":[.zhHans: "↩️ 恢复默认",           .zhHant: "↩️ 還原預設",            .en: "↩️ Reset to Defaults"],
+        "menu.glassRefraction":  [.zhHans: "✨ 液态玻璃折射",        .zhHant: "✨ 液態玻璃折射",         .en: "✨ Liquid Glass Refraction"],
         "menu.quit":             [.zhHans: "关闭 TokenClock",       .zhHant: "關閉 TokenClock",       .en: "Quit TokenClock"],
 
         // MARK: Timezone

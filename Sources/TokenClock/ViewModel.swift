@@ -85,6 +85,12 @@ final class ViewModel: ObservableObject {
         didSet { UserDefaults.standard.setString(glassTintHex, for: .glassTint) }
     }
 
+    /// 液态玻璃折射总开关（默认开；关 → 回退公开 .clear 玻璃）。表盘立即切换；
+    /// 但 FloatingPanel 的 _hasActiveAppearance 覆写在启动时据 TC_GLASS_DISABLE 决定，彻底关闭需重启。
+    @Published var glassRefractionEnabled: Bool = true {
+        didSet { UserDefaults.standard.set(!glassRefractionEnabled, forKey: "TC_GLASS_DISABLE") }
+    }
+
     /// 表盘文字主色（受 dialTextMode 覆盖；custom 解析失败回退主题色）。
     var effectiveDialPrimary: Color {
         switch dialTextMode {
@@ -201,6 +207,7 @@ final class ViewModel: ObservableObject {
         if let tintHex = UserDefaults.standard.string(for: .glassTint), CodableColor(hex: tintHex) != nil {
             glassTintHex = tintHex
         }
+        glassRefractionEnabled = !UserDefaults.standard.bool(forKey: "TC_GLASS_DISABLE")
 
         loadTheme()
         // 表盘大小：首启按主屏分辨率自动选档（用户手动改过后跳过），再加载到 @Published

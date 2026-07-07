@@ -226,6 +226,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         tintSubItem.submenu = tintMenu
         appearanceMenu.addItem(tintSubItem)
 
+        // 液态玻璃折射总开关（实验性私有 API；关 → 回退公开 .clear 玻璃）
+        let glassToggle = NSMenuItem(title: tr("menu.glassRefraction"),
+                                     action: #selector(toggleGlassRefraction(_:)), keyEquivalent: "")
+        glassToggle.state = viewModel.glassRefractionEnabled ? .on : .off
+        appearanceMenu.addItem(glassToggle)
+
         // 一键恢复默认：文字→跟随主题、材质→标准、底色→无
         appearanceMenu.addItem(.separator())
         let resetItem = NSMenuItem(title: tr("menu.dialResetDefaults"),
@@ -418,6 +424,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         viewModel.dialTextColorHex = "#FFFFFF"
         viewModel.glassMaterialVariant = 2
         viewModel.glassTintHex = nil
+        setupRightClickMenu()
+    }
+
+    /// 液态玻璃折射总开关。表盘立即在折射玻璃 / 公开 .clear 之间切换；
+    /// _hasActiveAppearance 覆写为启动时决策，彻底关闭/重开需重启。
+    @objc private func toggleGlassRefraction(_ sender: NSMenuItem) {
+        viewModel.glassRefractionEnabled.toggle()
         setupRightClickMenu()
     }
 

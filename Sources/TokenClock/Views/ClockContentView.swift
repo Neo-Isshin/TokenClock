@@ -102,7 +102,8 @@ struct ClockContentView: View {
                 theme: viewModel.selectedTheme,
                 diameter: d,
                 glassVariant: viewModel.glassMaterialVariant,
-                glassTintHex: viewModel.glassTintHex
+                glassTintHex: viewModel.glassTintHex,
+                glassEnabled: viewModel.glassRefractionEnabled
             ))
             .contentShape(Rectangle())
             .onTapGesture {
@@ -122,6 +123,8 @@ struct DialGlassModifier: ViewModifier {
     let glassVariant: Int
     /// 私有玻璃底色 #RRGGBB（nil = 纯净玻璃）。
     let glassTintHex: String?
+    /// 液态玻璃折射总开关（false = 回退公开 .clear 玻璃，无折射但稳定）。
+    let glassEnabled: Bool
 
     func body(content: Content) -> some View {
         switch theme {
@@ -144,10 +147,9 @@ struct DialGlassModifier: ViewModifier {
                         .blendMode(.overlay)
                 }
         default:
-            if UserDefaults.standard.bool(forKey: "TC_GLASS_PROBE") {
-                // SPIKE：私有 API 折射探针（NSGlassEffectView set_variant:/set_contentLensing:）。
-                // 见 LiquidGlassDial.swift。材质=variant、折射=lensing(锁6)、底色=tintColor。
-                // .id(glassVariant)：换材质时重建 NSGlassEffectView（variant 会重建内部子层，比 in-place 改更可靠）。
+            if glassEnabled {
+                // 私有 API 折射玻璃（NSGlassEffectView set_variant:/set_contentLensing:）。
+                // .id(glassVariant)：换材质时重建 NSGlassEffectView（variant 会重建内部子层）。
                 let tintNS = glassTintHex.flatMap { CodableColor(hex: $0) }?.nsColor
                 content
                     .background(
@@ -155,13 +157,9 @@ struct DialGlassModifier: ViewModifier {
                             .id(glassVariant)
                     )
             } else {
-                // macOS 27 Beta：.clear.tint(_:) 会把 tint 渲染成实心色（bug），故单用 .clear
-                // 拿最清透的液态玻璃，表盘着色交给背后 GlassAurora 流光。
+                // 回退：公开 .clear 玻璃（无折射但稳定；macOS 27 Beta 上 .clear 不带 tint 是清透的）。
                 content
-                    .glassEffect(
-                        .clear.interactive(),
-                        in: .circle
-                    )
+                    .glassEffect(.clear.interactive(), in: .circle)
             }
         }
     }
