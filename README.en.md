@@ -6,7 +6,7 @@
 
 **A thoughtfully crafted Liquid Glass token clock — see every agent's consumption at a glance**
 
-[![macOS 15+](https://img.shields.io/static/v1?label=macOS&message=15%2B&color=000000&logo=apple&logoColor=white)](https://www.apple.com/macos/)
+[![macOS 12+](https://img.shields.io/static/v1?label=macOS&message=12%2B&color=000000&logo=apple&logoColor=white)](https://www.apple.com/macos/)
 [![macOS 26 Liquid Glass](https://img.shields.io/static/v1?label=macOS%2026&message=Liquid%20Glass&color=00B0F0)](https://developer.apple.com/macos/)
 [![Swift 6](https://img.shields.io/static/v1?label=Swift&message=6&color=F05138&logo=swift&logoColor=white)](https://www.swift.org/)
 [![SwiftUI](https://img.shields.io/static/v1?label=UI&message=SwiftUI%20%2B%20AppKit&color=blueviolet)](https://developer.apple.com/xcode/swiftui/)
@@ -30,20 +30,30 @@ It's built with the macOS 26 **Liquid Glass** material for a crystal clock disc,
 
 ---
 
+## 🌟 Core advantages
+
+- **🤖 All your tools, one dial** — Token / message usage from **14 AI coding tools** flows into a single clock face. No more hopping between terminals and web dashboards to tally costs.
+- **🔍 Drill down per session / agent** — Click to expand the dropdown panel and go from a per-tool overview all the way down to every **session / agent**, so you can see exactly where the tokens went and which conversation burned them.
+- **🌤️ Always on the desktop, zero friction** — A floating, always-on-top, translucent Liquid Glass disc; a peripheral glance tells you the live consumption and rate (🔥 burst / 🌊 calm) without breaking your flow.
+- **📈 Multi-dimensional live insight** — Today's totals, cache rate, future-trend forecast, and active tools in one picture, answering "how much, where, and how much more is coming."
+- **🔒 Purely local, zero upload** — It reads only the local usage logs each tool writes itself; no token / session data ever leaves your machine, and the local API listens on `127.0.0.1` only.
+
+---
+
 ## ✨ Features
 
 ### 🤖 Unified multi-AI-tool detection
-- **One clock aggregates real-time token / message usage from 14 AI coding tools** — no more juggling terminals.
+- Auto-detects and reads the local token / message usage logs written by **14 AI coding tools** and aggregates them.
 - The dial overlays **today's totals, active-tool labels, and a rate emoji** (🔥 burst / 🌊 calm thresholds).
-- Click to expand the **dropdown panel**: usage broken down by tool → session / agent at a glance.
+- Click to expand the **dropdown panel** for the breakdown (tool → session / agent; see [Core advantages](#-core-advantages)).
 
 ### 🧊 Liquid Glass
 - On macOS 26 the disc renders with the native **Liquid Glass** material — it adapts to your wallpaper and carries a subtle theme tint.
 - **Adaptive high-contrast ink**: lighter-tinted themes automatically switch to near-black ticks / numerals for legibility.
-- Ships in **two variants** — `main` (macOS 26) and `normal` (macOS 15) — and the `tokenclock` CLI picks the right one for your OS automatically.
+- Ships in **two variants** — `main` (macOS 26) and `normal` (macOS 12) — and the `tokenclock` CLI picks the right one for your OS automatically.
 
 ### 📦 One-line install & CLI
-- The normal build runs on **macOS 15+**, the Liquid Glass build on **macOS 26+**. The one-liner picks the right variant for your OS automatically, and the lightweight `tokenclock` CLI handles start / stop / switch / diagnose. See the [install guide](https://gitea.nxc8335.cloud/nxc8335/TokenClock).
+- The normal build runs on **macOS 12+**, the Liquid Glass build on **macOS 26+**. The one-liner picks the right variant for your OS automatically, and the lightweight `tokenclock` CLI handles start / stop / switch / diagnose. See the [install guide](https://gitea.nxc8335.cloud/nxc8335/TokenClock).
 
 ### 🎨 Multiple faces & thoughtful design
 - 6 built-in faces (Classic / Midnight / Luxe / Gu Feng / Railgun / Sky), each with its own personality.
@@ -127,7 +137,7 @@ Options: `--debug` (faster build) / `--normal` / `--glass` / `--no-start` (don't
 > Or build manually from source below.
 
 ### Prerequisites
-- **macOS 15+** (normal build); **macOS 26+** (Liquid Glass build)
+- **macOS 12+** (normal build); **macOS 26+** (Liquid Glass build)
 - Swift 6 toolchain (Xcode 16+ / Command Line Tools)
 
 ### Build & run from source
@@ -145,7 +155,7 @@ swift build -c release # release
 .build/debug/TokenClock      # or .build/release/TokenClock
 ```
 
-> The `main` branch's `Package.swift` declares `.macOS(.v26)`, so `swift run` produces the Liquid Glass build; the classic (opaque) macOS 15-compatible build lives on the `normal` branch.
+> The `main` branch's `Package.swift` declares `.macOS(.v26)`, so `swift run` produces the Liquid Glass build; the classic (opaque) macOS 12-compatible build lives on the `normal` branch.
 
 ### Use the `tokenclock` CLI
 
@@ -157,7 +167,7 @@ sudo install -m755 cli/tokenclock /usr/local/bin/tokenclock
 
 | Command | Description |
 |---------|-------------|
-| `tokenclock start [--glass\|--normal] [--force]` | Start the clock; auto-picks by OS (26+ → glass, 15+ → normal); `--force` opens another instance |
+| `tokenclock start [--glass\|--normal] [--force]` | Start the clock; auto-picks by OS (26+ → glass, 12+ → normal); `--force` opens another instance |
 | `tokenclock stop` | Stop all running TokenClock instances |
 | `tokenclock restart [--glass\|--normal]` | Restart |
 | `tokenclock doctor` | Diagnose: OS version, installed variant paths, running processes, env vars |
@@ -193,7 +203,7 @@ TokenClock ships in two builds:
 | Branch | Target | Rendering |
 |--------|--------|-----------|
 | `main`   | **macOS 26+** | Native Liquid Glass material; the disc adapts to the wallpaper and carries a subtle tint |
-| `normal` | macOS 15+     | Classic opaque themed dial, for backward compatibility |
+| `normal` | macOS 12+     | Classic opaque themed dial, for backward compatibility |
 
 - The glass disc uses an **ambient tint (glass tint)** instead of the old opaque dial fill: a clean glass base plus a theme hint color, preserving each face's character without hiding your wallpaper.
 - Lighter-tinted themes (Luxe / Railgun / Sky) automatically use **high-contrast near-black ink** for text, ticks, and numerals; darker/mid tints (Classic / Midnight / Gu Feng) use pure white.
@@ -237,7 +247,7 @@ It returns the aggregated JSON usage of all tools, handy for external scripts / 
 | **Language** | Swift 6 (`-parse-as-library`) |
 | **UI** | SwiftUI + AppKit (lock-free dual-`NSPanel` architecture) |
 | **Build** | Swift Package Manager (no `.xcodeproj`) |
-| **Platforms** | macOS 26 SDK (`main` branch) / macOS 15 SDK (`normal` branch) |
+| **Platforms** | macOS 26 SDK (`main` branch) / macOS 12 SDK (`normal` branch) |
 | **i18n** | Custom `L10n` engine (zh-Hans / zh-Hant / en, no `.xcstrings`) |
 | **Size** | ~10,700 lines of Swift |
 
