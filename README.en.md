@@ -37,6 +37,9 @@ It's built with the macOS 26 **Liquid Glass** material for a crystal clock disc,
 - **🌤️ Always on the desktop, zero friction** — A floating, always-on-top, translucent Liquid Glass disc; a peripheral glance tells you the live consumption and rate (🔥 burst / 🌊 calm) without breaking your flow.
 - **📈 Multi-dimensional live insight** — Today's totals, cache rate, future-trend forecast, and active tools in one picture, answering "how much, where, and how much more is coming."
 - **🔒 Purely local, zero upload** — It reads only the local usage logs each tool writes itself; no token / session data ever leaves your machine, and the local API listens on `127.0.0.1` only.
+- **🎨 Rich customization** — 6 built-in faces plus a fully custom theme: frosted-glass backing opacity, glass tint, text color, hand style, ticks, numerals, fonts, dial size, and window opacity are all adjustable — make the clock yours.
+- **📜 Usage history you can revisit** — Each day's token usage is auto-settled into a local SQLite store (kept for 30 days) and exposed via the local API, so you can look back at past consumption or feed your own charts and dashboards.
+- **⚡ Tiny footprint** — Native Swift with efficient polling (clock 1s / usage 30s / weather 5min) and streaming JSONL reads; usage stats are computed locally with zero extra network cost, so it sits in the background almost unnoticed.
 
 ---
 
@@ -206,6 +209,7 @@ TokenClock ships in two builds:
 | `normal` | macOS 12+     | Classic opaque themed dial, for backward compatibility |
 
 - The glass disc uses an **ambient tint (glass tint)** instead of the old opaque dial fill: a clean glass base plus a theme hint color, preserving each face's character without hiding your wallpaper.
+- **Adjustable frosted backing** — a public frosted-glass plate sits beneath the clear refractive glass, with opacity adjustable across 5 steps (0 = clean see-through glass, 100 = solid plate), letting you dial translucency to taste (macOS 26 Liquid Glass build only).
 - Lighter-tinted themes (Luxe / Railgun / Sky) automatically use **high-contrast near-black ink** for text, ticks, and numerals; darker/mid tints (Classic / Midnight / Gu Feng) use pure white.
 - The `tokenclock` CLI selects the matching variant from the `sw_vers` major version — no manual guessing.
 
@@ -216,10 +220,11 @@ TokenClock ships in two builds:
 TokenClock starts a local `NWListener` HTTP server:
 
 ```
-GET http://127.0.0.1:9988/api/usage
+GET http://127.0.0.1:9988/api/usage          # live aggregated usage (today's totals / per-tool / session detail)
+GET http://127.0.0.1:9988/api/history?days=30 # daily snapshots for the last N days (max 30, for trend charts)
 ```
 
-It returns the aggregated JSON usage of all tools, handy for external scripts / dashboards. It listens on loopback only and is **never exposed externally**.
+It returns JSON usage data, handy for external scripts / dashboards. It listens on loopback only and is **never exposed externally**.
 
 ---
 
