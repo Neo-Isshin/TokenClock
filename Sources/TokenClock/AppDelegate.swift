@@ -226,6 +226,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         tintSubItem.submenu = tintMenu
         appearanceMenu.addItem(tintSubItem)
 
+        // — 毛玻璃底板透明度（公开 NSVisualEffectView.alphaValue；折射玻璃下层，0=无底板）—
+        let backingMenu = NSMenu()
+        for value in [0, 25, 50, 75, 100] {
+            let item = NSMenuItem(title: "\(value)%", action: #selector(setGlassBackingAlpha(_:)), keyEquivalent: "")
+            item.tag = value
+            if Int(viewModel.glassBackingAlpha * 100) == value { item.state = .on }
+            backingMenu.addItem(item)
+        }
+        let backingItem = NSMenuItem(title: tr("menu.glassBacking"), action: nil, keyEquivalent: "")
+        backingItem.submenu = backingMenu
+        appearanceMenu.addItem(backingItem)
+
         // 液态玻璃折射总开关（实验性私有 API；关 → 回退公开 .clear 玻璃）
         let glassToggle = NSMenuItem(title: tr("menu.glassRefraction"),
                                      action: #selector(toggleGlassRefraction(_:)), keyEquivalent: "")
@@ -366,6 +378,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         setupRightClickMenu()
     }
 
+    /// 毛玻璃底板透明度档位（0/25/50/75/100%）：公开 NSVisualEffectView.alphaValue，折射玻璃下层。
+    @objc private func setGlassBackingAlpha(_ sender: NSMenuItem) {
+        viewModel.glassBackingAlpha = Double(sender.tag) / 100.0
+        setupRightClickMenu()
+    }
+
     @objc private func pickDialTextColor(_ sender: NSMenuItem) {
         openColorPicker(for: .dialText)
     }
@@ -424,6 +442,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         viewModel.dialTextColorHex = "#FFFFFF"
         viewModel.glassMaterialVariant = 2
         viewModel.glassTintHex = nil
+        viewModel.glassBackingAlpha = 0
         setupRightClickMenu()
     }
 

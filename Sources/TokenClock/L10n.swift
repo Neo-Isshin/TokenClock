@@ -67,6 +67,7 @@ final class L10n: @unchecked Sendable {
         "menu.materialClear":    [.zhHans: "清透",                 .zhHant: "清透",                  .en: "Clear"],
         "menu.materialStandard": [.zhHans: "标准",                 .zhHant: "標準",                  .en: "Standard"],
         "menu.materialFrosted":  [.zhHans: "磨砂",                 .zhHant: "磨砂",                  .en: "Frosted"],
+        "menu.glassBacking":     [.zhHans: "毛玻璃底板",           .zhHant: "毛玻璃底板",            .en: "Frosted Backing"],
         "menu.dialTint":         [.zhHans: "玻璃底色",             .zhHant: "玻璃底色",              .en: "Glass Tint"],
         "menu.tintNone":         [.zhHans: "无",                   .zhHant: "無",                    .en: "None"],
         "menu.tintCustom":       [.zhHans: "自定义…",              .zhHant: "自訂…",                 .en: "Custom…"],

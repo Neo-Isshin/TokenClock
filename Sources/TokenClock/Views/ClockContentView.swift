@@ -103,7 +103,8 @@ struct ClockContentView: View {
                 diameter: d,
                 glassVariant: viewModel.glassMaterialVariant,
                 glassTintHex: viewModel.glassTintHex,
-                glassEnabled: viewModel.glassRefractionEnabled
+                glassEnabled: viewModel.glassRefractionEnabled,
+                glassBackingAlpha: viewModel.glassBackingAlpha
             ))
             .contentShape(Rectangle())
             .onTapGesture {
@@ -141,6 +142,8 @@ struct DialGlassModifier: ViewModifier {
     let glassTintHex: String?
     /// 液态玻璃折射总开关（false = 回退公开 .clear 玻璃，无折射但稳定）。
     let glassEnabled: Bool
+    /// 折射玻璃下层毛玻璃底板透明度 0…1（0=无底板）。公开 NSVisualEffectView.alphaValue。
+    let glassBackingAlpha: Double
 
     func body(content: Content) -> some View {
         switch theme {
@@ -165,12 +168,16 @@ struct DialGlassModifier: ViewModifier {
         default:
             if glassEnabled {
                 // 私有 API 折射玻璃（NSGlassEffectView set_variant:/set_contentLensing:）。
-                // .id(glassVariant)：换材质时重建 NSGlassEffectView（variant 会重建内部子层）。
+                // 折射玻璃锁 variant 2（非 dock + max 折射会变形）；下层叠公开毛玻璃底板，调透明度。
                 let tintNS = glassTintHex.flatMap { CodableColor(hex: $0) }?.nsColor
                 content
                     .background(
-                        LiquidGlassDial(diameter: diameter, variant: glassVariant, tintColor: tintNS)
+                        LiquidGlassDial(diameter: diameter, variant: 2, tintColor: tintNS)
                             .id(glassVariant)
+                    )
+                    .background(
+                        // 毛玻璃底板在折射玻璃下层；alpha 连续可调（updateNSView 原位改 alphaValue）。
+                        VibrancyBacking(diameter: diameter, alpha: glassBackingAlpha)
                     )
             } else {
                 // 回退：公开 .clear 玻璃（无折射但稳定；macOS 27 Beta 上 .clear 不带 tint 是清透的）。

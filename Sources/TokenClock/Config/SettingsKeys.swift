@@ -72,6 +72,8 @@ enum SettingsKey: String {
     case dialTextColor = "TC_dialTextColor"
     /// 私有 NSGlassEffectView 材质配方 set_variant: 2=标准(dock) 13=清透(clearGlass) 8=磨砂(controlCenter)
     case glassVariant = "TC_GLASS_VARIANT"
+    /// 底板毛玻璃透明度 0…1（公开 NSVisualEffectView.alphaValue；0=无底板）
+    case glassBackingAlpha = "TC_GLASS_BACK_ALPHA"
     /// 折射强度 set_contentLensing: 0–6（默认 6）
     case glassLensing = "TC_GLASS_LENSING"
     /// 私有玻璃底色 #RRGGBB（空=纯净玻璃，随壁纸自适应）

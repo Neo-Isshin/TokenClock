@@ -91,6 +91,11 @@ final class ViewModel: ObservableObject {
         didSet { UserDefaults.standard.set(!glassRefractionEnabled, forKey: "TC_GLASS_DISABLE") }
     }
 
+    /// 折射玻璃下层毛玻璃底板透明度 0…1（0=无底板，纯玻璃）。公开 NSVisualEffectView.alphaValue。
+    @Published var glassBackingAlpha: Double = 0 {
+        didSet { UserDefaults.standard.set(glassBackingAlpha, forKey: SettingsKey.glassBackingAlpha.rawValue) }
+    }
+
     /// 表盘文字主色（受 dialTextMode 覆盖；custom 解析失败回退主题色）。
     var effectiveDialPrimary: Color {
         switch dialTextMode {
@@ -203,6 +208,9 @@ final class ViewModel: ObservableObject {
         if let hex = UserDefaults.standard.string(for: .dialTextColor) { dialTextColorHex = hex }
         if UserDefaults.standard.object(forKey: SettingsKey.glassVariant.rawValue) != nil {
             glassMaterialVariant = UserDefaults.standard.int(for: .glassVariant, default: 2)
+        }
+        if UserDefaults.standard.object(forKey: SettingsKey.glassBackingAlpha.rawValue) != nil {
+            glassBackingAlpha = UserDefaults.standard.double(forKey: SettingsKey.glassBackingAlpha.rawValue)
         }
         if let tintHex = UserDefaults.standard.string(for: .glassTint), CodableColor(hex: tintHex) != nil {
             glassTintHex = tintHex
