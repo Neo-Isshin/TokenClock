@@ -45,10 +45,13 @@ C_RED=$'\033[1;31m'; C_GREEN=$'\033[1;32m'; C_YELLOW=$'\033[1;33m'; C_CYAN=$'\03
 
 die()  { printf '%s✗ %s%s\n' "$C_RED" "$*" "$C_RESET" >&2; exit 1; }
 say()  { printf '%s\n' "$*"; }
-step() { printf '\n%s━━ %s ━━%s\n' "$C_CYAN" "$*" "$C_RESET"; }
-info() { printf '  %s%s%s\n' "$C_DIM" "$*" "$C_RESET"; }
-ok()   { printf '  %s✓ %s%s\n' "$C_GREEN" "$*" "$C_RESET"; }
-warn() { printf '  %s⚠ %s%s\n' "$C_YELLOW" "$*" "$C_RESET"; }
+# 注意：step/info/ok/warn 走 stderr —— build_variant()/upload_asset() 用 $() 捕获返回值
+# （末行 echo "$bin" / echo "$uuid"），若进度打到 stdout 会被一起吞进 BIN_/UUID_ 变量
+# （曾导致 BIN_GLASS 变成多行垃圾 → tar "File name too long"）。say() 是最终结果，留 stdout。
+step() { printf '\n%s━━ %s ━━%s\n' "$C_CYAN" "$*" "$C_RESET" >&2; }
+info() { printf '  %s%s%s\n' "$C_DIM" "$*" "$C_RESET" >&2; }
+ok()   { printf '  %s✓ %s%s\n' "$C_GREEN" "$*" "$C_RESET" >&2; }
+warn() { printf '  %s⚠ %s%s\n' "$C_YELLOW" "$*" "$C_RESET" >&2; }
 
 # 从 remote URL 解析 token（形如 https://user:TOKEN@host/...）；GITEA_TOKEN 优先。
 resolve_token() {
@@ -106,6 +109,9 @@ ORIG_BRANCH="$(gc branch --show-current)" || die "不在 git 仓库"
 [ -n "$ORIG_BRANCH" ] || die "处于 detached HEAD，先 checkout 一个分支"
 info "起始分支: $ORIG_BRANCH"
 
+# 任何退出（含 die）都恢复起始分支 —— 否则构建中 die 会把仓库留在 main/normal 上。
+trap 'gc checkout "$ORIG_BRANCH" --quiet 2>/dev/null || true' EXIT
+
 # 两分支工作树必须干净（.build 是 gitignored，不影响）
 for b in "$BR_GLASS" "$BR_NORMAL"; do
   dirty="$(gc -C "$REPO_ROOT" status --porcelain 2>/dev/null)"
@@ -147,7 +153,7 @@ build_variant() {
   if [ "$SKIP_BUILD" = 1 ]; then
     warn "--skip-build：复用已有 .build 产物"
   else
-    "${build_env[@]}" swift build -c release --arch arm64 --arch x86_64 || die "$branch 构建失败"
+    "${build_env[@]}" swift build -c release --arch arm64 --arch x86_64 >&2 || die "$branch 构建失败"
   fi
 
   # 定位 fat 产物：SwiftPM 6.4 多架构产物落在 .build/out/Products/Release/TokenClock，
@@ -182,16 +188,18 @@ BIN_NORMAL=""; BIN_GLASS=""
 if [ "$DO_NORMAL" = 1 ]; then
   BIN_NORMAL="$(build_variant "$BR_NORMAL" normal)"
   # tar 到固定路径，gzip -n 去时间戳
-  tar -C "$(dirname "$BIN_NORMAL")" -cf /tmp/tc-release-normal.tar TokenClock 2>/dev/null
+  tar -C "$(dirname "$BIN_NORMAL")" -cf /tmp/tc-release-normal.tar TokenClock || die "normal tar 失败: $BIN_NORMAL"
   gzip -n -f /tmp/tc-release-normal.tar
   SHA_NORMAL="$(shasum -a 256 /tmp/tc-release-normal.tar.gz | cut -d' ' -f1)"
+  [ -n "$SHA_NORMAL" ] || die "normal SHA 为空（tarball 未生成: $BIN_NORMAL）"
   ok "normal tarball: /tmp/tc-release-normal.tar.gz  SHA=${SHA_NORMAL:0:16}…"
 fi
 if [ "$DO_GLASS" = 1 ]; then
   BIN_GLASS="$(build_variant "$BR_GLASS" glass)"
-  tar -C "$(dirname "$BIN_GLASS")" -cf /tmp/tc-release-glass.tar TokenClock 2>/dev/null
+  tar -C "$(dirname "$BIN_GLASS")" -cf /tmp/tc-release-glass.tar TokenClock || die "glass tar 失败: $BIN_GLASS"
   gzip -n -f /tmp/tc-release-glass.tar
   SHA_GLASS="$(shasum -a 256 /tmp/tc-release-glass.tar.gz | cut -d' ' -f1)"
+  [ -n "$SHA_GLASS" ] || die "glass SHA 为空（tarball 未生成: $BIN_GLASS）"
   ok "glass tarball:  /tmp/tc-release-glass.tar.gz  SHA=${SHA_GLASS:0:16}…"
 fi
 
@@ -200,7 +208,7 @@ step "对比 install.sh 旧 pin"
 gc checkout "$BR_GLASS" --quiet
 OLD_NORMAL="$(grep -oE 'normal\) echo "[a-f0-9]{64}"' cli/install.sh | grep -oE '[a-f0-9]{64}')"
 OLD_GLASS="$(grep -oE 'glass\)  echo "[a-f0-9]{64}"' cli/install.sh | grep -oE '[a-f0-9]{64}')"
-OLD_TAG="$(grep -oE 'RELEASE_TAG="\$\{TOKENCLOCK_RELEASE_TAG:-v[0-9.]+"' cli/install.sh | grep -oE 'v[0-9.]+')"
+OLD_TAG="$(grep -oE 'RELEASE_TAG="\$\{TOKENCLOCK_RELEASE_TAG:-v[0-9.]+' cli/install.sh | grep -oE 'v[0-9.]+')"
 
 info "旧: tag=$OLD_TAG  normal=${OLD_NORMAL:0:12}…  glass=${OLD_GLASS:0:12}…"
 info "新: tag=$VERSION  normal=${SHA_NORMAL:-（沿用）}  glass=${SHA_GLASS:-（沿用）}"
@@ -244,7 +252,7 @@ bash -n cli/install.sh || die "install.sh 语法错误"
 bash -n cli/tokenclock || die "tokenclock 语法错误"
 
 # 回读校验
-read_tag="$(grep -oE 'RELEASE_TAG="\$\{TOKENCLOCK_RELEASE_TAG:-v[0-9.]+"' cli/install.sh | grep -oE 'v[0-9.]+')"
+read_tag="$(grep -oE 'RELEASE_TAG="\$\{TOKENCLOCK_RELEASE_TAG:-v[0-9.]+' cli/install.sh | grep -oE 'v[0-9.]+')"
 read_normal="$(grep -oE 'normal\) echo "[a-f0-9]{64}"' cli/install.sh | grep -oE '[a-f0-9]{64}')"
 read_glass="$(grep -oE 'glass\)  echo "[a-f0-9]{64}"' cli/install.sh | grep -oE '[a-f0-9]{64}')"
 read_cli="$(grep -oE 'CLI_VERSION="[0-9.]+"' cli/tokenclock | grep -oE '[0-9.]+')"
