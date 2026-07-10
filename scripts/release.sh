@@ -115,7 +115,7 @@ done
 
 gc fetch origin --quiet || die "fetch 失败"
 
-[ "$DO_NORMAL" = 1 ] && { [ -x "$XCODE_BETA/usr/bin/swift" ] || die "找不到 Xcode-beta: ${XCODE_BETA}（normal 构建需要 universal 回退库）"; }
+[ "$DO_NORMAL" = 1 ] && { (DEVELOPER_DIR="${XCODE_BETA}" xcrun --find swift >/dev/null 2>&1) || die "找不到 Xcode-beta 的 swift（normal 构建需要 Xcode universal 回退库）：${XCODE_BETA}"; }
 [ -d "$CLT26_SDK" ] || die "找不到 CLT 26 SDK: $CLT26_SDK"
 
 TOKEN="$(resolve_token)"
