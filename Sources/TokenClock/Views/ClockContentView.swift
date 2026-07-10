@@ -76,5 +76,21 @@ struct ClockContentView: View {
         .onTapGesture {
             viewModel.isExpanded.toggle()
         }
+        // 无障碍：表盘是纯视觉（指针/emoji/格式化数字），VoiceOver 读不出含义。
+        // 收拢成单一元素，朗读「时间 + 今日用量」摘要；保留按钮特性（点按展开）。
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text(accessibilitySummary))
+        .accessibilityHint(Text(L10n.shared.tr("a11y.clockHint")))
+        .accessibilityAddTraits(.isButton)
+    }
+
+    /// VoiceOver 朗读摘要：时间 + 今日 token + 消息数（已随语言本地化）。
+    private var accessibilitySummary: String {
+        let time = String(format: "%d:%02d", viewModel.hours, viewModel.minutes)
+        return L10n.shared.tr("a11y.clockSummary",
+                              viewModel.dateString,
+                              time,
+                              viewModel.totalTokensFormatted,
+                              viewModel.totalMessagesFormatted)
     }
 }

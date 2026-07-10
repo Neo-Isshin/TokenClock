@@ -1,6 +1,8 @@
 # TokenClock — Tool Schema Analysis
 
-> Last updated: 2026-06-24
+> Last updated: 2026-07-10
+>
+> **实现状态对账（2026-07-10）：** 下表原为可行性分析。如今 **所有 P0–P3 工具 + Cline + Continue 都已落地为 `Sources/TokenClock/Services/*UsageService.swift`**（共 14 个，~4000 行）。测试覆盖刚起步——目前仅 Claude Code 有解析器单测（`Tests/TokenClockTests/ClaudeCodeUsageServiceTests.swift`，确立 fixture 模式），其余 13 个待按同模式补单测。下表的 "Priority / Ready / Needs verification" 列保留作历史，实际状态见新增的 **Impl** 列。
 
 ## Schema Standardization Template
 
@@ -330,19 +332,25 @@ Original algorithm over-counted by **7.64×** due to adding cumulative field 5.
 
 ## Summary Matrix
 
-| Tool | Local Token Data | TokenClock Feasibility | Priority |
-|------|-----------------|----------------------|----------|
-| OpenClaw | ✅ JSONL | ✅ Supported | — |
-| Claude Code | ✅ JSONL | ✅ Supported | — |
-| Gemini CLI | ✅ JSONL | ✅ Supported | — |
-| Codex | ✅ JSONL + SQLite | ✅ Supported | — |
-| Hermes | ✅ SQLite | ✅ Supported | — |
-| **OpenCode** | ✅ **SQLite (complete)** | ✅ **Ready to implement** | **P0** |
-| **Cursor Agent** | ✅ **Official usage API** | ✅ **Supported** (zero config) | — |
-| **Antigravity CLI (agy)** | ✅ **SQLite + protobuf telemetry** | ✅ **Supported** (verified) | — |
-| Antigravity IDE | ❌ Not persisted | ❌ Not feasible | — |
-| Trae CLI | ❌ Not persisted | ❌ Not feasible | — |
-| Qwen Code | ❓ (Gemini fork, likely similar) | ❓ Needs verification | P1 |
-| Grok Build | ❓ Unknown | ❓ Needs verification | P2 |
-| Copilot CLI | ❓ Unknown | ❓ Needs verification | P2 |
-| Aider | ❓ Unknown | ❓ Needs verification | P3 |
+Impl = 实现状态（`*UsageService.swift` 行数；✓tested = 有解析器单测）。
+
+| Tool | Local Token Data | TokenClock Feasibility | Impl | 原 Priority |
+|------|-----------------|----------------------|------|-------------|
+| OpenClaw | ✅ JSONL | ✅ Supported | ✅ 442 | — |
+| Claude Code | ✅ JSONL | ✅ Supported | ✅ 340 ✓tested | — |
+| Gemini CLI | ✅ JSONL | ✅ Supported | ✅ 404 | — |
+| Codex | ✅ JSONL + SQLite | ✅ Supported | ✅ 319 | — |
+| Hermes | ✅ SQLite | ✅ Supported | ✅ 223 | — |
+| **OpenCode** | ✅ **SQLite (complete)** | ✅ **Supported** | ✅ 214 | ~~P0~~ done |
+| **Cursor Agent** | ✅ **Official usage API** | ✅ **Supported** (zero config) | ✅ 313 | — |
+| **Antigravity CLI (agy)** | ✅ **SQLite + protobuf telemetry** | ✅ **Supported** | ✅ 343 | — |
+| **Cline** | ✅ VSCode globalStorage | ✅ Supported | ✅ 188 | (新) |
+| **Continue** | ✅ ~/.continue JSONL/SQLite | ✅ Supported | ✅ 255 | (新) |
+| **Qwen Code** | ✅ Gemini fork | ✅ Supported | ✅ 301 | ~~P1~~ done |
+| **Grok Build** | ✅ | ✅ Supported | ✅ 212 | ~~P2~~ done |
+| **Copilot CLI** | ✅ | ✅ Supported | ✅ 294 | ~~P2~~ done |
+| **Aider** | ✅ | ✅ Supported | ✅ 129 | ~~P3~~ done |
+| Antigravity IDE | ❌ Not persisted | ❌ Not feasible | — | — |
+| Trae CLI | ❌ Not persisted | ❌ Not feasible | — | — |
+
+> **下一步（测试）：** 对 Cline / Continue / OpenCode / Qwen / Grok / Copilot / Aider / Antigravity 等 13 个 service 按 `ClaudeCodeUsageServiceTests` 的模式补解析器单测（fixture + PathConfig.setXxxPath 重定向 + token 公式断言）。

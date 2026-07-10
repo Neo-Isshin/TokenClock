@@ -1,0 +1,47 @@
+# TokenClock CI
+#
+# 云端构建自检。**前提**（当前实例尚未满足，故此 workflow 处于休眠）：
+#   1. Gitea 实例 app.ini 开启 actions（[actions] ENABLED=true）
+#   2. 注册一台 macOS self-hosted runner（act_runner），带标签 macos
+#   3. runner 机器装了 Xcode-beta（/Users/neo/Downloads/Xcode-beta.app，提供 XCTest
+#      与 universal 回退库）+ CLT 的 MacOSX26.sdk
+# 本地等价检查（无需任何 infra）：scripts/ci.sh
+#
+# 检查矩阵：两个分支都能编（normal=.v12 / main=.v26），main 再跑测试。
+# 兜住 .v12 回退库触发、@State 宏、SMAppService 超龄、onChange overload 这类回归。
+name: CI
+
+on:
+  push:
+    branches: [main, normal]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: [self-hosted, macos]
+    strategy:
+      fail-fast: false
+      matrix:
+        branch: [main, normal]
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: ${{ matrix.branch }} }
+      - name: Set toolchain (Xcode-beta + CLT26)
+        run: |
+          echo "DEVELOPER_DIR=/Users/neo/Downloads/Xcode-beta.app/Contents/Developer" >> "$GITHUB_ENV"
+          echo "SDKROOT=/Library/Developer/CommandLineTools/SDKs/MacOSX26.sdk" >> "$GITHUB_ENV"
+      - name: Build (${{ matrix.branch }})
+        run: swift build
+
+  test:
+    needs: build
+    runs-on: [self-hosted, macos]
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: main }
+      - name: Set toolchain (Xcode-beta + CLT26)
+        run: |
+          echo "DEVELOPER_DIR=/Users/neo/Downloads/Xcode-beta.app/Contents/Developer" >> "$GITHUB_ENV"
+          echo "SDKROOT=/Library/Developer/CommandLineTools/SDKs/MacOSX26.sdk" >> "$GITHUB_ENV"
+      - name: Test
+        run: swift test
