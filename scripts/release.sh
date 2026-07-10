@@ -83,13 +83,13 @@ while [ $# -gt 0 ]; do
     -h|--help)
       sed -n '3,30p' "$0"; exit 0 ;;
     -*) die "未知参数: $1" ;;
-    *)  [ -z "$VERSION" ] || die "版本号只能给一个（已有 $VERSION）"; VERSION="$(norm_version "$1")" ;;
+    *)  [ -z "$VERSION" ] || die "版本号只能给一个（已有 ${VERSION}）"; VERSION="$(norm_version "$1")" ;;
   esac
   shift
 done
 
 [ -n "$VERSION" ] || die "用法: scripts/release.sh <version> [--dry-run] [--only normal|glass] [--skip-build]"
-[[ "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "版本号格式应为 vX.Y.Z（得到 $VERSION）"
+[[ "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "版本号格式应为 vX.Y.Z（得到 ${VERSION}）"
 
 # 只发一个变体时，另一个的 SHA 保持不变
 DO_GLASS=1; DO_NORMAL=1
@@ -115,7 +115,7 @@ done
 
 gc fetch origin --quiet || die "fetch 失败"
 
-[ "$DO_NORMAL" = 1 ] && { [ -x "$XCODE_BETA/usr/bin/swift" ] || die "找不到 Xcode-beta: $XCODE_BETA（normal 构建需要 universal 回退库）"; }
+[ "$DO_NORMAL" = 1 ] && { [ -x "$XCODE_BETA/usr/bin/swift" ] || die "找不到 Xcode-beta: ${XCODE_BETA}（normal 构建需要 universal 回退库）"; }
 [ -d "$CLT26_SDK" ] || die "找不到 CLT 26 SDK: $CLT26_SDK"
 
 TOKEN="$(resolve_token)"
@@ -130,7 +130,7 @@ ok "git http.version=HTTP/1.1, postBuffer=524288000"
 # build_variant <branch> <recipe-tag>  → 产物落到 .build/release/TokenClock（fat）
 build_variant() {
   local branch="$1" recipe="$2" out
-  step "构建 $branch（配方: $recipe）"
+  step "构建 ${branch}（配方: ${recipe}）"
   gc checkout "$branch" --quiet || die "checkout $branch 失败"
   [ -z "$(gc status --porcelain)" ] || die "$branch 工作树不干净"
 
@@ -141,7 +141,7 @@ build_variant() {
       info "SDKROOT=$CLT26_SDK swift build（CLT-only，.v26 不触发回退库）" ;;
     normal)
       build_env=(env "DEVELOPER_DIR=$XCODE_BETA" "SDKROOT=$CLT26_SDK")
-      info "DEVELOPER_DIR=Xcode-beta SDKROOT=$CLT26_SDK（.v12 触发回退库，需 Xcode universal 切片）" ;;
+      info "DEVELOPER_DIR=Xcode-beta SDKROOT=${CLT26_SDK}（.v12 触发回退库，需 Xcode universal 切片）" ;;
   esac
 
   if [ "$SKIP_BUILD" = 1 ]; then
@@ -172,7 +172,7 @@ build_variant() {
     bin=".build/release-TokenClock-fat"
     lipo -create "$a64" "$x86" -output "$bin" || die "lipo 合并失败"
   fi
-  ok "universal 产物: $bin（$(lipo -info "$bin" 2>/dev/null | sed 's/.*: //')）"
+  ok "universal 产物: ${bin}（$(lipo -info "$bin" 2>/dev/null | sed 's/.*: //')）"
   echo "$bin"
 }
 
@@ -228,7 +228,7 @@ if [ "$DRY_RUN" = 1 ]; then
 fi
 
 # ─────────────────────────── 改 install.sh + tokenclock（在 main 上）───────────────────────────
-step "更新 install.sh / cli/tokenclock（编辑于 $BR_GLASS）"
+step "更新 install.sh / cli/tokenclock（编辑于 ${BR_GLASS}）"
 gc checkout "$BR_GLASS" --quiet
 
 # RELEASE_TAG（文件内唯一形如 :-vX.Y.Z} 的片段）
@@ -304,7 +304,7 @@ api_post() { curl -fsSL --retry 3 --retry-delay 2 -X POST -H "Authorization: tok
 RELEASE_ID=""
 existing="$(api -o /tmp/tc-rel.json -w '%{http_code}' "$API/releases/tags/$VERSION" 2>/dev/null || true)"
 if [ "$existing" = "404" ] || [ "$existing" = "" ]; then
-  info "release 不存在，创建（target_commitish=$BR_GLASS）"
+  info "release 不存在，创建（target_commitish=${BR_GLASS}）"
   api_post "$API/releases" \
     -H 'Content-Type: application/json' \
     -d "{\"tag_name\":\"$VERSION\",\"target_commitish\":\"$BR_GLASS\",\"name\":\"$VERSION\",\"body\":\"TokenClock $VERSION\",\"draft\":false,\"prerelease\":false}" \
@@ -312,7 +312,7 @@ if [ "$existing" = "404" ] || [ "$existing" = "" ]; then
   RELEASE_ID="$(python3 -c 'import json;print(json.load(open("/tmp/tc-rel-create.json"))["id"])' 2>/dev/null)"
 else
   RELEASE_ID="$(python3 -c 'import json;print(json.load(open("/tmp/tc-rel.json"))["id"])' 2>/dev/null)"
-  info "release 已存在 id=$RELEASE_ID，确保 draft=false + 更新 body"
+  info "release 已存在 id=${RELEASE_ID}，确保 draft=false + 更新 body"
   api -X PATCH "$API/releases/$RELEASE_ID" \
     -H 'Content-Type: application/json' \
     -d "{\"body\":\"TokenClock $VERSION\",\"draft\":false}" -o /dev/null 2>&1 || warn "PATCH release 失败（可忽略）"
@@ -333,7 +333,7 @@ try:
 except: pass
 " 2>/dev/null)"
   if [ -n "$aid" ]; then
-    warn "$name 已存在（asset id=$aid），删除后重传"
+    warn "$name 已存在（asset id=${aid}），删除后重传"
     api -X DELETE "$API/releases/$RELEASE_ID/assets/$aid" -o /dev/null 2>&1 || warn "删除旧 $name 失败"
   fi
   api_post "$API/releases/$RELEASE_ID/assets?name=$name" \
