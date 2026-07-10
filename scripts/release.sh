@@ -355,15 +355,18 @@ for a in json.load(open('/tmp/tc-assets2.json')):
 }
 
 UUID_NORMAL=""; UUID_GLASS=""
-if [ "$NORMAL_CHANGED" = 1 ]; then
+# 新建 release 必须把所有已构建资产都传上去 —— 不能因 SHA 未变就跳过
+# （否则只改一变体时，新 release 会缺失另一变体的 tarball，installer 下载会 404）。
+# 仅 --only 跳过的那个变体才沿用既有 release 资产。
+if [ "$DO_NORMAL" = 1 ]; then
   UUID_NORMAL="$(upload_asset TokenClock-normal-universal.tar.gz /tmp/tc-release-normal.tar.gz)"
 else
-  info "normal SHA 未变，沿用已有资产"
+  info "normal 本次未构建（--only glass），沿用既有 release 资产"
 fi
-if [ "$GLASS_CHANGED" = 1 ]; then
+if [ "$DO_GLASS" = 1 ]; then
   UUID_GLASS="$(upload_asset TokenClock-glass-universal.tar.gz /tmp/tc-release-glass.tar.gz)"
 else
-  info "glass SHA 未变，沿用已有资产"
+  info "glass 本次未构建（--only normal），沿用既有 release 资产"
 fi
 
 # ─────────────────────────── 校验下载 SHA ───────────────────────────
