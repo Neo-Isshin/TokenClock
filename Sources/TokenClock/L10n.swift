@@ -88,6 +88,16 @@ final class L10n: @unchecked Sendable {
         "clock.todayTokens":   [.zhHans: "今日Tokens",    .zhHant: "今日Tokens",    .en: "Today's Tokens"],
         "clock.messagesCount": [.zhHans: "消息数：%d条",   .zhHant: "消息數：%d條",   .en: "Messages: %d"],
 
+        // MARK: Accessibility (VoiceOver) —— 表盘是纯视觉，VoiceOver 读不出指针/emoji，
+        // 故把表盘收拢成单一元素并朗读「时间 + 用量」摘要。
+        // %1$@=日期  %2$@=时间(HH:MM)  %3$@=今日token  %4$@=消息数串
+        "a11y.clockSummary": [.zhHans: "时钟。%@，%@。今日 %@。%@。",
+                              .zhHant: "時鐘。%@，%@。今日 %@。%@。",
+                              .en:     "Clock. %@, %@. Today %@. %@."],
+        "a11y.clockHint":    [.zhHans: "点按展开或收起详情",
+                              .zhHant: "點按展開或收起詳情",
+                              .en:     "Tap to expand or collapse details"],
+
         // MARK: Detail dropdown
         "detail.instance":  [.zhHans: "实例",     .zhHant: "實例",     .en: "Instance"],
         "detail.todayUsage":[.zhHans: "今日消耗",  .zhHant: "今日消耗",  .en: "Usage"],

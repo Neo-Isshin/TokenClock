@@ -9,6 +9,11 @@ let package = Package(
             name: "TokenClock",
             path: "Sources/TokenClock",
             swiftSettings: [.unsafeFlags(["-parse-as-library"])]
+        ),
+        .testTarget(
+            name: "TokenClockTests",
+            dependencies: ["TokenClock"],
+            path: "Tests/TokenClockTests"
         )
     ]
 )
