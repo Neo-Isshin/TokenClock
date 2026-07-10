@@ -6,7 +6,7 @@
 
 **精心设计的液态玻璃 token 时钟，随时掌握你所有 Agent 的消耗**
 
-[![macOS 15+](https://img.shields.io/static/v1?label=macOS&message=15%2B&color=000000&logo=apple&logoColor=white)](https://www.apple.com/macos/)
+[![macOS 12+](https://img.shields.io/static/v1?label=macOS&message=12%2B&color=000000&logo=apple&logoColor=white)](https://www.apple.com/macos/)
 [![macOS 26 Liquid Glass](https://img.shields.io/static/v1?label=macOS%2026&message=Liquid%20Glass&color=00B0F0)](https://developer.apple.com/macos/)
 [![Swift 6](https://img.shields.io/static/v1?label=Swift&message=6&color=F05138&logo=swift&logoColor=white)](https://www.swift.org/)
 [![SwiftUI](https://img.shields.io/static/v1?label=UI&message=SwiftUI%20%2B%20AppKit&color=blueviolet)](https://developer.apple.com/xcode/swiftui/)
@@ -30,20 +30,30 @@ TokenClock 是一个常驻桌面的 **悬浮时钟**（置顶 · 可拖拽 · �
 
 ---
 
+## 🌟 核心优势
+
+- **🤖 多工具总览，一屏尽览** —— 把 **14 款 AI 编程工具** 的 token / 消息用量汇聚到同一只表盘，无需再在多个终端、后台网页之间来回切换核对。
+- **🔍 分 session / agent 下钻** —— 点击展开下拉面板，从「工具级总览」一路深入到「每个 session / agent」的逐条明细，立刻看清消耗花在哪、是哪段对话烧的。
+- **🌤️ 常驻桌面，零打扰** —— 悬浮置顶的半透明液态玻璃表盘，余光扫一眼就知道实时消耗与速率（🔥 爆发 / 🌊 平稳），完全不打断编码节奏。
+- **📈 多维实时洞察** —— 今日总量、缓存率、未来趋势预测、活跃工具一图打尽，回答「花了多少、花在哪、接下来还会花多少」。
+- **🔒 纯本地，零上传** —— 只读各工具自己写入的本地用量日志，不上传任何 token / 会话数据；本地 API 仅监听 `127.0.0.1` 回环。
+
+---
+
 ## ✨ 特性
 
 ### 🤖 多 AI 工具统一实时检测
-- **一个时钟聚合 14 款 AI 编程工具** 的实时 token / 消息用量，无需在多个终端之间来回切换。
+- 自动探测并读取 **14 款 AI 编程工具** 写入本地的 token / 消息用量日志并统一聚合。
 - 表盘上叠加 **今日总量、活跃工具图标、速率 emoji**（🔥 爆发 / 🌊 平稳阈值）。
-- 点击展开 **下拉面板**：按工具 → session / agent 维度拆解，一目了然。
+- 点击展开 **下拉面板** 查看明细（工具 → session / agent 两级下钻，详见[核心优势](#-核心优势)）。
 
 ### 🧊 液态玻璃（Liquid Glass）& 精心设计
 - macOS 26 上以原生 **Liquid Glass** 材质渲染，玻璃盘体随壁纸自适应、带氛围着色、折射与流动。
 - **自适应高对比墨色文字**：浅色 tint 主题自动切换近黑刻度 / 数字，保证可读性。
-- 提供 `main`（macOS 26）与 `normal`（macOS 15）**双版本**，由 `tokenclock` CLI 按系统版本自动选用。
+- 提供 `main`（macOS 26）与 `normal`（macOS 12）**双版本**，由 `tokenclock` CLI 按系统版本自动选用。
 
 ### 📦 一行安装 & CLI
-- `normal` 适用于 **macOS 15+**，液态玻璃适用于 **macOS 26+**。一行安装脚本会根据系统自动选变体，简单的 `tokenclock` CLI 即可启动 / 停止 / 切换 / 诊断。详见 [安装指南](https://gitea.nxc8335.cloud/nxc8335/TokenClock)。
+- `normal` 适用于 **macOS 12+**，液态玻璃适用于 **macOS 26+**。一行安装脚本会根据系统自动选变体，简单的 `tokenclock` CLI 即可启动 / 停止 / 切换 / 诊断。详见 [安装指南](https://gitea.nxc8335.cloud/nxc8335/TokenClock)。
 
 ### 🎨 多表盘 + 美观设计 + 支持深度自定义
 - 6 款内置表盘（经典 / 深夜 / 暗金 / 古风 / 超电磁炮 / 天空），风格各异。
@@ -127,7 +137,7 @@ curl -fsSL https://gitea.nxc8335.cloud/nxc8335/TokenClock/raw/main/cli/install.s
 > 也可手动从源码构建，见下方。
 
 ### 前置要求
-- **macOS 15+**（普通版）；**macOS 26+**（Liquid Glass 版）
+- **macOS 12+**（普通版）；**macOS 26+**（Liquid Glass 版）
 - Swift 6 工具链（Xcode 16+ / Command Line Tools）
 
 ### 从源码构建运行
@@ -145,7 +155,7 @@ swift build -c release # 发布
 .build/debug/TokenClock      # 或 .build/release/TokenClock
 ```
 
-> `main` 分支的 `Package.swift` 声明为 `.macOS(.v26)`，`swift run` 直接产出 Liquid Glass 版；兼容 macOS 15 的经典（不透明）版本位于 `normal` 分支。
+> `main` 分支的 `Package.swift` 声明为 `.macOS(.v26)`，`swift run` 直接产出 Liquid Glass 版；兼容 macOS 12 的经典（不透明）版本位于 `normal` 分支。
 
 ### 使用 `tokenclock` CLI
 
@@ -157,7 +167,7 @@ sudo install -m755 cli/tokenclock /usr/local/bin/tokenclock
 
 | 命令 | 说明 |
 |------|------|
-| `tokenclock start [--glass\|--normal] [--force]` | 启动时钟；未指定版本时 **按系统版本自动选**（26+ → glass，15+ → normal）；`--force` 强制另开一份 |
+| `tokenclock start [--glass\|--normal] [--force]` | 启动时钟；未指定版本时 **按系统版本自动选**（26+ → glass，12+ → normal）；`--force` 强制另开一份 |
 | `tokenclock stop` | 停止所有运行中的 TokenClock 实例 |
 | `tokenclock restart [--glass\|--normal]` | 重启 |
 | `tokenclock doctor` | 诊断环境：系统版本、已安装变体路径、运行中的进程、环境变量 |
@@ -193,7 +203,7 @@ TokenClock 提供两套构建：
 | 分支 | 目标系统 | 渲染 |
 |------|---------|------|
 | `main`   | **macOS 26+** | 原生 Liquid Glass 材质，玻璃盘体随壁纸自适应、带氛围着色 |
-| `normal` | macOS 15+     | 经典不透明主题表盘，向前兼容 |
+| `normal` | macOS 12+     | 经典不透明主题表盘，向前兼容 |
 
 - 玻璃表盘采用 **氛围着色（glass tint）** 取代旧版不透明底色：纯净玻璃基础上叠加主题提示色，保留各表盘个性又不遮挡壁纸。
 - 浅色 tint 主题（暗金 / 超电磁炮 / 天空）自动使用 **高对比近黑墨色** 文字、刻度与数字；深 / 中 tint 主题（经典 / 深夜 / 古风）使用纯白。
@@ -237,7 +247,7 @@ GET http://127.0.0.1:9988/api/usage
 | **语言** | Swift 6（`-parse-as-library`） |
 | **UI** | SwiftUI + AppKit（无锁 NSPanel 双窗口架构） |
 | **构建** | Swift Package Manager（无 `.xcodeproj`） |
-| **平台** | macOS 26 SDK（`main` 分支）/ macOS 15 SDK（`normal` 分支） |
+| **平台** | macOS 26 SDK（`main` 分支）/ macOS 12 SDK（`normal` 分支） |
 | **定位** | 自研 `L10n` 引擎（zh-Hans / zh-Hant / en，无 `.xcstrings`） |
 | **规模** | 约 10,700 行 Swift |
 
