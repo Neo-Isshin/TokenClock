@@ -159,7 +159,7 @@ ensure_source() {
 # ── 4. 获取二进制（优先下载预编译，失败 / --build-from-source 则回退源码编译）──
 # 预编译资产来自 Gitea release（universal：arm64+x86_64），免 Xcode / 免编译。
 # 升级 release 时同步更新 RELEASE_TAG 与两个 SHA256。
-RELEASE_TAG="${TOKENCLOCK_RELEASE_TAG:-v1.2.1}"
+RELEASE_TAG="${TOKENCLOCK_RELEASE_TAG:-v1.2.2}"
 RELEASE_URL_BASE="${TOKENCLOCK_RELEASE_BASE:-https://gitea.nxc8335.cloud/nxc8335/TokenClock/releases/download/$RELEASE_TAG}"
 
 # 变体 → tarball 文件名 / 期望 SHA256（bash 3.2 无关联数组，用 case）
@@ -171,8 +171,8 @@ tarball_name() {
 }
 tarball_sha256() {
   case "$1" in
-    glass)  echo "f402a62654ea25339eb60d7ccabdbb751782f56b51b7199b554822cd9e00add3" ;;
-    normal) echo "0030989589e549fbdc8834231043cf7a2374041ad82b53538148685e08cade3d" ;;
+    glass)  echo "41e224b5dc68e0da528d657c3e6e3813103eef50967e61c30d719cd0b039a65d" ;;
+    normal) echo "63534cd2378726c4c423d40f8bc87cf4a145e9b2be6364dc1fc5235be8c086fa" ;;
   esac
 }
 
