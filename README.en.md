@@ -172,7 +172,7 @@ TokenClock reads the **JSONL / SQLite usage files** that each tool writes locall
 | **Continue** (VSCode extension) | `~/.continue/` | `CONTINUE_HOME` |
 | **Cursor Agent** | `~/.cursor/` | `CURSOR_AGENT_HOME` |
 
-> Token-counting formulas differ slightly per service (e.g. Codex's `input_tokens` already includes cached tokens, so it uses `total_tokens + reasoning_output_tokens`; other services sum input/output/cache fields that are mutually exclusive). See `docs/TOOL_SCHEMA_ANALYSIS.md`.
+> Token-counting formulas differ slightly per service: **Codex** and **Gemini/Qwen** have `input` (`promptTokenCount`) already including cached tokens, so cached must not be added again (it would double-count) — they use `input + output + (thought)`; other services (Claude/OpenClaw, etc.) sum input/output/cache fields that are mutually exclusive. See `docs/TOOL_SCHEMA_ANALYSIS.md`.
 
 ---
 

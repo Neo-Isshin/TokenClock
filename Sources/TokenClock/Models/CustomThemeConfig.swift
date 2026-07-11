@@ -63,6 +63,61 @@ struct CustomThemeConfig: Codable, Equatable {
         default: return .rounded
         }
     }
+
+    // MARK: - 宽容解码（向后兼容旧 schema）
+    // 合成 init(from:) 对缺失键不回退默认 → 任何字段增删都会让旧主题解码失败、静默清空。
+    // 这里逐字段 decodeIfPresent ?? 默认：缺失字段回默认实例的值，新增字段不破坏已存主题。
+    //
+    // 注意：自定义 init(from:) 会让编译器停止合成默认/成员初始化器，故显式补回空 init()
+    //（所有属性已有默认值），保持各处 CustomThemeConfig() 调用可用。
+    init() {}
+
+    private enum CodingKeys: String, CodingKey {
+        case dialColor, dialRimColor, dialRimWidth
+        case hourHandColor, minuteHandColor, secondHandColor
+        case hourHandWidth, minuteHandWidth, secondHandWidth
+        case hourHandLength, minuteHandLength, secondHandLength, handStyleRaw
+        case centerDotOuterColor, centerDotInnerColor
+        case numberColor, tickMarkColor, majorTickMarkColor
+        case dropdownBgColor, dropdownTextColor, dropdownSubtextColor, dropdownBorderColor, dropdownDividerColor
+        case textPrimaryColor, textSecondaryColor
+        case showNumbers, hasTickMarks, hasDialDecoration, numberStyleRaw, numberFontDesignRaw
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let d = CustomThemeConfig()  // 默认实例兜底，避免重复书写全部默认值
+        dialColor = try c.decodeIfPresent(CodableColor.self, forKey: .dialColor) ?? d.dialColor
+        dialRimColor = try c.decodeIfPresent(CodableColor.self, forKey: .dialRimColor) ?? d.dialRimColor
+        dialRimWidth = try c.decodeIfPresent(CGFloat.self, forKey: .dialRimWidth) ?? d.dialRimWidth
+        hourHandColor = try c.decodeIfPresent(CodableColor.self, forKey: .hourHandColor) ?? d.hourHandColor
+        minuteHandColor = try c.decodeIfPresent(CodableColor.self, forKey: .minuteHandColor) ?? d.minuteHandColor
+        secondHandColor = try c.decodeIfPresent(CodableColor.self, forKey: .secondHandColor) ?? d.secondHandColor
+        hourHandWidth = try c.decodeIfPresent(CGFloat.self, forKey: .hourHandWidth) ?? d.hourHandWidth
+        minuteHandWidth = try c.decodeIfPresent(CGFloat.self, forKey: .minuteHandWidth) ?? d.minuteHandWidth
+        secondHandWidth = try c.decodeIfPresent(CGFloat.self, forKey: .secondHandWidth) ?? d.secondHandWidth
+        hourHandLength = try c.decodeIfPresent(CGFloat.self, forKey: .hourHandLength) ?? d.hourHandLength
+        minuteHandLength = try c.decodeIfPresent(CGFloat.self, forKey: .minuteHandLength) ?? d.minuteHandLength
+        secondHandLength = try c.decodeIfPresent(CGFloat.self, forKey: .secondHandLength) ?? d.secondHandLength
+        handStyleRaw = try c.decodeIfPresent(String.self, forKey: .handStyleRaw) ?? d.handStyleRaw
+        centerDotOuterColor = try c.decodeIfPresent(CodableColor.self, forKey: .centerDotOuterColor) ?? d.centerDotOuterColor
+        centerDotInnerColor = try c.decodeIfPresent(CodableColor.self, forKey: .centerDotInnerColor) ?? d.centerDotInnerColor
+        numberColor = try c.decodeIfPresent(CodableColor.self, forKey: .numberColor) ?? d.numberColor
+        tickMarkColor = try c.decodeIfPresent(CodableColor.self, forKey: .tickMarkColor) ?? d.tickMarkColor
+        majorTickMarkColor = try c.decodeIfPresent(CodableColor.self, forKey: .majorTickMarkColor) ?? d.majorTickMarkColor
+        dropdownBgColor = try c.decodeIfPresent(CodableColor.self, forKey: .dropdownBgColor) ?? d.dropdownBgColor
+        dropdownTextColor = try c.decodeIfPresent(CodableColor.self, forKey: .dropdownTextColor) ?? d.dropdownTextColor
+        dropdownSubtextColor = try c.decodeIfPresent(CodableColor.self, forKey: .dropdownSubtextColor) ?? d.dropdownSubtextColor
+        dropdownBorderColor = try c.decodeIfPresent(CodableColor.self, forKey: .dropdownBorderColor) ?? d.dropdownBorderColor
+        dropdownDividerColor = try c.decodeIfPresent(CodableColor.self, forKey: .dropdownDividerColor) ?? d.dropdownDividerColor
+        textPrimaryColor = try c.decodeIfPresent(CodableColor.self, forKey: .textPrimaryColor) ?? d.textPrimaryColor
+        textSecondaryColor = try c.decodeIfPresent(CodableColor.self, forKey: .textSecondaryColor) ?? d.textSecondaryColor
+        showNumbers = try c.decodeIfPresent(Bool.self, forKey: .showNumbers) ?? d.showNumbers
+        hasTickMarks = try c.decodeIfPresent(Bool.self, forKey: .hasTickMarks) ?? d.hasTickMarks
+        hasDialDecoration = try c.decodeIfPresent(Bool.self, forKey: .hasDialDecoration) ?? d.hasDialDecoration
+        numberStyleRaw = try c.decodeIfPresent(String.self, forKey: .numberStyleRaw) ?? d.numberStyleRaw
+        numberFontDesignRaw = try c.decodeIfPresent(String.self, forKey: .numberFontDesignRaw) ?? d.numberFontDesignRaw
+    }
 }
 
 /// 可编码的 Color 包装
@@ -92,6 +147,16 @@ struct CodableColor: Codable, Equatable {
         self.blue = Double(b)
         self.opacity = Double(a)
     }
+
+    // 宽容解码：单个通道缺失时回默认（不致整对象解码失败）。
+    private enum CodingKeys: String, CodingKey { case red, green, blue, opacity }
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        red = try c.decodeIfPresent(Double.self, forKey: .red) ?? 0
+        green = try c.decodeIfPresent(Double.self, forKey: .green) ?? 0
+        blue = try c.decodeIfPresent(Double.self, forKey: .blue) ?? 0
+        opacity = try c.decodeIfPresent(Double.self, forKey: .opacity) ?? 1.0
+    }
 }
 
 /// 已保存的自定义主题
@@ -111,11 +176,14 @@ extension SavedCustomTheme {
     static var userDefaultsKey: String { SettingsKey.savedCustomThemes.rawValue }
 
     static func loadAll() -> [SavedCustomTheme] {
-        guard let data = UserDefaults.standard.data(forKey: userDefaultsKey),
-              let themes = try? JSONDecoder().decode([SavedCustomTheme].self, from: data) else {
+        guard let data = UserDefaults.standard.data(forKey: userDefaultsKey) else { return [] }
+        do {
+            return try JSONDecoder().decode([SavedCustomTheme].self, from: data)
+        } catch {
+            // 不静默清空：打日志便于排查（数据损坏/schema 演进），行为降级为空。
+            print("[CustomTheme] saved themes decode failed: \(error)")
             return []
         }
-        return themes
     }
 
     static func saveAll(_ themes: [SavedCustomTheme]) {
@@ -129,11 +197,13 @@ extension CustomThemeConfig {
     static var userDefaultsKey: String { SettingsKey.customThemeConfig.rawValue }
 
     static func load() -> CustomThemeConfig {
-        guard let data = UserDefaults.standard.data(forKey: userDefaultsKey),
-              let config = try? JSONDecoder().decode(CustomThemeConfig.self, from: data) else {
+        guard let data = UserDefaults.standard.data(forKey: userDefaultsKey) else { return CustomThemeConfig() }
+        do {
+            return try JSONDecoder().decode(CustomThemeConfig.self, from: data)
+        } catch {
+            print("[CustomTheme] config decode failed: \(error)")
             return CustomThemeConfig()
         }
-        return config
     }
 
     func save() {
