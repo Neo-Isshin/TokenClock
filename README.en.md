@@ -22,8 +22,8 @@
 
 <table>
   <tr>
-    <td width="50%" align="center"><img src="docs/screenshots/glass_en.png" alt="Liquid Glass build"><br><sub><b>Liquid Glass</b> · macOS 26</sub></td>
-    <td width="50%" align="center"><img src="docs/screenshots/normal_en.png" alt="Normal build"><br><sub><b>Normal</b> · macOS 12</sub></td>
+    <td width="50%" align="center"><img src="docs/screenshots/glass_en.png" alt="Liquid Glass build" width="300"><br><sub><b>Liquid Glass</b> · macOS 26</sub></td>
+    <td width="50%" align="center"><img src="docs/screenshots/normal_en.png" alt="Normal build" width="300"><br><sub><b>Normal</b> · macOS 12</sub></td>
   </tr>
 </table>
 

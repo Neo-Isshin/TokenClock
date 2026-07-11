@@ -22,8 +22,8 @@
 
 <table>
   <tr>
-    <td width="50%" align="center"><img src="docs/screenshots/glass_zh.png" alt="Liquid Glass 版"><br><sub><b>Liquid Glass</b> · macOS 26</sub></td>
-    <td width="50%" align="center"><img src="docs/screenshots/normal_zh.png" alt="Normal 版"><br><sub><b>Normal</b> · macOS 12</sub></td>
+    <td width="50%" align="center"><img src="docs/screenshots/glass_zh.png" alt="Liquid Glass 版" width="300"><br><sub><b>Liquid Glass</b> · macOS 26</sub></td>
+    <td width="50%" align="center"><img src="docs/screenshots/normal_zh.png" alt="Normal 版" width="300"><br><sub><b>Normal</b> · macOS 12</sub></td>
   </tr>
 </table>
 
