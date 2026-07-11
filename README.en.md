@@ -4,10 +4,11 @@
 
 # 🕰️ TokenClock
 
-**A thoughtfully crafted Liquid Glass token clock — see every agent's consumption at a glance**
+**A native Liquid Glass token clock · every agent's consumption on a single dial**
 
-[![macOS 12+](https://img.shields.io/static/v1?label=macOS&message=12%2B&color=000000&logo=apple&logoColor=white)](https://www.apple.com/macos/)
-[![macOS 26 Liquid Glass](https://img.shields.io/static/v1?label=macOS%2026&message=Liquid%20Glass&color=00B0F0)](https://developer.apple.com/macos/)
+[![macOS 12+](https://img.shields.io/badge/macOS-12%2B-000000?style=for-the-badge&logo=apple&logoColor=white)](https://www.apple.com/macos/)
+[![macOS 26](https://img.shields.io/badge/macOS%2026-Liquid%20Glass-00B0F0?style=for-the-badge)](https://developer.apple.com/macos/)
+
 [![Swift 6](https://img.shields.io/static/v1?label=Swift&message=6&color=F05138&logo=swift&logoColor=white)](https://www.swift.org/)
 [![SwiftUI](https://img.shields.io/static/v1?label=UI&message=SwiftUI%20%2B%20AppKit&color=blueviolet)](https://developer.apple.com/xcode/swiftui/)
 [![SwiftPM](https://img.shields.io/static/v1?label=Build&message=SwiftPM&color=FA7343)](https://www.swift.org/package-manager/)
@@ -31,16 +32,44 @@ It's built with the macOS 26 **Liquid Glass** material for a crystal clock disc,
 
 ---
 
+## 📑 Contents
+
+- [🌟 Core advantages](#-core-advantages)
+- [✨ Features](#-features)
+- [📸 Screenshots](#-screenshots)
+- [🤖 Supported AI tools](#-supported-ai-tools)
+- [🚀 Quick start](#-quick-start) — [One-line install](#one-line-install-easiest) · [`tokenclock` CLI](#use-the-tokenclock-cli)
+- [🎨 Themes](#-themes)
+- [🧊 Liquid Glass](#-liquid-glass)
+- [🔌 Local API server](#-local-api-server)
+- [🔒 Privacy](#-privacy)
+- [🛣 Roadmap](#-roadmap)
+- [📦 Tech stack](#-tech-stack)
+- [📄 License](#-license)
+- [🙏 Acknowledgments](#-acknowledgments)
+
+---
+
 ## 🌟 Core advantages
 
-- **🤖 All your tools, one dial** — Token / message usage from **14 AI coding tools** flows into a single clock face. No more hopping between terminals and web dashboards to tally costs.
-- **🔍 Drill down per session / agent** — Click to expand the dropdown panel and go from a per-tool overview all the way down to every **session / agent**, so you can see exactly where the tokens went and which conversation burned them.
-- **🌤️ Always on the desktop, zero friction** — A floating, always-on-top, translucent Liquid Glass disc; a peripheral glance tells you the live consumption and rate (🔥 burst / 🌊 calm) without breaking your flow.
-- **📈 Multi-dimensional live insight** — Today's totals, cache rate, future-trend forecast, and active tools in one picture, answering "how much, where, and how much more is coming."
-- **🔒 Purely local, zero upload** — It reads only the local usage logs each tool writes itself; no token / session data ever leaves your machine, and the local API listens on `127.0.0.1` only.
-- **🎨 Rich customization** — 6 built-in faces plus a fully custom theme: frosted-glass backing opacity, glass tint, text color, hand style, ticks, numerals, fonts, dial size, and window opacity are all adjustable — make the clock yours.
-- **📜 Usage history you can revisit** — Each day's token usage is auto-settled into a local SQLite store (kept for 30 days) and exposed via the local API, so you can look back at past consumption or feed your own charts and dashboards.
-- **⚡ Tiny footprint** — Native Swift with efficient polling (clock 1s / usage 30s / weather 5min) and streaming JSONL reads; usage stats are computed locally with zero extra network cost, so it sits in the background almost unnoticed.
+<table>
+  <tr>
+    <td width="50%" valign="top"><b>🤖 All your tools, one dial</b><br><sub>Token / message usage from <b>14 AI coding tools</b> flows into a single clock face — no more hopping between terminals and web dashboards.</sub></td>
+    <td width="50%" valign="top"><b>🔍 Drill down per session / agent</b><br><sub>From a per-tool overview all the way down to every session / agent — see exactly where the tokens went and which conversation burned them.</sub></td>
+  </tr>
+  <tr>
+    <td valign="top"><b>🌤️ Always on the desktop, zero friction</b><br><sub>A floating, always-on-top, translucent Liquid Glass disc; a glance gives you the live consumption and rate (🔥 burst / 🌊 calm).</sub></td>
+    <td valign="top"><b>📈 Multi-dimensional live insight</b><br><sub>Today's totals, cache rate, future-trend forecast, and active tools in one picture.</sub></td>
+  </tr>
+  <tr>
+    <td valign="top"><b>🎨 Rich customization</b><br><sub>6 built-in faces + a fully custom theme: frosted backing opacity, glass tint, text color, hands, ticks, numerals, fonts, dial size, window opacity.</sub></td>
+    <td valign="top"><b>📜 Usage history you can revisit</b><br><sub>Each day's usage is auto-settled into a local SQLite store (30 days) and exposed via the local API — feed your own charts.</sub></td>
+  </tr>
+  <tr>
+    <td valign="top"><b>⚡ Tiny footprint</b><br><sub>Native Swift + efficient polling (clock 1s / usage 30s / weather 5min) + streaming JSONL; sits in the background almost unnoticed.</sub></td>
+    <td valign="top"><b>🔒 Purely local, zero upload</b><br><sub>Reads only local logs each tool writes; nothing leaves your machine, and the API listens on <code>127.0.0.1</code> only.</sub></td>
+  </tr>
+</table>
 
 ---
 
@@ -128,12 +157,14 @@ TokenClock reads the **JSONL / SQLite usage files** that each tool writes locall
 
 Auto-detects the macOS version → **downloads the precompiled** matching variant (universal, SHA256-checked + de-quarantined) → installs to `~/.tokenclock` → puts `tokenclock` on your PATH → launches and scans each AI tool's local paths — no manual steps. Falls back to a local build only on download failure or with `--build-from-source`.
 
-```bash
-# if you've cloned this repo, run it directly:
-./cli/install.sh
+> 💡 **Download & run** — no Xcode, no $99/yr notarization: it fetches precompiled universal binaries (SHA256-checked + de-quarantined) and just works.
 
-# or one-line install:
+```bash
+# one-line install (recommended):
 curl -fsSL https://gitea.nxc8335.cloud/nxc8335/TokenClock/raw/main/cli/install.sh | bash
+
+# or, if you've cloned this repo:
+./cli/install.sh
 ```
 
 Options: `--normal` / `--glass` (pick the variant) / `--no-start` (don't auto-launch) / `--build-from-source` (force a local build) / `--check` (check only, don't install) / `--debug` (debug build).
@@ -274,6 +305,10 @@ TokenClock exists thanks to the many excellent AI coding tools and their communi
 
 <div align="center">
 
-**⭐ If TokenClock helps you, a Star is appreciated.**
+<h3>⭐ Finding TokenClock useful?</h3>
+
+**A Star means a lot — it's what keeps the project going 🚀**
+
+[![Star](https://img.shields.io/badge/⭐-Star%20on%20Gitea-00B0F0?style=for-the-badge&logo=gitea&logoColor=white)](https://gitea.nxc8335.cloud/nxc8335/TokenClock)
 
 </div>
