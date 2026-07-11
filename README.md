@@ -172,7 +172,7 @@ TokenClock 通过读取各工具在本地写入的 **JSONL / SQLite 用量文件
 | **Continue**（VSCode 扩展） | `~/.continue/` | `CONTINUE_HOME` |
 | **Cursor Agent** | `~/.cursor/` | `CURSOR_AGENT_HOME` |
 
-> 各服务的 token 计算公式略有差异（例如 Codex 的 `input_tokens` 已含 cached，需用 `total_tokens + reasoning_output_tokens`；其余服务输入/输出/缓存字段互斥相加）。详见 `docs/TOOL_SCHEMA_ANALYSIS.md`。
+> 各服务的 token 计算公式略有差异：**Codex、Gemini/Qwen** 的 `input`（`promptTokenCount`）已含 cached，不能再加 cached（否则双计），用 `input + output + (thought)`；其余服务（Claude/OpenClaw 等）的输入/输出/缓存字段互斥相加。详见 `docs/TOOL_SCHEMA_ANALYSIS.md`。
 
 ---
 

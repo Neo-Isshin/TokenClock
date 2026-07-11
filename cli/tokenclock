@@ -114,6 +114,15 @@ launch_path() {
 
 env_var_for() { case "$1" in glass) echo TOKENCLOCK_GLASS ;; normal) echo TOKENCLOCK_NORMAL ;; esac; }
 
+# 卸载某变体的 LaunchAgent（不删 plist：本会话停、不复活，下次登录/start 再起）。
+# 用 legacy `launchctl unload <plist>`，与 LaunchAgentHelper.disable() 同一 API。
+# 路径须与 Swift 侧 plistURL() 完全一致：~/Library/LaunchAgents/com.tokenclock.app.<variant>.plist
+launchagent_plist() { echo "$HOME/Library/LaunchAgents/com.tokenclock.app.$1.plist"; }
+unload_launchagent() {
+  local plist; plist="$(launchagent_plist "$1")"
+  [ -f "$plist" ] && launchctl unload "$plist" 2>/dev/null || true
+}
+
 # ─────────────────────────── 命令实现 ───────────────────────────
 
 cmd_start() {
@@ -166,6 +175,11 @@ cmd_start() {
 cmd_stop() {
   local pids; pids="$(running_pids)"
   if [ -z "$pids" ]; then echo "TokenClock 未在运行。"; return 0; fi
+  # 先 unload LaunchAgent：否则 launchd 的 KeepAlive.Crashed 会把下面 pkill 的 SIGTERM
+  # 当作「崩溃」立刻复活进程（菜单 Quit 走 NSApplication.terminate 干净退出不受影响，
+  # 仅 pkill/SIGTERM 路径有此问题）。两变体 plist 都试卸载，不存在的忽略。
+  unload_launchagent glass
+  unload_launchagent normal
   pkill    -f "${HOME}/.tokenclock/[^/]*/TokenClock( |$)" 2>/dev/null
   pkill    -x "$APP_PROCESS" 2>/dev/null
   sleep 2
@@ -184,6 +198,32 @@ cmd_stop() {
 cmd_restart() {
   cmd_stop
   cmd_start "$@"
+}
+
+# 卸载：停服务 + 删两变体 plist + 删 ~/.tokenclock 运行时目录。
+# 保留 `tokenclock` CLI 命令本身（便于重装）；需删 CLI 见末尾提示的手动路径。
+cmd_uninstall() {
+  echo "正在卸载 TokenClock…"
+  # 1. 停服务：unload（防 KeepAlive 复活）+ pkill 兜底
+  unload_launchagent glass
+  unload_launchagent normal
+  pkill -f "${HOME}/.tokenclock/[^/]*/TokenClock( |$)" 2>/dev/null
+  pkill -x "$APP_PROCESS" 2>/dev/null
+  sleep 1
+  # 2. 删两变体 plist
+  local v
+  for v in glass normal; do
+    rm -f "$(launchagent_plist "$v")"
+  done
+  # 3. 删运行时目录（二进制 + 资源 bundle）
+  if [ -d "$HOME/.tokenclock" ]; then
+    rm -rf "$HOME/.tokenclock"
+    echo "  ✓ 已删除 ~/.tokenclock"
+  fi
+  echo "${C_GREEN}✓ 已卸载 TokenClock（运行时 + LaunchAgent plist）。${C_RESET}"
+  echo "  CLI 命令 'tokenclock' 已保留。重装："
+  echo "    curl -fsSL https://gitea.nxc8335.cloud/nxc8335/TokenClock/raw/main/cli/install.sh | bash"
+  echo "  如需一并删除 CLI 本身：sudo rm -f /usr/local/bin/tokenclock"
 }
 
 cmd_doctor() {
@@ -301,8 +341,9 @@ tokenclock v$CLI_VERSION — TokenClock 轻量命令行
 
 用法:
   tokenclock start [--glass|--normal] [--force]   启动（按系统版本自动选；flag 强制）
-  tokenclock stop                                 停止所有实例
+  tokenclock stop                                 停止所有实例（unload LaunchAgent，不会被 KeepAlive 复活）
   tokenclock restart [--glass|--normal]           重启
+  tokenclock uninstall                            卸载（停服务 + 删两变体 plist + 删 ~/.tokenclock；保留 CLI）
   tokenclock doctor                               诊断环境与已安装版本
   tokenclock update [--glass|--normal] [--check] [--force]  更新（仅在有变更时重建+重启；--force 强制）
   tokenclock help                                 显示此帮助
@@ -322,6 +363,7 @@ case "${1:-help}" in
   start)              [ $# -gt 0 ] && shift; cmd_start "$@" ;;
   stop)               cmd_stop ;;
   restart)            [ $# -gt 0 ] && shift; cmd_restart "$@" ;;
+  uninstall)          cmd_uninstall ;;
   doctor|dr)          cmd_doctor ;;
   update)             [ $# -gt 0 ] && shift; cmd_update "$@" ;;
   help|-h|--help)     usage ;;

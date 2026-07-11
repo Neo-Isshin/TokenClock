@@ -63,10 +63,10 @@ Each tool analysis follows this structure:
 | **Data Source** | `~/.gemini/tmp/*/chats/session-*.json` or `.jsonl` |
 | **Format** | JSON (legacy) + JSONL (current, preferred) |
 | **Scan Pattern** | fileCache + modDate incremental |
-| **Token Fields** | `tokens.input`, `tokens.output`, `tokens.cached` |
-| **Token Formula** | `input + output + cached` |
+| **Token Fields** | `tokens.input`, `tokens.output`, `tokens.cached`, `tokens.thought` (API `usageMetadata`: `promptTokenCount` / `candidatesTokenCount` / `cachedContentTokenCount` / `thoughtsTokenCount`) |
+| **Token Formula** | `input + output + thought` (do NOT add `cached` — already included in `input`/`promptTokenCount`) |
 | **Date Attribution** | Per-event via timestamp field |
-| **Cache Semantics** | `input` EXCLUDES cached (mutually exclusive) |
+| **Cache Semantics** | `input` INCLUDES `cached` (mutually inclusive, like Codex — adding `cached` double-counts) |
 | **Session Source** | JSONL/JSON session files |
 | **Feasibility** | ✅ Fully supported |
 
