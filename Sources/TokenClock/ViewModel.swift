@@ -414,13 +414,7 @@ final class ViewModel: ObservableObject {
 
     var totalTokensFormatted: String {
         if isInitialLoading { return "—" }
-        let total = UsageAggregator.totalTokens(visibleTools)
-        if total >= 1_000_000 {
-            return String(format: "%.1fM", Double(total) / 1_000_000)
-        } else if total >= 1_000 {
-            return String(format: "%.1fK", Double(total) / 1_000)
-        }
-        return "\(total)"
+        return TokenFormat.compact(UsageAggregator.totalTokens(visibleTools))
     }
 
     var totalMessagesFormatted: String {

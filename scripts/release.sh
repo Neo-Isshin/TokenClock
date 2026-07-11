@@ -127,6 +127,17 @@ gc fetch origin --quiet || die "fetch 失败"
 TOKEN="$(resolve_token)"
 ok "token 已解析（${TOKEN:0:8}…）"
 
+# --only 仅用于给【已存在】的 release 补传某一变体。全新版本号用 --only 会让被跳过的
+# 变体在新 release 里缺席 tarball → installer 下载该变体时 404（脚本自己在下方上传段注释里
+# 也标注了这坑）。这里提前挡住，避免静默产出残缺 release。
+if [ -n "$ONLY" ]; then
+  only_code="$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: token $TOKEN" "$API/releases/tags/$VERSION" 2>/dev/null || true)"
+  if [ "$only_code" != "200" ]; then
+    die "--only 不能用于全新版本号：$VERSION 的 release 当前不存在（http=$only_code）。全新版本号必须双变体都发（去掉 --only），否则另一变体 tarball 缺席 → installer 404。--only 仅适合给已存在的 release 补传某一变体。"
+  fi
+  ok "--only=$ONLY：目标 release 已存在（http=$only_code），仅补传 $ONLY 变体（另一变体沿用既有资产）"
+fi
+
 # 确保 push 过 EdgeOne 的 HTTP/1.1 修复（幂等）
 gc config http.version HTTP/1.1
 gc config http.postBuffer 524288000
@@ -231,7 +242,23 @@ NORMAL_CHANGED=0; GLASS_CHANGED=0
 [ "${SHA_GLASS:-}"  != "" ] && [ "$SHA_GLASS"  != "$OLD_GLASS"  ] && GLASS_CHANGED=1
 [ "$NORMAL_CHANGED" = 1 ] && ok "normal SHA 变更 → 将更新 pin + 重传资产"
 [ "$GLASS_CHANGED"  = 1 ] && ok "glass SHA 变更  → 将更新 pin + 重传资产"
-[ "$NORMAL_CHANGED" = 0 ] && [ "$GLASS_CHANGED" = 0 ] && [ "$VERSION" = "$OLD_TAG" ] && { warn "无任何变更（SHA 与 tag 都没变）—— 退出"; exit 0; }
+
+# SHA 与 tag 都没变时，不能直接 exit 0 —— 上次构建/发版可能中途失败（release 没建或资产不全），
+# 这种"重跑"恰恰最需要继续走发布步骤。只有当 release 已存在且两变体资产齐全时才真的无事可做。
+if [ "$NORMAL_CHANGED" = 0 ] && [ "$GLASS_CHANGED" = 0 ] && [ "$VERSION" = "$OLD_TAG" ]; then
+  rel_code="$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: token $TOKEN" "$API/releases/tags/$VERSION" 2>/dev/null || true)"
+  if [ "$rel_code" = "200" ]; then
+    n_assets="$(curl -fsSL -H "Authorization: token $TOKEN" "$API/releases/tags/$VERSION" 2>/dev/null \
+      | python3 -c 'import json,sys; print(len((json.load(sys.stdin) or {}).get("assets",[])))' 2>/dev/null || echo 0)"
+    if [ "${n_assets:-0}" -ge 2 ]; then
+      warn "无任何变更（SHA 与 tag 都没变）且 release 资产齐全（$n_assets 个）—— 退出"
+      exit 0
+    fi
+    warn "SHA 未变但 release 资产数=${n_assets:-0}（<2），上次可能中途失败 —— 继续走发布步骤补齐"
+  else
+    warn "SHA 未变但 release 不存在（http=$rel_code）—— 继续走发布步骤创建 release"
+  fi
+fi
 
 if [ "$DRY_RUN" = 1 ]; then
   step "DRY-RUN diff（install.sh / tokenclock 预览）"

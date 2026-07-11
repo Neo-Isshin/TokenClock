@@ -12,6 +12,7 @@ final class CopilotUsageService: @unchecked Sendable {
     private var fileDailyContrib: [String: [String: DayUsage]] = [:]
     private var fileHourlyContrib: [String: [String: HourlyUsage]] = [:]
     private var fileCacheContrib: [String: [String: Int]] = [:]
+    private var fileRecentContrib: [String: [RecentEntry]] = [:]
     private var recentEntries: [RecentEntry] = []
 
     private let fm = FileManager.default
@@ -25,6 +26,7 @@ final class CopilotUsageService: @unchecked Sendable {
         dailyData.removeAll(); hourlyData.removeAll(); dailyCache.removeAll()
         fileCache.removeAll(); fileDailyContrib.removeAll()
         fileHourlyContrib.removeAll(); fileCacheContrib.removeAll()
+        fileRecentContrib.removeAll()
         recentEntries = []
         scanOtelDir()
         scanSessionStateDir()
@@ -73,6 +75,7 @@ final class CopilotUsageService: @unchecked Sendable {
             let fullPath = otelDir + "/" + file
             processJSONLFile(fullPath, parser: parseOtelEvent)
         }
+        rebuildRecentEntries()
     }
 
     // MARK: - Session events 扫描
@@ -87,6 +90,7 @@ final class CopilotUsageService: @unchecked Sendable {
             let eventsPath = stateDir + "/" + session + "/events.jsonl"
             processJSONLFile(eventsPath, parser: parseSessionEvent)
         }
+        rebuildRecentEntries()
     }
 
     // MARK: - 通用 JSONL 文件处理
@@ -105,6 +109,7 @@ final class CopilotUsageService: @unchecked Sendable {
         var newDaily: [String: DayUsage] = [:]
         var newHourly: [String: HourlyUsage] = [:]
         var newCache: [String: Int] = [:]
+        var newRecent: [RecentEntry] = []
 
         guard let stream = InputStream(fileAtPath: path) else { return }
         stream.open()
@@ -127,13 +132,14 @@ final class CopilotUsageService: @unchecked Sendable {
                 guard let line = String(data: lineData, encoding: .utf8),
                       let obj = try? JSONSerialization.jsonObject(with: line.data(using: .utf8) ?? Data()) as? [String: Any],
                       let r = parser(obj) else { continue }
-                accumulate(r, today: today, daily: &newDaily, hourly: &newHourly, cache: &newCache)
+                accumulate(r, today: today, daily: &newDaily, hourly: &newHourly, cache: &newCache, recent: &newRecent)
             }
         }
 
         fileDailyContrib[path] = newDaily
         fileHourlyContrib[path] = newHourly
         fileCacheContrib[path] = newCache
+        fileRecentContrib[path] = newRecent
         fileCache[path] = FileMeta(path: path, modDate: modDate)
     }
 
@@ -219,7 +225,8 @@ final class CopilotUsageService: @unchecked Sendable {
     private func accumulate(_ r: EventResult, today: String,
                             daily: inout [String: DayUsage],
                             hourly: inout [String: HourlyUsage],
-                            cache: inout [String: Int]) {
+                            cache: inout [String: Int],
+                            recent: inout [RecentEntry]) {
         if var e = dailyData[r.dateKey] { e.tokens += r.tokens; e.messages += 1; dailyData[r.dateKey] = e }
         else { dailyData[r.dateKey] = DayUsage(tokens: r.tokens, messages: 1) }
         if var e = daily[r.dateKey] { e.tokens += r.tokens; e.messages += 1; daily[r.dateKey] = e }
@@ -234,12 +241,17 @@ final class CopilotUsageService: @unchecked Sendable {
         cache[r.dateKey, default: 0] += r.cachedTokens
 
         if r.dateKey == today, let ts = r.timestamp {
-            recentEntries.append(RecentEntry(timestamp: ts, tokens: r.tokens))
-            // L4: 限制 recentEntries 增长，只保留 active 窗口 3 倍内的条目
-            if recentEntries.count > 64 {
-                let cutoff = Date().addingTimeInterval(-AppConfig.Scan.activeThresholdSeconds * 3)
-                recentEntries = recentEntries.filter { $0.timestamp >= cutoff }
-            }
+            recent.append(RecentEntry(timestamp: ts, tokens: r.tokens))
+        }
+    }
+
+    /// recentEntries 是各文件 recent 贡献的派生聚合：每轮扫描从 fileRecentContrib 重建，
+    /// 而非在逐行累加时直接 append —— 否则增量重读已变化文件时 recent 会双计。
+    private func rebuildRecentEntries() {
+        recentEntries = fileRecentContrib.values.flatMap { $0 }
+        if recentEntries.count > 64 {
+            let cutoff = Date().addingTimeInterval(-AppConfig.Scan.activeThresholdSeconds * 3)
+            recentEntries = recentEntries.filter { $0.timestamp >= cutoff }
         }
     }
 

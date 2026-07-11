@@ -672,14 +672,20 @@ struct SettingsView: View {
     }
 
     /// 将 (数字字符串, 单位) 组合为 token 整数
+    /// 对 inf / nan / 负数 / 溢出输入降级（0 或 Int.max），避免 Int(trap) 式崩溃。
     private func composeTokens(value: String, unit: String) -> Int {
         let num = Double(value) ?? 0
+        guard num.isFinite, num >= 0 else { return 0 }
+        let multiplier: Double
         switch unit {
-        case "B": return Int(num * 1_000_000_000)
-        case "M": return Int(num * 1_000_000)
-        case "K": return Int(num * 1_000)
-        default:  return Int(num)
+        case "B": multiplier = 1_000_000_000
+        case "M": multiplier = 1_000_000
+        case "K": multiplier = 1_000
+        default:  multiplier = 1
         }
+        let raw = num * multiplier
+        guard raw.isFinite, raw <= Double(Int.max) else { return Int.max }
+        return Int(raw)
     }
 
     // MARK: - 自定义主题

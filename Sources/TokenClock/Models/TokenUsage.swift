@@ -1,5 +1,21 @@
 import Foundation
 
+/// 紧凑 token 计数格式化（表盘 / 工具行 / session 行共用，避免三处各自实现而漂移）。
+/// 档位：B(≥1e9，2 位小数) / M(≥1e6，1 位) / K(≥1e3，1 位) / 原值。
+/// B 用 2 位小数：1.23B 分辨率≈10M，十亿级足够；M/K 保持 1 位与历史显示一致。
+enum TokenFormat {
+    static func compact(_ tokens: Int) -> String {
+        if tokens >= 1_000_000_000 {
+            return String(format: "%.2fB", Double(tokens) / 1_000_000_000)
+        } else if tokens >= 1_000_000 {
+            return String(format: "%.1fM", Double(tokens) / 1_000_000)
+        } else if tokens >= 1_000 {
+            return String(format: "%.1fK", Double(tokens) / 1_000)
+        }
+        return "\(tokens)"
+    }
+}
+
 /// 单个工具的 token 使用数据
 struct ToolUsage: Identifiable, Hashable {
     var id: String { name }
@@ -20,16 +36,8 @@ struct ToolUsage: Identifiable, Hashable {
     /// 今日活跃的 session/agent 列表（用于展开展示）
     var sessions: [SessionInfo] = []
 
-    /// 格式化的 token 数（如 "847.2K"）
-    var formattedTokens: String {
-        if todayTokens >= 1_000_000 {
-            return String(format: "%.1fM", Double(todayTokens) / 1_000_000)
-        } else if todayTokens >= 1_000 {
-            return String(format: "%.1fK", Double(todayTokens) / 1_000)
-        } else {
-            return "\(todayTokens)"
-        }
-    }
+    /// 格式化的 token 数（如 "847.2K" / "1.23B"）
+    var formattedTokens: String { TokenFormat.compact(todayTokens) }
 
     /// 格式化的消息数
     var formattedMessages: String {
@@ -54,15 +62,7 @@ struct SessionInfo: Identifiable, Hashable {
     let isActive: Bool
 
     /// 格式化的 token 数
-    var formattedTokens: String {
-        if todayTokens >= 1_000_000 {
-            return String(format: "%.1fM", Double(todayTokens) / 1_000_000)
-        } else if todayTokens >= 1_000 {
-            return String(format: "%.1fK", Double(todayTokens) / 1_000)
-        } else {
-            return "\(todayTokens)"
-        }
-    }
+    var formattedTokens: String { TokenFormat.compact(todayTokens) }
 }
 
 /// Session ID 统一格式化：取前 6 位 + "…" + 末 4 位

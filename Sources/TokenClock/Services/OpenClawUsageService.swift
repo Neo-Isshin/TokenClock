@@ -10,6 +10,7 @@ final class OpenClawUsageService: @unchecked Sendable {
     private var fileDailyContrib: [String: [String: DayUsage]] = [:]
     private var fileHourlyContrib: [String: [String: HourlyUsage]] = [:]
     private var fileCacheContrib: [String: [String: Int]] = [:]
+    private var fileRecentContrib: [String: [RecentEntry]] = [:]
     private var recentEntries: [RecentEntry] = []
 
     private let fm = FileManager.default
@@ -33,6 +34,7 @@ final class OpenClawUsageService: @unchecked Sendable {
         fileDailyContrib.removeAll()
         fileHourlyContrib.removeAll()
         fileCacheContrib.removeAll()
+        fileRecentContrib.removeAll()
         recentEntries = []
         scanAgentDirectories()
     }
@@ -119,6 +121,7 @@ final class OpenClawUsageService: @unchecked Sendable {
                 fileCache[fullPath] = FileMeta(path: fullPath, modDate: modDate)
             }
         }
+        rebuildRecentEntries()
     }
 
     private func subtractCacheContributions(_ contrib: [String: Int]) {
@@ -176,6 +179,7 @@ final class OpenClawUsageService: @unchecked Sendable {
         var newDailyContrib: [String: DayUsage] = [:]
         var newHourlyContrib: [String: HourlyUsage] = [:]
         var newCacheContrib: [String: Int] = [:]
+        var newRecent: [RecentEntry] = []
 
         while stream.hasBytesAvailable {
             let n = stream.read(buf, maxLength: bufSize)
@@ -192,7 +196,7 @@ final class OpenClawUsageService: @unchecked Sendable {
                         accumulate(result, today: today,
                                    dailyContrib: &newDailyContrib,
                                    hourlyContrib: &newHourlyContrib,
-                                   cacheContrib: &newCacheContrib)
+                                   cacheContrib: &newCacheContrib, recent: &newRecent)
                     }
                 }
             }
@@ -205,14 +209,14 @@ final class OpenClawUsageService: @unchecked Sendable {
                 accumulate(result, today: today,
                            dailyContrib: &newDailyContrib,
                            hourlyContrib: &newHourlyContrib,
-                           cacheContrib: &newCacheContrib)
+                           cacheContrib: &newCacheContrib, recent: &newRecent)
             }
         }
 
         fileDailyContrib[path] = newDailyContrib
         fileHourlyContrib[path] = newHourlyContrib
         fileCacheContrib[path] = newCacheContrib
-        fileCacheContrib[path] = newCacheContrib
+        fileRecentContrib[path] = newRecent
     }
 
     private struct ParseResult {
@@ -251,7 +255,8 @@ final class OpenClawUsageService: @unchecked Sendable {
     private func accumulate(_ result: ParseResult, today: String,
                             dailyContrib: inout [String: DayUsage],
                             hourlyContrib: inout [String: HourlyUsage],
-                            cacheContrib: inout [String: Int]) {
+                            cacheContrib: inout [String: Int],
+                            recent: inout [RecentEntry]) {
         // daily
         if var existing = dailyData[result.dateKey] {
             existing.tokens += result.tokens
@@ -287,12 +292,17 @@ final class OpenClawUsageService: @unchecked Sendable {
         cacheContrib[result.dateKey, default: 0] += result.cacheTokens
         // recentEntries（只记录今日）
         if result.dateKey == today, let ts = result.timestamp {
-            recentEntries.append(RecentEntry(timestamp: ts, tokens: result.tokens))
-            // L4: 限制 recentEntries 增长，只保留 active 窗口 3 倍内的条目
-            if recentEntries.count > 64 {
-                let cutoff = Date().addingTimeInterval(-AppConfig.Scan.activeThresholdSeconds * 3)
-                recentEntries = recentEntries.filter { $0.timestamp >= cutoff }
-            }
+            recent.append(RecentEntry(timestamp: ts, tokens: result.tokens))
+        }
+    }
+
+    /// recentEntries 是各文件 recent 贡献的派生聚合：每轮扫描从 fileRecentContrib 重建，
+    /// 而非在逐行累加时直接 append —— 否则增量重读已变化文件时 recent 会双计。
+    private func rebuildRecentEntries() {
+        recentEntries = fileRecentContrib.values.flatMap { $0 }
+        if recentEntries.count > 64 {
+            let cutoff = Date().addingTimeInterval(-AppConfig.Scan.activeThresholdSeconds * 3)
+            recentEntries = recentEntries.filter { $0.timestamp >= cutoff }
         }
     }
 

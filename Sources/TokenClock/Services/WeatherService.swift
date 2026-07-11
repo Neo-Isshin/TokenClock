@@ -18,6 +18,11 @@ final class WeatherService: NSObject, CLLocationManagerDelegate {
 
     private let locationManager = CLLocationManager()
 
+    /// 天气请求代次：每次发起网络抓取自增；post 前比对，旧请求被新请求超越时不 post，
+    /// 杜绝慢请求用旧数据覆盖快请求刚拿到的新数据。
+    private var weatherGen = 0
+    private func bumpWeatherGen() -> Int { weatherGen &+= 1; return weatherGen }
+
     /// 城市名 → 坐标映射
     private static let cityCoordinates: [String: (lat: Double, lon: Double)] = [
         "Hong Kong":    (22.3193, 114.1694),
@@ -98,10 +103,12 @@ final class WeatherService: NSObject, CLLocationManagerDelegate {
     // MARK: - wttr.in JSON API
 
     private func fetchWeatherFromAPI(lat: Double, lon: Double, cityName: String) async {
+        let myGen = bumpWeatherGen()
         let urlString = "\(AppConfig.API.weatherBase)/\(lat)+\(lon)?format=j1&m"
         guard let url = URL(string: urlString) else { return }
         do {
             let (data, _) = try await URLSession.shared.data(from: url)
+            guard myGen == weatherGen else { return }  // 已被更新的请求超越 → 丢弃旧数据
             let info = Self.parseJSON(data: data, fallbackCity: cityName)
             NotificationCenter.default.post(name: .weatherUpdated, object: info)
         } catch {
@@ -271,10 +278,12 @@ final class WeatherService: NSObject, CLLocationManagerDelegate {
     }
 
     private func fetchWeatherByAutoLocation() async {
+        let myGen = bumpWeatherGen()
         let urlString = "\(AppConfig.API.weatherBase)/?format=j1&m"
         guard let url = URL(string: urlString) else { return }
         do {
             let (data, _) = try await URLSession.shared.data(from: url)
+            guard myGen == weatherGen else { return }  // 已被更新的请求超越 → 丢弃旧数据
             let info = Self.parseJSON(data: data, fallbackCity: "")
             NotificationCenter.default.post(name: .weatherUpdated, object: info)
         } catch {
@@ -283,11 +292,13 @@ final class WeatherService: NSObject, CLLocationManagerDelegate {
     }
 
     private func fetchWeatherByCityName(_ cityName: String) async {
+        let myGen = bumpWeatherGen()
         let encoded = cityName.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? cityName
         let urlString = "\(AppConfig.API.weatherBase)/\(encoded)?format=j1&m"
         guard let url = URL(string: urlString) else { return }
         do {
             let (data, _) = try await URLSession.shared.data(from: url)
+            guard myGen == weatherGen else { return }  // 已被更新的请求超越 → 丢弃旧数据
             let info = Self.parseJSON(data: data, fallbackCity: cityName)
             NotificationCenter.default.post(name: .weatherUpdated, object: info)
         } catch {
