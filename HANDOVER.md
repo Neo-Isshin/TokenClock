@@ -10,7 +10,7 @@
 - **本地 Gitea**: `http://localhost:3000/nxc8335/TokenClock.git`（LAN 推拉用，反代到公开域名）
 - **公开托管**: `https://gitea.nxc8335.cloud/nxc8335/TokenClock`
 - **用户**: Neo-Isshin
-- **许可证**: MIT
+- **许可证**: GPL v3
 - **规模**: ~10,800 行 Swift + 双 CLI 脚本
 - **主项目目录**: `/Users/neo/Projects/TokenClock`（glass / Liquid Glass）
 - **平级 worktree**: `/Users/neo/Projects/TokenClock-normal`（normal / Classic opaque）

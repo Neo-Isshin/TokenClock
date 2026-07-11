@@ -13,7 +13,7 @@
 [![SwiftUI](https://img.shields.io/static/v1?label=UI&message=SwiftUI%20%2B%20AppKit&color=blueviolet)](https://developer.apple.com/xcode/swiftui/)
 [![SwiftPM](https://img.shields.io/static/v1?label=Build&message=SwiftPM&color=FA7343)](https://www.swift.org/package-manager/)
 [![Privacy](https://img.shields.io/static/v1?label=Privacy&message=local%20only&color=success)](#-隐私)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
 [![Releases](https://img.shields.io/badge/releases-Gitea-00B0F0?logo=gitea&logoColor=white)](https://gitea.nxc8335.cloud/nxc8335/TokenClock/releases)
 
 </div>
@@ -328,21 +328,17 @@ GET http://127.0.0.1:9988/api/history?days=30 # 过去 N 天的日结快照（�
 
 ## 📄 许可证
 
-TokenClock 基于 **[MIT 协议](LICENSE)** 开源 —— © 2026 Neo-Isshin。可自由使用、修改与再分发，仅需保留版权声明。
+TokenClock 基于 **[GPL v3 协议](LICENSE)** 开源 —— © 2026 Neo-Isshin。您可以自由使用、分发与修改，但任何分发或修改后的衍生版本也必须以 GPL v3 协议开源。
 
 ---
 
 ## 🙏 致谢
 
-TokenClock 的诞生得益于众多优秀的 AI 编程工具及其社区。感谢这些工具将 token 用量写入本地日志，使统一可视化成为可能。  
+- TokenClock 的诞生得益于众多优秀的 AI 编程工具及其社区。感谢这些工具将 token 用量写入本地日志，使统一可视化成为可能。  
 
-表盘设计灵感来自传统机械腕表与流行文化（古风 / 超电磁炮主题）。
+- 本项目的液态玻璃折射效果（macOS 26+）得益于对 macOS 私有 API `NSGlassEffectView` 的逆向研究，特别致谢首创探索该私有 API 的开源项目 **[electron-liquid-glass](https://github.com/Meridius-Labs/electron-liquid-glass)**（由 Meridius-Labs 维护）。
 
-本项目的液态玻璃折射效果（macOS 26+）得益于对 macOS 私有 API `NSGlassEffectView` 的逆向研究，在此特别致谢以下开源项目的探索工作：
-- **[electron-liquid-glass](https://github.com/Meridius-Labs/electron-liquid-glass)**（由 Meridius-Labs 维护）
-- **[qt-liquid-glass](https://github.com/fsalinas26/qt-liquid-glass)**（由 fsalinas26 维护）
-- **[window-vibrancy](https://github.com/tauri-apps/window-vibrancy)**（由 Tauri 社区/tauri-apps 维护）
-
+- 表盘设计灵感来自传统机械腕表与流行文化（古风 / 超电磁炮主题）。
 ---
 
 <div align="center">

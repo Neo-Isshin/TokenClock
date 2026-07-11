@@ -13,7 +13,7 @@
 [![SwiftUI](https://img.shields.io/static/v1?label=UI&message=SwiftUI%20%2B%20AppKit&color=blueviolet)](https://developer.apple.com/xcode/swiftui/)
 [![SwiftPM](https://img.shields.io/static/v1?label=Build&message=SwiftPM&color=FA7343)](https://www.swift.org/package-manager/)
 [![Privacy](https://img.shields.io/static/v1?label=Privacy&message=local%20only&color=success)](#-privacy)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
 [![Releases](https://img.shields.io/badge/releases-Gitea-00B0F0?logo=gitea&logoColor=white)](https://gitea.nxc8335.cloud/nxc8335/TokenClock/releases)
 
 </div>
@@ -329,19 +329,17 @@ It returns JSON usage data, handy for external scripts / dashboards. It listens 
 
 ## 📄 License
 
-TokenClock is open-sourced under the **[MIT License](LICENSE)** — © 2026 Neo-Isshin. Use it, modify it, ship it freely; just keep the copyright notice.
+TokenClock is open-sourced under the **[GPL v3 License](LICENSE)** — © 2026 Neo-Isshin. You are free to use, distribute, and modify it, but any distributed or modified derivative works must also be open-sourced under the GPL v3 License.
 
 ---
 
 ## 🙏 Acknowledgments
 
-TokenClock exists thanks to the many excellent AI coding tools and their communities. Thanks to these tools for writing token usage to local logs, making unified visualization possible. The dial designs draw inspiration from traditional mechanical watches and pop culture (the Gu Feng / Railgun themes).
+- TokenClock exists thanks to the many excellent AI coding tools and their communities. Thanks to these tools for writing token usage to local logs, making unified visualization possible..
 
-The Liquid Glass refraction effect (macOS 26+) is powered by reverse-engineered macOS private API `NSGlassEffectView`. Special thanks to the pioneering work of these open-source projects:
-- **[electron-liquid-glass](https://github.com/Meridius-Labs/electron-liquid-glass)** (maintained by Meridius-Labs)
-- **[qt-liquid-glass](https://github.com/fsalinas26/qt-liquid-glass)** (maintained by fsalinas26)
-- **[window-vibrancy](https://github.com/tauri-apps/window-vibrancy)** (maintained by Tauri community/tauri-apps)
+- The Liquid Glass refraction effect (macOS 26+) is powered by reverse-engineered macOS private API `NSGlassEffectView`. Special thanks to the pioneering open-source project **[electron-liquid-glass](https://github.com/Meridius-Labs/electron-liquid-glass)** (maintained by Meridius-Labs).
 
+- The dial designs draw inspiration from traditional mechanical watches and pop culture (the Gu Feng / Railgun themes).
 ---
 
 <div align="center">
