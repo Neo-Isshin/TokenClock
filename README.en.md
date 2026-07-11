@@ -7,7 +7,7 @@
 **A native Liquid Glass token clock · every agent's consumption on a single dial**
 
 [![macOS 12+](https://img.shields.io/badge/macOS-12%2B-000000?style=for-the-badge&logo=apple&logoColor=white)](https://www.apple.com/macos/)
-[![macOS 26](https://img.shields.io/badge/macOS%2026-Liquid%20Glass-00B0F0?style=for-the-badge)](https://developer.apple.com/macos/)
+[![macOS 26+](https://img.shields.io/badge/macOS%2026-Liquid%20Glass-00B0F0?style=for-the-badge)](https://developer.apple.com/macos/)
 
 [![Swift 6](https://img.shields.io/static/v1?label=Swift&message=6&color=F05138&logo=swift&logoColor=white)](https://www.swift.org/)
 [![SwiftUI](https://img.shields.io/static/v1?label=UI&message=SwiftUI%20%2B%20AppKit&color=blueviolet)](https://developer.apple.com/xcode/swiftui/)
@@ -22,8 +22,8 @@
 
 <table>
   <tr>
-    <td width="50%" align="center"><img src="docs/screenshots/glass_en.png" alt="Liquid Glass build" width="300"><br><sub><b>Liquid Glass</b> · macOS 26</sub></td>
-    <td width="50%" align="center"><img src="docs/screenshots/normal_en.png" alt="Normal build" width="300"><br><sub><b>Normal</b> · macOS 12</sub></td>
+    <td width="50%" align="center"><img src="docs/screenshots/glass_en.png" alt="Liquid Glass build" width="300"><br><sub><b>Liquid Glass build</b> · macOS 26+</sub></td>
+    <td width="30%" align="center"><img src="docs/screenshots/normal_en.png" alt="Normal build" width="300"><br><sub><b>Normal build</b> · macOS 12+</sub></td>
   </tr>
 </table>
 
@@ -34,6 +34,9 @@
 TokenClock is an **always-on-top floating clock** for your desktop (draggable · remembers its position). The dial overlays live data: **today's total token consumption, message counts, the AI tools currently active, a rate indicator, and the weather**. Click the clock to expand a dropdown panel that breaks usage down by **each tool → each session / agent**.
 
 It's built with the macOS 26 **Liquid Glass** material for a crystal clock disc, ships with 6 carefully designed built-in faces plus a fully custom theme editor, and reads **everything locally** — nothing is ever uploaded.
+
+> [!NOTE]
+> Liquid Glass build has supported macOS 27 beta 3, but may break with beta version updates.
 
 ---
 
@@ -74,6 +77,9 @@ It's built with the macOS 26 **Liquid Glass** material for a crystal clock disc,
     <td valign="top"><b>⚡ Tiny footprint</b><br><sub>Native Swift + efficient polling (clock 1s / usage 30s / weather 5min) + streaming JSONL; sits in the background almost unnoticed.</sub></td>
     <td valign="top"><b>🔒 Purely local, zero upload</b><br><sub>Reads only local logs each tool writes; nothing leaves your machine, and the API listens on <code>127.0.0.1</code> only.</sub></td>
   </tr>
+  <tr>
+    <td colspan="2" valign="top"><b>🔌 Zero config, ready out of the box</b><br><sub>Auto-detects 14 AI coding tools' log paths on first launch. New tools without history are auto-discovered by background workers on their first session, requiring no manual setup.</sub></td>
+  </tr>
 </table>
 
 ---
@@ -110,7 +116,7 @@ It's built with the macOS 26 **Liquid Glass** material for a crystal clock disc,
 
 ## 📸 Screenshots
 
-### 🧊 Liquid Glass build preview (macOS 26)
+### 🧊 Liquid Glass build preview (macOS 26+)
 
 <table>
   <tr>
@@ -118,12 +124,12 @@ It's built with the macOS 26 **Liquid Glass** material for a crystal clock disc,
     <td width="50%" align="center"><b>Overview</b><br><sub>glass clock + expanded panel together</sub></td>
   </tr>
   <tr>
-    <td width="50%" align="center"><img src="docs/screenshots/glass_en.png" alt="liquid glass clock"></td>
-    <td width="50%" align="center"><img src="docs/screenshots/glass_full_en.png" alt="liquid glass overview"></td>
+    <td width="50%" align="center"><img src="docs/screenshots/glass_en.png" alt="liquid glass clock" width="75%"></td>
+    <td width="50%" align="center"><img src="docs/screenshots/glass_full_en.png" alt="liquid glass overview" width="75%"></td>
   </tr>
 </table>
 
-### ⬜ Normal build preview (macOS 12)
+### ⬜ Normal build preview (macOS 12+)
 
 <table>
   <tr>
@@ -131,8 +137,8 @@ It's built with the macOS 26 **Liquid Glass** material for a crystal clock disc,
     <td width="50%" align="center"><b>Overview</b><br><sub>opaque clock + expanded panel together</sub></td>
   </tr>
   <tr>
-    <td width="50%" align="center"><img src="docs/screenshots/normal_en.png" alt="normal clock"></td>
-    <td width="50%" align="center"><img src="docs/screenshots/normal_full_en.png" alt="normal overview"></td>
+    <td width="50%" align="center"><img src="docs/screenshots/normal_en.png" alt="normal clock" width="75%"></td>
+    <td width="50%" align="center"><img src="docs/screenshots/normal_full_en.png" alt="normal overview" width="75%"></td>
   </tr>
 </table>
 
@@ -140,12 +146,17 @@ It's built with the macOS 26 **Liquid Glass** material for a crystal clock disc,
 
 <table>
   <tr>
-    <td width="50%" align="center"><b>Expanded detail panel</b><br><sub>usage broken down by tool → session / agent</sub></td>
-    <td width="50%" align="center"><b>Theme picker</b><br><sub>6 built-in faces + fully custom</sub></td>
+    <td width="44%" align="center"><b>Settings panel</b><br><sub>Auto-detected tool paths & parameters configuration</sub></td>
+    <td width="34%" align="center"><b>Theme picker</b><br><sub>6 built-in faces & fully custom theme editing</sub></td>
+    <td width="22%" align="center"><b>Context menu</b><br><sub>Quick access to dial themes, sizes & preferences</sub></td>
   </tr>
   <tr>
-    <td width="50%" align="center"><img src="docs/screenshots/dropdown_en.png" alt="dropdown panel"></td>
-    <td width="50%" align="center"><img src="docs/screenshots/themes_en.png" alt="theme picker"></td>
+    <td align="center"><img src="docs/screenshots/settings_en.png" alt="settings panel upper" width="83%"></td>
+    <td align="center" rowspan="2" valign="middle"><img src="docs/screenshots/themes_en.png" alt="theme picker" width="300"></td>
+    <td align="center" rowspan="2" valign="middle"><img src="docs/screenshots/menu_en.png" alt="context menu" width="220"></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="docs/screenshots/settings_en_bottom.png" alt="settings panel lower" width="83%"></td>
   </tr>
 </table>
 
@@ -172,7 +183,7 @@ TokenClock reads the **JSONL / SQLite usage files** that each tool writes locall
 | **Continue** (VSCode extension) | `~/.continue/` | `CONTINUE_HOME` |
 | **Cursor Agent** | `~/.cursor/` | `CURSOR_AGENT_HOME` |
 
-> Token-counting formulas differ slightly per service (e.g. Codex's `input_tokens` already includes cached tokens, so it uses `total_tokens + reasoning_output_tokens`; other services sum input/output/cache fields that are mutually exclusive). See `docs/TOOL_SCHEMA_ANALYSIS.md`.
+> Token-counting formulas differ slightly per service: **Codex** and **Gemini/Qwen** have `input` (`promptTokenCount`) already including cached tokens, so cached must not be added again (it would double-count) — they use `input + output + (thought)`; other services (Claude/OpenClaw, etc.) sum input/output/cache fields that are mutually exclusive. See `docs/TOOL_SCHEMA_ANALYSIS.md`.
 
 ---
 
@@ -325,6 +336,11 @@ TokenClock is open-sourced under the **[MIT License](LICENSE)** — © 2026 Neo-
 ## 🙏 Acknowledgments
 
 TokenClock exists thanks to the many excellent AI coding tools and their communities. Thanks to these tools for writing token usage to local logs, making unified visualization possible. The dial designs draw inspiration from traditional mechanical watches and pop culture (the Gu Feng / Railgun themes).
+
+The Liquid Glass refraction effect (macOS 26+) is powered by reverse-engineered macOS private API `NSGlassEffectView`. Special thanks to the pioneering work of these open-source projects:
+- **[electron-liquid-glass](https://github.com/Meridius-Labs/electron-liquid-glass)** (maintained by Meridius-Labs)
+- **[qt-liquid-glass](https://github.com/fsalinas26/qt-liquid-glass)** (maintained by fsalinas26)
+- **[window-vibrancy](https://github.com/tauri-apps/window-vibrancy)** (maintained by Tauri community/tauri-apps)
 
 ---
 

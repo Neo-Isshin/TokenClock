@@ -7,7 +7,7 @@
 **原生液态玻璃（Liquid Glass）token 时钟 · 一屏掌握你所有 Agent 的消耗**
 
 [![macOS 12+](https://img.shields.io/badge/macOS-12%2B-000000?style=for-the-badge&logo=apple&logoColor=white)](https://www.apple.com/macos/)
-[![macOS 26](https://img.shields.io/badge/macOS%2026-Liquid%20Glass-00B0F0?style=for-the-badge)](https://developer.apple.com/macos/)
+[![macOS 26+](https://img.shields.io/badge/macOS%2026-Liquid%20Glass-00B0F0?style=for-the-badge)](https://developer.apple.com/macos/)
 
 [![Swift 6](https://img.shields.io/static/v1?label=Swift&message=6&color=F05138&logo=swift&logoColor=white)](https://www.swift.org/)
 [![SwiftUI](https://img.shields.io/static/v1?label=UI&message=SwiftUI%20%2B%20AppKit&color=blueviolet)](https://developer.apple.com/xcode/swiftui/)
@@ -22,8 +22,8 @@
 
 <table>
   <tr>
-    <td width="50%" align="center"><img src="docs/screenshots/glass_zh.png" alt="Liquid Glass 版" width="300"><br><sub><b>Liquid Glass</b> · macOS 26</sub></td>
-    <td width="50%" align="center"><img src="docs/screenshots/normal_zh.png" alt="Normal 版" width="300"><br><sub><b>Normal</b> · macOS 12</sub></td>
+    <td width="50%" align="center"><img src="docs/screenshots/glass_zh.png" alt="Liquid Glass 版" width="300"><br><sub><b>Liquid Glass版</b> · macOS 26+</sub></td>
+    <td width="30%" align="center"><img src="docs/screenshots/normal_zh.png" alt="Normal 版" width="300"><br><sub><b>Normal版</b> · macOS 12+</sub></td>
   </tr>
 </table>
 
@@ -35,6 +35,8 @@ TokenClock 是一个常驻桌面的 **悬浮时钟**（置顶 · 可拖拽 · �
 
 采用 macOS 26 的 **Liquid Glass** 材质打造玻璃质感表盘，并提供 6 款精心设计的内置表盘与完全自定义主题。所有数据都在 **本地** 读取——不上传任何信息。
 
+> [!NOTE]
+> Liquid Glass 版已支持 macOS 27 beta 3，但可能随 beta 版本更新而失效。
 ---
 
 ## 📑 目录
@@ -74,6 +76,9 @@ TokenClock 是一个常驻桌面的 **悬浮时钟**（置顶 · 可拖拽 · �
     <td valign="top"><b>⚡ 性能占用极低</b><br><sub>原生 Swift + 高效轮询（时钟 1s / 用量 30s / 天气 5min）+ 流式 JSONL，常驻后台几乎无感。</sub></td>
     <td valign="top"><b>🔒 纯本地，零上传</b><br><sub>只读各工具本地日志，不上传任何数据；API 仅监听 <code>127.0.0.1</code> 回环。</sub></td>
   </tr>
+  <tr>
+    <td colspan="2" valign="top"><b>🔌 零配置，开箱即用</b><br><sub>首次启动自动探测本机已安装的 14 款 AI 编程工具。对于无历史数据的全新工具，在使用产生日志后亦能被后台动态感知开启，无需手动配置。</sub></td>
+  </tr>
 </table>
 
 ---
@@ -110,7 +115,7 @@ TokenClock 是一个常驻桌面的 **悬浮时钟**（置顶 · 可拖拽 · �
 
 ## 📸 截图
 
-### 🧊 Liquid Glass 版预览（macOS 26）
+### 🧊 Liquid Glass 版预览（macOS 26+）
 
 <table>
   <tr>
@@ -118,12 +123,12 @@ TokenClock 是一个常驻桌面的 **悬浮时钟**（置顶 · 可拖拽 · �
     <td width="50%" align="center"><b>总览</b><br><sub>玻璃时钟与展开面板同框</sub></td>
   </tr>
   <tr>
-    <td width="50%" align="center"><img src="docs/screenshots/glass_zh.png" alt="liquid glass clock"></td>
-    <td width="50%" align="center"><img src="docs/screenshots/glass_full_zh.png" alt="liquid glass overview"></td>
+    <td width="50%" align="center"><img src="docs/screenshots/glass_zh.png" alt="liquid glass clock" width="75%"></td>
+    <td width="50%" align="center"><img src="docs/screenshots/glass_full_zh.png" alt="liquid glass overview" width="75%"></td>
   </tr>
 </table>
 
-### ⬜ Normal 版预览（macOS 12）
+### ⬜ Normal 版预览（macOS 12+）
 
 <table>
   <tr>
@@ -131,8 +136,8 @@ TokenClock 是一个常驻桌面的 **悬浮时钟**（置顶 · 可拖拽 · �
     <td width="50%" align="center"><b>总览</b><br><sub>不透明时钟与展开面板同框</sub></td>
   </tr>
   <tr>
-    <td width="50%" align="center"><img src="docs/screenshots/normal_zh.png" alt="normal clock"></td>
-    <td width="50%" align="center"><img src="docs/screenshots/normal_full_zh.png" alt="normal overview"></td>
+    <td width="50%" align="center"><img src="docs/screenshots/normal_zh.png" alt="normal clock" width="75%"></td>
+    <td width="50%" align="center"><img src="docs/screenshots/normal_full_zh.png" alt="normal overview" width="75%"></td>
   </tr>
 </table>
 
@@ -140,12 +145,17 @@ TokenClock 是一个常驻桌面的 **悬浮时钟**（置顶 · 可拖拽 · �
 
 <table>
   <tr>
-    <td width="50%" align="center"><b>展开详情面板</b><br><sub>按工具 → session / agent 拆解用量</sub></td>
-    <td width="50%" align="center"><b>表盘主题选择器</b><br><sub>6 款内置表盘 + 完全自定义</sub></td>
+    <td width="44%" align="center"><b>功能设置面板</b><br><sub>自动探测工具路径与详细参数配置</sub></td>
+    <td width="34%" align="center"><b>表盘主题选择器</b><br><sub>6 款内置表盘与完全自定义配置</sub></td>
+    <td width="22%" align="center"><b>右键快捷菜单</b><br><sub>快速调整表盘、尺寸与常用设置</sub></td>
   </tr>
   <tr>
-    <td width="50%" align="center"><img src="docs/screenshots/dropdown_zh.png" alt="dropdown panel"></td>
-    <td width="50%" align="center"><img src="docs/screenshots/themes_zh.png" alt="theme picker"></td>
+    <td align="center"><img src="docs/screenshots/settings_zh.png" alt="settings panel upper" width="100%"></td>
+    <td align="center" rowspan="2" valign="middle"><img src="docs/screenshots/themes_zh.png" alt="theme picker" width="300"></td>
+    <td align="center" rowspan="2" valign="middle"><img src="docs/screenshots/menu_zh.png" alt="context menu" width="220"></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="docs/screenshots/settings_zh_bottom.png" alt="settings panel lower" width="83%"></td>
   </tr>
 </table>
 
@@ -172,7 +182,7 @@ TokenClock 通过读取各工具在本地写入的 **JSONL / SQLite 用量文件
 | **Continue**（VSCode 扩展） | `~/.continue/` | `CONTINUE_HOME` |
 | **Cursor Agent** | `~/.cursor/` | `CURSOR_AGENT_HOME` |
 
-> 各服务的 token 计算公式略有差异（例如 Codex 的 `input_tokens` 已含 cached，需用 `total_tokens + reasoning_output_tokens`；其余服务输入/输出/缓存字段互斥相加）。详见 `docs/TOOL_SCHEMA_ANALYSIS.md`。
+> 各服务的 token 计算公式略有差异：**Codex、Gemini/Qwen** 的 `input`（`promptTokenCount`）已含 cached，不能再加 cached（否则双计），用 `input + output + (thought)`；其余服务（Claude/OpenClaw 等）的输入/输出/缓存字段互斥相加。详见 `docs/TOOL_SCHEMA_ANALYSIS.md`。
 
 ---
 
@@ -324,7 +334,14 @@ TokenClock 基于 **[MIT 协议](LICENSE)** 开源 —— © 2026 Neo-Isshin。�
 
 ## 🙏 致谢
 
-TokenClock 的诞生得益于众多优秀的 AI 编程工具及其社区。感谢这些工具将 token 用量写入本地日志，使统一可视化成为可能。表盘设计灵感来自传统机械腕表与流行文化（古风 / 超电磁炮主题）。
+TokenClock 的诞生得益于众多优秀的 AI 编程工具及其社区。感谢这些工具将 token 用量写入本地日志，使统一可视化成为可能。  
+
+表盘设计灵感来自传统机械腕表与流行文化（古风 / 超电磁炮主题）。
+
+本项目的液态玻璃折射效果（macOS 26+）得益于对 macOS 私有 API `NSGlassEffectView` 的逆向研究，在此特别致谢以下开源项目的探索工作：
+- **[electron-liquid-glass](https://github.com/Meridius-Labs/electron-liquid-glass)**（由 Meridius-Labs 维护）
+- **[qt-liquid-glass](https://github.com/fsalinas26/qt-liquid-glass)**（由 fsalinas26 维护）
+- **[window-vibrancy](https://github.com/tauri-apps/window-vibrancy)**（由 Tauri 社区/tauri-apps 维护）
 
 ---
 
