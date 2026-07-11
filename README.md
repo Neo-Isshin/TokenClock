@@ -4,14 +4,15 @@
 
 # 🕰️ TokenClock
 
-**精心设计的液态玻璃 token 时钟，随时掌握你所有 Agent 的消耗**
+**原生液态玻璃（Liquid Glass）token 时钟 · 一屏掌握你所有 Agent 的消耗**
 
-[![macOS 12+](https://img.shields.io/static/v1?label=macOS&message=12%2B&color=000000&logo=apple&logoColor=white)](https://www.apple.com/macos/)
-[![macOS 26 Liquid Glass](https://img.shields.io/static/v1?label=macOS%2026&message=Liquid%20Glass&color=00B0F0)](https://developer.apple.com/macos/)
+[![macOS 12+](https://img.shields.io/badge/macOS-12%2B-000000?style=for-the-badge&logo=apple&logoColor=white)](https://www.apple.com/macos/)
+[![macOS 26](https://img.shields.io/badge/macOS%2026-Liquid%20Glass-00B0F0?style=for-the-badge)](https://developer.apple.com/macos/)
+
 [![Swift 6](https://img.shields.io/static/v1?label=Swift&message=6&color=F05138&logo=swift&logoColor=white)](https://www.swift.org/)
 [![SwiftUI](https://img.shields.io/static/v1?label=UI&message=SwiftUI%20%2B%20AppKit&color=blueviolet)](https://developer.apple.com/xcode/swiftui/)
 [![SwiftPM](https://img.shields.io/static/v1?label=Build&message=SwiftPM&color=FA7343)](https://www.swift.org/package-manager/)
-[![Privacy](https://img.shields.io/static/v1?label=Privacy&message=local%20only&color=success)](#-隐私--privacy)
+[![Privacy](https://img.shields.io/static/v1?label=Privacy&message=local%20only&color=success)](#-隐私)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Releases](https://img.shields.io/badge/releases-Gitea-00B0F0?logo=gitea&logoColor=white)](https://gitea.nxc8335.cloud/nxc8335/TokenClock/releases)
 
@@ -31,16 +32,44 @@ TokenClock 是一个常驻桌面的 **悬浮时钟**（置顶 · 可拖拽 · �
 
 ---
 
+## 📑 目录
+
+- [🌟 核心优势](#-核心优势)
+- [✨ 特性](#-特性)
+- [📸 截图](#-截图)
+- [🤖 支持的 AI 工具](#-支持的-ai-工具)
+- [🚀 快速开始](#-快速开始) —— [一行安装](#一键安装最简单) · [`tokenclock` CLI](#使用-tokenclock-cli)
+- [🎨 主题](#-主题)
+- [🧊 液态玻璃（Liquid Glass）](#-液态玻璃liquid-glass)
+- [🔌 本地 API 服务器](#-本地-api-服务器)
+- [🔒 隐私](#-隐私)
+- [🛣 未来支持计划](#-未来支持计划)
+- [📦 技术栈](#-技术栈)
+- [📄 许可证](#-许可证)
+- [🙏 致谢](#-致谢)
+
+---
+
 ## 🌟 核心优势
 
-- **🤖 多工具总览，一屏尽览** —— 把 **14 款 AI 编程工具** 的 token / 消息用量汇聚到同一只表盘，无需再在多个终端、后台网页之间来回切换核对。
-- **🔍 分 session / agent 下钻** —— 点击展开下拉面板，从「工具级总览」一路深入到「每个 session / agent」的逐条明细，立刻看清消耗花在哪、是哪段对话烧的。
-- **🌤️ 常驻桌面，零打扰** —— 悬浮置顶的半透明液态玻璃表盘，余光扫一眼就知道实时消耗与速率（🔥 爆发 / 🌊 平稳），完全不打断编码节奏。
-- **📈 多维实时洞察** —— 今日总量、缓存率、未来趋势预测、活跃工具一图打尽，回答「花了多少、花在哪、接下来还会花多少」。
-- **🔒 纯本地，零上传** —— 只读各工具自己写入的本地用量日志，不上传任何 token / 会话数据；本地 API 仅监听 `127.0.0.1` 回环。
-- **🎨 丰富的自定义选项** —— 6 款内置表盘 + 完全自定义主题：液态玻璃底板透明度、玻璃着色、文字颜色、指针样式、刻度、数字、字体、表盘尺寸与窗口透明度全部可调，把表盘调成你想要的样子。
-- **📜 历史用量可回溯** —— 每日自动结算 token 用量快照并存入本地 SQLite（保留 30 天），经本地 API 暴露，可回溯过往消耗、对接你自己的图表或仪表盘。
-- **⚡ 性能占用极低** —— 原生 Swift 实现 + 高效轮询（时钟 1s / 用量 30s / 天气 5min）+ 流式 JSONL 读取，用量统计全在本地、零额外网络开销，常驻后台几乎无感。
+<table>
+  <tr>
+    <td width="50%" valign="top"><b>🤖 多工具总览，一屏尽览</b><br><sub>把 <b>14 款</b> AI 编程工具的 token / 消息用量汇聚到同一只表盘，告别多终端、多后台来回切换。</sub></td>
+    <td width="50%" valign="top"><b>🔍 分 session / agent 下钻</b><br><sub>从工具级总览一路深入到每条 session / agent 明细，立刻看清消耗花在哪、是哪段对话烧的。</sub></td>
+  </tr>
+  <tr>
+    <td valign="top"><b>🌤️ 常驻桌面，零打扰</b><br><sub>悬浮置顶的半透明液态玻璃表盘，余光即知实时消耗与速率（🔥 爆发 / 🌊 平稳），不打断编码节奏。</sub></td>
+    <td valign="top"><b>📈 多维实时洞察</b><br><sub>今日总量、缓存率、未来趋势预测、活跃工具一图打尽。</sub></td>
+  </tr>
+  <tr>
+    <td valign="top"><b>🎨 丰富的自定义选项</b><br><sub>6 款表盘 + 完全自定义：毛玻璃底板透明度、玻璃着色、文字 / 指针 / 刻度 / 数字 / 字体 / 尺寸 / 窗口透明度全可调。</sub></td>
+    <td valign="top"><b>📜 历史用量可回溯</b><br><sub>每日快照存入本地 SQLite（保留 30 天），经本地 API 暴露，可回溯过往、对接你自己的图表。</sub></td>
+  </tr>
+  <tr>
+    <td valign="top"><b>⚡ 性能占用极低</b><br><sub>原生 Swift + 高效轮询（时钟 1s / 用量 30s / 天气 5min）+ 流式 JSONL，常驻后台几乎无感。</sub></td>
+    <td valign="top"><b>🔒 纯本地，零上传</b><br><sub>只读各工具本地日志，不上传任何数据；API 仅监听 <code>127.0.0.1</code> 回环。</sub></td>
+  </tr>
+</table>
 
 ---
 
@@ -128,12 +157,14 @@ TokenClock 通过读取各工具在本地写入的 **JSONL / SQLite 用量文件
 
 自动检测 macOS 版本 → **下载预编译**对应变体（universal，SHA256 校验 + 去隔离）→ 安装到 `~/.tokenclock` → 把 `tokenclock` 加入 PATH → 首次启动并扫描各 AI 工具的本地路径，全程无需手动干预。下载失败或加 `--build-from-source` 才回退本地编译。
 
-```bash
-# 已克隆本仓库时直接运行：
-./cli/install.sh
+> 💡 **下载即用** —— 无需 Xcode、无需 $99/年公证：自动下载预编译 universal 二进制（SHA256 校验 + 去隔离），普通用户开箱即用。
 
-# 或一行安装：
+```bash
+# 一行安装（推荐）：
 curl -fsSL https://gitea.nxc8335.cloud/nxc8335/TokenClock/raw/main/cli/install.sh | bash
+
+# 已克隆本仓库时也可直接运行：
+./cli/install.sh
 ```
 
 可选参数：`--normal` / `--glass`（指定变体）/ `--no-start`（装完不自动启动）/ `--build-from-source`（强制本地编译）/ `--check`（仅检查不安装）/ `--debug`（debug 构建）。
@@ -274,6 +305,10 @@ TokenClock 的诞生得益于众多优秀的 AI 编程工具及其社区。感�
 
 <div align="center">
 
-**⭐ 如果 TokenClock 对你有帮助，欢迎 Star。**
+<h3>⭐ 觉得 TokenClock 好用？</h3>
+
+**欢迎给项目一个 Star —— 你的支持是持续迭代的动力 🚀**
+
+[![Star](https://img.shields.io/badge/⭐-Star%20on%20Gitea-00B0F0?style=for-the-badge&logo=gitea&logoColor=white)](https://gitea.nxc8335.cloud/nxc8335/TokenClock)
 
 </div>
