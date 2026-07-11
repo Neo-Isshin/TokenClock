@@ -20,7 +20,12 @@
 
 <div align="center">
 
-![TokenClock — floating Liquid Glass desktop clock](docs/screenshots/hero_en.png)
+<table>
+  <tr>
+    <td width="50%" align="center"><img src="docs/screenshots/glass_en.png" alt="Liquid Glass build"><br><sub><b>Liquid Glass</b> · macOS 26</sub></td>
+    <td width="50%" align="center"><img src="docs/screenshots/normal_en.png" alt="Normal build"><br><sub><b>Normal</b> · macOS 12</sub></td>
+  </tr>
+</table>
 
 </div>
 
@@ -105,22 +110,42 @@ It's built with the macOS 26 **Liquid Glass** material for a crystal clock disc,
 
 ## 📸 Screenshots
 
+### 🧊 Liquid Glass build preview (macOS 26)
+
 <table>
   <tr>
-    <td width="50%" align="center"><b>Floating glass clock</b><br>tokens / messages / rate / weather on the dial</td>
-    <td width="50%" align="center"><b>Expanded detail panel</b><br>usage broken down by tool → session / agent</td>
+    <td width="50%" align="center"><b>Floating Liquid Glass clock</b><br><sub>disc refracts the wallpaper · tokens / messages / rate / weather on the dial</sub></td>
+    <td width="50%" align="center"><b>Overview</b><br><sub>glass clock + expanded panel together</sub></td>
   </tr>
   <tr>
-    <td width="50%" align="center"><img src="docs/screenshots/hero_en.png" alt="hero"></td>
-    <td width="50%" align="center"><img src="docs/screenshots/dropdown_en.png" alt="dropdown"></td>
+    <td width="50%" align="center"><img src="docs/screenshots/glass_en.png" alt="liquid glass clock"></td>
+    <td width="50%" align="center"><img src="docs/screenshots/glass_full_en.png" alt="liquid glass overview"></td>
+  </tr>
+</table>
+
+### ⬜ Normal build preview (macOS 12)
+
+<table>
+  <tr>
+    <td width="50%" align="center"><b>Floating clock</b><br><sub>classic opaque dial · tokens / messages / rate / weather on the dial</sub></td>
+    <td width="50%" align="center"><b>Overview</b><br><sub>opaque clock + expanded panel together</sub></td>
   </tr>
   <tr>
-    <td width="50%" align="center"><b>Overview</b><br>clock + panel together on the desktop</td>
-    <td width="50%" align="center"><b>Theme picker</b> · 6 built-in faces + custom</td>
+    <td width="50%" align="center"><img src="docs/screenshots/normal_en.png" alt="normal clock"></td>
+    <td width="50%" align="center"><img src="docs/screenshots/normal_full_en.png" alt="normal overview"></td>
+  </tr>
+</table>
+
+### ⚙️ Settings preview
+
+<table>
+  <tr>
+    <td width="50%" align="center"><b>Expanded detail panel</b><br><sub>usage broken down by tool → session / agent</sub></td>
+    <td width="50%" align="center"><b>Theme picker</b><br><sub>6 built-in faces + fully custom</sub></td>
   </tr>
   <tr>
-    <td width="50%" align="center"><img src="docs/screenshots/overview.png" alt="overview"></td>
-    <td width="50%" align="center"><img src="docs/screenshots/themes_en.png" alt="themes"></td>
+    <td width="50%" align="center"><img src="docs/screenshots/dropdown_en.png" alt="dropdown panel"></td>
+    <td width="50%" align="center"><img src="docs/screenshots/themes_en.png" alt="theme picker"></td>
   </tr>
 </table>
 
