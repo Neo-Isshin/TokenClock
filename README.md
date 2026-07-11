@@ -20,7 +20,12 @@
 
 <div align="center">
 
-![TokenClock — 桌面液态玻璃时钟](docs/screenshots/hero.png)
+<table>
+  <tr>
+    <td width="50%" align="center"><img src="docs/screenshots/glass_zh.png" alt="Liquid Glass 版"><br><sub><b>Liquid Glass</b> · macOS 26</sub></td>
+    <td width="50%" align="center"><img src="docs/screenshots/normal_zh.png" alt="Normal 版"><br><sub><b>Normal</b> · macOS 12</sub></td>
+  </tr>
+</table>
 
 </div>
 
@@ -105,22 +110,42 @@ TokenClock 是一个常驻桌面的 **悬浮时钟**（置顶 · 可拖拽 · �
 
 ## 📸 截图
 
+### 🧊 Liquid Glass 版预览（macOS 26）
+
 <table>
   <tr>
-    <td width="50%" align="center"><b>悬浮玻璃时钟</b><br>表盘叠加 token / 消息 / 速率 / 天气</td>
-    <td width="50%" align="center"><b>展开详情面板</b><br>按工具 → session / agent 拆解用量</td>
+    <td width="50%" align="center"><b>悬浮液态玻璃时钟</b><br><sub>玻璃盘体随壁纸折射 · 叠加 token / 消息 / 速率 / 天气</sub></td>
+    <td width="50%" align="center"><b>总览</b><br><sub>玻璃时钟与展开面板同框</sub></td>
   </tr>
   <tr>
-    <td width="50%" align="center"><img src="docs/screenshots/hero.png" alt="hero"></td>
-    <td width="50%" align="center"><img src="docs/screenshots/dropdown_zh.png" alt="dropdown"></td>
+    <td width="50%" align="center"><img src="docs/screenshots/glass_zh.png" alt="liquid glass clock"></td>
+    <td width="50%" align="center"><img src="docs/screenshots/glass_full_zh.png" alt="liquid glass overview"></td>
+  </tr>
+</table>
+
+### ⬜ Normal 版预览（macOS 12）
+
+<table>
+  <tr>
+    <td width="50%" align="center"><b>悬浮时钟</b><br><sub>经典不透明表盘 · 叠加 token / 消息 / 速率 / 天气</sub></td>
+    <td width="50%" align="center"><b>总览</b><br><sub>不透明时钟与展开面板同框</sub></td>
   </tr>
   <tr>
-    <td width="50%" align="center"><b>总览</b><br>时钟与展开面板同框</td>
-    <td width="50%" align="center"><b>表盘主题选择器</b> · 6 款内置 + 自定义</td>
+    <td width="50%" align="center"><img src="docs/screenshots/normal_zh.png" alt="normal clock"></td>
+    <td width="50%" align="center"><img src="docs/screenshots/normal_full_zh.png" alt="normal overview"></td>
+  </tr>
+</table>
+
+### ⚙️ 功能设置预览
+
+<table>
+  <tr>
+    <td width="50%" align="center"><b>展开详情面板</b><br><sub>按工具 → session / agent 拆解用量</sub></td>
+    <td width="50%" align="center"><b>表盘主题选择器</b><br><sub>6 款内置表盘 + 完全自定义</sub></td>
   </tr>
   <tr>
-    <td width="50%" align="center"><img src="docs/screenshots/overview.png" alt="overview"></td>
-    <td width="50%" align="center"><img src="docs/screenshots/themes_zh.png" alt="themes"></td>
+    <td width="50%" align="center"><img src="docs/screenshots/dropdown_zh.png" alt="dropdown panel"></td>
+    <td width="50%" align="center"><img src="docs/screenshots/themes_zh.png" alt="theme picker"></td>
   </tr>
 </table>
 
