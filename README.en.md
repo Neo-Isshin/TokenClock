@@ -13,6 +13,7 @@
 [![SwiftPM](https://img.shields.io/static/v1?label=Build&message=SwiftPM&color=FA7343)](https://www.swift.org/package-manager/)
 [![Privacy](https://img.shields.io/static/v1?label=Privacy&message=local%20only&color=success)](#-privacy)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Releases](https://img.shields.io/badge/releases-Gitea-00B0F0?logo=gitea&logoColor=white)](https://gitea.nxc8335.cloud/nxc8335/TokenClock/releases)
 
 </div>
 
@@ -125,7 +126,7 @@ TokenClock reads the **JSONL / SQLite usage files** that each tool writes locall
 
 ### One-line install (easiest)
 
-Auto-detects the macOS version → builds the matching variant → installs to `~/.tokenclock` → puts `tokenclock` on your PATH → launches and scans each AI tool's local paths — no manual steps.
+Auto-detects the macOS version → **downloads the precompiled** matching variant (universal, SHA256-checked + de-quarantined) → installs to `~/.tokenclock` → puts `tokenclock` on your PATH → launches and scans each AI tool's local paths — no manual steps. Falls back to a local build only on download failure or with `--build-from-source`.
 
 ```bash
 # if you've cloned this repo, run it directly:
@@ -135,13 +136,13 @@ Auto-detects the macOS version → builds the matching variant → installs to `
 curl -fsSL https://gitea.nxc8335.cloud/nxc8335/TokenClock/raw/main/cli/install.sh | bash
 ```
 
-Options: `--debug` (faster build) / `--normal` / `--glass` / `--no-start` (don't auto-launch).
+Options: `--normal` / `--glass` (pick the variant) / `--no-start` (don't auto-launch) / `--build-from-source` (force a local build) / `--check` (check only, don't install) / `--debug` (debug build).
 
 > Or build manually from source below.
 
 ### Prerequisites
 - **macOS 12+** (normal build); **macOS 26+** (Liquid Glass build)
-- Swift 6 toolchain (Xcode 16+ / Command Line Tools)
+- The precompiled install needs **no toolchain at all**; Swift 6 (Xcode 16+ / Command Line Tools) is only required for `--build-from-source` local builds
 
 ### Build & run from source
 
@@ -160,6 +161,8 @@ swift build -c release # release
 
 > The `main` branch's `Package.swift` declares `.macOS(.v26)`, so `swift run` produces the Liquid Glass build; the classic (opaque) macOS 12-compatible build lives on the `normal` branch.
 
+> Gotcha: on **macOS 27 with only Command Line Tools** installed (no full Xcode), a bare `swift build` on the `main` branch fails because the 27 SDK macro-expands `@State`; pass `SDKROOT=/Library/Developer/CommandLineTools/SDKs/MacOSX26.sdk swift build` to fix it (in the 26 SDK `@State` is still a plain property wrapper). The `normal` branch is unaffected.
+
 ### Use the `tokenclock` CLI
 
 Install the lightweight shell script onto your PATH:
@@ -174,7 +177,7 @@ sudo install -m755 cli/tokenclock /usr/local/bin/tokenclock
 | `tokenclock stop` | Stop all running TokenClock instances |
 | `tokenclock restart [--glass\|--normal]` | Restart |
 | `tokenclock doctor` | Diagnose: OS version, installed variant paths, running processes, env vars |
-| `tokenclock update` | Update (placeholder until the update server is deployed) |
+| `tokenclock update [--check] [--force]` | Update to the latest release: pulls the latest install.sh → SHA256-checks → installs new binaries → restarts (no-op if unchanged); `--check` checks only, `--force` forces |
 | `tokenclock help` | Show help |
 
 **Variant discovery order**: `$TOKENCLOCK_GLASS` / `$TOKENCLOCK_NORMAL` env vars → `~/.tokenclock/` → `/Applications/` → repo `.build/debug/`.
@@ -238,9 +241,8 @@ It returns JSON usage data, handy for external scripts / dashboards. It listens 
 
 ## 🛣 Roadmap
 
-- [ ] `tokenclock update` — deploy an update server for one-command fetch / install
 - [ ] Support more AI coding tools (keep extending the detector)
-- [ ] Signed / notarized release builds (`.app`)
+- [ ] Signed / notarized release builds (`.app`) — currently shipping unsigned via Gitea; this needs an Apple Developer account ($99/yr) and isn't currently planned — open to sponsorship / volunteers
 - [ ] Richer history stats and charts
 
 ---
@@ -254,7 +256,7 @@ It returns JSON usage data, handy for external scripts / dashboards. It listens 
 | **Build** | Swift Package Manager (no `.xcodeproj`) |
 | **Platforms** | macOS 26 SDK (`main` branch) / macOS 12 SDK (`normal` branch) |
 | **i18n** | Custom `L10n` engine (zh-Hans / zh-Hant / en, no `.xcstrings`) |
-| **Size** | ~10,700 lines of Swift |
+| **Size** | ~12,400 lines of Swift |
 
 ---
 
