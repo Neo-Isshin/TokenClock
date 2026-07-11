@@ -187,8 +187,13 @@ BIN_NORMAL=""; BIN_GLASS=""
 
 if [ "$DO_NORMAL" = 1 ]; then
   BIN_NORMAL="$(build_variant "$BR_NORMAL" normal)"
-  # tar 到固定路径，gzip -n 去时间戳
-  tar -C "$(dirname "$BIN_NORMAL")" -cf /tmp/tc-release-normal.tar TokenClock || die "normal tar 失败: $BIN_NORMAL"
+  # tar 到固定路径，gzip -n 去时间戳。
+  # normal 分支有资源 bundle（Package.swift .copy("Resources/glass_disc.png") → TokenClock_TokenClock.bundle），
+  # 必须随二进制一起分发——否则预编译用户切 .glass 主题时 Bundle.module 找不到 bundle 而 fatalError
+  # （install.sh 已有把 bundle 部署到二进制旁的逻辑，缺的只是历史 tarball 里没带它）。
+  NORMAL_PKG="TokenClock"
+  [ -d "$(dirname "$BIN_NORMAL")/TokenClock_TokenClock.bundle" ] && NORMAL_PKG="TokenClock TokenClock_TokenClock.bundle"
+  tar -C "$(dirname "$BIN_NORMAL")" -cf /tmp/tc-release-normal.tar $NORMAL_PKG || die "normal tar 失败: $BIN_NORMAL"
   gzip -n -f /tmp/tc-release-normal.tar
   SHA_NORMAL="$(shasum -a 256 /tmp/tc-release-normal.tar.gz | cut -d' ' -f1)"
   [ -n "$SHA_NORMAL" ] || die "normal SHA 为空（tarball 未生成: $BIN_NORMAL）"
@@ -196,7 +201,11 @@ if [ "$DO_NORMAL" = 1 ]; then
 fi
 if [ "$DO_GLASS" = 1 ]; then
   BIN_GLASS="$(build_variant "$BR_GLASS" glass)"
-  tar -C "$(dirname "$BIN_GLASS")" -cf /tmp/tc-release-glass.tar TokenClock || die "glass tar 失败: $BIN_GLASS"
+  # glass（main）Package.swift 无 resources → 不产 bundle，GLASS_PKG 仅 TokenClock；
+  # 保留 bundle 条件以备将来给 glass 加资源时自动随包分发。
+  GLASS_PKG="TokenClock"
+  [ -d "$(dirname "$BIN_GLASS")/TokenClock_TokenClock.bundle" ] && GLASS_PKG="TokenClock TokenClock_TokenClock.bundle"
+  tar -C "$(dirname "$BIN_GLASS")" -cf /tmp/tc-release-glass.tar $GLASS_PKG || die "glass tar 失败: $BIN_GLASS"
   gzip -n -f /tmp/tc-release-glass.tar
   SHA_GLASS="$(shasum -a 256 /tmp/tc-release-glass.tar.gz | cut -d' ' -f1)"
   [ -n "$SHA_GLASS" ] || die "glass SHA 为空（tarball 未生成: $BIN_GLASS）"
