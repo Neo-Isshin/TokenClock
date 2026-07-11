@@ -13,6 +13,7 @@
 [![SwiftPM](https://img.shields.io/static/v1?label=Build&message=SwiftPM&color=FA7343)](https://www.swift.org/package-manager/)
 [![Privacy](https://img.shields.io/static/v1?label=Privacy&message=local%20only&color=success)](#-隐私--privacy)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Releases](https://img.shields.io/badge/releases-Gitea-00B0F0?logo=gitea&logoColor=white)](https://gitea.nxc8335.cloud/nxc8335/TokenClock/releases)
 
 </div>
 
@@ -125,7 +126,7 @@ TokenClock 通过读取各工具在本地写入的 **JSONL / SQLite 用量文件
 
 ### 一键安装（最简单）
 
-自动检测 macOS 版本 → 构建对应变体 → 安装到 `~/.tokenclock` → 把 `tokenclock` 加入 PATH → 首次启动并扫描各 AI 工具的本地路径，全程无需手动干预。
+自动检测 macOS 版本 → **下载预编译**对应变体（universal，SHA256 校验 + 去隔离）→ 安装到 `~/.tokenclock` → 把 `tokenclock` 加入 PATH → 首次启动并扫描各 AI 工具的本地路径，全程无需手动干预。下载失败或加 `--build-from-source` 才回退本地编译。
 
 ```bash
 # 已克隆本仓库时直接运行：
@@ -135,13 +136,13 @@ TokenClock 通过读取各工具在本地写入的 **JSONL / SQLite 用量文件
 curl -fsSL https://gitea.nxc8335.cloud/nxc8335/TokenClock/raw/main/cli/install.sh | bash
 ```
 
-可选参数：`--debug`（构建更快）/ `--normal` / `--glass` / `--no-start`（装完不自动启动）。
+可选参数：`--normal` / `--glass`（指定变体）/ `--no-start`（装完不自动启动）/ `--build-from-source`（强制本地编译）/ `--check`（仅检查不安装）/ `--debug`（debug 构建）。
 
 > 也可手动从源码构建，见下方。
 
 ### 前置要求
 - **macOS 12+**（普通版）；**macOS 26+**（Liquid Glass 版）
-- Swift 6 工具链（Xcode 16+ / Command Line Tools）
+- 预编译安装**无需任何工具链**；仅 `--build-from-source` 本地编译时需要 Swift 6（Xcode 16+ / Command Line Tools）
 
 ### 从源码构建运行
 
@@ -160,6 +161,8 @@ swift build -c release # 发布
 
 > `main` 分支的 `Package.swift` 声明为 `.macOS(.v26)`，`swift run` 直接产出 Liquid Glass 版；兼容 macOS 12 的经典（不透明）版本位于 `normal` 分支。
 
+> 小坑：在 **macOS 27 且只装了 Command Line Tools**（无完整 Xcode）的机器上，`main` 分支裸 `swift build` 会因 27 SDK 把 `@State` 宏化而失败；指定 `SDKROOT=/Library/Developer/CommandLineTools/SDKs/MacOSX26.sdk swift build` 即可（26 SDK 里 `@State` 仍是普通属性包装器）。`normal` 分支不受影响。
+
 ### 使用 `tokenclock` CLI
 
 将轻量 shell 脚本安装到 PATH：
@@ -174,7 +177,7 @@ sudo install -m755 cli/tokenclock /usr/local/bin/tokenclock
 | `tokenclock stop` | 停止所有运行中的 TokenClock 实例 |
 | `tokenclock restart [--glass\|--normal]` | 重启 |
 | `tokenclock doctor` | 诊断环境：系统版本、已安装变体路径、运行中的进程、环境变量 |
-| `tokenclock update` | 更新（占位，更新服务器待部署） |
+| `tokenclock update [--check] [--force]` | 更新到最新版：拉取最新 install.sh → SHA256 校验 → 装新二进制 → 重启（无变更则不动）；`--check` 仅检查，`--force` 强制 |
 | `tokenclock help` | 显示帮助 |
 
 **变体定位顺序**：`$TOKENCLOCK_GLASS` / `$TOKENCLOCK_NORMAL` 环境变量 → `~/.tokenclock/` → `/Applications/` → 仓库 `.build/debug/`。
@@ -238,9 +241,8 @@ GET http://127.0.0.1:9988/api/history?days=30 # 过去 N 天的日结快照（�
 
 ## 🛣 未来支持计划
 
-- [ ] `tokenclock update` —— 部署更新服务器，实现一键拉取 / 安装新版本
 - [ ] 支持更多 AI 编程工具（持续扩展检测器）
-- [ ] 提供签名 / 公证的 release 构建（`.app`）
+- [ ] 提供签名 / 公证的 release 构建（`.app`）—— 当前走未签名 Gitea 分发，此项需 Apple Developer 账号（$99/年），暂不计划，欢迎赞助 / 认领
 - [ ] 更丰富的历史统计与图表
 
 ---
@@ -254,7 +256,7 @@ GET http://127.0.0.1:9988/api/history?days=30 # 过去 N 天的日结快照（�
 | **构建** | Swift Package Manager（无 `.xcodeproj`） |
 | **平台** | macOS 26 SDK（`main` 分支）/ macOS 12 SDK（`normal` 分支） |
 | **定位** | 自研 `L10n` 引擎（zh-Hans / zh-Hant / en，无 `.xcstrings`） |
-| **规模** | 约 10,700 行 Swift |
+| **规模** | 约 12,400 行 Swift |
 
 ---
 
