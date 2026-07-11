@@ -45,10 +45,13 @@ C_RED=$'\033[1;31m'; C_GREEN=$'\033[1;32m'; C_YELLOW=$'\033[1;33m'; C_CYAN=$'\03
 
 die()  { printf '%s✗ %s%s\n' "$C_RED" "$*" "$C_RESET" >&2; exit 1; }
 say()  { printf '%s\n' "$*"; }
-step() { printf '\n%s━━ %s ━━%s\n' "$C_CYAN" "$*" "$C_RESET"; }
-info() { printf '  %s%s%s\n' "$C_DIM" "$*" "$C_RESET"; }
-ok()   { printf '  %s✓ %s%s\n' "$C_GREEN" "$*" "$C_RESET"; }
-warn() { printf '  %s⚠ %s%s\n' "$C_YELLOW" "$*" "$C_RESET"; }
+# 注意：step/info/ok/warn 走 stderr —— build_variant()/upload_asset() 用 $() 捕获返回值
+# （末行 echo "$bin" / echo "$uuid"），若进度打到 stdout 会被一起吞进 BIN_/UUID_ 变量
+# （曾导致 BIN_GLASS 变成多行垃圾 → tar "File name too long"）。say() 是最终结果，留 stdout。
+step() { printf '\n%s━━ %s ━━%s\n' "$C_CYAN" "$*" "$C_RESET" >&2; }
+info() { printf '  %s%s%s\n' "$C_DIM" "$*" "$C_RESET" >&2; }
+ok()   { printf '  %s✓ %s%s\n' "$C_GREEN" "$*" "$C_RESET" >&2; }
+warn() { printf '  %s⚠ %s%s\n' "$C_YELLOW" "$*" "$C_RESET" >&2; }
 
 # 从 remote URL 解析 token（形如 https://user:TOKEN@host/...）；GITEA_TOKEN 优先。
 resolve_token() {
@@ -83,13 +86,13 @@ while [ $# -gt 0 ]; do
     -h|--help)
       sed -n '3,30p' "$0"; exit 0 ;;
     -*) die "未知参数: $1" ;;
-    *)  [ -z "$VERSION" ] || die "版本号只能给一个（已有 $VERSION）"; VERSION="$(norm_version "$1")" ;;
+    *)  [ -z "$VERSION" ] || die "版本号只能给一个（已有 ${VERSION}）"; VERSION="$(norm_version "$1")" ;;
   esac
   shift
 done
 
 [ -n "$VERSION" ] || die "用法: scripts/release.sh <version> [--dry-run] [--only normal|glass] [--skip-build]"
-[[ "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "版本号格式应为 vX.Y.Z（得到 $VERSION）"
+[[ "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "版本号格式应为 vX.Y.Z（得到 ${VERSION}）"
 
 # 只发一个变体时，另一个的 SHA 保持不变
 DO_GLASS=1; DO_NORMAL=1
@@ -106,6 +109,9 @@ ORIG_BRANCH="$(gc branch --show-current)" || die "不在 git 仓库"
 [ -n "$ORIG_BRANCH" ] || die "处于 detached HEAD，先 checkout 一个分支"
 info "起始分支: $ORIG_BRANCH"
 
+# 任何退出（含 die）都恢复起始分支 —— 否则构建中 die 会把仓库留在 main/normal 上。
+trap 'gc checkout "$ORIG_BRANCH" --quiet 2>/dev/null || true' EXIT
+
 # 两分支工作树必须干净（.build 是 gitignored，不影响）
 for b in "$BR_GLASS" "$BR_NORMAL"; do
   dirty="$(gc -C "$REPO_ROOT" status --porcelain 2>/dev/null)"
@@ -115,7 +121,7 @@ done
 
 gc fetch origin --quiet || die "fetch 失败"
 
-[ "$DO_NORMAL" = 1 ] && { [ -x "$XCODE_BETA/usr/bin/swift" ] || die "找不到 Xcode-beta: $XCODE_BETA（normal 构建需要 universal 回退库）"; }
+[ "$DO_NORMAL" = 1 ] && { (DEVELOPER_DIR="${XCODE_BETA}" xcrun --find swift >/dev/null 2>&1) || die "找不到 Xcode-beta 的 swift（normal 构建需要 Xcode universal 回退库）：${XCODE_BETA}"; }
 [ -d "$CLT26_SDK" ] || die "找不到 CLT 26 SDK: $CLT26_SDK"
 
 TOKEN="$(resolve_token)"
@@ -130,7 +136,7 @@ ok "git http.version=HTTP/1.1, postBuffer=524288000"
 # build_variant <branch> <recipe-tag>  → 产物落到 .build/release/TokenClock（fat）
 build_variant() {
   local branch="$1" recipe="$2" out
-  step "构建 $branch（配方: $recipe）"
+  step "构建 ${branch}（配方: ${recipe}）"
   gc checkout "$branch" --quiet || die "checkout $branch 失败"
   [ -z "$(gc status --porcelain)" ] || die "$branch 工作树不干净"
 
@@ -141,13 +147,13 @@ build_variant() {
       info "SDKROOT=$CLT26_SDK swift build（CLT-only，.v26 不触发回退库）" ;;
     normal)
       build_env=(env "DEVELOPER_DIR=$XCODE_BETA" "SDKROOT=$CLT26_SDK")
-      info "DEVELOPER_DIR=Xcode-beta SDKROOT=$CLT26_SDK（.v12 触发回退库，需 Xcode universal 切片）" ;;
+      info "DEVELOPER_DIR=Xcode-beta SDKROOT=${CLT26_SDK}（.v12 触发回退库，需 Xcode universal 切片）" ;;
   esac
 
   if [ "$SKIP_BUILD" = 1 ]; then
     warn "--skip-build：复用已有 .build 产物"
   else
-    "${build_env[@]}" swift build -c release --arch arm64 --arch x86_64 || die "$branch 构建失败"
+    "${build_env[@]}" swift build -c release --arch arm64 --arch x86_64 >&2 || die "$branch 构建失败"
   fi
 
   # 定位 fat 产物：SwiftPM 6.4 多架构产物落在 .build/out/Products/Release/TokenClock，
@@ -172,7 +178,7 @@ build_variant() {
     bin=".build/release-TokenClock-fat"
     lipo -create "$a64" "$x86" -output "$bin" || die "lipo 合并失败"
   fi
-  ok "universal 产物: $bin（$(lipo -info "$bin" 2>/dev/null | sed 's/.*: //')）"
+  ok "universal 产物: ${bin}（$(lipo -info "$bin" 2>/dev/null | sed 's/.*: //')）"
   echo "$bin"
 }
 
@@ -181,17 +187,28 @@ BIN_NORMAL=""; BIN_GLASS=""
 
 if [ "$DO_NORMAL" = 1 ]; then
   BIN_NORMAL="$(build_variant "$BR_NORMAL" normal)"
-  # tar 到固定路径，gzip -n 去时间戳
-  tar -C "$(dirname "$BIN_NORMAL")" -cf /tmp/tc-release-normal.tar TokenClock 2>/dev/null
+  # tar 到固定路径，gzip -n 去时间戳。
+  # normal 分支有资源 bundle（Package.swift .copy("Resources/glass_disc.png") → TokenClock_TokenClock.bundle），
+  # 必须随二进制一起分发——否则预编译用户切 .glass 主题时 Bundle.module 找不到 bundle 而 fatalError
+  # （install.sh 已有把 bundle 部署到二进制旁的逻辑，缺的只是历史 tarball 里没带它）。
+  NORMAL_PKG="TokenClock"
+  [ -d "$(dirname "$BIN_NORMAL")/TokenClock_TokenClock.bundle" ] && NORMAL_PKG="TokenClock TokenClock_TokenClock.bundle"
+  tar -C "$(dirname "$BIN_NORMAL")" -cf /tmp/tc-release-normal.tar $NORMAL_PKG || die "normal tar 失败: $BIN_NORMAL"
   gzip -n -f /tmp/tc-release-normal.tar
   SHA_NORMAL="$(shasum -a 256 /tmp/tc-release-normal.tar.gz | cut -d' ' -f1)"
+  [ -n "$SHA_NORMAL" ] || die "normal SHA 为空（tarball 未生成: $BIN_NORMAL）"
   ok "normal tarball: /tmp/tc-release-normal.tar.gz  SHA=${SHA_NORMAL:0:16}…"
 fi
 if [ "$DO_GLASS" = 1 ]; then
   BIN_GLASS="$(build_variant "$BR_GLASS" glass)"
-  tar -C "$(dirname "$BIN_GLASS")" -cf /tmp/tc-release-glass.tar TokenClock 2>/dev/null
+  # glass（main）Package.swift 无 resources → 不产 bundle，GLASS_PKG 仅 TokenClock；
+  # 保留 bundle 条件以备将来给 glass 加资源时自动随包分发。
+  GLASS_PKG="TokenClock"
+  [ -d "$(dirname "$BIN_GLASS")/TokenClock_TokenClock.bundle" ] && GLASS_PKG="TokenClock TokenClock_TokenClock.bundle"
+  tar -C "$(dirname "$BIN_GLASS")" -cf /tmp/tc-release-glass.tar $GLASS_PKG || die "glass tar 失败: $BIN_GLASS"
   gzip -n -f /tmp/tc-release-glass.tar
   SHA_GLASS="$(shasum -a 256 /tmp/tc-release-glass.tar.gz | cut -d' ' -f1)"
+  [ -n "$SHA_GLASS" ] || die "glass SHA 为空（tarball 未生成: $BIN_GLASS）"
   ok "glass tarball:  /tmp/tc-release-glass.tar.gz  SHA=${SHA_GLASS:0:16}…"
 fi
 
@@ -200,7 +217,7 @@ step "对比 install.sh 旧 pin"
 gc checkout "$BR_GLASS" --quiet
 OLD_NORMAL="$(grep -oE 'normal\) echo "[a-f0-9]{64}"' cli/install.sh | grep -oE '[a-f0-9]{64}')"
 OLD_GLASS="$(grep -oE 'glass\)  echo "[a-f0-9]{64}"' cli/install.sh | grep -oE '[a-f0-9]{64}')"
-OLD_TAG="$(grep -oE 'RELEASE_TAG="\$\{TOKENCLOCK_RELEASE_TAG:-v[0-9.]+"' cli/install.sh | grep -oE 'v[0-9.]+')"
+OLD_TAG="$(grep -oE 'RELEASE_TAG="\$\{TOKENCLOCK_RELEASE_TAG:-v[0-9.]+' cli/install.sh | grep -oE 'v[0-9.]+')"
 
 info "旧: tag=$OLD_TAG  normal=${OLD_NORMAL:0:12}…  glass=${OLD_GLASS:0:12}…"
 info "新: tag=$VERSION  normal=${SHA_NORMAL:-（沿用）}  glass=${SHA_GLASS:-（沿用）}"
@@ -228,7 +245,7 @@ if [ "$DRY_RUN" = 1 ]; then
 fi
 
 # ─────────────────────────── 改 install.sh + tokenclock（在 main 上）───────────────────────────
-step "更新 install.sh / cli/tokenclock（编辑于 $BR_GLASS）"
+step "更新 install.sh / cli/tokenclock（编辑于 ${BR_GLASS}）"
 gc checkout "$BR_GLASS" --quiet
 
 # RELEASE_TAG（文件内唯一形如 :-vX.Y.Z} 的片段）
@@ -244,7 +261,7 @@ bash -n cli/install.sh || die "install.sh 语法错误"
 bash -n cli/tokenclock || die "tokenclock 语法错误"
 
 # 回读校验
-read_tag="$(grep -oE 'RELEASE_TAG="\$\{TOKENCLOCK_RELEASE_TAG:-v[0-9.]+"' cli/install.sh | grep -oE 'v[0-9.]+')"
+read_tag="$(grep -oE 'RELEASE_TAG="\$\{TOKENCLOCK_RELEASE_TAG:-v[0-9.]+' cli/install.sh | grep -oE 'v[0-9.]+')"
 read_normal="$(grep -oE 'normal\) echo "[a-f0-9]{64}"' cli/install.sh | grep -oE '[a-f0-9]{64}')"
 read_glass="$(grep -oE 'glass\)  echo "[a-f0-9]{64}"' cli/install.sh | grep -oE '[a-f0-9]{64}')"
 read_cli="$(grep -oE 'CLI_VERSION="[0-9.]+"' cli/tokenclock | grep -oE '[0-9.]+')"
@@ -304,7 +321,7 @@ api_post() { curl -fsSL --retry 3 --retry-delay 2 -X POST -H "Authorization: tok
 RELEASE_ID=""
 existing="$(api -o /tmp/tc-rel.json -w '%{http_code}' "$API/releases/tags/$VERSION" 2>/dev/null || true)"
 if [ "$existing" = "404" ] || [ "$existing" = "" ]; then
-  info "release 不存在，创建（target_commitish=$BR_GLASS）"
+  info "release 不存在，创建（target_commitish=${BR_GLASS}）"
   api_post "$API/releases" \
     -H 'Content-Type: application/json' \
     -d "{\"tag_name\":\"$VERSION\",\"target_commitish\":\"$BR_GLASS\",\"name\":\"$VERSION\",\"body\":\"TokenClock $VERSION\",\"draft\":false,\"prerelease\":false}" \
@@ -312,7 +329,7 @@ if [ "$existing" = "404" ] || [ "$existing" = "" ]; then
   RELEASE_ID="$(python3 -c 'import json;print(json.load(open("/tmp/tc-rel-create.json"))["id"])' 2>/dev/null)"
 else
   RELEASE_ID="$(python3 -c 'import json;print(json.load(open("/tmp/tc-rel.json"))["id"])' 2>/dev/null)"
-  info "release 已存在 id=$RELEASE_ID，确保 draft=false + 更新 body"
+  info "release 已存在 id=${RELEASE_ID}，确保 draft=false + 更新 body"
   api -X PATCH "$API/releases/$RELEASE_ID" \
     -H 'Content-Type: application/json' \
     -d "{\"body\":\"TokenClock $VERSION\",\"draft\":false}" -o /dev/null 2>&1 || warn "PATCH release 失败（可忽略）"
@@ -333,7 +350,7 @@ try:
 except: pass
 " 2>/dev/null)"
   if [ -n "$aid" ]; then
-    warn "$name 已存在（asset id=$aid），删除后重传"
+    warn "$name 已存在（asset id=${aid}），删除后重传"
     api -X DELETE "$API/releases/$RELEASE_ID/assets/$aid" -o /dev/null 2>&1 || warn "删除旧 $name 失败"
   fi
   api_post "$API/releases/$RELEASE_ID/assets?name=$name" \
@@ -355,15 +372,18 @@ for a in json.load(open('/tmp/tc-assets2.json')):
 }
 
 UUID_NORMAL=""; UUID_GLASS=""
-if [ "$NORMAL_CHANGED" = 1 ]; then
+# 新建 release 必须把所有已构建资产都传上去 —— 不能因 SHA 未变就跳过
+# （否则只改一变体时，新 release 会缺失另一变体的 tarball，installer 下载会 404）。
+# 仅 --only 跳过的那个变体才沿用既有 release 资产。
+if [ "$DO_NORMAL" = 1 ]; then
   UUID_NORMAL="$(upload_asset TokenClock-normal-universal.tar.gz /tmp/tc-release-normal.tar.gz)"
 else
-  info "normal SHA 未变，沿用已有资产"
+  info "normal 本次未构建（--only glass），沿用既有 release 资产"
 fi
-if [ "$GLASS_CHANGED" = 1 ]; then
+if [ "$DO_GLASS" = 1 ]; then
   UUID_GLASS="$(upload_asset TokenClock-glass-universal.tar.gz /tmp/tc-release-glass.tar.gz)"
 else
-  info "glass SHA 未变，沿用已有资产"
+  info "glass 本次未构建（--only normal），沿用既有 release 资产"
 fi
 
 # ─────────────────────────── 校验下载 SHA ───────────────────────────
