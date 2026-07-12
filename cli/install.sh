@@ -262,6 +262,10 @@ for entry in "${BUILT_BINS[@]}"; do
   if [ "$bin_changed" -eq 1 ]; then
     cp "$bin_path" "$dest_bin"
     chmod +x "$dest_bin"
+    # ad-hoc 重签兜底：预编译下载或源码回退产物可能仍是 linker-signed adhoc（flags=0x20002），
+    # macOS 27 taskgated 会杀。--force --sign - 产出 proper adhoc（0x2）。release.sh 已在打包前
+    # 签过，这里对 $dest_bin 再签一次——覆盖源码回退路径，并自愈传输/解压中可能出现的签名问题。
+    codesign --force --sign - "$dest_bin" >/dev/null 2>&1 || warn "[$variant] ad-hoc 重签失败：$dest_bin（macOS 27 上可能启动崩溃）"
     say "  ✓ $dest_bin"
     DEPLOYED_ANYTHING=1
   else

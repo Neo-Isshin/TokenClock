@@ -190,6 +190,14 @@ build_variant() {
     lipo -create "$a64" "$x86" -output "$bin" || die "lipo 合并失败"
   fi
   ok "universal 产物: ${bin}（$(lipo -info "$bin" 2>/dev/null | sed 's/.*: //')）"
+
+  # ad-hoc 重签：SwiftPM 产物默认是 linker-signed adhoc（flags=0x20002），macOS 27 taskgated
+  # 会以此杀进程（"Taskgated Invalid Signature"），时钟起不来。--force --sign - 产出 proper adhoc
+  # （flags=0x2，可校验通过、无需开发者账号）—— 与"不签名/不公证"立场一致。
+  # 必须在 tar 之前签，让分发的 tarball 自带合法签名（install.sh 部署时还会兜底再签一次）。
+  codesign --force --sign - "$bin" >/dev/null 2>&1 || die "$branch ad-hoc 重签失败: $bin"
+  codesign --verify "$bin" 2>/dev/null || die "$branch 签名校验未通过（macOS 27 上会启动崩溃）: $bin"
+  ok "$branch 已 ad-hoc 重签（codesign --verify 通过）"
   echo "$bin"
 }
 
