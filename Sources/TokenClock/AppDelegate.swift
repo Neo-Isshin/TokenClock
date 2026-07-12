@@ -446,7 +446,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         // 时钟面板是非激活的 floating 窗；打开设置时必须显式激活 app，否则前台仍是
         // 终端等其它 app，设置窗口里的 TextField 收不到键盘输入（敲字全跑到前台 app）。
         NSApp.activate(ignoringOtherApps: true)
+        // 弹出窗口层级跟随表盘：表盘是 .statusBar（常驻置顶）时，设置窗口也提到 .statusBar，
+        // 否则它与其它 app 的 .normal 窗口同层、会被压到最下，点开后看不到。
+        let clockLevel = panel?.level ?? .statusBar
         if let window = settingsWindow {
+            window.level = clockLevel
             window.makeKeyAndOrderFront(nil)
             return
         }
@@ -467,6 +471,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         window.isReleasedWhenClosed = false
         window.delegate = self
         window.contentView = hostingView
+        window.level = clockLevel
         window.center()
         window.makeKeyAndOrderFront(nil)
 
