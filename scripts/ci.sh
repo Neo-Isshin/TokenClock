@@ -2,9 +2,8 @@
 #
 # ci.sh —— TokenClock 本地 CI 冒烟（push 前自检）
 #
-# Gitea 实例当前未启用 Actions（/api/v1/actions/runners → 404，无 runner），
-# 所以这是「现在就能跑」的等价检查：两个分支都能编 + 测试过。.gitea/workflows/ci.yml
-# 是它启用 Actions + 注册 macOS runner 后的云端版本。
+# 项目现以 GitHub 为主仓（GitHub Actions 可作云端 CI；此处是 push 前本地等价自检）：
+# 两个分支都能编 + 测试过。
 #
 # 环境（与本机验证一致）：
 #   * DEVELOPER_DIR=Xcode-beta  —— 提供 XCTest（测试必需）+ universal 回退库
@@ -15,7 +14,7 @@
 set -uo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-XCODE_BETA="/Users/neo/Downloads/Xcode-beta.app/Contents/Developer"
+XCODE_BETA="${XCODE_BETA:-$(xcode-select -p)}"
 CLT26_SDK="/Library/Developer/CommandLineTools/SDKs/MacOSX26.sdk"
 export DEVELOPER_DIR="$XCODE_BETA" SDKROOT="$CLT26_SDK"
 

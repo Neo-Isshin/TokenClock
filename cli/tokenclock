@@ -10,7 +10,7 @@
 #
 set -u
 
-CLI_VERSION="1.2.8"
+CLI_VERSION="1.2.9"
 # 运行中时钟的进程名（comm）。**所有变体的可执行文件都必须叫 TokenClock**
 #（放在 glass/ normal/ 子目录里区分变体），这样无论启动哪个变体，进程名都是 TokenClock，
 # 下面的 pgrep/pkill -x 才能精确命中、且不会误伤 shell/脚本本身。
@@ -20,12 +20,9 @@ APP_PROCESS="TokenClock"
 MIN_MACOS=12              # 最低支持 macOS 主版本（Monterey）
 LIQUID_GLASS_MIN_MACOS=26 # liquid-glass 变体最低主版本
 
-# 更新源：cmd_update 从这里拉取最新 install.sh。
-# 走 gitea API（/api/v1/repos/<owner>/<repo>/raw/<path>?ref=<branch>）而非
-# /<owner>/<repo>/raw/<branch>/<path>，因为后者被 CDN（腾讯 EdgeOne）6h 缓存，
-# push 完要等缓存过期才能拿到新版；前者直连源站（也走 CDN，但 query string 不在缓存键里）。
-# 可通过 TOKENCLOCK_INSTALL_URL 环境变量覆盖（LAN 用户指向 localhost:3000）。
-INSTALL_URL="${TOKENCLOCK_INSTALL_URL:-https://gitea.nxc8335.cloud/api/v1/repos/nxc8335/TokenClock/raw/cli/install.sh?ref=main}"
+# 更新源：cmd_update 从这里拉取最新 install.sh（GitHub raw，CDN 缓存 ~5min）。
+# 可通过 TOKENCLOCK_INSTALL_URL 环境变量覆盖。
+INSTALL_URL="${TOKENCLOCK_INSTALL_URL:-https://raw.githubusercontent.com/Neo-Isshin/TokenClock/main/cli/install.sh}"
 
 # ─────────────────────────── 辅助函数 ───────────────────────────
 
@@ -222,7 +219,7 @@ cmd_uninstall() {
   fi
   echo "${C_GREEN}✓ 已卸载 TokenClock（运行时 + LaunchAgent plist）。${C_RESET}"
   echo "  CLI 命令 'tokenclock' 已保留。重装："
-  echo "    curl -fsSL https://gitea.nxc8335.cloud/nxc8335/TokenClock/raw/main/cli/install.sh | bash"
+  echo "    curl -fsSL https://raw.githubusercontent.com/Neo-Isshin/TokenClock/main/cli/install.sh | bash"
   echo "  如需一并删除 CLI 本身：sudo rm -f /usr/local/bin/tokenclock"
 }
 

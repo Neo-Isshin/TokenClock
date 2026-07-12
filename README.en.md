@@ -13,8 +13,8 @@
 [![SwiftUI](https://img.shields.io/static/v1?label=UI&message=SwiftUI%20%2B%20AppKit&color=blueviolet)](https://developer.apple.com/xcode/swiftui/)
 [![SwiftPM](https://img.shields.io/static/v1?label=Build&message=SwiftPM&color=FA7343)](https://www.swift.org/package-manager/)
 [![Privacy](https://img.shields.io/static/v1?label=Privacy&message=local%20only&color=success)](#-privacy)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Releases](https://img.shields.io/badge/releases-Gitea-00B0F0?logo=gitea&logoColor=white)](https://gitea.nxc8335.cloud/nxc8335/TokenClock/releases)
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
+[![Releases](https://img.shields.io/badge/releases-GitHub-181717?logo=github&logoColor=white)](https://github.com/Neo-Isshin/TokenClock/releases)
 
 </div>
 
@@ -91,7 +91,7 @@ It's built with the macOS 26 **Liquid Glass** material for a crystal clock disc,
 - Ships in **two variants** — `main` (macOS 26) and `normal` (macOS 12) — and the `tokenclock` CLI picks the right one for your OS automatically.
 
 ### 📦 One-line install & CLI
-- The normal build runs on **macOS 12+**, the Liquid Glass build on **macOS 26+**. The one-liner picks the right variant for your OS automatically, and the lightweight `tokenclock` CLI handles start / stop / switch / diagnose. See the [install guide](https://gitea.nxc8335.cloud/nxc8335/TokenClock).
+- The normal build runs on **macOS 12+**, the Liquid Glass build on **macOS 26+**. The one-liner picks the right variant for your OS automatically, and the lightweight `tokenclock` CLI handles start / stop / switch / diagnose. See the [install guide](https://github.com/Neo-Isshin/TokenClock).
 
 ### 🎨 Multiple faces & thoughtful design
 - 6 built-in faces (Classic / Midnight / Luxe / Gu Feng / Railgun / Sky), each with its own personality.
@@ -186,7 +186,7 @@ Auto-detects the macOS version → **downloads the precompiled** matching varian
 
 ```bash
 # one-line install (recommended):
-curl -fsSL https://gitea.nxc8335.cloud/nxc8335/TokenClock/raw/main/cli/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Neo-Isshin/TokenClock/main/cli/install.sh | bash
 
 # or, if you've cloned this repo:
 ./cli/install.sh
@@ -203,7 +203,7 @@ Options: `--normal` / `--glass` (pick the variant) / `--no-start` (don't auto-la
 ### Build & run from source
 
 ```bash
-git clone https://gitea.nxc8335.cloud/nxc8335/TokenClock.git TokenClock
+git clone https://github.com/Neo-Isshin/TokenClock.git TokenClock
 cd TokenClock
 
 # debug build and run directly
@@ -318,7 +318,7 @@ It returns JSON usage data, handy for external scripts / dashboards. It listens 
 
 ## 📄 License
 
-TokenClock is open-sourced under the **[MIT License](LICENSE)** — © 2026 Neo-Isshin. Use it, modify it, ship it freely; just keep the copyright notice.
+TokenClock is open-sourced under the **[GPL v3 License](LICENSE)** — © 2026 Neo-Isshin. You are free to use, distribute, and modify it, but any distributed or modified derivative works must also be open-sourced under the GPL v3 License.
 
 ---
 
@@ -334,6 +334,6 @@ TokenClock exists thanks to the many excellent AI coding tools and their communi
 
 **A Star means a lot — it's what keeps the project going 🚀**
 
-[![Star](https://img.shields.io/badge/⭐-Star%20on%20Gitea-00B0F0?style=for-the-badge&logo=gitea&logoColor=white)](https://gitea.nxc8335.cloud/nxc8335/TokenClock)
+[![Star](https://img.shields.io/badge/⭐-Star%20on%20GitHub-181717?style=for-the-badge&logo=github&logoColor=white)](https://github.com/Neo-Isshin/TokenClock)
 
 </div>

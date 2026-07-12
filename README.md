@@ -13,8 +13,8 @@
 [![SwiftUI](https://img.shields.io/static/v1?label=UI&message=SwiftUI%20%2B%20AppKit&color=blueviolet)](https://developer.apple.com/xcode/swiftui/)
 [![SwiftPM](https://img.shields.io/static/v1?label=Build&message=SwiftPM&color=FA7343)](https://www.swift.org/package-manager/)
 [![Privacy](https://img.shields.io/static/v1?label=Privacy&message=local%20only&color=success)](#-隐私)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Releases](https://img.shields.io/badge/releases-Gitea-00B0F0?logo=gitea&logoColor=white)](https://gitea.nxc8335.cloud/nxc8335/TokenClock/releases)
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
+[![Releases](https://img.shields.io/badge/releases-GitHub-181717?logo=github&logoColor=white)](https://github.com/Neo-Isshin/TokenClock/releases)
 
 </div>
 
@@ -91,7 +91,7 @@ TokenClock 是一个常驻桌面的 **悬浮时钟**（置顶 · 可拖拽 · �
 - 提供 `main`（macOS 26）与 `normal`（macOS 12）**双版本**，由 `tokenclock` CLI 按系统版本自动选用。
 
 ### 📦 一行安装 & CLI
-- `normal` 适用于 **macOS 12+**，液态玻璃适用于 **macOS 26+**。一行安装脚本会根据系统自动选变体，简单的 `tokenclock` CLI 即可启动 / 停止 / 切换 / 诊断。详见 [安装指南](https://gitea.nxc8335.cloud/nxc8335/TokenClock)。
+- `normal` 适用于 **macOS 12+**，液态玻璃适用于 **macOS 26+**。一行安装脚本会根据系统自动选变体，简单的 `tokenclock` CLI 即可启动 / 停止 / 切换 / 诊断。详见 [安装指南](https://github.com/Neo-Isshin/TokenClock)。
 
 ### 🎨 多表盘 + 美观设计 + 支持深度自定义
 - 6 款内置表盘（经典 / 深夜 / 暗金 / 古风 / 超电磁炮 / 天空），风格各异。
@@ -186,7 +186,7 @@ TokenClock 通过读取各工具在本地写入的 **JSONL / SQLite 用量文件
 
 ```bash
 # 一行安装（推荐）：
-curl -fsSL https://gitea.nxc8335.cloud/nxc8335/TokenClock/raw/main/cli/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Neo-Isshin/TokenClock/main/cli/install.sh | bash
 
 # 已克隆本仓库时也可直接运行：
 ./cli/install.sh
@@ -203,7 +203,7 @@ curl -fsSL https://gitea.nxc8335.cloud/nxc8335/TokenClock/raw/main/cli/install.s
 ### 从源码构建运行
 
 ```bash
-git clone https://gitea.nxc8335.cloud/nxc8335/TokenClock.git TokenClock
+git clone https://github.com/Neo-Isshin/TokenClock.git TokenClock
 cd TokenClock
 
 # 调试构建并直接运行
@@ -318,7 +318,7 @@ GET http://127.0.0.1:9988/api/history?days=30 # 过去 N 天的日结快照（�
 
 ## 📄 许可证
 
-TokenClock 基于 **[MIT 协议](LICENSE)** 开源 —— © 2026 Neo-Isshin。可自由使用、修改与再分发，仅需保留版权声明。
+TokenClock 基于 **[GPL v3 协议](LICENSE)** 开源 —— © 2026 Neo-Isshin。您可以自由使用、分发与修改，但任何分发或修改后的衍生版本也必须以 GPL v3 协议开源。
 
 ---
 
@@ -334,6 +334,6 @@ TokenClock 的诞生得益于众多优秀的 AI 编程工具及其社区。感�
 
 **欢迎给项目一个 Star —— 你的支持是持续迭代的动力 🚀**
 
-[![Star](https://img.shields.io/badge/⭐-Star%20on%20Gitea-00B0F0?style=for-the-badge&logo=gitea&logoColor=white)](https://gitea.nxc8335.cloud/nxc8335/TokenClock)
+[![Star](https://img.shields.io/badge/⭐-Star%20on%20GitHub-181717?style=for-the-badge&logo=github&logoColor=white)](https://github.com/Neo-Isshin/TokenClock)
 
 </div>
