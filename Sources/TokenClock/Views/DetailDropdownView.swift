@@ -272,10 +272,20 @@ private struct SessionRow: View {
                         .lineLimit(1)
                         .truncationMode(.tail)
                 } else {
-                    // 其他工具：session 标签 + ID
-                    Text("session")
-                        .font(.system(size: 8, weight: .medium))
-                        .foregroundColor(theme.dropdownSubtextColor)
+                    // 其他工具：session 标签（+ 来源，仅 Antigravity）+ ID
+                    HStack(spacing: 3) {
+                        Text("session")
+                            .font(.system(size: 8, weight: .medium))
+                            .foregroundColor(theme.dropdownSubtextColor)
+                        if let source = session.source, !source.isEmpty {
+                            Text("·")
+                                .font(.system(size: 8, weight: .medium))
+                                .foregroundColor(theme.dropdownSubtextColor.opacity(0.55))
+                            Text(source)
+                                .font(.system(size: 8, weight: .semibold))
+                                .foregroundColor(theme.dropdownSubtextColor)
+                        }
+                    }
                     Text(session.displayName)
                         .font(.system(size: 10, weight: .semibold, design: .monospaced))
                         .foregroundColor(theme.dropdownTextColor)

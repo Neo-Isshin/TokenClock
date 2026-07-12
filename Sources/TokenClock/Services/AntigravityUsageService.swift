@@ -1,8 +1,12 @@
 import Foundation
 import SQLite3
 
-/// 从 Antigravity CLI 本地 SQLite 数据库读取 token 使用数据
-/// 数据库位置: ~/.gemini/antigravity-cli/conversations/{session-uuid}.db
+/// 从 Antigravity 本地 SQLite 数据库读取 token 使用数据（CLI + IDE + 主应用）
+/// 数据库位置:
+///   ~/.gemini/antigravity-cli/conversations/{session-uuid}.db   (Antigravity CLI)
+///   ~/.gemini/antigravity-ide/conversations/{session-uuid}.db   (Antigravity IDE)
+///   ~/.gemini/antigravity/conversations/{session-uuid}.db       (Antigravity 主应用)
+/// 三者 schema 与 protobuf 遥测格式同源，统一扫描、用全局 tracking_id 去重。
 ///
 /// 两个 protobuf 列配合读取：
 ///   - steps.metadata (protobuf blob) → 时间戳
@@ -27,10 +31,10 @@ final class AntigravityUsageService: @unchecked Sendable {
     private var seenTrackingIds: Set<String> = []
     private var lastScanTime: Date = .distantPast
 
-    private let agHome: String
+    private let conversationDirs: [String]
 
     init() {
-        agHome = PathConfig.antigravityHome()
+        conversationDirs = PathConfig.antigravityConversationDirs()
     }
 
     func fullScan() {
@@ -72,22 +76,23 @@ final class AntigravityUsageService: @unchecked Sendable {
     // MARK: - 内部
 
     private func scanAllDatabases() {
-        let convDir = agHome + "/conversations"
         let fm = FileManager.default
-        var isDir: ObjCBool = false
-        guard fm.fileExists(atPath: convDir, isDirectory: &isDir), isDir.boolValue else { return }
-        guard let files = try? fm.contentsOfDirectory(atPath: convDir) else { return }
-
         let now = Date()
         var anyChanged = false
 
-        for file in files where file.hasSuffix(".db") {
-            let dbPath = convDir + "/" + file
-            guard let attrs = try? fm.attributesOfItem(atPath: dbPath),
-                  let modDate = attrs[.modificationDate] as? Date else { continue }
-            if modDate <= lastScanTime { continue }
-            anyChanged = true
-            scanDatabase(dbPath: dbPath)
+        for convDir in conversationDirs {
+            var isDir: ObjCBool = false
+            guard fm.fileExists(atPath: convDir, isDirectory: &isDir), isDir.boolValue else { continue }
+            guard let files = try? fm.contentsOfDirectory(atPath: convDir) else { continue }
+
+            for file in files where file.hasSuffix(".db") {
+                let dbPath = convDir + "/" + file
+                guard let attrs = try? fm.attributesOfItem(atPath: dbPath),
+                      let modDate = attrs[.modificationDate] as? Date else { continue }
+                if modDate <= lastScanTime { continue }
+                anyChanged = true
+                scanDatabase(dbPath: dbPath)
+            }
         }
 
         if anyChanged { lastScanTime = now }
@@ -266,77 +271,88 @@ final class AntigravityUsageService: @unchecked Sendable {
 
     // MARK: - 今日活跃 Session 列表
 
+    /// 会话目录 → 来源标签：antigravity-cli=CLI / antigravity-ide=IDE / antigravity(主应用)=App
+    private static func sourceLabel(for convDir: String) -> String? {
+        if convDir.hasSuffix("/antigravity-cli/conversations") { return "CLI" }
+        if convDir.hasSuffix("/antigravity-ide/conversations") { return "IDE" }
+        if convDir.hasSuffix("/antigravity/conversations") { return "App" }
+        return nil
+    }
+
     func todaySessions() -> [SessionInfo] {
-        let convDir = agHome + "/conversations"
         let fm = FileManager.default
-        guard let files = try? fm.contentsOfDirectory(atPath: convDir) else { return [] }
 
         var results: [SessionInfo] = []
         let today = DateHelper.todayKey()
 
-        for file in files where file.hasSuffix(".db") {
-            let dbPath = convDir + "/" + file
-            var db: OpaquePointer?
-            guard sqlite3_open(dbPath, &db) == SQLITE_OK else { continue }
-            defer { sqlite3_close(db) }
+        for convDir in conversationDirs {
+            guard let files = try? fm.contentsOfDirectory(atPath: convDir) else { continue }
 
-            // 粗过滤：文件 modDate 必须是今天（避免扫历史库）
-            guard let attrs = try? fm.attributesOfItem(atPath: dbPath),
-                  let modDate = attrs[.modificationDate] as? Date,
-                  DateHelper.dateKey(from: modDate) == today else { continue }
+            for file in files where file.hasSuffix(".db") {
+                let dbPath = convDir + "/" + file
+                var db: OpaquePointer?
+                guard sqlite3_open(dbPath, &db) == SQLITE_OK else { continue }
+                defer { sqlite3_close(db) }
 
-            var sessionTokens = 0
-            var sessionMsgs = 0
-            // 同时取 step_payload（telemetry）和 metadata（时间戳）
-            let query = "SELECT step_payload, metadata FROM steps WHERE step_payload IS NOT NULL"
-            var stmt: OpaquePointer?
-            guard sqlite3_prepare_v2(db, query, -1, &stmt, nil) == SQLITE_OK else { continue }
-            defer { sqlite3_finalize(stmt) }
+                // 粗过滤：文件 modDate 必须是今天（避免扫历史库）
+                guard let attrs = try? fm.attributesOfItem(atPath: dbPath),
+                      let modDate = attrs[.modificationDate] as? Date,
+                      DateHelper.dateKey(from: modDate) == today else { continue }
 
-            while sqlite3_step(stmt) == SQLITE_ROW {
-                let blobPtr = sqlite3_column_blob(stmt, 0)
-                let blobLen = sqlite3_column_bytes(stmt, 0)
-                guard blobLen > 0, let blobPtr = blobPtr else { continue }
-                let data = Data(bytes: blobPtr, count: Int(blobLen))
+                var sessionTokens = 0
+                var sessionMsgs = 0
+                // 同时取 step_payload（telemetry）和 metadata（时间戳）
+                let query = "SELECT step_payload, metadata FROM steps WHERE step_payload IS NOT NULL"
+                var stmt: OpaquePointer?
+                guard sqlite3_prepare_v2(db, query, -1, &stmt, nil) == SQLITE_OK else { continue }
+                defer { sqlite3_finalize(stmt) }
 
-                // 从 metadata 取时间戳，按行级时间过滤
-                var rowDate: Date? = nil
-                if let metaPtr = sqlite3_column_blob(stmt, 1) {
-                    let metaLen = sqlite3_column_bytes(stmt, 1)
-                    if metaLen > 0 {
-                        let metaBlob = Data(bytes: metaPtr, count: Int(metaLen))
-                        rowDate = parseTimestamp(from: metaBlob)
+                while sqlite3_step(stmt) == SQLITE_ROW {
+                    let blobPtr = sqlite3_column_blob(stmt, 0)
+                    let blobLen = sqlite3_column_bytes(stmt, 0)
+                    guard blobLen > 0, let blobPtr = blobPtr else { continue }
+                    let data = Data(bytes: blobPtr, count: Int(blobLen))
+
+                    // 从 metadata 取时间戳，按行级时间过滤
+                    var rowDate: Date? = nil
+                    if let metaPtr = sqlite3_column_blob(stmt, 1) {
+                        let metaLen = sqlite3_column_bytes(stmt, 1)
+                        if metaLen > 0 {
+                            let metaBlob = Data(bytes: metaPtr, count: Int(metaLen))
+                            rowDate = parseTimestamp(from: metaBlob)
+                        }
+                    }
+                    // 如果文件是今天但具体行不是今天（历史 session 在今天被 touch），跳过
+                    if let rd = rowDate, DateHelper.dateKey(from: rd) != today { continue }
+
+                    guard let outer = parseProtobufFields(data),
+                          let f5Field = outer.first(where: { $0.field == 5 && $0.wireType == 2 }),
+                          let f5Data = f5Field.value as? Data,
+                          let f5 = parseProtobufFields(f5Data) else { continue }
+                    for field in f5 where field.field == 9 && field.wireType == 2 {
+                        guard let telData = field.value as? Data,
+                              let tel = parseProtobufFields(telData) else { continue }
+                        // 字段映射与 processStepPayload 保持一致（已校准）
+                        let inputT = varintValue(tel, field: 1)
+                        let outputT = varintValue(tel, field: 2)
+                        let cacheT = varintValue(tel, field: 3)
+                        let thoughtT = varintValue(tel, field: 9)
+                        let toolT = varintValue(tel, field: 10)
+                        let total = inputT + outputT + cacheT + thoughtT + toolT
+                        guard total > 0 else { continue }
+                        sessionTokens += total
+                        sessionMsgs += 1
                     }
                 }
-                // 如果文件是今天但具体行不是今天（历史 session 在今天被 touch），跳过
-                if let rd = rowDate, DateHelper.dateKey(from: rd) != today { continue }
 
-                guard let outer = parseProtobufFields(data),
-                      let f5Field = outer.first(where: { $0.field == 5 && $0.wireType == 2 }),
-                      let f5Data = f5Field.value as? Data,
-                      let f5 = parseProtobufFields(f5Data) else { continue }
-                for field in f5 where field.field == 9 && field.wireType == 2 {
-                    guard let telData = field.value as? Data,
-                          let tel = parseProtobufFields(telData) else { continue }
-                    // 字段映射与 processStepPayload 保持一致（已校准）
-                    let inputT = varintValue(tel, field: 1)
-                    let outputT = varintValue(tel, field: 2)
-                    let cacheT = varintValue(tel, field: 3)
-                    let thoughtT = varintValue(tel, field: 9)
-                    let toolT = varintValue(tel, field: 10)
-                    let total = inputT + outputT + cacheT + thoughtT + toolT
-                    guard total > 0 else { continue }
-                    sessionTokens += total
-                    sessionMsgs += 1
-                }
+                guard sessionTokens > 0 else { continue }
+                let sessionId = String(file.dropLast(".db".count))
+                results.append(SessionInfo(
+                    rawId: sessionId, displayName: SessionIdDisplay.format(sessionId), detail: nil,
+                    todayTokens: sessionTokens, todayMessages: sessionMsgs, isActive: true,
+                    source: Self.sourceLabel(for: convDir)
+                ))
             }
-
-            guard sessionTokens > 0 else { continue }
-            let sessionId = String(file.dropLast(".db".count))
-            results.append(SessionInfo(
-                rawId: sessionId, displayName: SessionIdDisplay.format(sessionId), detail: nil,
-                todayTokens: sessionTokens, todayMessages: sessionMsgs, isActive: true
-            ))
         }
         return results.sorted { $0.todayTokens > $1.todayTokens }
     }

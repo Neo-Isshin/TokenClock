@@ -229,6 +229,20 @@ enum PathConfig {
         return candidates
     }
 
+    /// Antigravity 会话数据库目录列表。
+    /// CLI / IDE / 主应用各自把对话存到 `~/.gemini/{antigravity-cli,antigravity-ide,antigravity}/conversations/*.db`，
+    /// 三者 SQLite schema 与 protobuf 遥测格式同源，统计逻辑统一处理。
+    /// 设置了自定义路径或 `ANTIGRAVITY_HOME` 时，仅扫描该覆盖目录（向后兼容旧行为）。
+    static func antigravityConversationDirs() -> [String] {
+        if let override = customPath(forKey: "antigravityPath") ?? envPath(envAntigravity) {
+            return [override + "/conversations"]
+        }
+        let gemini = NSHomeDirectory() + "/.gemini"
+        return ["antigravity-cli", "antigravity-ide", "antigravity"].map {
+            gemini + "/" + $0 + "/conversations"
+        }
+    }
+
     static func clineCandidates() -> [String] {
         var candidates: [String] = []
         if let env = envPath(envCline) { candidates.append(env) }
