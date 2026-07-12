@@ -332,15 +332,11 @@ final class ViewModel: ObservableObject {
 
     // MARK: - 聚合属性
 
+    // 表盘/VoiceOver 总数走统一 TokenFormat（含 B/M/K 档，与 main 一致），
+    // 否则十亿级用量会停在 "1625M" 不切 B 档。
     var totalTokensFormatted: String {
         if isInitialLoading { return "—" }
-        let total = UsageAggregator.totalTokens(visibleTools)
-        if total >= 1_000_000 {
-            return String(format: "%.1fM", Double(total) / 1_000_000)
-        } else if total >= 1_000 {
-            return String(format: "%.1fK", Double(total) / 1_000)
-        }
-        return "\(total)"
+        return TokenFormat.compact(UsageAggregator.totalTokens(visibleTools))
     }
 
     var totalMessagesFormatted: String {
