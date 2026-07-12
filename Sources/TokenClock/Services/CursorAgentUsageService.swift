@@ -173,40 +173,60 @@ final class CursorAgentUsageService: @unchecked Sendable {
         }
         request.setValue("WorkosCursorSessionToken=\(cookieValue)", forHTTPHeaderField: "Cookie")
 
-        let body: [String: Any] = [
-            "teamId": 0,
-            "startDate": String(startMs),
-            "endDate": String(nowMs),
-            "page": 1,
-            "pageSize": AppConfig.Scan.cursorPageSize
-        ]
-        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        // 分页拉满整个窗口：单页 pageSize=200，超过部分曾被静默丢弃。
+        // 循环直到某页返回 < pageSize（最后一页）/ 空 / 非 200，安全上限 100 页（=20000 事件，30 天远超）。
+        var allEvents: [[String: Any]] = []
+        var page = 1
+        let maxPages = 100
+        var gotSuccess = false   // 至少一次 200 —— 区分"窗口真没事件"与"API 全失败需保缓存"
+        var sawAuthError = false
 
-        do {
-            let (data, response) = try await session.data(for: request)
-            lastFetchTime = Date()
+        while page <= maxPages {
+            let body: [String: Any] = [
+                "teamId": 0,
+                "startDate": String(startMs),
+                "endDate": String(nowMs),
+                "page": page,
+                "pageSize": AppConfig.Scan.cursorPageSize
+            ]
+            request.httpBody = try? JSONSerialization.data(withJSONObject: body)
 
-            guard let http = response as? HTTPURLResponse else { return }
+            do {
+                let (data, response) = try await session.data(for: request)
+                guard let http = response as? HTTPURLResponse else { break }
 
-            // 401/403：token 过期，清空凭据，下次扫描重新读
-            if http.statusCode == 401 || http.statusCode == 403 {
-                sessionToken = nil
-                userId = nil
-                return
+                // 401/403：token 过期，清空凭据，下次扫描重新读；停止翻页
+                if http.statusCode == 401 || http.statusCode == 403 {
+                    sawAuthError = true
+                    break
+                }
+                guard http.statusCode == 200 else { break }   // 翻页中途非 200：停止，保留已拿到的事件
+
+                guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                      let events = json["usageEventsDisplay"] as? [[String: Any]] else { break }
+
+                gotSuccess = true
+                allEvents.append(contentsOf: events)
+                if events.count < AppConfig.Scan.cursorPageSize { break }   // 最后一页
+                page += 1
+            } catch {
+                // 网络错误：停止翻页，保留已拿到的事件（与旧"保留旧缓存"语义一致）
+                break
             }
+        }
 
-            guard http.statusCode == 200 else { return }
+        if sawAuthError {
+            sessionToken = nil
+            userId = nil
+        }
+        lastFetchTime = Date()
 
-            guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let events = json["usageEventsDisplay"] as? [[String: Any]] else { return }
+        // 只有真正拿到过 200（哪怕空列表）才更新缓存；完全失败则保留旧缓存
+        guard gotSuccess else { return }
 
-            // 在主线程上更新缓存数据（与 ViewModel 读取一致）
-            await MainActor.run {
-                self.applyEvents(events, rangeDays: timeRangeDays)
-            }
-        } catch {
-            // 网络错误：保留旧缓存
-            lastFetchTime = Date()
+        // 在主线程上更新缓存数据（与 ViewModel 读取一致）
+        await MainActor.run {
+            self.applyEvents(allEvents, rangeDays: timeRangeDays)
         }
     }
 
@@ -220,12 +240,17 @@ final class CursorAgentUsageService: @unchecked Sendable {
             dailyCache.removeAll()
             recentEntries = []
         } else {
-            // 增量：清空今天和昨天的数据后重读
-            let today = DateHelper.todayKey()
-            dailyData[today] = nil
-            dailyCache[today] = nil
-            hourlyData = hourlyData.filter { !$0.key.hasPrefix(today) }
-            recentEntries = recentEntries.filter { DateHelper.dateKey(from: $0.timestamp) != today }
+            // 增量窗口覆盖最近 rangeDays 天（cursorIncrementalDays=2 = 今天 + 昨天）。
+            // 必须逐天清空后再重读，否则昨天的 dailyData/hourlyData/dailyCache 每轮增量都
+            // 累加一次（double-count）。recentEntries 本身只收今天条目，清昨天对它是 no-op，
+            // 但保持循环统一。（旧实现只清今天 → 昨天持续翻倍。）
+            for dayOffset in 0..<rangeDays {
+                let day = DateHelper.dateKey(from: Date().addingTimeInterval(-Double(dayOffset) * 24 * 60 * 60))
+                dailyData[day] = nil
+                dailyCache[day] = nil
+                hourlyData = hourlyData.filter { !$0.key.hasPrefix(day) }
+                recentEntries = recentEntries.filter { DateHelper.dateKey(from: $0.timestamp) != day }
+            }
         }
 
         let today = DateHelper.todayKey()

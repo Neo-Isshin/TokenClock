@@ -57,6 +57,22 @@ final class L10n: @unchecked Sendable {
         "menu.language":         [.zhHans: "🌐 语言",              .zhHant: "🌐 語言",              .en: "🌐 Language"],
         "menu.settings":         [.zhHans: "⚙️ 设置",              .zhHant: "⚙️ 設定",              .en: "⚙️ Settings"],
         "menu.launchAtLogin":    [.zhHans: "开机自启",              .zhHant: "開機自啟",              .en: "Launch at Login"],
+        "menu.dialAppearance":   [.zhHans: "🪟 表盘外观",           .zhHant: "🪟 錶盤外觀",           .en: "🪟 Dial Appearance"],
+        "menu.dialTextColor":    [.zhHans: "文字颜色",             .zhHant: "文字顏色",              .en: "Text Color"],
+        "menu.dialTextTheme":    [.zhHans: "跟随主题",             .zhHant: "跟隨主題",              .en: "Follow Theme"],
+        "menu.dialTextWhite":    [.zhHans: "白色",                 .zhHant: "白色",                  .en: "White"],
+        "menu.dialTextBlack":    [.zhHans: "黑色",                 .zhHant: "黑色",                  .en: "Black"],
+        "menu.dialTextCustom":   [.zhHans: "自定义…",              .zhHant: "自訂…",                 .en: "Custom…"],
+        "menu.dialMaterial":     [.zhHans: "玻璃材质",             .zhHant: "玻璃材質",              .en: "Glass Material"],
+        "menu.materialClear":    [.zhHans: "清透",                 .zhHant: "清透",                  .en: "Clear"],
+        "menu.materialStandard": [.zhHans: "标准",                 .zhHant: "標準",                  .en: "Standard"],
+        "menu.materialFrosted":  [.zhHans: "磨砂",                 .zhHant: "磨砂",                  .en: "Frosted"],
+        "menu.glassBacking":     [.zhHans: "毛玻璃底板",           .zhHant: "毛玻璃底板",            .en: "Frosted Backing"],
+        "menu.dialTint":         [.zhHans: "玻璃底色",             .zhHant: "玻璃底色",              .en: "Glass Tint"],
+        "menu.tintNone":         [.zhHans: "无",                   .zhHant: "無",                    .en: "None"],
+        "menu.tintCustom":       [.zhHans: "自定义…",              .zhHant: "自訂…",                 .en: "Custom…"],
+        "menu.dialResetDefaults":[.zhHans: "↩️ 恢复默认",           .zhHant: "↩️ 還原預設",            .en: "↩️ Reset to Defaults"],
+        "menu.glassRefraction":  [.zhHans: "✨ 液态玻璃折射",        .zhHant: "✨ 液態玻璃折射",         .en: "✨ Liquid Glass Refraction"],
         "menu.quit":             [.zhHans: "关闭 TokenClock",       .zhHant: "關閉 TokenClock",       .en: "Quit TokenClock"],
 
         // MARK: Timezone
@@ -211,7 +227,6 @@ final class L10n: @unchecked Sendable {
         "themeName.gufeng":     [.zhHans: "古风",   .zhHant: "古風",   .en: "Antique"],
         "themeName.railgun":    [.zhHans: "超電磁砲", .zhHant: "超電磁砲", .en: "Railgun"],
         "themeName.sky":        [.zhHans: "天空",   .zhHant: "天空",   .en: "Sky"],
-        "themeName.glass":      [.zhHans: "玻璃",   .zhHant: "玻璃",   .en: "Glass"],
         "themeName.glacier":    [.zhHans: "冰川",   .zhHant: "冰川",   .en: "Glacier"],
         "themeName.custom":     [.zhHans: "自定义", .zhHant: "自訂",   .en: "Custom"],
 
@@ -221,7 +236,6 @@ final class L10n: @unchecked Sendable {
         "themeDesc.gufeng":     [.zhHans: "宣纸底色 · 墨色剑形指针", .zhHant: "宣紙底色 · 墨色劍形指針", .en: "Rice paper dial · Ink sword hands"],
         "themeDesc.railgun":    [.zhHans: "米白表盘 · 电弧蓝秒针",   .zhHant: "米白錶盤 · 電弧藍秒針",   .en: "Off-white dial · Arc blue second hand"],
         "themeDesc.sky":        [.zhHans: "蓝天白云 · 阳光金色指针", .zhHant: "藍天白雲 · 陽光金色指針", .en: "Blue sky · Sunlit gold hands"],
-        "themeDesc.glass":      [.zhHans: "玻璃质感固定背景 · 墨色指针", .zhHant: "玻璃質感固定背景 · 墨色指針", .en: "Glassy fixed background · Ink hands"],
         "themeDesc.glacier":    [.zhHans: "清澈透亮的液态玻璃 · 冰青 tint", .zhHant: "清澈透亮的液態玻璃 · 冰青 tint", .en: "Crystal-clear liquid glass · icy cyan"],
         "themeDesc.custom":     [.zhHans: "用户自定义配色与样式",     .zhHant: "用戶自訂配色與樣式",     .en: "User-defined colors and style"],
 
