@@ -14,7 +14,7 @@
 #   ./cli/install.sh --build-from-source  # 跳过预编译下载，强制本地 swift build
 #
 # 一行安装:
-#   curl -fsSL https://gitea.nxc8335.cloud/nxc8335/TokenClock/raw/main/cli/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/Neo-Isshin/TokenClock/main/cli/install.sh | bash
 #
 # 可用环境变量覆盖默认值:
 #   TOKENCLOCK_REPO     git 仓库地址            （默认: 仓库 origin）
@@ -25,13 +25,13 @@
 set -uo pipefail
 export LC_ALL=C      # bash 3.2 在 UTF-8 locale 下会把紧跟 $var 的多字节字符(如中文括号)误并入变量名;C locale 按字节解析可避免。中文字符串仍按 UTF-8 字节正常输出。
 
-DEFAULT_REPO="https://gitea.nxc8335.cloud/nxc8335/TokenClock.git"
+DEFAULT_REPO="https://github.com/Neo-Isshin/TokenClock.git"
 REPO_URL="${TOKENCLOCK_REPO:-$DEFAULT_REPO}"
 HOME_DIR="${TOKENCLOCK_HOME:-$HOME/.tokenclock}"
 BIN_DIR="${TOKENCLOCK_BIN_DIR:-$HOME/.local/bin}"
 BUILD_DIR="${TOKENCLOCK_BUILD:-$HOME_DIR/src}"
 # 更新源（cmd_update 拉取此 URL；tokenclock wrapper 默认同值）
-INSTALL_URL="${TOKENCLOCK_INSTALL_URL:-https://gitea.nxc8335.cloud/nxc8335/TokenClock/raw/main/cli/install.sh}"
+INSTALL_URL="${TOKENCLOCK_INSTALL_URL:-https://raw.githubusercontent.com/Neo-Isshin/TokenClock/main/cli/install.sh}"
 
 CONFIG="release"
 VARIANT=""          # "" = 按系统版本自动
@@ -157,10 +157,10 @@ ensure_source() {
 }
 
 # ── 4. 获取二进制（优先下载预编译，失败 / --build-from-source 则回退源码编译）──
-# 预编译资产来自 Gitea release（universal：arm64+x86_64），免 Xcode / 免编译。
+# 预编译资产来自 GitHub release（universal：arm64+x86_64），免 Xcode / 免编译。
 # 升级 release 时同步更新 RELEASE_TAG 与两个 SHA256。
-RELEASE_TAG="${TOKENCLOCK_RELEASE_TAG:-v1.2.8}"
-RELEASE_URL_BASE="${TOKENCLOCK_RELEASE_BASE:-https://gitea.nxc8335.cloud/nxc8335/TokenClock/releases/download/$RELEASE_TAG}"
+RELEASE_TAG="${TOKENCLOCK_RELEASE_TAG:-v1.2.9}"
+RELEASE_URL_BASE="${TOKENCLOCK_RELEASE_BASE:-https://github.com/Neo-Isshin/TokenClock/releases/download/$RELEASE_TAG}"
 
 # 变体 → tarball 文件名 / 期望 SHA256（bash 3.2 无关联数组，用 case）
 tarball_name() {

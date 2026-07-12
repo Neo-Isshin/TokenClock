@@ -14,7 +14,7 @@
 [![SwiftPM](https://img.shields.io/static/v1?label=Build&message=SwiftPM&color=FA7343)](https://www.swift.org/package-manager/)
 [![Privacy](https://img.shields.io/static/v1?label=Privacy&message=local%20only&color=success)](#-privacy)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
-[![Releases](https://img.shields.io/badge/releases-Gitea-00B0F0?logo=gitea&logoColor=white)](https://gitea.nxc8335.cloud/nxc8335/TokenClock/releases)
+[![Releases](https://img.shields.io/badge/releases-GitHub-181717?logo=github&logoColor=white)](https://github.com/Neo-Isshin/TokenClock/releases)
 
 </div>
 
@@ -33,7 +33,7 @@
 
 TokenClock is an **always-on-top floating clock** for your desktop (draggable · remembers its position). The dial overlays live data: **today's total token consumption, message counts, the AI tools currently active, a rate indicator, and the weather**. Click the clock to expand a dropdown panel that breaks usage down by **each tool → each session / agent**.
 
-It's built with the macOS 26 **Liquid Glass** material for a crystal clock disc, ships with 6 carefully designed built-in faces plus a fully custom theme editor, and reads **everything locally** — nothing is ever uploaded.
+It's built with the macOS 26 **Liquid Glass** material for a crystal clock disc, ships with 7 carefully designed built-in faces plus a fully custom theme editor, and reads **everything locally** — nothing is ever uploaded.
 
 > [!NOTE]
 > Liquid Glass build has supported macOS 27 beta 3, but may break with beta version updates.
@@ -97,7 +97,7 @@ It's built with the macOS 26 **Liquid Glass** material for a crystal clock disc,
 - Ships in **two variants** — `main` (macOS 26) and `normal` (macOS 12) — and the `tokenclock` CLI picks the right one for your OS automatically.
 
 ### 📦 One-line install & CLI
-- The normal build runs on **macOS 12+**, the Liquid Glass build on **macOS 26+**. The one-liner picks the right variant for your OS automatically, and the lightweight `tokenclock` CLI handles start / stop / switch / diagnose. See the [install guide](https://gitea.nxc8335.cloud/nxc8335/TokenClock).
+- The normal build runs on **macOS 12+**, the Liquid Glass build on **macOS 26+**. The one-liner picks the right variant for your OS automatically, and the lightweight `tokenclock` CLI handles start / stop / switch / diagnose. See the [install guide](https://github.com/Neo-Isshin/TokenClock).
 
 ### 🎨 Multiple faces & thoughtful design
 - 6 built-in faces (Classic / Midnight / Luxe / Gu Feng / Railgun / Sky), each with its own personality.
@@ -197,7 +197,7 @@ Auto-detects the macOS version → **downloads the precompiled** matching varian
 
 ```bash
 # one-line install (recommended):
-curl -fsSL https://gitea.nxc8335.cloud/nxc8335/TokenClock/raw/main/cli/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Neo-Isshin/TokenClock/main/cli/install.sh | bash
 
 # or, if you've cloned this repo:
 ./cli/install.sh
@@ -214,7 +214,7 @@ Options: `--normal` / `--glass` (pick the variant) / `--no-start` (don't auto-la
 ### Build & run from source
 
 ```bash
-git clone https://gitea.nxc8335.cloud/nxc8335/TokenClock.git TokenClock
+git clone https://github.com/Neo-Isshin/TokenClock.git TokenClock
 cd TokenClock
 
 # debug build and run directly
@@ -253,11 +253,12 @@ sudo install -m755 cli/tokenclock /usr/local/bin/tokenclock
 
 ## 🎨 Themes
 
-6 built-in faces, plus full custom:
+7 built-in faces, plus full custom:
 
 | Theme | Name | Personality |
 |-------|------|-------------|
 | `classic`  | Classic    | Clear glass disc · charcoal hands + amber second hand · 3/6/9/12 only |
+| `glacier`  | Glacier    | Crystal ice-blue glass · ink sword hands + cherry-blossom pink second hand · ice-blue numerals & ticks |
 | `midnight` | Midnight   | Cyan glass · cyan tapered hands |
 | `luxe`     | Luxe       | Gold glass · gold lance hands |
 | `gufeng`   | Gu Feng    | Warm-brown glass · ink sword hands · **Chinese numerals** |
@@ -309,7 +310,7 @@ It returns JSON usage data, handy for external scripts / dashboards. It listens 
 ## 🛣 Roadmap
 
 - [ ] Support more AI coding tools (keep extending the detector)
-- [ ] Signed / notarized release builds (`.app`) — currently shipping unsigned via Gitea; this needs an Apple Developer account ($99/yr) and isn't currently planned — open to sponsorship / volunteers
+- [ ] Signed / notarized release builds (`.app`) — currently shipping unsigned via GitHub; this needs an Apple Developer account ($99/yr) and isn't currently planned — open to sponsorship / volunteers
 - [ ] Richer history stats and charts
 
 ---
@@ -348,6 +349,6 @@ TokenClock is open-sourced under the **[GPL v3 License](LICENSE)** — © 2026 N
 
 **A Star means a lot — it's what keeps the project going 🚀**
 
-[![Star](https://img.shields.io/badge/⭐-Star%20on%20Gitea-00B0F0?style=for-the-badge&logo=gitea&logoColor=white)](https://gitea.nxc8335.cloud/nxc8335/TokenClock)
+[![Star](https://img.shields.io/badge/⭐-Star%20on%20GitHub-181717?style=for-the-badge&logo=github&logoColor=white)](https://github.com/Neo-Isshin/TokenClock)
 
 </div>

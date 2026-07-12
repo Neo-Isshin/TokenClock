@@ -14,7 +14,7 @@
 [![SwiftPM](https://img.shields.io/static/v1?label=Build&message=SwiftPM&color=FA7343)](https://www.swift.org/package-manager/)
 [![Privacy](https://img.shields.io/static/v1?label=Privacy&message=local%20only&color=success)](#-隐私)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
-[![Releases](https://img.shields.io/badge/releases-Gitea-00B0F0?logo=gitea&logoColor=white)](https://gitea.nxc8335.cloud/nxc8335/TokenClock/releases)
+[![Releases](https://img.shields.io/badge/releases-GitHub-181717?logo=github&logoColor=white)](https://github.com/Neo-Isshin/TokenClock/releases)
 
 </div>
 
@@ -33,7 +33,7 @@
 
 TokenClock 是一个常驻桌面的 **悬浮时钟**（置顶 · 可拖拽 · 记忆位置）。表盘上实时叠加显示：**今日总 token 消耗、消息条数、当前活跃的 AI 工具、速率指示器与天气**。点击时钟即可展开下拉面板，查看 **每个工具 → 每个 session / agent** 的明细用量。
 
-采用 macOS 26 的 **Liquid Glass** 材质打造玻璃质感表盘，并提供 6 款精心设计的内置表盘与完全自定义主题。所有数据都在 **本地** 读取——不上传任何信息。
+采用 macOS 26 的 **Liquid Glass** 材质打造玻璃质感表盘，并提供 7 款精心设计的内置表盘与完全自定义主题。所有数据都在 **本地** 读取——不上传任何信息。
 
 > [!NOTE]
 > Liquid Glass 版已支持 macOS 27 beta 3，但可能随 beta 版本更新而失效。
@@ -96,7 +96,7 @@ TokenClock 是一个常驻桌面的 **悬浮时钟**（置顶 · 可拖拽 · �
 - 提供 `main`（macOS 26）与 `normal`（macOS 12）**双版本**，由 `tokenclock` CLI 按系统版本自动选用。
 
 ### 📦 一行安装 & CLI
-- `normal` 适用于 **macOS 12+**，液态玻璃适用于 **macOS 26+**。一行安装脚本会根据系统自动选变体，简单的 `tokenclock` CLI 即可启动 / 停止 / 切换 / 诊断。详见 [安装指南](https://gitea.nxc8335.cloud/nxc8335/TokenClock)。
+- `normal` 适用于 **macOS 12+**，液态玻璃适用于 **macOS 26+**。一行安装脚本会根据系统自动选变体，简单的 `tokenclock` CLI 即可启动 / 停止 / 切换 / 诊断。详见 [安装指南](https://github.com/Neo-Isshin/TokenClock)。
 
 ### 🎨 多表盘 + 美观设计 + 支持深度自定义
 - 6 款内置表盘（经典 / 深夜 / 暗金 / 古风 / 超电磁炮 / 天空），风格各异。
@@ -196,7 +196,7 @@ TokenClock 通过读取各工具在本地写入的 **JSONL / SQLite 用量文件
 
 ```bash
 # 一行安装（推荐）：
-curl -fsSL https://gitea.nxc8335.cloud/nxc8335/TokenClock/raw/main/cli/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Neo-Isshin/TokenClock/main/cli/install.sh | bash
 
 # 已克隆本仓库时也可直接运行：
 ./cli/install.sh
@@ -213,7 +213,7 @@ curl -fsSL https://gitea.nxc8335.cloud/nxc8335/TokenClock/raw/main/cli/install.s
 ### 从源码构建运行
 
 ```bash
-git clone https://gitea.nxc8335.cloud/nxc8335/TokenClock.git TokenClock
+git clone https://github.com/Neo-Isshin/TokenClock.git TokenClock
 cd TokenClock
 
 # 调试构建并直接运行
@@ -252,11 +252,12 @@ sudo install -m755 cli/tokenclock /usr/local/bin/tokenclock
 
 ## 🎨 主题
 
-6 款内置表盘，外加完全自定义：
+7 款内置表盘，外加完全自定义：
 
 | 主题 | 中文名 | 性格 |
 |------|--------|------|
 | `classic`  | 经典     | 纯净玻璃盘 · 炭黑指针 + 琥珀秒针 · 仅 3/6/9/12 数字 |
+| `glacier`  | 冰川     | 清透冰蓝玻璃 · 墨色剑形指针 + 樱粉秒针 · 冰蓝色刻度与数字 |
 | `midnight` | 深夜     | 青色玻璃 · 青色锥形指针 |
 | `luxe`     | 暗金     | 金色玻璃 · 金色菱形指针 |
 | `gufeng`   | 古风     | 暖棕玻璃 · 墨色剑形指针 · **中文数字** |
@@ -308,7 +309,7 @@ GET http://127.0.0.1:9988/api/history?days=30 # 过去 N 天的日结快照（�
 ## 🛣 未来支持计划
 
 - [ ] 支持更多 AI 编程工具（持续扩展检测器）
-- [ ] 提供签名 / 公证的 release 构建（`.app`）—— 当前走未签名 Gitea 分发，此项需 Apple Developer 账号（$99/年），暂不计划，欢迎赞助 / 认领
+- [ ] 提供签名 / 公证的 release 构建（`.app`）—— 当前走未签名 GitHub 分发，此项需 Apple Developer 账号（$99/年），暂不计划，欢迎赞助 / 认领
 - [ ] 更丰富的历史统计与图表
 
 ---
@@ -347,6 +348,6 @@ TokenClock 基于 **[GPL v3 协议](LICENSE)** 开源 —— © 2026 Neo-Isshin�
 
 **欢迎给项目一个 Star —— 你的支持是持续迭代的动力 🚀**
 
-[![Star](https://img.shields.io/badge/⭐-Star%20on%20Gitea-00B0F0?style=for-the-badge&logo=gitea&logoColor=white)](https://gitea.nxc8335.cloud/nxc8335/TokenClock)
+[![Star](https://img.shields.io/badge/⭐-Star%20on%20GitHub-181717?style=for-the-badge&logo=github&logoColor=white)](https://github.com/Neo-Isshin/TokenClock)
 
 </div>
