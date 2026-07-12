@@ -60,6 +60,8 @@ struct SessionInfo: Identifiable, Hashable {
     let todayMessages: Int
     /// 是否活跃（最近10分钟内有活动）
     let isActive: Bool
+    /// 来源标签（如 Antigravity 的 CLI/IDE/App），显示在 "session" 标签右侧；nil 则不显示
+    var source: String? = nil
 
     /// 格式化的 token 数
     var formattedTokens: String { TokenFormat.compact(todayTokens) }
