@@ -227,6 +227,7 @@ final class L10n: @unchecked Sendable {
         "themeName.gufeng":     [.zhHans: "古风",   .zhHant: "古風",   .en: "Antique"],
         "themeName.railgun":    [.zhHans: "超電磁砲", .zhHant: "超電磁砲", .en: "Railgun"],
         "themeName.sky":        [.zhHans: "天空",   .zhHant: "天空",   .en: "Sky"],
+        "themeName.glass":      [.zhHans: "玻璃",   .zhHant: "玻璃",   .en: "Glass"],
         "themeName.glacier":    [.zhHans: "冰川",   .zhHant: "冰川",   .en: "Glacier"],
         "themeName.custom":     [.zhHans: "自定义", .zhHant: "自訂",   .en: "Custom"],
 
@@ -236,6 +237,7 @@ final class L10n: @unchecked Sendable {
         "themeDesc.gufeng":     [.zhHans: "宣纸底色 · 墨色剑形指针", .zhHant: "宣紙底色 · 墨色劍形指針", .en: "Rice paper dial · Ink sword hands"],
         "themeDesc.railgun":    [.zhHans: "米白表盘 · 电弧蓝秒针",   .zhHant: "米白錶盤 · 電弧藍秒針",   .en: "Off-white dial · Arc blue second hand"],
         "themeDesc.sky":        [.zhHans: "蓝天白云 · 阳光金色指针", .zhHant: "藍天白雲 · 陽光金色指針", .en: "Blue sky · Sunlit gold hands"],
+        "themeDesc.glass":      [.zhHans: "玻璃质感底 · 琥珀秒针",     .zhHant: "玻璃質感底 · 琥珀秒針",     .en: "Glass-textured backdrop · Amber second hand"],
         "themeDesc.glacier":    [.zhHans: "清澈透亮的液态玻璃 · 冰青 tint", .zhHant: "清澈透亮的液態玻璃 · 冰青 tint", .en: "Crystal-clear liquid glass · icy cyan"],
         "themeDesc.custom":     [.zhHans: "用户自定义配色与样式",     .zhHant: "用戶自訂配色與樣式",     .en: "User-defined colors and style"],
 
