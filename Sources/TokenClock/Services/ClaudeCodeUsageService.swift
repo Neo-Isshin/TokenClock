@@ -10,6 +10,7 @@ final class ClaudeCodeUsageService: @unchecked Sendable {
     private var fileDailyContrib: [String: [String: DayUsage]] = [:]
     private var fileHourlyContrib: [String: [String: HourlyUsage]] = [:]
     private var fileCacheContrib: [String: [String: Int]] = [:]
+    private var fileRecentContrib: [String: [RecentEntry]] = [:]
     private var recentEntries: [RecentEntry] = []
 
     private let fm = FileManager.default
@@ -27,6 +28,7 @@ final class ClaudeCodeUsageService: @unchecked Sendable {
         fileDailyContrib.removeAll()
         fileHourlyContrib.removeAll()
         fileCacheContrib.removeAll()
+        fileRecentContrib.removeAll()
         recentEntries = []
         scanProjectsDir()
     }
@@ -92,6 +94,7 @@ final class ClaudeCodeUsageService: @unchecked Sendable {
                 fileCache[fullPath] = FileMeta(path: fullPath, modDate: modDate)
             }
         }
+        rebuildRecentEntries()
     }
 
     private func subtractDaily(_ contrib: [String: DayUsage]) {
@@ -137,6 +140,7 @@ final class ClaudeCodeUsageService: @unchecked Sendable {
         var newDaily: [String: DayUsage] = [:]
         var newHourly: [String: HourlyUsage] = [:]
         var newCache: [String: Int] = [:]
+        var newRecent: [RecentEntry] = []
 
         while stream.hasBytesAvailable {
             let n = stream.read(buf, maxLength: bufSize)
@@ -148,19 +152,20 @@ final class ClaudeCodeUsageService: @unchecked Sendable {
                 guard !lineData.isEmpty else { continue }
                 let line = String(data: lineData, encoding: .utf8) ?? ""
                 if line.contains("\"assistant\""), let r = parseLine(line) {
-                    accumulate(r, today: today, daily: &newDaily, hourly: &newHourly, cache: &newCache)
+                    accumulate(r, today: today, daily: &newDaily, hourly: &newHourly, cache: &newCache, recent: &newRecent)
                 }
             }
         }
         if !lineBuf.isEmpty,
            let line = String(data: lineBuf, encoding: .utf8),
            line.contains("\"assistant\""), let r = parseLine(line) {
-            accumulate(r, today: today, daily: &newDaily, hourly: &newHourly, cache: &newCache)
+            accumulate(r, today: today, daily: &newDaily, hourly: &newHourly, cache: &newCache, recent: &newRecent)
         }
 
         fileDailyContrib[path] = newDaily
         fileHourlyContrib[path] = newHourly
         fileCacheContrib[path] = newCache
+        fileRecentContrib[path] = newRecent
     }
 
     private struct R { let dateKey: String; let hourKey: String; let tokens: Int; let cacheTokens: Int; let ts: Date? }
@@ -186,7 +191,8 @@ final class ClaudeCodeUsageService: @unchecked Sendable {
     }
 
     private func accumulate(_ r: R, today: String, daily: inout [String: DayUsage],
-                            hourly: inout [String: HourlyUsage], cache: inout [String: Int]) {
+                            hourly: inout [String: HourlyUsage], cache: inout [String: Int],
+                            recent: inout [RecentEntry]) {
         if var e = dailyData[r.dateKey] { e.tokens += r.tokens; e.messages += 1; dailyData[r.dateKey] = e }
         else { dailyData[r.dateKey] = DayUsage(tokens: r.tokens, messages: 1) }
         if var e = daily[r.dateKey] { e.tokens += r.tokens; e.messages += 1; daily[r.dateKey] = e }
@@ -200,12 +206,17 @@ final class ClaudeCodeUsageService: @unchecked Sendable {
         cache[r.dateKey, default: 0] += r.cacheTokens
         // recent
         if r.dateKey == today, let ts = r.ts {
-            recentEntries.append(RecentEntry(timestamp: ts, tokens: r.tokens))
-            // L4: 限制 recentEntries 增长，只保留 active 窗口 3 倍内的条目
-            if recentEntries.count > 64 {
-                let cutoff = Date().addingTimeInterval(-AppConfig.Scan.activeThresholdSeconds * 3)
-                recentEntries = recentEntries.filter { $0.timestamp >= cutoff }
-            }
+            recent.append(RecentEntry(timestamp: ts, tokens: r.tokens))
+        }
+    }
+
+    /// recentEntries 是各文件 recent 贡献的派生聚合：每轮扫描从 fileRecentContrib 重建，
+    /// 而非在逐行累加时直接 append —— 否则增量重读已变化文件时 recent 会双计。
+    private func rebuildRecentEntries() {
+        recentEntries = fileRecentContrib.values.flatMap { $0 }
+        if recentEntries.count > 64 {
+            let cutoff = Date().addingTimeInterval(-AppConfig.Scan.activeThresholdSeconds * 3)
+            recentEntries = recentEntries.filter { $0.timestamp >= cutoff }
         }
     }
 

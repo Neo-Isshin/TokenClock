@@ -12,6 +12,7 @@ final class ContinueUsageService: @unchecked Sendable {
     private var fileCache: [String: FileMeta] = [:]
     private var fileDailyContrib: [String: [String: DayUsage]] = [:]
     private var fileHourlyContrib: [String: [String: HourlyUsage]] = [:]
+    private var fileRecentContrib: [String: [RecentEntry]] = [:]
 
     private let fm = FileManager.default
     private let continueHome: String
@@ -23,7 +24,8 @@ final class ContinueUsageService: @unchecked Sendable {
     func fullScan() {
         dailyData.removeAll(); hourlyData.removeAll()
         fileCache.removeAll(); fileDailyContrib.removeAll()
-        fileHourlyContrib.removeAll(); recentEntries = []
+        fileHourlyContrib.removeAll(); fileRecentContrib.removeAll()
+        recentEntries = []
         scanAllDirs()
     }
 
@@ -65,6 +67,7 @@ final class ContinueUsageService: @unchecked Sendable {
                 processJSONL(dir + "/" + file)
             }
         }
+        rebuildRecentEntries()
     }
 
     private func processJSONL(_ path: String) {
@@ -88,6 +91,7 @@ final class ContinueUsageService: @unchecked Sendable {
         var lineBuf = Data()
         var newDaily: [String: DayUsage] = [:]
         var newHourly: [String: HourlyUsage] = [:]
+        var newRecent: [RecentEntry] = []
 
         while stream.hasBytesAvailable {
             let n = stream.read(buf, maxLength: bufSize)
@@ -101,12 +105,13 @@ final class ContinueUsageService: @unchecked Sendable {
                       let obj = try? JSONSerialization.jsonObject(with: line.data(using: .utf8) ?? Data()) as? [String: Any] else { continue }
 
                 guard let r = parseEvent(obj) else { continue }
-                accumulate(r, today: today, daily: &newDaily, hourly: &newHourly)
+                accumulate(r, today: today, daily: &newDaily, hourly: &newHourly, recent: &newRecent)
             }
         }
 
         fileDailyContrib[path] = newDaily
         fileHourlyContrib[path] = newHourly
+        fileRecentContrib[path] = newRecent
         fileCache[path] = FileMeta(path: path, modDate: modDate)
     }
 
@@ -184,7 +189,8 @@ final class ContinueUsageService: @unchecked Sendable {
 
     private func accumulate(_ r: EventResult, today: String,
                             daily: inout [String: DayUsage],
-                            hourly: inout [String: HourlyUsage]) {
+                            hourly: inout [String: HourlyUsage],
+                            recent: inout [RecentEntry]) {
         if var e = dailyData[r.dateKey] { e.tokens += r.tokens; e.messages += 1; dailyData[r.dateKey] = e }
         else { dailyData[r.dateKey] = DayUsage(tokens: r.tokens, messages: 1) }
         if var e = daily[r.dateKey] { e.tokens += r.tokens; e.messages += 1; daily[r.dateKey] = e }
@@ -196,12 +202,17 @@ final class ContinueUsageService: @unchecked Sendable {
         else { hourly[r.hourKey] = HourlyUsage(tokens: r.tokens, messages: 1) }
 
         if r.dateKey == today, let ts = r.timestamp {
-            recentEntries.append(RecentEntry(timestamp: ts, tokens: r.tokens))
-            // L4: 限制 recentEntries 增长，只保留 active 窗口 3 倍内的条目
-            if recentEntries.count > 64 {
-                let cutoff = Date().addingTimeInterval(-AppConfig.Scan.activeThresholdSeconds * 3)
-                recentEntries = recentEntries.filter { $0.timestamp >= cutoff }
-            }
+            recent.append(RecentEntry(timestamp: ts, tokens: r.tokens))
+        }
+    }
+
+    /// recentEntries 是各文件 recent 贡献的派生聚合：每轮扫描从 fileRecentContrib 重建，
+    /// 而非在逐行累加时直接 append —— 否则增量重读已变化文件时 recent 会双计。
+    private func rebuildRecentEntries() {
+        recentEntries = fileRecentContrib.values.flatMap { $0 }
+        if recentEntries.count > 64 {
+            let cutoff = Date().addingTimeInterval(-AppConfig.Scan.activeThresholdSeconds * 3)
+            recentEntries = recentEntries.filter { $0.timestamp >= cutoff }
         }
     }
 
