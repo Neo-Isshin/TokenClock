@@ -232,15 +232,22 @@ enum PathConfig {
     /// Antigravity 会话数据库目录列表。
     /// CLI / IDE / 主应用各自把对话存到 `~/.gemini/{antigravity-cli,antigravity-ide,antigravity}/conversations/*.db`，
     /// 三者 SQLite schema 与 protobuf 遥测格式同源，统计逻辑统一处理。
-    /// 设置了自定义路径或 `ANTIGRAVITY_HOME` 时，仅扫描该覆盖目录（向后兼容旧行为）。
+    ///
+    /// 始终扫描这三个标准目录——IDE 的对话就活在 antigravity-ide 下，绝不能漏。
+    /// 设置了自定义路径或 `ANTIGRAVITY_HOME` 时，作为【额外】目录追加（用于真正移动过安装的用户），
+    /// 而非替换标准目录：历史上自动检测会把 CLI 子路径写进 override，若用它早返回，就会把 IDE 整个旁路掉，
+    /// 导致 Antigravity 今日用量恒为 0。重复目录由 AntigravityUsageService 的全局 tracking_id 去重兜底。
     static func antigravityConversationDirs() -> [String] {
-        if let override = customPath(forKey: "antigravityPath") ?? envPath(envAntigravity) {
-            return [override + "/conversations"]
-        }
         let gemini = NSHomeDirectory() + "/.gemini"
-        return ["antigravity-cli", "antigravity-ide", "antigravity"].map {
+        var dirs = ["antigravity-cli", "antigravity-ide", "antigravity"].map {
             gemini + "/" + $0 + "/conversations"
         }
+        if var override = customPath(forKey: "antigravityPath") ?? envPath(envAntigravity) {
+            while override.hasSuffix("/") { override.removeLast() }
+            let overrideDir = override + "/conversations"
+            if !dirs.contains(overrideDir) { dirs.append(overrideDir) }
+        }
+        return dirs
     }
 
     static func clineCandidates() -> [String] {
