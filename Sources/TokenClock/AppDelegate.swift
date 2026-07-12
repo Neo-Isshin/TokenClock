@@ -7,6 +7,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var dropdownPanel: DropdownPanel!
     private var viewModel: ViewModel!
     private var settingsWindow: NSWindow?
+    private var aboutWindow: NSWindow?
     private var themePickerPanel: NSPanel?
     private var themePickerEventMonitor: Any?
 
@@ -292,6 +293,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         menu.addItem(launchItem)
         menu.addItem(.separator())
 
+        let aboutItem = NSMenuItem(title: tr("menu.about"),
+                                   action: #selector(showAbout(_:)), keyEquivalent: "")
+        menu.addItem(aboutItem)
+
         let quitItem = NSMenuItem(title: tr("menu.quit"),
                                   action: #selector(quitApp(_:)), keyEquivalent: "q")
         menu.addItem(quitItem)
@@ -438,6 +443,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     @objc private func quitApp(_ sender: NSMenuItem) {
         NSApplication.shared.terminate(sender)
+    }
+
+    @objc private func showAbout(_ sender: NSMenuItem) {
+        // 复用设置窗口的激活+层级模式：表盘 .statusBar 时关于面板也置顶，否则会被压底。
+        NSApp.activate(ignoringOtherApps: true)
+        let clockLevel = panel?.level ?? .statusBar
+        if let window = aboutWindow {
+            window.level = clockLevel
+            window.makeKeyAndOrderFront(nil)
+            return
+        }
+
+        let aboutView = AboutView(onDone: { [weak self] in
+            self?.aboutWindow?.close()
+            self?.aboutWindow = nil
+        })
+        let hostingView = NSHostingView(rootView: aboutView)
+
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 360, height: 300),
+            styleMask: [.titled, .closable],
+            backing: .buffered,
+            defer: false
+        )
+        window.title = L10n.shared.tr("menu.about")
+        window.isReleasedWhenClosed = false
+        window.delegate = self
+        window.contentView = hostingView
+        window.level = clockLevel
+        window.center()
+        window.makeKeyAndOrderFront(nil)
+
+        self.aboutWindow = window
     }
 
     // MARK: - 设置窗口

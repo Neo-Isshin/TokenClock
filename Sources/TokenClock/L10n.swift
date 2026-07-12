@@ -74,6 +74,12 @@ final class L10n: @unchecked Sendable {
         "menu.dialResetDefaults":[.zhHans: "↩️ 恢复默认",           .zhHant: "↩️ 還原預設",            .en: "↩️ Reset to Defaults"],
         "menu.glassRefraction":  [.zhHans: "✨ 液态玻璃折射",        .zhHant: "✨ 液態玻璃折射",         .en: "✨ Liquid Glass Refraction"],
         "menu.quit":             [.zhHans: "关闭 TokenClock",       .zhHant: "關閉 TokenClock",       .en: "Quit TokenClock"],
+        "menu.about":            [.zhHans: "关于 TokenClock",       .zhHant: "關於 TokenClock",       .en: "About TokenClock"],
+
+        // MARK: About
+        "about.license":         [.zhHans: "许可证：GPL v3",         .zhHant: "許可證：GPL v3",         .en: "License: GPL v3"],
+        "about.contact":         [.zhHans: "联系方式",              .zhHant: "聯絡方式",              .en: "Contact"],
+        "about.close":           [.zhHans: "关闭",                  .zhHant: "關閉",                  .en: "Close"],
 
         // MARK: Timezone
         "tz.auto":       [.zhHans: "自动",      .zhHant: "自動",      .en: "Auto"],

@@ -1,12 +1,14 @@
 import Foundation
 
-/// 模拟 AI 工具 token 消耗数据
+/// 首启占位数据：让 UI 知道有哪些 AI 工具可统计。
 ///
-/// 仅作为首次启动时的占位数据，让 UI 有东西可显示。真实扫描结果到达后会通过
-/// `ViewModel.applySnapshot` 覆盖。**禁用的工具不生成 mock 数据**，避免误导。
+/// 仅在首次启动、真实扫描结果到达前作为零值脚手架。token / message 全为 0，
+/// 真实数据通过 `ViewModel.applySnapshot` 覆盖。**不再生成随机假数据**，避免误导新用户。
 final class MockUsageService {
-    /// 为启用的工具生成随机初始数据；禁用的工具返回 0
+    /// 为全部已知工具生成零值占位。
+    /// `enabledTools` 保留参数以兼容旧调用点，但不再影响数据（一律返回 0）。
     static func generateInitialData(enabledTools: Set<String> = .init()) -> [ToolUsage] {
+        _ = enabledTools
         let tools: [(name: String, abbr: String, emoji: String)] = [
             ("OpenClaw", "OC", "🦞"),
             ("Gemini CLI", "GC", "✨"),
@@ -24,45 +26,17 @@ final class MockUsageService {
             ("Cursor Agent", "CA", "🖱️"),
         ]
 
-        let isEnabled = { (name: String) in
-            enabledTools.isEmpty || enabledTools.contains(name)
-        }
-
         return tools.map { tool in
             ToolUsage(
                 name: tool.name,
                 abbreviation: tool.abbr,
                 emoji: tool.emoji,
-                todayTokens: isEnabled(tool.name) ? Int.random(in: 50_000...500_000) : 0,
-                todayMessages: isEnabled(tool.name) ? Int.random(in: 50...500) : 0,
+                todayTokens: 0,
+                todayMessages: 0,
                 isActive: false,
                 recentTokens: 0,
                 hourlyTokens: 0
             )
-        }
-    }
-
-    /// 模拟增量：随机增加 tokens 和消息数
-    static func simulateIncrement(tools: inout [ToolUsage]) {
-        let activeCount = Int.random(in: 1...3)
-        let indices = Array(0..<tools.count).shuffled().prefix(activeCount)
-
-        for i in indices {
-            let increment = Int.random(in: 500...8_000)
-            let msgIncrement = Int.random(in: 1...5)
-            tools[i].todayTokens += increment
-            tools[i].todayMessages += msgIncrement
-            tools[i].recentTokens += increment
-            tools[i].isActive = true
-        }
-
-        // 标记不活跃的工具
-        let activeSet = Set(indices)
-        for i in 0..<tools.count where !activeSet.contains(i) {
-            // 概率性地设为不活跃
-            if Bool.random() {
-                tools[i].isActive = false
-            }
         }
     }
 }
