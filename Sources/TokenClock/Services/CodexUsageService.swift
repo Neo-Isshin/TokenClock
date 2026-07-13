@@ -2,7 +2,9 @@ import Foundation
 import SQLite3
 
 /// 从 Codex CLI 读取 token 使用数据
-/// Token 计数直接使用 last_token_usage（每条消息的增量值），公式：total_tokens + reasoning_output_tokens
+/// Token 计数直接使用 last_token_usage（每条消息的增量值），取 total_tokens。
+/// 注意：total_tokens == input + output，已包含 reasoning_output_tokens（reasoning ⊂ output），
+/// 故不再额外累加 reasoning，否则会重复计算。
 /// last_token_usage.input_tokens 已包含 cached_input_tokens，与 total_token_usage 语义一致
 /// 缓存率从 last_token_usage.cached_input_tokens 计算
 /// Session 列表从 SQLite threads 表读取
@@ -143,8 +145,8 @@ final class CodexUsageService: @unchecked Sendable {
                     let segment = String(line[ltuRange.lowerBound...].prefix(500))
 
                     let totalTokens = extractInt(from: segment, key: "\"total_tokens\"")
-                    let reasoning = extractInt(from: segment, key: "\"reasoning_output_tokens\"")
-                    let tokens = totalTokens + reasoning
+                    // total_tokens 已含 reasoning_output_tokens（total == input + output，reasoning ⊂ output），不再重复累加
+                    let tokens = totalTokens
                     let cached = extractInt(from: segment, key: "\"cached_input_tokens\"")
 
                     // 归因模型：优先 turn_context 缓存的 currentModel；
@@ -184,8 +186,8 @@ final class CodexUsageService: @unchecked Sendable {
            let ltuRange = line.range(of: "\"last_token_usage\":{") {
             let segment = String(line[ltuRange.lowerBound...].prefix(500))
             let totalTokens = extractInt(from: segment, key: "\"total_tokens\"")
-            let reasoning = extractInt(from: segment, key: "\"reasoning_output_tokens\"")
-            let tokens = totalTokens + reasoning
+            // total_tokens 已含 reasoning_output_tokens，不再重复累加
+            let tokens = totalTokens
             if tokens > 0, !lastDateKey.isEmpty {
                 dailyTokens[lastDateKey, default: 0] += tokens
                 dailyMsgs[lastDateKey, default: 0] += 1
