@@ -55,7 +55,9 @@ enum UsageAggregator {
             guard tool.todayTokens > 0 || tool.todayMessages > 0 else { continue }
             for session in tool.sessions {
                 let name = ModelNormalizer.normalize(session.model) ?? unknownLabel
-                var group = bucket[name] ?? ModelGroup(name: name)
+                var group = bucket[name] ?? ModelGroup(
+                    name: name,
+                    emoji: name == unknownLabel ? "❓" : ModelEmoji.emoji(for: name))
                 group.totalTokens += session.todayTokens
                 group.totalMessages += session.todayMessages
                 if let idx = group.contributions.firstIndex(where: { $0.tool == tool.name }) {
@@ -89,6 +91,8 @@ struct ModelGroup: Identifiable, Hashable {
     var id: String { name }
     /// 归一化后的模型名（或「未知」占位名）
     let name: String
+    /// 模型对应的 emoji 前缀（未知桶用 ❓，其余由 ModelEmoji 匹配，无命中 🧠）
+    var emoji: String = "🧠"
     var totalTokens: Int = 0
     var totalMessages: Int = 0
     /// 该模型下每个工具的贡献（按 token 降序）

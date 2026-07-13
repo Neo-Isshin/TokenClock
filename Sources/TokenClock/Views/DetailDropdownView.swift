@@ -372,7 +372,7 @@ private struct ModelExpandableRow: View {
                         .foregroundColor(theme.dropdownSubtextColor)
                         .frame(width: 14)
 
-                    Text(group.name)
+                    Text("\(group.emoji) \(group.name)")
                         .font(.system(size: 11, weight: .medium, design: .monospaced))
                         .foregroundColor(theme.dropdownTextColor)
                         .lineLimit(1)
