@@ -642,7 +642,9 @@ private struct DropdownPanelView: View {
                 theme: viewModel.selectedTheme,
                 weather: viewModel.weather,
                 localizedCityName: viewModel.localizedCityName,
-                isLoading: viewModel.isInitialLoading
+                isLoading: viewModel.isInitialLoading,
+                groupingMode: viewModel.groupingMode,
+                onGroupingChange: { viewModel.groupingMode = $0 }
             )
             .frame(maxHeight: .infinity, alignment: .top)
 

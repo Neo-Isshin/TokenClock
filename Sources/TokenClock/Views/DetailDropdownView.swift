@@ -9,9 +9,19 @@ struct DetailDropdownView: View {
     /// 首次数据读取中：为 true 时用加载提示取代（基于 mock 的）工具列表，避免误导
     var isLoading: Bool = false
 
+    /// 当前分组模式（按会话 / 按模型）
+    var groupingMode: GroupingMode = .session
+    /// 分组模式切换回调
+    var onGroupingChange: ((GroupingMode) -> Void)? = nil
+
     /// 过滤掉今日消耗为 0 的工具
     private var activeTools: [ToolUsage] {
         tools.filter { $0.todayTokens > 0 }
+    }
+
+    /// 「按模型」分组的视图数据（跨工具归并）
+    private var modelGroups: [ModelGroup] {
+        UsageAggregator.groupedByModel(tools, unknownLabel: L10n.shared.tr("detail.unknownModel"))
     }
 
     var body: some View {
@@ -34,16 +44,32 @@ struct DetailDropdownView: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
+                // 分组切换 [按会话 | 按模型]
+                Picker("", selection: Binding<GroupingMode>(
+                    get: { groupingMode },
+                    set: { newValue in onGroupingChange?(newValue) }
+                )) {
+                    Text(L10n.shared.tr("detail.groupBySession")).tag(GroupingMode.session)
+                    Text(L10n.shared.tr("detail.groupByModel")).tag(GroupingMode.model)
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .padding(.horizontal, 12)
+                .padding(.top, 6)
+                .padding(.bottom, 2)
+
                 // 表头
                 HStack(spacing: 0) {
-                    Text(L10n.shared.tr("detail.instance"))
+                    Text(L10n.shared.tr(groupingMode == .model ? "detail.model" : "detail.instance"))
                         .frame(maxWidth: .infinity, alignment: .leading)
                     Text(L10n.shared.tr("detail.todayUsage"))
                         .frame(width: 62, alignment: .trailing)
                     Text(L10n.shared.tr("detail.messages"))
                         .frame(width: 36, alignment: .trailing)
-                    Text(L10n.shared.tr("detail.cacheRate"))
-                        .frame(width: 40, alignment: .trailing)
+                    if groupingMode == .session {
+                        Text(L10n.shared.tr("detail.cacheRate"))
+                            .frame(width: 40, alignment: .trailing)
+                    }
                 }
                 .font(.system(size: 9, weight: .medium))
                 .foregroundColor(theme.dropdownHeaderColor)
@@ -51,16 +77,25 @@ struct DetailDropdownView: View {
                 .padding(.top, 8)
                 .padding(.bottom, 4)
 
-                // 工具列表（过滤消耗为 0 的）
+                // 列表（按模式切换）
                 ScrollView(.vertical, showsIndicators: true) {
                     VStack(spacing: 0) {
-                        ForEach(Array(activeTools.enumerated()), id: \.element.id) { index, tool in
-                            if index > 0 {
-                                Divider()
-                                    .background(theme.dropdownDividerColor)
+                        if groupingMode == .session {
+                            ForEach(Array(activeTools.enumerated()), id: \.element.id) { index, tool in
+                                if index > 0 {
+                                    Divider()
+                                        .background(theme.dropdownDividerColor)
+                                }
+                                ToolExpandableRow(tool: tool, theme: theme)
                             }
-
-                            ToolExpandableRow(tool: tool, theme: theme)
+                        } else {
+                            ForEach(Array(modelGroups.enumerated()), id: \.element.id) { index, group in
+                                if index > 0 {
+                                    Divider()
+                                        .background(theme.dropdownDividerColor)
+                                }
+                                ModelExpandableRow(group: group, theme: theme)
+                            }
                         }
                     }
                 }
@@ -322,5 +357,94 @@ private struct SessionRow: View {
                 ? theme.dropdownTextColor.opacity(0.04)
                 : Color.clear
         )
+    }
+}
+
+// MARK: - 按模型分组的可展开行
+
+private struct ModelExpandableRow: View {
+    let group: ModelGroup
+    let theme: ClockFaceTheme
+    @State private var isExpanded = false
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Button(action: { withAnimation(.easeOut(duration: 0.15)) { isExpanded.toggle() } }) {
+                HStack(spacing: 0) {
+                    Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundColor(theme.dropdownSubtextColor)
+                        .frame(width: 14)
+
+                    Text(group.name)
+                        .font(.system(size: 11, weight: .medium, design: .monospaced))
+                        .foregroundColor(theme.dropdownTextColor)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+
+                    Text(group.formattedTokens)
+                        .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                        .foregroundColor(theme.dropdownTextColor)
+                        .frame(width: 62, alignment: .trailing)
+
+                    Text("\(group.totalMessages)")
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundColor(theme.dropdownSubtextColor)
+                        .frame(width: 36, alignment: .trailing)
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            if isExpanded && !group.contributions.isEmpty {
+                VStack(spacing: 0) {
+                    Divider()
+                        .background(theme.dropdownDividerColor.opacity(0.5))
+                        .padding(.horizontal, 12)
+
+                    ForEach(group.contributions) { c in
+                        ModelContributionRow(contribution: c, theme: theme)
+                    }
+                }
+                .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+        }
+    }
+}
+
+// MARK: - 模型分组下的工具贡献子行
+
+private struct ModelContributionRow: View {
+    let contribution: ToolContribution
+    let theme: ClockFaceTheme
+
+    var body: some View {
+        HStack(spacing: 0) {
+            Rectangle()
+                .fill(Color.clear)
+                .frame(width: 14)
+
+            Text("\(contribution.emoji) \(contribution.tool)")
+                .font(.system(size: 10, weight: .medium))
+                .foregroundColor(theme.dropdownTextColor)
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            Text(TokenFormat.compact(contribution.tokens))
+                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                .foregroundColor(theme.dropdownSubtextColor)
+                .frame(width: 62, alignment: .trailing)
+
+            Text("\(contribution.messages)")
+                .font(.system(size: 9, design: .monospaced))
+                .foregroundColor(theme.dropdownSubtextColor)
+                .frame(width: 36, alignment: .trailing)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 5)
     }
 }

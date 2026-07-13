@@ -225,6 +225,7 @@ final class OpenClawUsageService: @unchecked Sendable {
         let tokens: Int
         let cacheTokens: Int
         let timestamp: Date?
+        let model: String?
     }
 
     private func parseAssistantLine(_ line: String) -> ParseResult? {
@@ -249,7 +250,8 @@ final class OpenClawUsageService: @unchecked Sendable {
 
         return ParseResult(dateKey: dateKey, hourKey: hourKey,
                           tokens: tokens, cacheTokens: cacheTokens,
-                          timestamp: DateHelper.parseISO8601(timestamp))
+                          timestamp: DateHelper.parseISO8601(timestamp),
+                          model: (obj["model"] as? String) ?? (msg["model"] as? String))
     }
 
     private func accumulate(_ result: ParseResult, today: String,
@@ -327,6 +329,8 @@ final class OpenClawUsageService: @unchecked Sendable {
 
             var agentTokens = 0
             var agentMessages = 0
+            // 该 agent 下各模型 → token 用量，用于取代表模型（一个 agent 可能跨多个 session 文件用不同模型）
+            var agentModelTokens: [String: Int] = [:]
 
             for file in files {
                 // 过滤掉 trajectory 和 checkpoint 文件，只保留主 session 日志
@@ -339,19 +343,22 @@ final class OpenClawUsageService: @unchecked Sendable {
                 if isCronSession(path: fullPath) { continue }
 
                 // 解析该文件今日数据（以实际内容为准，不以文件修改时间为准）
-                let (tokens, messages) = parseSessionFileToday(path: fullPath, today: today)
+                let (tokens, messages, modelTokens) = parseSessionFileToday(path: fullPath, today: today)
                 agentTokens += tokens
                 agentMessages += messages
+                for (m, t) in modelTokens { agentModelTokens[m, default: 0] += t }
             }
 
             if agentTokens > 0 {
+                let dominantModel = agentModelTokens.max(by: { $0.value < $1.value })?.key
                 results.append(SessionInfo(
                     rawId: agentName,
                     displayName: agentName,
                     detail: nil,
                     todayTokens: agentTokens,
                     todayMessages: agentMessages,
-                    isActive: true
+                    isActive: true,
+                    model: dominantModel
                 ))
             }
         }
@@ -409,8 +416,9 @@ final class OpenClawUsageService: @unchecked Sendable {
     }
 
     /// 解析单个 session 文件的今日数据
-    private func parseSessionFileToday(path: String, today: String) -> (tokens: Int, messages: Int) {
-        guard let stream = InputStream(fileAtPath: path) else { return (0, 0) }
+    /// 返回 (tokens, messages, modelTokens: 各模型 → token 用量)，供上层按 agent 归并时取代表模型
+    private func parseSessionFileToday(path: String, today: String) -> (tokens: Int, messages: Int, modelTokens: [String: Int]) {
+        guard let stream = InputStream(fileAtPath: path) else { return (0, 0, [:]) }
         stream.open()
         defer { stream.close() }
 
@@ -419,6 +427,7 @@ final class OpenClawUsageService: @unchecked Sendable {
         defer { buf.deallocate() }
         var lineBuf = Data()
         var tokens = 0, messages = 0
+        var modelTokens: [String: Int] = [:]
 
         while stream.hasBytesAvailable {
             let n = stream.read(buf, maxLength: bufSize)
@@ -434,6 +443,7 @@ final class OpenClawUsageService: @unchecked Sendable {
                     if result.dateKey == today {
                         tokens += result.tokens
                         messages += 1
+                        if let m = result.model { modelTokens[m, default: 0] += result.tokens }
                     }
                 }
             }
@@ -445,8 +455,9 @@ final class OpenClawUsageService: @unchecked Sendable {
            let result = parseAssistantLine(line), result.dateKey == today {
             tokens += result.tokens
             messages += 1
+            if let m = result.model { modelTokens[m, default: 0] += result.tokens }
         }
 
-        return (tokens, messages)
+        return (tokens, messages, modelTokens)
     }
 }

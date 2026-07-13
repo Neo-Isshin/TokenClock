@@ -112,6 +112,10 @@ final class L10n: @unchecked Sendable {
         "detail.cacheRate": [.zhHans: "缓存率",    .zhHant: "緩存率",    .en: "Cache"],
         "detail.forecast":  [.zhHans: "未来趋势",  .zhHant: "未來趨勢",  .en: "Forecast"],
         "detail.loading":   [.zhHans: "正在读取数据…", .zhHant: "正在讀取資料…", .en: "Reading data…"],
+        "detail.groupBySession": [.zhHans: "按会话", .zhHant: "按工作階段", .en: "By Session"],
+        "detail.groupByModel":   [.zhHans: "按模型", .zhHant: "按模型",   .en: "By Model"],
+        "detail.unknownModel":   [.zhHans: "未知",   .zhHant: "未知",    .en: "Unknown"],
+        "detail.model":          [.zhHans: "模型",   .zhHant: "模型",    .en: "Model"],
 
         // MARK: Theme picker
         "themePicker.title": [.zhHans: "选择表盘", .zhHant: "選擇錶盤", .en: "Select Clock Face"],

@@ -229,6 +229,7 @@ final class GeminiUsageService: @unchecked Sendable {
         let dateKey: String
         let hourKey: String
         let timestamp: Date?
+        let model: String?
     }
 
     private func parseGeminiEvent(_ msg: [String: Any]) -> GeminiEvent? {
@@ -250,7 +251,8 @@ final class GeminiUsageService: @unchecked Sendable {
 
         return GeminiEvent(tokens: total, cachedTokens: cached,
                            dateKey: dateKey, hourKey: hourKey,
-                           timestamp: DateHelper.parseISO8601(timestamp))
+                           timestamp: DateHelper.parseISO8601(timestamp),
+                           model: msg["model"] as? String)
     }
 
     private func accumulateResult(_ r: GeminiEvent, today: String,
@@ -325,11 +327,11 @@ final class GeminiUsageService: @unchecked Sendable {
                       let modDate = attrs[.modificationDate] as? Date else { continue }
                 guard DateHelper.dateKey(from: modDate) == today else { continue }
 
-                let (tokens, messages, sessionId): (Int, Int, String)
+                let (tokens, messages, sessionId, model): (Int, Int, String, String?)
                 if isJSONL {
-                    (tokens, messages, sessionId) = parseSessionFileJSONLToday(path: fullPath, today: today)
+                    (tokens, messages, sessionId, model) = parseSessionFileJSONLToday(path: fullPath, today: today)
                 } else {
-                    (tokens, messages, sessionId) = parseSessionFileJSONToday(path: fullPath, today: today)
+                    (tokens, messages, sessionId, model) = parseSessionFileJSONToday(path: fullPath, today: today)
                 }
                 guard tokens > 0 else { continue }
 
@@ -340,7 +342,8 @@ final class GeminiUsageService: @unchecked Sendable {
                     detail: project,
                     todayTokens: tokens,
                     todayMessages: messages,
-                    isActive: true
+                    isActive: true,
+                    model: model
                 ))
             }
         }
@@ -350,27 +353,29 @@ final class GeminiUsageService: @unchecked Sendable {
 
     // MARK: - Session 详情解析
 
-    private func parseSessionFileJSONToday(path: String, today: String) -> (tokens: Int, messages: Int, sessionId: String) {
+    private func parseSessionFileJSONToday(path: String, today: String) -> (tokens: Int, messages: Int, sessionId: String, model: String?) {
         guard let data = fm.contents(atPath: path),
-              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return (0, 0, "") }
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return (0, 0, "", nil) }
 
         let sessionId = (obj["sessionId"] as? String) ?? (obj["id"] as? String) ?? ""
-        guard let messages = obj["messages"] as? [[String: Any]] else { return (0, 0, sessionId) }
+        guard let messages = obj["messages"] as? [[String: Any]] else { return (0, 0, sessionId, nil) }
 
         var totalTokens = 0
         var msgCount = 0
+        var model: String?
 
         for msg in messages {
             guard let result = parseGeminiEvent(msg), result.dateKey == today else { continue }
             totalTokens += result.tokens
             msgCount += 1
+            if let m = result.model { model = m }
         }
 
-        return (totalTokens, msgCount, sessionId)
+        return (totalTokens, msgCount, sessionId, model)
     }
 
-    private func parseSessionFileJSONLToday(path: String, today: String) -> (tokens: Int, messages: Int, sessionId: String) {
-        guard let stream = InputStream(fileAtPath: path) else { return (0, 0, "") }
+    private func parseSessionFileJSONLToday(path: String, today: String) -> (tokens: Int, messages: Int, sessionId: String, model: String?) {
+        guard let stream = InputStream(fileAtPath: path) else { return (0, 0, "", nil) }
         stream.open()
         defer { stream.close() }
 
@@ -381,6 +386,7 @@ final class GeminiUsageService: @unchecked Sendable {
         var totalTokens = 0
         var msgCount = 0
         var sessionId = ""
+        var model: String?
 
         while stream.hasBytesAvailable {
             let n = stream.read(buf, maxLength: bufSize)
@@ -400,6 +406,7 @@ final class GeminiUsageService: @unchecked Sendable {
                 if let result = parseGeminiEvent(obj), result.dateKey == today {
                     totalTokens += result.tokens
                     msgCount += 1
+                    if let m = result.model { model = m }
                 }
             }
         }
@@ -412,9 +419,10 @@ final class GeminiUsageService: @unchecked Sendable {
             if let result = parseGeminiEvent(obj), result.dateKey == today {
                 totalTokens += result.tokens
                 msgCount += 1
+                if let m = result.model { model = m }
             }
         }
 
-        return (totalTokens, msgCount, sessionId)
+        return (totalTokens, msgCount, sessionId, model)
     }
 }

@@ -171,7 +171,7 @@ final class HermesUsageService: @unchecked Sendable {
 
         let todayStart = Date().addingTimeInterval(-AppConfig.Scan.oneDaySeconds)
         let query = """
-        SELECT session_id, started_at,
+        SELECT id, started_at, model,
                input_tokens, output_tokens,
                cache_read_tokens, cache_write_tokens,
                message_count
@@ -193,10 +193,12 @@ final class HermesUsageService: @unchecked Sendable {
             let sessionIdPtr = sqlite3_column_text(stmt, 0)
             let sessionId = sessionIdPtr != nil ? String(cString: sessionIdPtr!) : ""
             let startedAt = sqlite3_column_double(stmt, 1)
-            let inputTokens = sqlite3_column_int(stmt, 2)
-            let outputTokens = sqlite3_column_int(stmt, 3)
-            let cacheRead = sqlite3_column_int(stmt, 4)
-            let msgCount = sqlite3_column_int(stmt, 6)
+            let modelPtr = sqlite3_column_text(stmt, 2)
+            let model = modelPtr != nil ? String(cString: modelPtr!) : nil
+            let inputTokens = sqlite3_column_int(stmt, 3)
+            let outputTokens = sqlite3_column_int(stmt, 4)
+            let cacheRead = sqlite3_column_int(stmt, 5)
+            let msgCount = sqlite3_column_int(stmt, 7)
 
             let tokens = Int(inputTokens) + Int(outputTokens) + Int(cacheRead)
             guard tokens > 0 else { continue }
@@ -214,7 +216,8 @@ final class HermesUsageService: @unchecked Sendable {
                 detail: nil,
                 todayTokens: tokens,
                 todayMessages: effectiveMessages,
-                isActive: true
+                isActive: true,
+                model: model
             ))
         }
 

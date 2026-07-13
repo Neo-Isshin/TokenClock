@@ -67,6 +67,10 @@ enum SettingsKey: String {
     /// Cursor 用量是否从云端获取（关闭则不向 cursor.com 发凭证请求）
     case cursorCloudFetchEnabled = "TC_cursorCloudFetchEnabled"
 
+    // MARK: - 下拉面板
+    /// 分组模式：0=按会话 1=按模型
+    case dropdownGrouping = "TC_dropdownGrouping"
+
     // MARK: - 首次启动标记
     case hasRunInitialDetection = "TC_hasRunInitialDetection"
 

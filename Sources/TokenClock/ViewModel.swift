@@ -2,6 +2,12 @@ import SwiftUI
 import Combine
 import AppKit
 
+/// 下拉面板分组模式：按会话 / 按模型
+enum GroupingMode: Int {
+    case session = 0
+    case model = 1
+}
+
 @MainActor
 final class ViewModel: ObservableObject {
     @Published var tools: [ToolUsage] {
@@ -30,6 +36,13 @@ final class ViewModel: ObservableObject {
 
     /// 展开状态变化时的回调（由 AppDelegate 设置）
     var onExpandChanged: ((Bool) -> Void)?
+
+    /// 下拉面板分组模式（按会话 / 按模型），持久化到 UserDefaults
+    @Published var groupingMode: GroupingMode = {
+        GroupingMode(rawValue: UserDefaults.standard.int(for: .dropdownGrouping, default: 0)) ?? .session
+    }() {
+        didSet { UserDefaults.standard.setInt(groupingMode.rawValue, for: .dropdownGrouping) }
+    }
 
     @Published var windowOpacity: Double = 1.0 { didSet { UserDefaults.standard.set(windowOpacity, forKey: SettingsKey.windowOpacity.rawValue) } }
     @Published var alwaysOnTop: Bool = {

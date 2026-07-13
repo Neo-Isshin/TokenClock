@@ -13,6 +13,9 @@ final class CodexUsageService: @unchecked Sendable {
     private var recentEntries: [RecentEntry] = []
     private var sessionMessagesByDate: [String: [String: Int]] = [:]
     private var sessionTokensByDate: [String: [String: Int]] = [:]
+    /// 每个 session 的代表模型（按 token 占比最高的那个）。
+    /// Codex rollout 里模型由 turn_context 事件声明，同一 session 切换模型时取用量最大的。
+    private var sessionModels: [String: String] = [:]
 
     /// 已扫描的 JSONL 文件路径及其统计结果（含文件大小用于变更检测）
     private var jsonlCache: [String: (dateKey: String, count: Int, tokens: Int, cachedTokens: Int, fileSize: Int)] = [:]
@@ -31,6 +34,7 @@ final class CodexUsageService: @unchecked Sendable {
         recentEntries = []
         sessionMessagesByDate = [:]
         sessionTokensByDate = [:]
+        sessionModels = [:]
         jsonlCache = [:]
         scanJSONL()
     }
@@ -119,6 +123,10 @@ final class CodexUsageService: @unchecked Sendable {
         var dailyTokens: [String: Int] = [:]
         var dailyMsgs: [String: Int] = [:]
         var dailyCached: [String: Int] = [:]
+        // 模型状态机：turn_context 事件声明本 turn 的模型，缓存到下一条 token_count。
+        var currentModel: String?
+        // 模型 → token 用量，结尾取最大者作为该 session 的代表模型。
+        var modelTokens: [String: Int] = [:]
 
         while stream.hasBytesAvailable {
             let n = stream.read(buf, maxLength: bufSize)
@@ -139,6 +147,11 @@ final class CodexUsageService: @unchecked Sendable {
                     let tokens = totalTokens + reasoning
                     let cached = extractInt(from: segment, key: "\"cached_input_tokens\"")
 
+                    // 归因模型：优先 turn_context 缓存的 currentModel；
+                    // 缺失时按 model_context_window 启发式回退（258400 → gpt-5.5，移植自 open-nova）。
+                    let contextWindow = extractInt(from: line, key: "\"model_context_window\"")
+                    let modelForTurn = currentModel ?? (contextWindow == 258400 ? "gpt-5.5" : nil)
+
                     var dateKey = ""
                     if let tsRange = line.range(of: "\"timestamp\":\"") {
                         let start = tsRange.upperBound
@@ -155,7 +168,11 @@ final class CodexUsageService: @unchecked Sendable {
                         dailyTokens[dateKey, default: 0] += tokens
                         dailyMsgs[dateKey, default: 0] += 1
                         dailyCached[dateKey, default: 0] += cached
+                        if let m = modelForTurn { modelTokens[m, default: 0] += tokens }
                     }
+                } else if line.contains("\"type\":\"turn_context\"") {
+                    // turn_context 声明本 turn 模型，缓存供后续 token_count 归因。
+                    if let m = codexModel(fromLine: line) { currentModel = m }
                 }
             }
         }
@@ -173,6 +190,7 @@ final class CodexUsageService: @unchecked Sendable {
                 dailyTokens[lastDateKey, default: 0] += tokens
                 dailyMsgs[lastDateKey, default: 0] += 1
                 dailyCached[lastDateKey, default: 0] += extractInt(from: segment, key: "\"cached_input_tokens\"")
+                if let m = currentModel { modelTokens[m, default: 0] += tokens }
             }
         }
 
@@ -202,6 +220,10 @@ final class CodexUsageService: @unchecked Sendable {
                 sessionMessagesByDate[dateKey, default: [:]][sessionId, default: 0] += dailyMsgs[dateKey] ?? 0
                 sessionTokensByDate[dateKey, default: [:]][sessionId, default: 0] += tokens
             }
+            // 取用量最大的模型作为该 session 的代表模型
+            if let dominant = modelTokens.max(by: { $0.value < $1.value })?.key {
+                sessionModels[sessionId] = dominant
+            }
         }
     }
 
@@ -212,6 +234,33 @@ final class CodexUsageService: @unchecked Sendable {
         // Codex filenames are rollout-YYYY-MM-DDTHH-MM-SS-<sessionId>.jsonl.
         guard stem.count > 20 else { return nil }
         return String(stem.dropFirst(20))
+    }
+
+    /// 从一条 turn_context 行解析模型名（多键回退，移植自 open-nova `_codex_model_from_payload`）。
+    /// 回退顺序：model → model_key → model_slug → collaboration_mode.settings.model → settings.model
+    private func codexModel(fromLine line: String) -> String? {
+        guard let data = line.data(using: .utf8),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let payload = obj["payload"] as? [String: Any] else { return nil }
+        return codexModel(fromPayload: payload)
+    }
+
+    private func codexModel(fromPayload payload: [String: Any]) -> String? {
+        for key in ["model", "model_key", "model_slug"] {
+            if let s = payload[key] as? String, !s.trimmingCharacters(in: .whitespaces).isEmpty {
+                return s
+            }
+        }
+        if let collaboration = payload["collaboration_mode"] as? [String: Any],
+           let settings = collaboration["settings"] as? [String: Any],
+           let s = settings["model"] as? String, !s.isEmpty {
+            return s
+        }
+        if let settings = payload["settings"] as? [String: Any],
+           let s = settings["model"] as? String, !s.isEmpty {
+            return s
+        }
+        return nil
     }
 
 private func extractInt(from str: String, key: String) -> Int {
@@ -283,7 +332,8 @@ private func extractInt(from str: String, key: String) -> Int {
                 detail: detail,
                 todayTokens: tokens,
                 todayMessages: messages,
-                isActive: true
+                isActive: true,
+                model: sessionModel(for: sessionId, in: sessionModels)
             ))
         }
 
@@ -311,6 +361,15 @@ private func extractInt(from str: String, key: String) -> Int {
             return prefixMatch.value
         }
         return 0
+    }
+
+    /// 按 sessionId 查代表模型（与 token 计数采用同样的前缀容错匹配）
+    private func sessionModel(for sessionId: String, in models: [String: String]) -> String? {
+        if let exact = models[sessionId] { return exact }
+        if let prefixMatch = models.first(where: { sessionId.hasPrefix($0.key) || $0.key.hasPrefix(sessionId) }) {
+            return prefixMatch.value
+        }
+        return nil
     }
 
     private func fileSize(at path: String) -> Int {
