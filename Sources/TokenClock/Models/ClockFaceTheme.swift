@@ -362,6 +362,28 @@ enum ClockFaceTheme: String, CaseIterable, Identifiable {
         }
     }
 
+    /// 下拉底色对应的系统外观：用于把系统控件（如分段选择器）的 colorScheme 对齐到
+    /// 主题底色明暗，避免「浅底 + 系统深色模式」下白字系统控件看不清（normal 不透明变体专用）。
+    var dropdownColorScheme: ColorScheme {
+        func scheme(_ r: Double, _ g: Double, _ b: Double) -> ColorScheme {
+            (0.299 * r + 0.587 * g + 0.114 * b) > 0.55 ? .light : .dark
+        }
+        switch self {
+        case .classic:  return scheme(0.94, 0.94, 0.95)
+        case .midnight: return scheme(0.133, 0.184, 0.247)
+        case .luxe:     return scheme(0.125, 0.125, 0.200)
+        case .gufeng:   return scheme(0.910, 0.878, 0.812)
+        case .railgun:  return scheme(0.925, 0.906, 0.875)
+        case .sky:      return scheme(0.600, 0.780, 0.920)
+        case .glass:    return scheme(0.93, 0.95, 0.97)
+        case .glacier:  return scheme(0.94, 0.97, 1.00)
+        case .custom:
+            let c = custom.dropdownBgColor
+            return scheme(c.red, c.green, c.blue)
+        }
+    }
+
+
     var dropdownHeaderColor: Color {
         switch self {
         case .classic: return Color(red: 0.55, green: 0.55, blue: 0.58)

@@ -103,6 +103,7 @@ struct DetailDropdownView: View {
             }
         }
         .frame(maxHeight: .infinity, alignment: .top)
+        .environment(\.colorScheme, theme.dropdownColorScheme)
         .background(
             RoundedRectangle(cornerRadius: 12)
                 .fill(theme.dropdownBgColor)
