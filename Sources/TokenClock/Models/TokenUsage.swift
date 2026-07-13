@@ -63,6 +63,10 @@ struct SessionInfo: Identifiable, Hashable {
     /// 来源标签（如 Antigravity 的 CLI/IDE/App），显示在 "session" 标签右侧；nil 则不显示
     var source: String? = nil
 
+    /// 该 session 使用的模型名（经 `ModelNormalizer` 归一化后的官方名，如 "claude-sonnet-4-5"）；
+    /// nil = 日志里解析不到 → 在「按模型」视图里归入「未知」桶。
+    var model: String? = nil
+
     /// 格式化的 token 数
     var formattedTokens: String { TokenFormat.compact(todayTokens) }
 }

@@ -155,11 +155,16 @@ final class OpenCodeUsageService: @unchecked Sendable {
         let todayStart = Date().addingTimeInterval(-AppConfig.Scan.oneDaySeconds)
         let todayStartMs = Int64(todayStart.timeIntervalSince1970 * 1000)
 
+        // model 列在 opencode 不同版本 schema 中未必存在：先探测再决定是否选取，
+        // 缺失时归「未知」也绝不破坏整条 prepare（否则该工具的 session 列表会整体为空）。
+        // model 放在 SELECT 末尾（index 9），不影响既有列下标。
+        let hasModelColumn = sqlite3HasColumn(db, table: "session", column: "model")
+        let modelSelect = hasModelColumn ? ", model" : ""
         let query = """
         SELECT id, title, directory,
                tokens_input, tokens_output, tokens_reasoning,
                tokens_cache_read, tokens_cache_write,
-               time_created
+               time_created\(modelSelect)
         FROM session
         WHERE time_created >= ?
           AND (tokens_input > 0 OR tokens_output > 0)
@@ -188,6 +193,13 @@ final class OpenCodeUsageService: @unchecked Sendable {
             let cacheRead = sqlite3_column_int(stmt, 6)
             _ = sqlite3_column_int(stmt, 7)   // cacheWrite: 故意不计,避免计数膨胀（其他工具也不计 cacheWrite）
             let timeCreatedMs = sqlite3_column_int64(stmt, 8)
+            let model: String?
+            if hasModelColumn {
+                let mPtr = sqlite3_column_text(stmt, 9)
+                model = mPtr != nil ? String(cString: mPtr!) : nil
+            } else {
+                model = nil
+            }
 
             let tokens = Int(inputTokens) + Int(outputTokens) + Int(reasoningTokens) + Int(cacheRead)
             guard tokens > 0 else { continue }
@@ -205,10 +217,25 @@ final class OpenCodeUsageService: @unchecked Sendable {
                 detail: dirName.isEmpty ? nil : dirName,
                 todayTokens: tokens,
                 todayMessages: 1,
-                isActive: true
+                isActive: true,
+                model: model
             ))
         }
 
         return results
     }
+}
+
+/// 探测 SQLite 表是否含某列（PRAGMA table_info 的 name 列在 index 1）。
+/// 用于在 schema 不确定时安全地按需选取列，避免 prepare 失败导致整个查询返回空。
+private func sqlite3HasColumn(_ db: OpaquePointer?, table: String, column: String) -> Bool {
+    var stmt: OpaquePointer?
+    guard sqlite3_prepare_v2(db, "PRAGMA table_info(\(table))", -1, &stmt, nil) == SQLITE_OK else { return false }
+    defer { sqlite3_finalize(stmt) }
+    while sqlite3_step(stmt) == SQLITE_ROW {
+        if let namePtr = sqlite3_column_text(stmt, 1), String(cString: namePtr) == column {
+            return true
+        }
+    }
+    return false
 }

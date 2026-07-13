@@ -168,7 +168,7 @@ final class ClaudeCodeUsageService: @unchecked Sendable {
         fileRecentContrib[path] = newRecent
     }
 
-    private struct R { let dateKey: String; let hourKey: String; let tokens: Int; let cacheTokens: Int; let ts: Date? }
+    private struct R { let dateKey: String; let hourKey: String; let tokens: Int; let cacheTokens: Int; let ts: Date?; let model: String? }
 
     private func parseLine(_ line: String) -> R? {
         guard let data = line.data(using: .utf8) else { return nil }
@@ -187,7 +187,8 @@ final class ClaudeCodeUsageService: @unchecked Sendable {
         guard dateKey.count == 10 else { return nil }
         return R(dateKey: dateKey, hourKey: DateHelper.localHourKey(from: timestamp),
                  tokens: tokens, cacheTokens: cacheRead + cacheCreation,
-                 ts: DateHelper.parseISO8601(timestamp))
+                 ts: DateHelper.parseISO8601(timestamp),
+                 model: msg["model"] as? String)
     }
 
     private func accumulate(_ r: R, today: String, daily: inout [String: DayUsage],
@@ -243,7 +244,7 @@ final class ClaudeCodeUsageService: @unchecked Sendable {
 
             guard seen.insert(sessionId).inserted else { continue }
 
-            let (tokens, messages) = findSessionTokens(sessionId: sessionId, today: today)
+            let (tokens, messages, model) = findSessionTokens(sessionId: sessionId, today: today)
             guard tokens > 0 || messages > 0 else { continue }
 
             let displayId = SessionIdDisplay.format(sessionId)
@@ -256,7 +257,8 @@ final class ClaudeCodeUsageService: @unchecked Sendable {
                 detail: detail,
                 todayTokens: tokens,
                 todayMessages: messages,
-                isActive: true
+                isActive: true,
+                model: model
             ))
         }
 
@@ -264,16 +266,16 @@ final class ClaudeCodeUsageService: @unchecked Sendable {
     }
 
     /// 在 projects 目录中递归查找指定 sessionId 的 .jsonl 文件，并计算今日 token
-    private func findSessionTokens(sessionId: String, today: String) -> (tokens: Int, messages: Int) {
+    private func findSessionTokens(sessionId: String, today: String) -> (tokens: Int, messages: Int, model: String?) {
         let projectsDir = claudeHome + "/projects"
         var isDir: ObjCBool = false
-        guard fm.fileExists(atPath: projectsDir, isDirectory: &isDir), isDir.boolValue else { return (0, 0) }
+        guard fm.fileExists(atPath: projectsDir, isDirectory: &isDir), isDir.boolValue else { return (0, 0, nil) }
 
         // session 文件名就是 sessionId + ".jsonl"
         let targetFile = sessionId + ".jsonl"
 
         // 递归查找
-        guard let projects = try? fm.contentsOfDirectory(atPath: projectsDir) else { return (0, 0) }
+        guard let projects = try? fm.contentsOfDirectory(atPath: projectsDir) else { return (0, 0, nil) }
         for project in projects {
             let projectPath = projectsDir + "/" + project
             var pIsDir: ObjCBool = false
@@ -291,10 +293,10 @@ final class ClaudeCodeUsageService: @unchecked Sendable {
                 return found
             }
         }
-        return (0, 0)
+        return (0, 0, nil)
     }
 
-    private func findSessionFileRecursive(dir: String, targetFile: String, today: String) -> (tokens: Int, messages: Int)? {
+    private func findSessionFileRecursive(dir: String, targetFile: String, today: String) -> (tokens: Int, messages: Int, model: String?)? {
         guard let contents = try? fm.contentsOfDirectory(atPath: dir) else { return nil }
         for item in contents {
             let fullPath = dir + "/" + item
@@ -312,8 +314,8 @@ final class ClaudeCodeUsageService: @unchecked Sendable {
     }
 
     /// 解析单个 session 文件的今日数据（复用现有解析逻辑）
-    private func parseSessionFileToday(path: String, today: String) -> (tokens: Int, messages: Int) {
-        guard let stream = InputStream(fileAtPath: path) else { return (0, 0) }
+    private func parseSessionFileToday(path: String, today: String) -> (tokens: Int, messages: Int, model: String?) {
+        guard let stream = InputStream(fileAtPath: path) else { return (0, 0, nil) }
         stream.open()
         defer { stream.close() }
 
@@ -322,6 +324,8 @@ final class ClaudeCodeUsageService: @unchecked Sendable {
         defer { buf.deallocate() }
         var lineBuf = Data()
         var tokens = 0, messages = 0
+        // 取该 session 出现过的模型（最后一条 assistant turn 的 message.model）
+        var model: String?
 
         while stream.hasBytesAvailable {
             let n = stream.read(buf, maxLength: bufSize)
@@ -335,6 +339,7 @@ final class ClaudeCodeUsageService: @unchecked Sendable {
                 if line.contains("\"assistant\""), let r = parseLine(line), r.dateKey == today {
                     tokens += r.tokens
                     messages += 1
+                    if let m = r.model { model = m }
                 }
             }
         }
@@ -344,8 +349,9 @@ final class ClaudeCodeUsageService: @unchecked Sendable {
            line.contains("\"assistant\""), let r = parseLine(line), r.dateKey == today {
             tokens += r.tokens
             messages += 1
+            if let m = r.model { model = m }
         }
 
-        return (tokens, messages)
+        return (tokens, messages, model)
     }
 }
