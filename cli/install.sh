@@ -159,7 +159,7 @@ ensure_source() {
 # ── 4. 获取二进制（优先下载预编译，失败 / --build-from-source 则回退源码编译）──
 # 预编译资产来自 GitHub release（universal：arm64+x86_64），免 Xcode / 免编译。
 # 升级 release 时同步更新 RELEASE_TAG 与两个 SHA256。
-RELEASE_TAG="${TOKENCLOCK_RELEASE_TAG:-v1.2.9}"
+RELEASE_TAG="${TOKENCLOCK_RELEASE_TAG:-v1.3.0}"
 RELEASE_URL_BASE="${TOKENCLOCK_RELEASE_BASE:-https://github.com/Neo-Isshin/TokenClock/releases/download/$RELEASE_TAG}"
 
 # 变体 → tarball 文件名 / 期望 SHA256（bash 3.2 无关联数组，用 case）
@@ -171,8 +171,8 @@ tarball_name() {
 }
 tarball_sha256() {
   case "$1" in
-    glass)  echo "87c139fa97bc31d4f1d8c3ca7954e572126b5c8bce2e183d1c5ab59e14ef8397" ;;
-    normal) echo "ec6e34228b7c7a8cfbef8df3a6893fad3612ad8a6b2116474d3e80f22b687e67" ;;
+    glass)  echo "83737310bfe8274d33127746a9ab73e74d265081f9cbc31467af9f77ea4a4efb" ;;
+    normal) echo "31880e7b7bd92c4ad52789f2d4d7e4ef54af3ccb145d5fe58089e4e8fcde8b2f" ;;
   esac
 }
 
