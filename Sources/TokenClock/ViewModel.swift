@@ -97,6 +97,10 @@ final class ViewModel: ObservableObject {
     @Published var glassTintHex: String? = nil {
         didSet { UserDefaults.standard.setString(glassTintHex, for: .glassTint) }
     }
+    /// 下拉详情面板主文字色覆写 #RRGGBB（nil = 跟随主题）。
+    @Published var dropdownTextColorHex: String? = nil {
+        didSet { UserDefaults.standard.setString(dropdownTextColorHex, for: .dropdownTextColor) }
+    }
 
     /// 液态玻璃折射总开关（默认开；关 → 回退公开 .clear 玻璃）。表盘立即切换；
     /// 但 FloatingPanel 的 _hasActiveAppearance 覆写在启动时据 TC_GLASS_DISABLE 决定，彻底关闭需重启。
@@ -227,6 +231,9 @@ final class ViewModel: ObservableObject {
         }
         if let tintHex = UserDefaults.standard.string(for: .glassTint), CodableColor(hex: tintHex) != nil {
             glassTintHex = tintHex
+        }
+        if let panelHex = UserDefaults.standard.string(for: .dropdownTextColor), CodableColor(hex: panelHex) != nil {
+            dropdownTextColorHex = panelHex
         }
         glassRefractionEnabled = !UserDefaults.standard.bool(forKey: "TC_GLASS_DISABLE")
 

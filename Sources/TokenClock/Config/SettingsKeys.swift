@@ -78,6 +78,8 @@ enum SettingsKey: String {
     case glassLensing = "TC_GLASS_LENSING"
     /// 私有玻璃底色 #RRGGBB（空=纯净玻璃，随壁纸自适应）
     case glassTint = "TC_GLASS_TINT"
+    /// 下拉详情面板主文字色 #RRGGBB（空=跟随主题）
+    case dropdownTextColor = "TC_dropdownTextColor"
     /// Cursor 用量是否从云端获取（关闭则不向 cursor.com 发凭证请求）
     case cursorCloudFetchEnabled = "TC_cursorCloudFetchEnabled"
 

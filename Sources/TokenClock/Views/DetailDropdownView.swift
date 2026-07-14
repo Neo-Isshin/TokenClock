@@ -4,6 +4,8 @@ import SwiftUI
 struct DetailDropdownView: View {
     let tools: [ToolUsage]
     var theme: ClockFaceTheme = .classic
+    /// 下拉面板主文字色覆写（nil = 跟随主题）。来自右键「表盘外观 → 详情面板文字色」。
+    var dropdownTextColorOverride: Color? = nil
     var weather: WeatherInfo = WeatherInfo()
     var localizedCityName: String = ""
     /// 首次数据读取中：为 true 时用加载提示取代（基于 mock 的）工具列表，避免误导
@@ -13,6 +15,11 @@ struct DetailDropdownView: View {
     var groupingMode: GroupingMode = .session
     /// 分组模式切换回调
     var onGroupingChange: ((GroupingMode) -> Void)? = nil
+
+    /// 实际面板主文字色：有覆写则用覆写，否则用主题色。
+    private var textColor: Color { dropdownTextColorOverride ?? theme.dropdownTextColor }
+    private var subtextColor: Color { dropdownTextColorOverride.map { $0.opacity(0.65) } ?? theme.dropdownSubtextColor }
+    private var headerColor: Color { dropdownTextColorOverride.map { $0.opacity(0.7) } ?? theme.dropdownHeaderColor }
 
     /// 过滤掉今日消耗为 0 的工具
     private var activeTools: [ToolUsage] {
@@ -40,20 +47,35 @@ struct DetailDropdownView: View {
                     ProgressView().controlSize(.small)
                     Text(L10n.shared.tr("detail.loading"))
                         .font(.system(size: 11))
-                        .foregroundColor(theme.dropdownSubtextColor)
+                        .foregroundColor(subtextColor)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                // 分组切换 [按会话 | 按模型]
-                Picker("", selection: Binding<GroupingMode>(
-                    get: { groupingMode },
-                    set: { newValue in onGroupingChange?(newValue) }
-                )) {
-                    Text(L10n.shared.tr("detail.groupBySession")).tag(GroupingMode.session)
-                    Text(L10n.shared.tr("detail.groupByModel")).tag(GroupingMode.model)
+                // 分组切换胶囊 [按会话 | 按模型]
+                // 自定义胶囊替代系统 segmented：字号更小、配色更克制，不抢占列表视觉焦点。
+                // 外层胶囊用 dropdownTextColor 低透明叠层（与面板底色略微区分），选中段加一层略浓的圆角块。
+                HStack(spacing: 2) {
+                    ForEach([GroupingMode.session, GroupingMode.model], id: \.self) { mode in
+                        let selected = (groupingMode == mode)
+                        Button { onGroupingChange?(mode) } label: {
+                            Text(L10n.shared.tr(mode == .session ? "detail.groupBySession" : "detail.groupByModel"))
+                                .font(.system(size: 10, weight: selected ? .semibold : .regular))
+                                .foregroundColor(selected ? textColor : subtextColor)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 3)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 5, style: .continuous)
+                                        .fill(textColor.opacity(selected ? 0.12 : 0))
+                                )
+                        }
+                        .buttonStyle(.plain)
+                    }
                 }
-                .pickerStyle(.segmented)
-                .labelsHidden()
+                .padding(3)
+                .background(
+                    Capsule(style: .continuous)
+                        .fill(textColor.opacity(0.07))
+                )
                 .padding(.horizontal, 12)
                 .padding(.top, 6)
                 .padding(.bottom, 2)
@@ -72,7 +94,7 @@ struct DetailDropdownView: View {
                     }
                 }
                 .font(.system(size: 9, weight: .medium))
-                .foregroundColor(theme.dropdownHeaderColor)
+                .foregroundColor(headerColor)
                 .padding(.horizontal, 16)
                 .padding(.top, 8)
                 .padding(.bottom, 4)
@@ -86,7 +108,7 @@ struct DetailDropdownView: View {
                                     Divider()
                                         .background(theme.dropdownDividerColor)
                                 }
-                                ToolExpandableRow(tool: tool, theme: theme)
+                                ToolExpandableRow(tool: tool, theme: theme, textColorOverride: dropdownTextColorOverride)
                             }
                         } else {
                             ForEach(Array(modelGroups.enumerated()), id: \.element.id) { index, group in
@@ -94,7 +116,7 @@ struct DetailDropdownView: View {
                                     Divider()
                                         .background(theme.dropdownDividerColor)
                                 }
-                                ModelExpandableRow(group: group, theme: theme)
+                                ModelExpandableRow(group: group, theme: theme, textColorOverride: dropdownTextColorOverride)
                             }
                         }
                     }
@@ -121,14 +143,14 @@ struct DetailDropdownView: View {
             HStack(spacing: 0) {
                 Text("\(weather.emoji) \(localizedCityName.isEmpty ? weather.cityName : localizedCityName) \(weather.temperature)°C")
                     .font(.system(size: 12, weight: .medium))
-                    .foregroundColor(theme.dropdownTextColor)
+                    .foregroundColor(textColor)
                     .lineLimit(1)
                     .truncationMode(.tail)
                 Spacer()
                 if hasForecast {
                     Text(L10n.shared.tr("detail.forecast"))
                         .font(.system(size: 11))
-                        .foregroundColor(theme.dropdownSubtextColor)
+                        .foregroundColor(subtextColor)
                 }
             }
             .padding(.horizontal, 12)
@@ -139,12 +161,12 @@ struct DetailDropdownView: View {
                         VStack(spacing: 2) {
                             Text(formatForecastTime(slot.time))
                                 .font(.system(size: 10, design: .monospaced))
-                                .foregroundColor(theme.dropdownSubtextColor)
+                                .foregroundColor(subtextColor)
                             Text(slot.emoji)
                                 .font(.system(size: 16))
                             Text("\(slot.tempC)°")
                                 .font(.system(size: 11, weight: .medium, design: .monospaced))
-                                .foregroundColor(theme.dropdownTextColor)
+                                .foregroundColor(textColor)
                         }
                         .frame(maxWidth: .infinity)
                     }
@@ -212,6 +234,11 @@ struct DetailDropdownView: View {
 private struct ToolExpandableRow: View {
     let tool: ToolUsage
     let theme: ClockFaceTheme
+    /// 面板主文字色覆写（nil = 跟随主题）。
+    var textColorOverride: Color? = nil
+    private var textColor: Color { textColorOverride ?? theme.dropdownTextColor }
+    private var subtextColor: Color { textColorOverride.map { $0.opacity(0.65) } ?? theme.dropdownSubtextColor }
+    private var headerColor: Color { textColorOverride.map { $0.opacity(0.7) } ?? theme.dropdownHeaderColor }
     @State private var isExpanded = false
 
     var body: some View {
@@ -222,29 +249,29 @@ private struct ToolExpandableRow: View {
                     // 展开指示器
                     Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
                         .font(.system(size: 9, weight: .semibold))
-                        .foregroundColor(theme.dropdownSubtextColor)
+                        .foregroundColor(subtextColor)
                         .frame(width: 14)
 
                     Text("\(tool.emoji) \(tool.name)")
                         .font(.system(size: 11, weight: .medium))
-                        .foregroundColor(theme.dropdownTextColor)
+                        .foregroundColor(textColor)
                         .lineLimit(1)
                         .truncationMode(.tail)
                         .frame(maxWidth: .infinity, alignment: .leading)
 
                     Text(tool.formattedTokens)
                         .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                        .foregroundColor(theme.dropdownTextColor)
+                        .foregroundColor(textColor)
                         .frame(width: 62, alignment: .trailing)
 
                     Text("\(tool.todayMessages)")
                         .font(.system(size: 10, design: .monospaced))
-                        .foregroundColor(theme.dropdownSubtextColor)
+                        .foregroundColor(subtextColor)
                         .frame(width: 36, alignment: .trailing)
 
                     Text(formatCacheRate(tool.cacheRate))
                         .font(.system(size: 10, design: .monospaced))
-                        .foregroundColor(theme.dropdownSubtextColor)
+                        .foregroundColor(subtextColor)
                         .frame(width: 40, alignment: .trailing)
                 }
                 .padding(.horizontal, 12)
@@ -264,7 +291,8 @@ private struct ToolExpandableRow: View {
                         SessionRow(
                             session: session,
                             isOpenClaw: tool.name == "OpenClaw",
-                            theme: theme
+                            theme: theme,
+                            textColorOverride: textColorOverride
                         )
                     }
                 }
@@ -285,6 +313,11 @@ private struct SessionRow: View {
     let session: SessionInfo
     let isOpenClaw: Bool
     let theme: ClockFaceTheme
+    /// 面板主文字色覆写（nil = 跟随主题）。
+    var textColorOverride: Color? = nil
+    private var textColor: Color { textColorOverride ?? theme.dropdownTextColor }
+    private var subtextColor: Color { textColorOverride.map { $0.opacity(0.65) } ?? theme.dropdownSubtextColor }
+    private var headerColor: Color { textColorOverride.map { $0.opacity(0.7) } ?? theme.dropdownHeaderColor }
 
     var body: some View {
         HStack(spacing: 0) {
@@ -299,7 +332,7 @@ private struct SessionRow: View {
                     // OpenClaw：直接显示 agent 名
                     Text(session.displayName)
                         .font(.system(size: 10, weight: .medium))
-                        .foregroundColor(theme.dropdownTextColor)
+                        .foregroundColor(textColor)
                         .lineLimit(1)
                         .truncationMode(.tail)
                 } else {
@@ -307,25 +340,25 @@ private struct SessionRow: View {
                     HStack(spacing: 3) {
                         Text("session")
                             .font(.system(size: 8, weight: .medium))
-                            .foregroundColor(theme.dropdownSubtextColor)
+                            .foregroundColor(subtextColor)
                         if let source = session.source, !source.isEmpty {
                             Text("·")
                                 .font(.system(size: 8, weight: .medium))
-                                .foregroundColor(theme.dropdownSubtextColor.opacity(0.55))
+                                .foregroundColor(subtextColor.opacity(0.55))
                             Text(source)
                                 .font(.system(size: 8, weight: .semibold))
-                                .foregroundColor(theme.dropdownSubtextColor)
+                                .foregroundColor(subtextColor)
                         }
                     }
                     Text(session.displayName)
                         .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                        .foregroundColor(theme.dropdownTextColor)
+                        .foregroundColor(textColor)
                 }
 
                 if let detail = session.detail, !detail.isEmpty {
                     Text(detail)
                         .font(.system(size: 8))
-                        .foregroundColor(theme.dropdownSubtextColor)
+                        .foregroundColor(subtextColor)
                         .lineLimit(1)
                 }
             }
@@ -333,12 +366,12 @@ private struct SessionRow: View {
 
             Text(session.formattedTokens)
                 .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                .foregroundColor(theme.dropdownSubtextColor)
+                .foregroundColor(subtextColor)
                 .frame(width: 62, alignment: .trailing)
 
             Text("\(session.todayMessages)")
                 .font(.system(size: 9, design: .monospaced))
-                .foregroundColor(theme.dropdownSubtextColor)
+                .foregroundColor(subtextColor)
                 .frame(width: 36, alignment: .trailing)
 
             // 子行无缓存率列，占位保持对齐
@@ -350,7 +383,7 @@ private struct SessionRow: View {
         .padding(.vertical, 5)
         .background(
             session.isActive
-                ? theme.dropdownTextColor.opacity(0.04)
+                ? textColor.opacity(0.04)
                 : Color.clear
         )
     }
@@ -361,6 +394,11 @@ private struct SessionRow: View {
 private struct ModelExpandableRow: View {
     let group: ModelGroup
     let theme: ClockFaceTheme
+    /// 面板主文字色覆写（nil = 跟随主题）。
+    var textColorOverride: Color? = nil
+    private var textColor: Color { textColorOverride ?? theme.dropdownTextColor }
+    private var subtextColor: Color { textColorOverride.map { $0.opacity(0.65) } ?? theme.dropdownSubtextColor }
+    private var headerColor: Color { textColorOverride.map { $0.opacity(0.7) } ?? theme.dropdownHeaderColor }
     @State private var isExpanded = false
 
     var body: some View {
@@ -369,24 +407,24 @@ private struct ModelExpandableRow: View {
                 HStack(spacing: 0) {
                     Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
                         .font(.system(size: 9, weight: .semibold))
-                        .foregroundColor(theme.dropdownSubtextColor)
+                        .foregroundColor(subtextColor)
                         .frame(width: 14)
 
                     Text("\(group.emoji) \(group.name)")
                         .font(.system(size: 11, weight: .medium, design: .monospaced))
-                        .foregroundColor(theme.dropdownTextColor)
+                        .foregroundColor(textColor)
                         .lineLimit(1)
                         .truncationMode(.middle)
                         .frame(maxWidth: .infinity, alignment: .leading)
 
                     Text(group.formattedTokens)
                         .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                        .foregroundColor(theme.dropdownTextColor)
+                        .foregroundColor(textColor)
                         .frame(width: 62, alignment: .trailing)
 
                     Text("\(group.totalMessages)")
                         .font(.system(size: 10, design: .monospaced))
-                        .foregroundColor(theme.dropdownSubtextColor)
+                        .foregroundColor(subtextColor)
                         .frame(width: 36, alignment: .trailing)
                 }
                 .padding(.horizontal, 12)
@@ -402,7 +440,7 @@ private struct ModelExpandableRow: View {
                         .padding(.horizontal, 12)
 
                     ForEach(group.contributions) { c in
-                        ModelContributionRow(contribution: c, theme: theme)
+                        ModelContributionRow(contribution: c, theme: theme, textColorOverride: textColorOverride)
                     }
                 }
                 .transition(.opacity.combined(with: .move(edge: .top)))
@@ -416,6 +454,11 @@ private struct ModelExpandableRow: View {
 private struct ModelContributionRow: View {
     let contribution: ToolContribution
     let theme: ClockFaceTheme
+    /// 面板主文字色覆写（nil = 跟随主题）。
+    var textColorOverride: Color? = nil
+    private var textColor: Color { textColorOverride ?? theme.dropdownTextColor }
+    private var subtextColor: Color { textColorOverride.map { $0.opacity(0.65) } ?? theme.dropdownSubtextColor }
+    private var headerColor: Color { textColorOverride.map { $0.opacity(0.7) } ?? theme.dropdownHeaderColor }
 
     var body: some View {
         HStack(spacing: 0) {
@@ -425,19 +468,19 @@ private struct ModelContributionRow: View {
 
             Text("\(contribution.emoji) \(contribution.tool)")
                 .font(.system(size: 10, weight: .medium))
-                .foregroundColor(theme.dropdownTextColor)
+                .foregroundColor(textColor)
                 .lineLimit(1)
                 .truncationMode(.tail)
                 .frame(maxWidth: .infinity, alignment: .leading)
 
             Text(TokenFormat.compact(contribution.tokens))
                 .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                .foregroundColor(theme.dropdownSubtextColor)
+                .foregroundColor(subtextColor)
                 .frame(width: 62, alignment: .trailing)
 
             Text("\(contribution.messages)")
                 .font(.system(size: 9, design: .monospaced))
-                .foregroundColor(theme.dropdownSubtextColor)
+                .foregroundColor(subtextColor)
                 .frame(width: 36, alignment: .trailing)
         }
         .padding(.horizontal, 12)

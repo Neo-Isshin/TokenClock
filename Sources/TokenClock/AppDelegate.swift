@@ -214,6 +214,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         textColorItem.submenu = textColorMenu
         appearanceMenu.addItem(textColorItem)
 
+        // — 详情面板文字色（覆写下拉面板文字色；nil = 跟随主题）—
+        let panelHex = viewModel.dropdownTextColorHex
+        let panelTextMenu = NSMenu()
+        let panelThemeItem = NSMenuItem(title: tr("menu.panelTextTheme"),
+                                        action: #selector(setDropdownTextColorPreset(_:)), keyEquivalent: "")
+        // representedObject 默认 nil → 跟随主题
+        if panelHex == nil { panelThemeItem.state = .on }
+        panelTextMenu.addItem(panelThemeItem)
+        let panelWhiteItem = NSMenuItem(title: tr("menu.panelTextWhite"),
+                                        action: #selector(setDropdownTextColorPreset(_:)), keyEquivalent: "")
+        panelWhiteItem.representedObject = "#FFFFFF"
+        if panelHex == "#FFFFFF" { panelWhiteItem.state = .on }
+        panelTextMenu.addItem(panelWhiteItem)
+        let panelBlackItem = NSMenuItem(title: tr("menu.panelTextBlack"),
+                                        action: #selector(setDropdownTextColorPreset(_:)), keyEquivalent: "")
+        panelBlackItem.representedObject = "#000000"
+        if panelHex == "#000000" { panelBlackItem.state = .on }
+        panelTextMenu.addItem(panelBlackItem)
+        let panelCustomItem = NSMenuItem(title: tr("menu.panelTextCustom"),
+                                         action: #selector(pickDropdownTextColor(_:)), keyEquivalent: "")
+        if panelHex != nil && panelHex != "#FFFFFF" && panelHex != "#000000" { panelCustomItem.state = .on }
+        panelTextMenu.addItem(panelCustomItem)
+        let panelTextItem = NSMenuItem(title: tr("menu.panelTextColor"), action: nil, keyEquivalent: "")
+        panelTextItem.submenu = panelTextMenu
+        appearanceMenu.addItem(panelTextItem)
+
         // — 玻璃底色（私有 tintColor SPI；27 Beta 可能渲染偏实心）—
         let tintMenu = NSMenu()
         let noTintItem = NSMenuItem(title: tr("menu.tintNone"), action: #selector(clearDialTint(_:)), keyEquivalent: "")
@@ -402,7 +428,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         openColorPicker(for: .glassTint)
     }
 
-    private enum ColorPickerTarget { case dialText, glassTint }
+    @objc private func pickDropdownTextColor(_ sender: NSMenuItem) {
+        openColorPicker(for: .dropdownText)
+    }
+
+    @objc private func setDropdownTextColorPreset(_ sender: NSMenuItem) {
+        viewModel.dropdownTextColorHex = sender.representedObject as? String
+        setupRightClickMenu()
+    }
+
+    private enum ColorPickerTarget { case dialText, glassTint, dropdownText }
     private var colorPickerTarget: ColorPickerTarget = .dialText
 
     /// 打开系统拾色器（target/action 实时回写 viewModel）。两类目标复用同一 NSColorPanel。
@@ -421,6 +456,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             case .glassTint:
                 picker.color = self.viewModel.glassTintHex.flatMap { CodableColor(hex: $0)?.nsColor }
                     ?? NSColor(srgbRed: 0.55, green: 0.72, blue: 0.92, alpha: 1)
+            case .dropdownText:
+                picker.color = self.viewModel.dropdownTextColorHex.flatMap { CodableColor(hex: $0)?.nsColor } ?? .white
             }
             picker.setTarget(self)
             picker.setAction(#selector(self.colorPanelChanged(_:)))
@@ -437,6 +474,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             viewModel.dialTextColorHex = hex
         case .glassTint:
             viewModel.glassTintHex = hex
+        case .dropdownText:
+            viewModel.dropdownTextColorHex = hex
         }
     }
 
@@ -448,6 +487,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         viewModel.glassMaterialVariant = 2
         viewModel.glassTintHex = nil
         viewModel.glassBackingAlpha = 0
+        viewModel.dropdownTextColorHex = nil
         setupRightClickMenu()
     }
 
@@ -785,6 +825,7 @@ private struct DropdownPanelView: View {
             DetailDropdownView(
                 tools: viewModel.visibleTools,
                 theme: viewModel.selectedTheme,
+                dropdownTextColorOverride: viewModel.dropdownTextColorHex.flatMap { CodableColor(hex: $0)?.swiftUIColor },
                 weather: viewModel.weather,
                 localizedCityName: viewModel.localizedCityName,
                 isLoading: viewModel.isInitialLoading,
