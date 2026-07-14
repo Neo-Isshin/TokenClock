@@ -44,16 +44,31 @@ struct DetailDropdownView: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                // 分组切换 [按会话 | 按模型]
-                Picker("", selection: Binding<GroupingMode>(
-                    get: { groupingMode },
-                    set: { newValue in onGroupingChange?(newValue) }
-                )) {
-                    Text(L10n.shared.tr("detail.groupBySession")).tag(GroupingMode.session)
-                    Text(L10n.shared.tr("detail.groupByModel")).tag(GroupingMode.model)
+                // 分组切换胶囊 [按会话 | 按模型]
+                // 自定义胶囊替代系统 segmented：字号更小、配色更克制，不抢占列表视觉焦点。
+                // 外层胶囊用 dropdownTextColor 低透明叠层（与面板底色略微区分），选中段加一层略浓的圆角块。
+                HStack(spacing: 2) {
+                    ForEach([GroupingMode.session, GroupingMode.model], id: \.self) { mode in
+                        let selected = (groupingMode == mode)
+                        Button { onGroupingChange?(mode) } label: {
+                            Text(L10n.shared.tr(mode == .session ? "detail.groupBySession" : "detail.groupByModel"))
+                                .font(.system(size: 10, weight: selected ? .semibold : .regular))
+                                .foregroundColor(selected ? theme.dropdownTextColor : theme.dropdownSubtextColor)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 3)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 5, style: .continuous)
+                                        .fill(theme.dropdownTextColor.opacity(selected ? 0.12 : 0))
+                                )
+                        }
+                        .buttonStyle(.plain)
+                    }
                 }
-                .pickerStyle(.segmented)
-                .labelsHidden()
+                .padding(3)
+                .background(
+                    Capsule(style: .continuous)
+                        .fill(theme.dropdownTextColor.opacity(0.07))
+                )
                 .padding(.horizontal, 12)
                 .padding(.top, 6)
                 .padding(.bottom, 2)
