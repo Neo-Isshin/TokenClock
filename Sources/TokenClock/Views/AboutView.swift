@@ -5,7 +5,7 @@ struct AboutView: View {
     let onDone: () -> Void
 
     // ⚠️ 发版时同步版本号（与 cli/install.sh 的 RELEASE_TAG、cli/tokenclock 的 CLI_VERSION 一致）
-    private let version = "v1.3.0"
+    private let version = "v1.3.1"
     private let issuesURL = URL(string: "https://github.com/Neo-Isshin/TokenClock/issues")!
 
     var body: some View {
