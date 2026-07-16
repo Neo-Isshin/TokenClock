@@ -1,71 +1,72 @@
 #!/usr/bin/env bash
 #
-# tokenclock — TokenClock 轻量命令行
+# tokenclock — TokenClock lightweight command-line
 #
-# 管理浮动时钟的启动：按 macOS 版本自动选 liquid-glass（26+）或 normal（12+）构建，
-# 以及 stop / restart / doctor / update。
+# Manages launching the floating clock: auto-selects the liquid-glass (26+) or normal (12+) build
+# based on the macOS version, plus stop / restart / doctor / update.
 #
-# 设计为 POSIX/bash-3.2 兼容（macOS 自带 /bin/bash 即可），无需编译。
-# 安装：sudo install -m755 cli/tokenclock /usr/local/bin/tokenclock
+# Designed to be POSIX/bash-3.2 compatible (the system /bin/bash is enough), no compilation needed.
+# Install: sudo install -m755 cli/tokenclock /usr/local/bin/tokenclock
 #
 set -u
 
 CLI_VERSION="1.3.1"
-# 运行中时钟的进程名（comm）。**所有变体的可执行文件都必须叫 TokenClock**
-#（放在 glass/ normal/ 子目录里区分变体），这样无论启动哪个变体，进程名都是 TokenClock，
-# 下面的 pgrep/pkill -x 才能精确命中、且不会误伤 shell/脚本本身。
+# Process name (comm) of the running clock. **The executable of every variant must be named TokenClock**
+# (placed in a glass/ or normal/ subdir to distinguish variants), so that no matter which variant is
+# launched the process name is TokenClock — the pgrep/pkill -x below hits it precisely and never
+# accidentally matches the shell or the script itself.
 APP_PROCESS="TokenClock"
 
-# 跨脚本共享常量（与 cli/install.sh 保持同步）
-MIN_MACOS=12              # 最低支持 macOS 主版本（Monterey）
-LIQUID_GLASS_MIN_MACOS=26 # liquid-glass 变体最低主版本
+# Constants shared across scripts (kept in sync with cli/install.sh)
+MIN_MACOS=12              # minimum supported macOS major version (Monterey)
+LIQUID_GLASS_MIN_MACOS=26 # minimum major version for the liquid-glass variant
 
-# 更新源：cmd_update 从这里拉取最新 install.sh（GitHub raw，CDN 缓存 ~5min）。
-# 可通过 TOKENCLOCK_INSTALL_URL 环境变量覆盖。
+# Update source: cmd_update pulls the latest install.sh from here (GitHub raw, CDN-cached ~5min).
+# Override with the TOKENCLOCK_INSTALL_URL environment variable.
 INSTALL_URL="${TOKENCLOCK_INSTALL_URL:-https://raw.githubusercontent.com/Neo-Isshin/TokenClock/main/cli/install.sh}"
 
-# ─────────────────────────── 辅助函数 ───────────────────────────
+# ─────────────────────────── helpers ───────────────────────────
 
 die() { printf '%btokenclock: %s%b\n' "$C_RED" "$*" "$C_RESET" >&2; exit 1; }
 say() { printf '%s\n' "$*"; }
 
-# 彩色输出：仅 TTY 上色（脚本被管道/重定向时自动去色）。
+# Color output: only colorize on a TTY (auto-stripped when piped/redirected).
 if [ -t 1 ]; then
   C_GREEN=$'\033[1;32m'; C_YELLOW=$'\033[1;33m'; C_RED=$'\033[1;31m'; C_CYAN=$'\033[1;36m'; C_RESET=$'\033[0m'
 else
   C_GREEN=''; C_YELLOW=''; C_RED=''; C_CYAN=''; C_RESET=''
 fi
 
-# macOS 主版本号（12 / 26 …）
+# macOS major version (12 / 26 …)
 os_major() { sw_vers -productVersion 2>/dev/null | cut -d. -f1; }
 
-# 校验变体与系统版本兼容性,失败时 die。
+# Validate variant vs. macOS version compatibility; die on failure.
 validate_variant_compat() {
   local variant="$1"
   case "$variant" in
     glass)
       local m; m="$(os_major)"
       if [ "${m:-0}" -lt "$LIQUID_GLASS_MIN_MACOS" ]; then
-        die "glass 变体需要 macOS $LIQUID_GLASS_MIN_MACOS+（液态玻璃材质），当前 macOS ${m:-未知}。请用 --normal 启动 classic 版。"
+        die "The glass variant requires macOS $LIQUID_GLASS_MIN_MACOS+ (Liquid Glass material); current macOS is ${m:-unknown}. Use --normal to launch the classic build."
       fi
       ;;
     normal)
-      # macOS 12+ 都支持
+      # macOS 12+ all supported
       ;;
   esac
 }
 
-# 运行中的 TokenClock pid（可能多行）。
-# 双重命中，互为兜底：
-#   ① 可执行路径位于 ~/.tokenclock/ 下 —— 覆盖当前 glass/normal 子目录布局，也覆盖
-#      历史遗留的 tokenclock-glass/normal 命名（那种情况下 comm 不是 TokenClock）；
-#   ② 进程名为 TokenClock —— 覆盖开发态 .build 构建与 /Applications 的 .app。
-# CLI 自身在 ~/.local/bin，两条规则都不会误伤它或 shell。
+# PIDs of any running TokenClock (may be multiple lines).
+# Double-matched, each as a fallback for the other:
+#   ① executable path lives under ~/.tokenclock/ — covers the current glass/normal subdir layout and
+#      the legacy tokenclock-glass/normal naming (where comm is not TokenClock);
+#   ② process name is TokenClock — covers dev .build builds and /Applications .app bundles.
+# The CLI itself lives in ~/.local/bin, so neither rule ever hits it or the shell.
 running_pids() {
   { pgrep -f "${HOME}/.tokenclock/[^/]*/TokenClock( |$)" 2>/dev/null; pgrep -x "$APP_PROCESS" 2>/dev/null; } | sort -u
 }
 
-# 打印第一个真实存在的路径，否则返回非零（不输出）
+# Print the first path that actually exists, or fail non-zero (no output).
 first_existing() {
   local p
   for p in "$@"; do
@@ -74,7 +75,7 @@ first_existing() {
   return 1
 }
 
-# 若脚本位于 <repo>/cli 下，返回仓库根（用于开发态的 .build/debug 构建）；否则空
+# If the script lives under <repo>/cli, return the repo root (for dev .build/debug builds); otherwise empty.
 repo_dev_build() {
   local d p
   d="$(cd "$(dirname "$0")" 2>/dev/null && pwd)" || return 0
@@ -101,7 +102,7 @@ find_normal() {
     "/Applications/TokenClock.app"
 }
 
-# 启动给定路径：.app 用 open（自动去重/激活），裸二进制用 nohup 后台拉起
+# Launch a given path: .app via open (auto-dedupes/activates), bare binary via nohup in the background.
 launch_path() {
   case "$1" in
     *.app) open "$1" ;;
@@ -111,16 +112,17 @@ launch_path() {
 
 env_var_for() { case "$1" in glass) echo TOKENCLOCK_GLASS ;; normal) echo TOKENCLOCK_NORMAL ;; esac; }
 
-# 卸载某变体的 LaunchAgent（不删 plist：本会话停、不复活，下次登录/start 再起）。
-# 用 legacy `launchctl unload <plist>`，与 LaunchAgentHelper.disable() 同一 API。
-# 路径须与 Swift 侧 plistURL() 完全一致：~/Library/LaunchAgents/com.tokenclock.app.<variant>.plist
+# Unload a variant's LaunchAgent (does not delete the plist: stopped this session, not revived,
+# comes back on next login/start). Uses the legacy `launchctl unload <plist>`, the same API as
+# LaunchAgentHelper.disable(). The path must exactly match the Swift-side plistURL():
+# ~/Library/LaunchAgents/com.tokenclock.app.<variant>.plist
 launchagent_plist() { echo "$HOME/Library/LaunchAgents/com.tokenclock.app.$1.plist"; }
 unload_launchagent() {
   local plist; plist="$(launchagent_plist "$1")"
   [ -f "$plist" ] && launchctl unload "$plist" 2>/dev/null || true
 }
 
-# ─────────────────────────── 命令实现 ───────────────────────────
+# ─────────────────────────── command implementations ───────────────────────────
 
 cmd_start() {
   local variant="" force=0
@@ -129,30 +131,30 @@ cmd_start() {
       --glass|--liquid-glass) variant=glass ;;
       --normal|--classic)     variant=normal ;;
       --force)                force=1 ;;
-      -h|--help)              echo "用法: tokenclock start [--glass|--normal] [--force]"; return 0 ;;
-      *)                      die "未知参数: $1（可用 --glass / --normal / --force）" ;;
+      -h|--help)              echo "Usage: tokenclock start [--glass|--normal] [--force]"; return 0 ;;
+      *)                      die "Unknown argument: $1 (use --glass / --normal / --force)" ;;
     esac
     shift
   done
 
-  # 已在运行？默认拒绝重复拉起（解决「同时两个实例」问题）
+  # Already running? Refuse to launch a duplicate by default (fixes the "two instances at once" problem)
   local pids; pids="$(running_pids)"
   if [ -n "$pids" ] && [ "$force" -eq 0 ]; then
-    echo "TokenClock 已在运行（pid $(echo $pids | tr '\n' ' ')）。"
-    echo "${C_YELLOW}重启请用: tokenclock restart    另开一份请用: tokenclock start --force${C_RESET}"
+    echo "TokenClock is already running (pid $(echo $pids | tr '\n' ' '))."
+    echo "${C_YELLOW}Use tokenclock restart to restart, or tokenclock start --force to launch another instance${C_RESET}"
     return 0
   fi
 
-  # 未显式指定则按系统版本自动选
+  # If not specified explicitly, auto-select by macOS version
   if [ -z "$variant" ]; then
     local m; m="$(os_major)"
-    if   [ "$m" -ge "$LIQUID_GLASS_MIN_MACOS" ]; then variant=glass;  echo "检测到 macOS $m → 自动选择 liquid-glass 版"
-    elif [ "$m" -ge "$MIN_MACOS" ]; then variant=normal; echo "检测到 macOS $m → 自动选择 normal 版"
-    else die "需要 macOS $MIN_MACOS 或更高版本（当前主版本 ${m:-未知}）。"
+    if   [ "$m" -ge "$LIQUID_GLASS_MIN_MACOS" ]; then variant=glass;  echo "Detected macOS $m → auto-selecting the liquid-glass build"
+    elif [ "$m" -ge "$MIN_MACOS" ]; then variant=normal; echo "Detected macOS $m → auto-selecting the normal build"
+    else die "macOS $MIN_MACOS or later is required (current major version ${m:-unknown})."
     fi
   fi
 
-  # 校验变体与系统版本兼容性（glass 必须 macOS 26+；normal 通用）
+  # Validate variant vs. macOS version compatibility (glass needs macOS 26+; normal is universal)
   validate_variant_compat "$variant"
 
   local path
@@ -162,19 +164,20 @@ cmd_start() {
   esac
 
   if [ -z "$path" ]; then
-    die "未找到 $variant 版可执行文件。请设置 \$$(env_var_for "$variant") 环境变量，或安装到 ~/.tokenclock 或 /Applications。"
+    die "No $variant executable found. Set the \$$(env_var_for "$variant") environment variable, or install to ~/.tokenclock or /Applications."
   fi
 
   launch_path "$path"
-  echo "已启动 $variant 版: $path"
+  echo "Started the $variant build: $path"
 }
 
 cmd_stop() {
   local pids; pids="$(running_pids)"
-  if [ -z "$pids" ]; then echo "TokenClock 未在运行。"; return 0; fi
-  # 先 unload LaunchAgent：否则 launchd 的 KeepAlive.Crashed 会把下面 pkill 的 SIGTERM
-  # 当作「崩溃」立刻复活进程（菜单 Quit 走 NSApplication.terminate 干净退出不受影响，
-  # 仅 pkill/SIGTERM 路径有此问题）。两变体 plist 都试卸载，不存在的忽略。
+  if [ -z "$pids" ]; then echo "TokenClock is not running."; return 0; fi
+  # Unload the LaunchAgent first: otherwise launchd's KeepAlive.Crashed treats the SIGTERM from pkill
+  # below as a "crash" and immediately revives the process (the menu Quit goes through
+  # NSApplication.terminate for a clean exit and is unaffected; only the pkill/SIGTERM path has this
+  # issue). Try unloading both variants' plists; ignore ones that don't exist.
   unload_launchagent glass
   unload_launchagent normal
   pkill    -f "${HOME}/.tokenclock/[^/]*/TokenClock( |$)" 2>/dev/null
@@ -186,10 +189,10 @@ cmd_stop() {
     sleep 0.3
   fi
   if [ -n "$(running_pids)" ]; then
-    echo "警告：部分进程未能停止（pid $(running_pids | tr '\n' ' ')）。" >&2
+    echo "Warning: some processes could not be stopped (pid $(running_pids | tr '\n' ' '))." >&2
     return 1
   fi
-  echo "已停止 TokenClock。"
+  echo "Stopped TokenClock."
 }
 
 cmd_restart() {
@@ -197,51 +200,52 @@ cmd_restart() {
   cmd_start "$@"
 }
 
-# 卸载：停服务 + 删两变体 plist + 删 ~/.tokenclock 运行时目录。
-# 保留 `tokenclock` CLI 命令本身（便于重装）；需删 CLI 见末尾提示的手动路径。
+# Uninstall: stop the service + remove both variant plists + remove the ~/.tokenclock runtime dir.
+# Keep the `tokenclock` CLI command itself (handy for reinstalling); to remove the CLI too, see the
+# manual path noted at the end.
 cmd_uninstall() {
-  echo "正在卸载 TokenClock…"
-  # 1. 停服务：unload（防 KeepAlive 复活）+ pkill 兜底
+  echo "Uninstalling TokenClock…"
+  # 1. Stop the service: unload (prevents KeepAlive revival) + pkill fallback
   unload_launchagent glass
   unload_launchagent normal
   pkill -f "${HOME}/.tokenclock/[^/]*/TokenClock( |$)" 2>/dev/null
   pkill -x "$APP_PROCESS" 2>/dev/null
   sleep 1
-  # 2. 删两变体 plist
+  # 2. Remove both variants' plists
   local v
   for v in glass normal; do
     rm -f "$(launchagent_plist "$v")"
   done
-  # 3. 删运行时目录（二进制 + 资源 bundle）
+  # 3. Remove the runtime directory (binary + resource bundle)
   if [ -d "$HOME/.tokenclock" ]; then
     rm -rf "$HOME/.tokenclock"
-    echo "  ✓ 已删除 ~/.tokenclock"
+    echo "  ✓ Removed ~/.tokenclock"
   fi
-  echo "${C_GREEN}✓ 已卸载 TokenClock（运行时 + LaunchAgent plist）。${C_RESET}"
-  echo "  CLI 命令 'tokenclock' 已保留。重装："
+  echo "${C_GREEN}✓ Uninstalled TokenClock (runtime + LaunchAgent plist).${C_RESET}"
+  echo "  The 'tokenclock' CLI command is kept. To reinstall:"
   echo "    curl -fsSL https://raw.githubusercontent.com/Neo-Isshin/TokenClock/main/cli/install.sh | bash"
-  echo "  如需一并删除 CLI 本身：sudo rm -f /usr/local/bin/tokenclock"
+  echo "  To also remove the CLI itself: sudo rm -f /usr/local/bin/tokenclock"
 }
 
 cmd_doctor() {
   local m path pids
   m="$(os_major)"
   echo "TokenClock CLI v$CLI_VERSION"
-  echo "macOS $(sw_vers -productVersion 2>/dev/null)（主版本 ${m:-未知}）"
-  if   [ "$m" -ge "$LIQUID_GLASS_MIN_MACOS" ]; then echo "→ 自动选择: liquid-glass 版"
-  elif [ "$m" -ge "$MIN_MACOS" ]; then echo "→ 自动选择: normal 版"
-  else echo "→ ⚠ 系统版本过低（需 macOS $MIN_MACOS+）"
+  echo "macOS $(sw_vers -productVersion 2>/dev/null) (major version ${m:-unknown})"
+  if   [ "$m" -ge "$LIQUID_GLASS_MIN_MACOS" ]; then echo "→ Auto-select: liquid-glass build"
+  elif [ "$m" -ge "$MIN_MACOS" ]; then echo "→ Auto-select: normal build"
+  else echo "→ ⚠ System version too low (needs macOS $MIN_MACOS+)"
   fi
   echo
 
-  path="$(find_glass)";  [ -n "$path" ] && echo "liquid-glass:  ✓ $path" || echo "liquid-glass:  ✗ 未找到"
-  path="$(find_normal)"; [ -n "$path" ] && echo "normal:        ✓ $path" || echo "normal:        ✗ 未找到"
+  path="$(find_glass)";  [ -n "$path" ] && echo "liquid-glass:  ✓ $path" || echo "liquid-glass:  ✗ not found"
+  path="$(find_normal)"; [ -n "$path" ] && echo "normal:        ✓ $path" || echo "normal:        ✗ not found"
   echo
 
   pids="$(running_pids)"
-  if [ -n "$pids" ]; then echo "运行中: pid $(echo $pids | tr '\n' ' ')"; else echo "运行中: 无"; fi
+  if [ -n "$pids" ]; then echo "Running: pid $(echo $pids | tr '\n' ' ')"; else echo "Running: none"; fi
   echo
-  echo "环境变量: TOKENCLOCK_GLASS=${TOKENCLOCK_GLASS:-（未设置）}  TOKENCLOCK_NORMAL=${TOKENCLOCK_NORMAL:-（未设置）}"
+  echo "Env vars: TOKENCLOCK_GLASS=${TOKENCLOCK_GLASS:-(unset)}  TOKENCLOCK_NORMAL=${TOKENCLOCK_NORMAL:-(unset)}"
 }
 
 cmd_update() {
@@ -252,22 +256,23 @@ cmd_update() {
       --normal|--classic)     variant=normal ;;
       --check)                check_only=1 ;;
       --force)                force=1 ;;
-      -h|--help)              echo "用法: tokenclock update [--glass|--normal] [--check] [--force]"; return 0 ;;
-      *)                      die "未知参数: $1（可用 --glass / --normal / --check / --force）" ;;
+      -h|--help)              echo "Usage: tokenclock update [--glass|--normal] [--check] [--force]"; return 0 ;;
+      *)                      die "Unknown argument: $1 (use --glass / --normal / --check / --force)" ;;
     esac
     shift
   done
 
-  say "当前 CLI 版本: v$CLI_VERSION"
-  say "更新源: $INSTALL_URL"
+  say "Current CLI version: v$CLI_VERSION"
+  say "Update source: $INSTALL_URL"
 
-  # 下载 install.sh 到临时文件（umask 077 保证只有当前用户能读）。
-  # 走公开 URL 直通 CDN,保护源站带宽;CDN 缓存由运营侧维护。
+  # Download install.sh to a temp file (umask 077 so only the current user can read it).
+  # Goes straight to the public URL via the CDN to spare the origin's bandwidth; CDN cache is
+  # managed on the ops side.
   local tmp_script
   tmp_script="$(umask 077; mktemp -t tokenclock-install.XXXXXX)" \
-    || die "创建临时文件失败"
-  # CDN 边缘偶发 TCP/TLS 握手断（SSL_ERROR_SYSCALL，约 30% 失败率），
-  # 重试 3 次 + 短退避可消除瞬时抖动。
+    || die "Failed to create a temp file"
+  # The CDN edge occasionally drops the TCP/TLS handshake (SSL_ERROR_SYSCALL, ~30% failure rate);
+  # retrying 3 times with short backoff smooths out the transient blips.
   local attempt=1 max_attempts=3
   while [ "$attempt" -le "$max_attempts" ]; do
     if curl -fsSL --http2 --max-time 60 "$INSTALL_URL" -o "$tmp_script"; then
@@ -275,40 +280,40 @@ cmd_update() {
     fi
     if [ "$attempt" -eq "$max_attempts" ]; then
       rm -f "$tmp_script"
-      die "下载安装器失败（$max_attempts 次重试均失败，检查网络或 TOKENCLOCK_INSTALL_URL）"
+      die "Failed to download the installer (all $max_attempts retries failed; check your network or TOKENCLOCK_INSTALL_URL)"
     fi
-    say "  ${C_YELLOW}⚠ 下载失败,重试 $((attempt+1))/$max_attempts...${C_RESET}"
+    say "  ${C_YELLOW}⚠ Download failed, retrying $((attempt+1))/$max_attempts...${C_RESET}"
     sleep $((attempt * 2))
     attempt=$((attempt+1))
   done
-  chmod +x "$tmp_script" || { rm -f "$tmp_script"; die "chmod 临时文件失败"; }
-  say "✓ 已下载最新安装器"
+  chmod +x "$tmp_script" || { rm -f "$tmp_script"; die "Failed to chmod the temp file"; }
+  say "✓ Downloaded the latest installer"
 
   if [ "$check_only" -eq 1 ]; then
-    say "已检查（未执行升级）"
+    say "Checked (no upgrade performed)"
     rm -f "$tmp_script"
     return 0
   fi
 
-  # 不预先 stop：install.sh 的 cp 可覆盖运行中二进制（macOS unlink 语义允许），
-  # 仅在确实部署了变更（或 --force）时才 restart（restart 内部 stop+start），
-  # 避免无变化时打断正在运行的时钟。
+  # Don't stop up front: install.sh's cp can overwrite the running binary (macOS unlink semantics
+  # allow it). Only restart when something was actually deployed (or --force) — restart does
+  # stop+start internally — so we avoid interrupting a running clock when nothing changed.
   local status_file force_arg=""
-  status_file="$(umask 077; mktemp -t tokenclock-status.XXXXXX)" || die "创建状态文件失败"
+  status_file="$(umask 077; mktemp -t tokenclock-status.XXXXXX)" || die "Failed to create a status file"
   [ "$force" -eq 1 ] && force_arg="--force"
 
-  # 执行安装器 --no-start：fetch + build + 按需 cp；通过状态文件回报 DEPLOYED。
-  # --no-start 跳过 API prompt（保留已有 UserDefaults）和首启扫描；
-  # detect_and_set_language 也在该路径下被守卫跳过，尊重用户已选语言。
+  # Run the installer with --no-start: fetch + build + cp as needed; it reports DEPLOYED via the
+  # status file. --no-start skips the API prompt (preserves existing UserDefaults) and the first-launch
+  # scan; detect_and_set_language is also guarded off on this path, respecting the user's chosen language.
   if ! TOKENCLOCK_STATUS_FILE="$status_file" bash "$tmp_script" --no-start $force_arg; then
     rm -f "$tmp_script" "$status_file"
-    die "升级失败（已恢复原状态，旧二进制未被替换）"
+    die "Upgrade failed (state restored, the old binary was not replaced)"
   fi
   rm -f "$tmp_script"
 
-  # 读 install.sh 回报的部署状态：
-  #   DEPLOYED=1     时钟二进制变了 → 重启运行中的时钟
-  #   CLI_UPDATED=1  仅 wrapper 变了 → 不重启时钟，只提示「CLI 已更新」
+  # Read the deploy status reported by install.sh:
+  #   DEPLOYED=1     clock binary changed → restart the running clock
+  #   CLI_UPDATED=1  only the wrapper changed → don't restart the clock, just note "CLI updated"
   local deployed=0 cli_updated=0
   if [ -f "$status_file" ]; then
     deployed=$(grep -oE 'DEPLOYED=[01]' "$status_file" | tail -1 | cut -d= -f2)
@@ -317,44 +322,45 @@ cmd_update() {
   rm -f "$status_file"
 
   if [ "$force" -eq 1 ] || [ "$deployed" = "1" ]; then
-    say "${C_GREEN}✓ 已部署更新，重启中…${C_RESET}"
-    # 重启：不指定 variant 时按当前默认（系统版本）自动选；用户 --glass/--normal 限定时传递。
+    say "${C_GREEN}✓ Update deployed, restarting…${C_RESET}"
+    # Restart: when no variant is given, use the current default (auto-selected by macOS version);
+    # when the user passes --glass/--normal, forward it.
     if [ -n "$variant" ]; then
       cmd_restart "--$variant"
     else
       cmd_restart
     fi
   elif [ "$cli_updated" = "1" ]; then
-    # 仅 CLI wrapper 变了：与运行中的时钟二进制互相独立，无需重启。
-    say "${C_GREEN}✓ CLI 已更新到 v${CLI_VERSION}，运行中的时钟无需重启${C_RESET}"
+    # Only the CLI wrapper changed: independent of the running clock binary, no restart needed.
+    say "${C_GREEN}✓ CLI updated to v${CLI_VERSION}; the running clock does not need a restart${C_RESET}"
   else
-    say "${C_CYAN}✓ 已是最新版本，无需重启（运行中的时钟未受影响）${C_RESET}"
+    say "${C_CYAN}✓ Already up to date, no restart needed (the running clock is unaffected)${C_RESET}"
   fi
 }
 
 usage() {
   cat <<EOF
-tokenclock v$CLI_VERSION — TokenClock 轻量命令行
+tokenclock v$CLI_VERSION — TokenClock lightweight command-line
 
-用法:
-  tokenclock start [--glass|--normal] [--force]   启动（按系统版本自动选；flag 强制）
-  tokenclock stop                                 停止所有实例（unload LaunchAgent，不会被 KeepAlive 复活）
-  tokenclock restart [--glass|--normal]           重启
-  tokenclock uninstall                            卸载（停服务 + 删两变体 plist + 删 ~/.tokenclock；保留 CLI）
-  tokenclock doctor                               诊断环境与已安装版本
-  tokenclock update [--glass|--normal] [--check] [--force]  更新（仅在有变更时重建+重启；--force 强制）
-  tokenclock help                                 显示此帮助
+Usage:
+  tokenclock start [--glass|--normal] [--force]   start (auto-selects by macOS version; the flag forces it)
+  tokenclock stop                                 stop all instances (unloads the LaunchAgent so KeepAlive won't revive it)
+  tokenclock restart [--glass|--normal]           restart
+  tokenclock uninstall                            uninstall (stops the service + removes both variant plists + removes ~/.tokenclock; keeps the CLI)
+  tokenclock doctor                               diagnose the environment and installed versions
+  tokenclock update [--glass|--normal] [--check] [--force]  update (rebuilds + restarts only on change; --force forces it)
+  tokenclock help                                 show this help
 
-每个变体的定位顺序:
-  \$TOKENCLOCK_GLASS / \$TOKENCLOCK_NORMAL  →  ~/.tokenclock/  →  /Applications/  →  仓库 .build/debug/
+Lookup order for each variant:
+  \$TOKENCLOCK_GLASS / \$TOKENCLOCK_NORMAL  →  ~/.tokenclock/  →  /Applications/  →  repo .build/debug/
 
-注意: --glass 需要 macOS 26+; --normal 适用 macOS 12+。
+Note: --glass requires macOS 26+; --normal works on macOS 12+.
 
-安装到 PATH: sudo install -m755 cli/tokenclock /usr/local/bin/tokenclock
+Install onto PATH: sudo install -m755 cli/tokenclock /usr/local/bin/tokenclock
 EOF
 }
 
-# ─────────────────────────── 分发 ───────────────────────────
+# ─────────────────────────── dispatch ───────────────────────────
 
 case "${1:-help}" in
   start)              [ $# -gt 0 ] && shift; cmd_start "$@" ;;
@@ -365,5 +371,5 @@ case "${1:-help}" in
   update)             [ $# -gt 0 ] && shift; cmd_update "$@" ;;
   help|-h|--help)     usage ;;
   "")                 usage ;;
-  *)                  die "未知命令: $1（用 'tokenclock help' 查看用法）" ;;
+  *)                  die "Unknown command: $1 (use 'tokenclock help' for usage)" ;;
 esac
