@@ -6,6 +6,16 @@ struct DayUsage: Sendable {
     var messages: Int
 }
 
+/// 单个工具日结快照内、单个 session 的明细（当日增量口径，与 tool 级同源）。
+/// 序列化进 daily_snapshots.sessions_json；/api/history?detail=sessions 时透出。
+struct SessionSnapshot: Sendable {
+    let id: String
+    let displayName: String
+    let tokens: Int
+    let messages: Int
+    let isActive: Bool
+}
+
 /// 单个工具的日结快照：每天 00:01 抓 viewModel.tools 写入 history.sqlite
 struct ToolSnapshot: Sendable {
     let name: String
@@ -13,6 +23,21 @@ struct ToolSnapshot: Sendable {
     let messages: Int
     let cacheRate: Double
     let isActive: Bool
+    /// 当日各 session 明细（默认空 → 旧构造调用不破坏）
+    let sessions: [SessionSnapshot]
+
+    /// 显式 init：sessions 带默认值。既有 `ToolSnapshot(name:tokens:messages:cacheRate:isActive:)`
+    /// 调用仍合法（省略 sessions）。显式化可避免带闭包参数时 memberwise init 的类型推断误报。
+    init(name: String, tokens: Int, messages: Int,
+         cacheRate: Double, isActive: Bool,
+         sessions: [SessionSnapshot] = []) {
+        self.name = name
+        self.tokens = tokens
+        self.messages = messages
+        self.cacheRate = cacheRate
+        self.isActive = isActive
+        self.sessions = sessions
+    }
 }
 
 /// 共享的文件缓存元数据
