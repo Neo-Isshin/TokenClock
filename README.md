@@ -1,18 +1,18 @@
 <div align="center">
 
-**简体中文** · [English](README.en.md)
+[简体中文](README.zh-CN.md) · **English**
 
 # 🕰️ TokenClock
 
-**原生液态玻璃（Liquid Glass）token 时钟 · 一屏掌握你所有 Agent 的消耗**
+**A native Liquid Glass token clock · every agent's consumption on a single dial**
 
 [![macOS 12+](https://img.shields.io/badge/macOS-12%2B-000000?style=for-the-badge&logo=apple&logoColor=white)](https://www.apple.com/macos/)
-[![macOS 26](https://img.shields.io/badge/macOS%2026-Liquid%20Glass-00B0F0?style=for-the-badge)](https://developer.apple.com/macos/)
+[![macOS 26+](https://img.shields.io/badge/macOS%2026-Liquid%20Glass-00B0F0?style=for-the-badge)](https://developer.apple.com/macos/)
 
 [![Swift 6](https://img.shields.io/static/v1?label=Swift&message=6&color=F05138&logo=swift&logoColor=white)](https://www.swift.org/)
 [![SwiftUI](https://img.shields.io/static/v1?label=UI&message=SwiftUI%20%2B%20AppKit&color=blueviolet)](https://developer.apple.com/xcode/swiftui/)
 [![SwiftPM](https://img.shields.io/static/v1?label=Build&message=SwiftPM&color=FA7343)](https://www.swift.org/package-manager/)
-[![Privacy](https://img.shields.io/static/v1?label=Privacy&message=local%20only&color=success)](#-隐私)
+[![Privacy](https://img.shields.io/static/v1?label=Privacy&message=local%20only&color=success)](#-privacy)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
 [![Releases](https://img.shields.io/badge/releases-GitHub-181717?logo=github&logoColor=white)](https://github.com/Neo-Isshin/TokenClock/releases)
 
@@ -22,8 +22,8 @@
 
 <table>
   <tr>
-    <td width="50%" align="center"><img src="docs/screenshots/glass_zh.png" alt="Liquid Glass 版" width="300"><br><sub><b>Liquid Glass</b> · macOS 26</sub></td>
-    <td width="50%" align="center"><img src="docs/screenshots/normal_zh.png" alt="Normal 版" width="300"><br><sub><b>Normal</b> · macOS 12</sub></td>
+    <td width="50%" align="center"><img src="docs/screenshots/glass_en.png" alt="Liquid Glass build" width="300"><br><sub><b>Liquid Glass build</b> · macOS 26+</sub></td>
+    <td width="30%" align="center"><img src="docs/screenshots/normal_en.png" alt="Normal build" width="300"><br><sub><b>Normal build</b> · macOS 12+</sub></td>
   </tr>
 </table>
 
@@ -31,132 +31,143 @@
 
 ---
 
-TokenClock 是一个常驻桌面的 **悬浮时钟**（置顶 · 可拖拽 · 记忆位置）。表盘上实时叠加显示：**今日总 token 消耗、消息条数、当前活跃的 AI 工具、速率指示器与天气**。点击时钟即可展开下拉面板，查看 **每个工具 → 每个 session / agent** 的明细用量。
+TokenClock is an **always-on-top floating clock** for your desktop (draggable · remembers its position). The dial overlays live data: **today's total token consumption, message counts, the AI tools currently active, a rate indicator, and the weather**. Click the clock to expand a dropdown panel that breaks usage down by **each tool → each session / agent**.
 
-采用 macOS 26 的 **Liquid Glass** 材质打造玻璃质感表盘，并提供 6 款精心设计的内置表盘与完全自定义主题。所有数据都在 **本地** 读取——不上传任何信息。
+It's built with the macOS 26 **Liquid Glass** material for a crystal clock disc, ships with 7 carefully designed built-in faces plus a fully custom theme editor, and reads **everything locally** — nothing is ever uploaded.
 
----
-
-## 📑 目录
-
-- [🌟 核心优势](#-核心优势)
-- [✨ 特性](#-特性)
-- [📸 截图](#-截图)
-- [🤖 支持的 AI 工具](#-支持的-ai-工具)
-- [🚀 快速开始](#-快速开始) —— [一行安装](#一键安装最简单) · [`tokenclock` CLI](#使用-tokenclock-cli)
-- [🎨 主题](#-主题)
-- [🧊 液态玻璃（Liquid Glass）](#-液态玻璃liquid-glass)
-- [🔌 本地 API 服务器](#-本地-api-服务器)
-- [🔒 隐私](#-隐私)
-- [🛣 未来支持计划](#-未来支持计划)
-- [📦 技术栈](#-技术栈)
-- [📄 许可证](#-许可证)
-- [🙏 致谢](#-致谢)
+> [!NOTE]
+> Liquid Glass build has supported macOS 27 beta 3, but may break with beta version updates.
 
 ---
 
-## 🌟 核心优势
+## 📑 Contents
+
+- [🌟 Core advantages](#-core-advantages)
+- [✨ Features](#-features)
+- [📸 Screenshots](#-screenshots)
+- [🤖 Supported AI tools](#-supported-ai-tools)
+- [🚀 Quick start](#-quick-start) — [One-line install](#one-line-install-easiest) · [`tokenclock` CLI](#use-the-tokenclock-cli)
+- [🎨 Themes](#-themes)
+- [🧊 Liquid Glass](#-liquid-glass)
+- [🔌 Local API server](#-local-api-server)
+- [🔒 Privacy](#-privacy)
+- [🛣 Roadmap](#-roadmap)
+- [📦 Tech stack](#-tech-stack)
+- [📄 License](#-license)
+- [🙏 Acknowledgments](#-acknowledgments)
+
+---
+
+## 🌟 Core advantages
 
 <table>
   <tr>
-    <td width="50%" valign="top"><b>🤖 多工具总览，一屏尽览</b><br><sub>把 <b>14 款</b> AI 编程工具的 token / 消息用量汇聚到同一只表盘，告别多终端、多后台来回切换。</sub></td>
-    <td width="50%" valign="top"><b>🔍 分 session / agent 下钻</b><br><sub>从工具级总览一路深入到每条 session / agent 明细，立刻看清消耗花在哪、是哪段对话烧的。</sub></td>
+    <td width="50%" valign="top"><b>🤖 All your tools, one dial</b><br><sub>Token / message usage from <b>14 AI coding tools</b> flows into a single clock face — no more hopping between terminals and web dashboards.</sub></td>
+    <td width="50%" valign="top"><b>🔍 Drill down per session / agent</b><br><sub>From a per-tool overview all the way down to every session / agent — see exactly where the tokens went and which conversation burned them.</sub></td>
   </tr>
   <tr>
-    <td valign="top"><b>🌤️ 常驻桌面，零打扰</b><br><sub>悬浮置顶的半透明液态玻璃表盘，余光即知实时消耗与速率（🔥 爆发 / 🌊 平稳），不打断编码节奏。</sub></td>
-    <td valign="top"><b>📈 多维实时洞察</b><br><sub>今日总量、缓存率、未来趋势预测、活跃工具一图打尽。</sub></td>
+    <td valign="top"><b>🌤️ Always on the desktop, zero friction</b><br><sub>A floating, always-on-top, translucent Liquid Glass disc; a glance gives you the live consumption and rate (🔥 burst / 🌊 calm).</sub></td>
+    <td valign="top"><b>📈 Multi-dimensional live insight</b><br><sub>Today's totals, cache rate, future-trend forecast, and active tools in one picture.</sub></td>
   </tr>
   <tr>
-    <td valign="top"><b>🎨 丰富的自定义选项</b><br><sub>6 款表盘 + 完全自定义：毛玻璃底板透明度、玻璃着色、文字 / 指针 / 刻度 / 数字 / 字体 / 尺寸 / 窗口透明度全可调。</sub></td>
-    <td valign="top"><b>📜 历史用量可回溯</b><br><sub>每日快照存入本地 SQLite（保留 30 天），经本地 API 暴露，可回溯过往、对接你自己的图表。</sub></td>
+    <td valign="top"><b>🎨 Rich customization</b><br><sub>6 built-in faces + a fully custom theme: frosted backing opacity, glass tint, text color, hands, ticks, numerals, fonts, dial size, window opacity.</sub></td>
+    <td valign="top"><b>📜 Usage history you can revisit</b><br><sub>Each day's usage is auto-settled into a local SQLite store (30 days) and exposed via the local API — feed your own charts.</sub></td>
   </tr>
   <tr>
-    <td valign="top"><b>⚡ 性能占用极低</b><br><sub>原生 Swift + 高效轮询（时钟 1s / 用量 30s / 天气 5min）+ 流式 JSONL，常驻后台几乎无感。</sub></td>
-    <td valign="top"><b>🔒 纯本地，零上传</b><br><sub>只读各工具本地日志，不上传任何数据；API 仅监听 <code>127.0.0.1</code> 回环。</sub></td>
+    <td valign="top"><b>⚡ Tiny footprint</b><br><sub>Native Swift + efficient polling (clock 1s / usage 30s / weather 5min) + streaming JSONL; sits in the background almost unnoticed.</sub></td>
+    <td valign="top"><b>🔒 Purely local, zero upload</b><br><sub>Reads only local logs each tool writes; nothing leaves your machine, and the API listens on <code>127.0.0.1</code> only.</sub></td>
+  </tr>
+  <tr>
+    <td colspan="2" valign="top"><b>🔌 Zero config, ready out of the box</b><br><sub>Auto-detects 14 AI coding tools' log paths on first launch. New tools without history are auto-discovered by background workers on their first session, requiring no manual setup.</sub></td>
   </tr>
 </table>
 
 ---
 
-## ✨ 特性
+## ✨ Features
 
-### 🤖 多 AI 工具统一实时检测
-- 自动探测并读取 **14 款 AI 编程工具** 写入本地的 token / 消息用量日志并统一聚合。
-- 表盘上叠加 **今日总量、活跃工具图标、速率 emoji**（🔥 爆发 / 🌊 平稳阈值）。
-- 点击展开 **下拉面板** 查看明细（工具 → session / agent 两级下钻，详见[核心优势](#-核心优势)）。
+### 🤖 Unified multi-AI-tool detection
+- Auto-detects and reads the local token / message usage logs written by **14 AI coding tools** and aggregates them.
+- The dial overlays **today's totals, active-tool labels, and a rate emoji** (🔥 burst / 🌊 calm thresholds).
+- Click to expand the **dropdown panel** for the breakdown (tool → session / agent; see [Core advantages](#-core-advantages)).
 
-### 🧊 液态玻璃（Liquid Glass）& 精心设计
-- macOS 26 上以原生 **Liquid Glass** 材质渲染，玻璃盘体随壁纸自适应、带氛围着色、折射与流动。
-- **自适应高对比墨色文字**：浅色 tint 主题自动切换近黑刻度 / 数字，保证可读性。
-- 提供 `main`（macOS 26）与 `normal`（macOS 12）**双版本**，由 `tokenclock` CLI 按系统版本自动选用。
+### 🧊 Liquid Glass
+- On macOS 26 the disc renders with the native **Liquid Glass** material — it adapts to your wallpaper and carries a subtle theme tint.
+- **Adaptive high-contrast ink**: lighter-tinted themes automatically switch to near-black ticks / numerals for legibility.
+- Ships in **two variants** — `main` (macOS 26) and `normal` (macOS 12) — and the `tokenclock` CLI picks the right one for your OS automatically.
 
-### 📦 一行安装 & CLI
-- `normal` 适用于 **macOS 12+**，液态玻璃适用于 **macOS 26+**。一行安装脚本会根据系统自动选变体，简单的 `tokenclock` CLI 即可启动 / 停止 / 切换 / 诊断。详见 [安装指南](https://github.com/Neo-Isshin/TokenClock)。
+### 📦 One-line install & CLI
+- The normal build runs on **macOS 12+**, the Liquid Glass build on **macOS 26+**. The one-liner picks the right variant for your OS automatically, and the lightweight `tokenclock` CLI handles start / stop / switch / diagnose. See the [install guide](https://github.com/Neo-Isshin/TokenClock).
 
-### 🎨 多表盘 + 美观设计 + 支持深度自定义
-- 6 款内置表盘（经典 / 深夜 / 暗金 / 古风 / 超电磁炮 / 天空），风格各异。
-- 4 种指针样式（圆头 / 锥形 / 菱形 / 剑形），数字风格含阿拉伯数字与中文数字。
-- **完全自定义主题**：表盘色、玻璃着色、三根指针、刻度、数字、边框颜色与字体全部可调。
+### 🎨 Multiple faces & thoughtful design
+- 6 built-in faces (Classic / Midnight / Luxe / Gu Feng / Railgun / Sky), each with its own personality.
+- 4 hand styles (round / tapered / lance / sword); numerals in Arabic or Chinese.
+- **Fully custom themes**: dial color, glass tint, all three hands, ticks, numerals, borders, and fonts are all adjustable.
 
-### ⚙️ 其他
-- 实时时钟（1s）、用量刷新（30s）、天气（5min）。
-- 天气与 12 小时预报（IP 自动定位或手动选城市）；8 个时区。
-- 国际化：**简体中文 / 繁体中文 / English**。
-- 置顶 · 可拖拽 · 跨重启位置记忆；开机自启动（`SMAppService`）。
-- 本地 API 服务器（`:9988`），供集成 / 脚本调用。
-- 隐私优先：**全部数据本地读取，零上传**。
-
----
-
-## 📸 截图
-
-### 🧊 Liquid Glass 版预览（macOS 26）
-
-<table>
-  <tr>
-    <td width="50%" align="center"><b>悬浮液态玻璃时钟</b><br><sub>玻璃盘体随壁纸折射 · 叠加 token / 消息 / 速率 / 天气</sub></td>
-    <td width="50%" align="center"><b>总览</b><br><sub>玻璃时钟与展开面板同框</sub></td>
-  </tr>
-  <tr>
-    <td width="50%" align="center"><img src="docs/screenshots/glass_zh.png" alt="liquid glass clock"></td>
-    <td width="50%" align="center"><img src="docs/screenshots/glass_full_zh.png" alt="liquid glass overview"></td>
-  </tr>
-</table>
-
-### ⬜ Normal 版预览（macOS 12）
-
-<table>
-  <tr>
-    <td width="50%" align="center"><b>悬浮时钟</b><br><sub>经典不透明表盘 · 叠加 token / 消息 / 速率 / 天气</sub></td>
-    <td width="50%" align="center"><b>总览</b><br><sub>不透明时钟与展开面板同框</sub></td>
-  </tr>
-  <tr>
-    <td width="50%" align="center"><img src="docs/screenshots/normal_zh.png" alt="normal clock"></td>
-    <td width="50%" align="center"><img src="docs/screenshots/normal_full_zh.png" alt="normal overview"></td>
-  </tr>
-</table>
-
-### ⚙️ 功能设置预览
-
-<table>
-  <tr>
-    <td width="50%" align="center"><b>展开详情面板</b><br><sub>按工具 → session / agent 拆解用量</sub></td>
-    <td width="50%" align="center"><b>表盘主题选择器</b><br><sub>6 款内置表盘 + 完全自定义</sub></td>
-  </tr>
-  <tr>
-    <td width="50%" align="center"><img src="docs/screenshots/dropdown_zh.png" alt="dropdown panel"></td>
-    <td width="50%" align="center"><img src="docs/screenshots/themes_zh.png" alt="theme picker"></td>
-  </tr>
-</table>
+### ⚙️ More
+- Live clock (1s), usage refresh (30s), weather (5min).
+- Weather + 12-hour forecast (auto-located by IP or pick a city); 8 time zones.
+- Internationalization: **Simplified Chinese / Traditional Chinese / English**.
+- Always-on-top · draggable · position remembered across relaunch; launch-at-login via `SMAppService`.
+- Local API server (`:9988`) for integration / scripting.
+- Privacy-first: **all data read locally, zero upload**.
 
 ---
 
-## 🤖 支持的 AI 工具
+## 📸 Screenshots
 
-TokenClock 通过读取各工具在本地写入的 **JSONL / SQLite 用量文件** 进行统计（路径优先级：自定义路径 > 环境变量 > 默认路径，首启时自动探测）。下表为默认数据源与对应环境变量。
+### 🧊 Liquid Glass build preview (macOS 26+)
 
-| 工具 | 默认数据源 | 环境变量 |
-|------|-----------|---------|
+<table>
+  <tr>
+    <td width="50%" align="center"><b>Floating Liquid Glass clock</b><br><sub>disc refracts the wallpaper · tokens / messages / rate / weather on the dial</sub></td>
+    <td width="50%" align="center"><b>Overview</b><br><sub>glass clock + expanded panel together</sub></td>
+  </tr>
+  <tr>
+    <td width="50%" align="center"><img src="docs/screenshots/glass_en.png" alt="liquid glass clock" width="75%"></td>
+    <td width="50%" align="center"><img src="docs/screenshots/glass_full_en.png" alt="liquid glass overview" width="75%"></td>
+  </tr>
+</table>
+
+### ⬜ Normal build preview (macOS 12+)
+
+<table>
+  <tr>
+    <td width="50%" align="center"><b>Floating clock</b><br><sub>classic opaque dial · tokens / messages / rate / weather on the dial</sub></td>
+    <td width="50%" align="center"><b>Overview</b><br><sub>opaque clock + expanded panel together</sub></td>
+  </tr>
+  <tr>
+    <td width="50%" align="center"><img src="docs/screenshots/normal_en.png" alt="normal clock" width="75%"></td>
+    <td width="50%" align="center"><img src="docs/screenshots/normal_full_en.png" alt="normal overview" width="75%"></td>
+  </tr>
+</table>
+
+### ⚙️ Settings preview
+
+<table>
+  <tr>
+    <td width="44%" align="center"><b>Settings panel</b><br><sub>Auto-detected tool paths & parameters configuration</sub></td>
+    <td width="34%" align="center"><b>Theme picker</b><br><sub>6 built-in faces & fully custom theme editing</sub></td>
+    <td width="22%" align="center"><b>Context menu</b><br><sub>Quick access to dial themes, sizes & preferences</sub></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="docs/screenshots/settings_en.png" alt="settings panel upper" width="83%"></td>
+    <td align="center" rowspan="2" valign="middle"><img src="docs/screenshots/themes_en.png" alt="theme picker" width="300"></td>
+    <td align="center" rowspan="2" valign="middle"><img src="docs/screenshots/menu_en.png" alt="context menu" width="220"></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="docs/screenshots/settings_en_bottom.png" alt="settings panel lower" width="83%"></td>
+  </tr>
+</table>
+
+---
+
+## 🤖 Supported AI tools
+
+TokenClock reads the **JSONL / SQLite usage files** that each tool writes locally (path priority: custom path > env var > default path; auto-detected on first launch). Defaults and env vars below.
+
+| Tool | Default data source | Env var |
+|------|---------------------|--------|
 | **OpenClaw** | `~/.openclaw/` | `OPENCLAW_HOME` |
 | **Claude Code** | `~/.claude/` | `CLAUDE_CONFIG_DIR` |
 | **Gemini CLI** | `~/.gemini/` | `GEMINI_HOME` |
@@ -168,171 +179,175 @@ TokenClock 通过读取各工具在本地写入的 **JSONL / SQLite 用量文件
 | **Grok CLI** | `~/.grok/` | `GROK_HOME` |
 | **Aider** | `~/.aider/analytics.jsonl` | `AIDER_HOME` |
 | **Antigravity** | `~/.gemini/antigravity-cli/` | `ANTIGRAVITY_HOME` |
-| **Cline**（VSCode 扩展） | `~/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/` | `CLINE_HOME` |
-| **Continue**（VSCode 扩展） | `~/.continue/` | `CONTINUE_HOME` |
+| **Cline** (VSCode extension) | `~/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/` | `CLINE_HOME` |
+| **Continue** (VSCode extension) | `~/.continue/` | `CONTINUE_HOME` |
 | **Cursor Agent** | `~/.cursor/` | `CURSOR_AGENT_HOME` |
 
-> 各服务的 token 计算公式略有差异：**Codex、Gemini/Qwen** 的 `input`（`promptTokenCount`）已含 cached，不能再加 cached（否则双计），用 `input + output + (thought)`；其余服务（Claude/OpenClaw 等）的输入/输出/缓存字段互斥相加。详见 `docs/TOOL_SCHEMA_ANALYSIS.md`。
+> Token-counting formulas differ slightly per service: **Codex** and **Gemini/Qwen** have `input` (`promptTokenCount`) already including cached tokens, so cached must not be added again (it would double-count) — they use `input + output + (thought)`; other services (Claude/OpenClaw, etc.) sum input/output/cache fields that are mutually exclusive. See `docs/TOOL_SCHEMA_ANALYSIS.md`.
 
 ---
 
-## 🚀 快速开始
+## 🚀 Quick start
 
-### 一键安装（最简单）
+### One-line install (easiest)
 
-自动检测 macOS 版本 → **下载预编译**对应变体（universal，SHA256 校验 + 去隔离）→ 安装到 `~/.tokenclock` → 把 `tokenclock` 加入 PATH → 首次启动并扫描各 AI 工具的本地路径，全程无需手动干预。下载失败或加 `--build-from-source` 才回退本地编译。
+Auto-detects the macOS version → **downloads the precompiled** matching variant (universal, SHA256-checked + de-quarantined) → installs to `~/.tokenclock` → puts `tokenclock` on your PATH → launches and scans each AI tool's local paths — no manual steps. Falls back to a local build only on download failure or with `--build-from-source`.
 
-> 💡 **下载即用** —— 无需 Xcode、无需 $99/年公证：自动下载预编译 universal 二进制（SHA256 校验 + 去隔离），普通用户开箱即用。
+> 💡 **Download & run** — no Xcode, no $99/yr notarization: it fetches precompiled universal binaries (SHA256-checked + de-quarantined) and just works.
 
 ```bash
-# 一行安装（推荐）：
+# one-line install (recommended):
 curl -fsSL https://raw.githubusercontent.com/Neo-Isshin/TokenClock/main/cli/install.sh | bash
 
-# 已克隆本仓库时也可直接运行：
+# or, if you've cloned this repo:
 ./cli/install.sh
 ```
 
-可选参数：`--normal` / `--glass`（指定变体）/ `--no-start`（装完不自动启动）/ `--build-from-source`（强制本地编译）/ `--check`（仅检查不安装）/ `--debug`（debug 构建）。
+Options: `--normal` / `--glass` (pick the variant) / `--no-start` (don't auto-launch) / `--build-from-source` (force a local build) / `--check` (check only, don't install) / `--debug` (debug build).
 
-> 也可手动从源码构建，见下方。
+> Or build manually from source below.
 
-### 前置要求
-- **macOS 12+**（普通版）；**macOS 26+**（Liquid Glass 版）
-- 预编译安装**无需任何工具链**；仅 `--build-from-source` 本地编译时需要 Swift 6（Xcode 16+ / Command Line Tools）
+### Prerequisites
+- **macOS 12+** (normal build); **macOS 26+** (Liquid Glass build)
+- The precompiled install needs **no toolchain at all**; Swift 6 (Xcode 16+ / Command Line Tools) is only required for `--build-from-source` local builds
 
-### 从源码构建运行
+### Build & run from source
 
 ```bash
 git clone https://github.com/Neo-Isshin/TokenClock.git TokenClock
 cd TokenClock
 
-# 调试构建并直接运行
+# debug build and run directly
 swift run
 
-# 或先构建再运行
-swift build            # 调试
-swift build -c release # 发布
-.build/debug/TokenClock      # 或 .build/release/TokenClock
+# or build first, then run
+swift build            # debug
+swift build -c release # release
+.build/debug/TokenClock      # or .build/release/TokenClock
 ```
 
-> `main` 分支的 `Package.swift` 声明为 `.macOS(.v26)`，`swift run` 直接产出 Liquid Glass 版；兼容 macOS 12 的经典（不透明）版本位于 `normal` 分支。
+> The `main` branch's `Package.swift` declares `.macOS(.v26)`, so `swift run` produces the Liquid Glass build; the classic (opaque) macOS 12-compatible build lives on the `normal` branch.
 
-> 小坑：在 **macOS 27 且只装了 Command Line Tools**（无完整 Xcode）的机器上，`main` 分支裸 `swift build` 会因 27 SDK 把 `@State` 宏化而失败；指定 `SDKROOT=/Library/Developer/CommandLineTools/SDKs/MacOSX26.sdk swift build` 即可（26 SDK 里 `@State` 仍是普通属性包装器）。`normal` 分支不受影响。
+> Gotcha: on **macOS 27 with only Command Line Tools** installed (no full Xcode), a bare `swift build` on the `main` branch fails because the 27 SDK macro-expands `@State`; pass `SDKROOT=/Library/Developer/CommandLineTools/SDKs/MacOSX26.sdk swift build` to fix it (in the 26 SDK `@State` is still a plain property wrapper). The `normal` branch is unaffected.
 
-### 使用 `tokenclock` CLI
+### Use the `tokenclock` CLI
 
-将轻量 shell 脚本安装到 PATH：
+Install the lightweight shell script onto your PATH:
 
 ```bash
 sudo install -m755 cli/tokenclock /usr/local/bin/tokenclock
 ```
 
-| 命令 | 说明 |
-|------|------|
-| `tokenclock start [--glass\|--normal] [--force]` | 启动时钟；未指定版本时 **按系统版本自动选**（26+ → glass，12+ → normal）；`--force` 强制另开一份 |
-| `tokenclock stop` | 停止所有运行中的 TokenClock 实例 |
-| `tokenclock restart [--glass\|--normal]` | 重启 |
-| `tokenclock doctor` | 诊断环境：系统版本、已安装变体路径、运行中的进程、环境变量 |
-| `tokenclock update [--check] [--force]` | 更新到最新版：拉取最新 install.sh → SHA256 校验 → 装新二进制 → 重启（无变更则不动）；`--check` 仅检查，`--force` 强制 |
-| `tokenclock help` | 显示帮助 |
+| Command | Description |
+|---------|-------------|
+| `tokenclock start [--glass\|--normal] [--force]` | Start the clock; auto-picks by OS (26+ → glass, 12+ → normal); `--force` opens another instance |
+| `tokenclock stop` | Stop all running TokenClock instances |
+| `tokenclock restart [--glass\|--normal]` | Restart |
+| `tokenclock doctor` | Diagnose: OS version, installed variant paths, running processes, env vars |
+| `tokenclock update [--check] [--force]` | Update to the latest release: pulls the latest install.sh → SHA256-checks → installs new binaries → restarts (no-op if unchanged); `--check` checks only, `--force` forces |
+| `tokenclock help` | Show help |
 
-**变体定位顺序**：`$TOKENCLOCK_GLASS` / `$TOKENCLOCK_NORMAL` 环境变量 → `~/.tokenclock/` → `/Applications/` → 仓库 `.build/debug/`。
-
----
-
-## 🎨 主题
-
-6 款内置表盘，外加完全自定义：
-
-| 主题 | 中文名 | 性格 |
-|------|--------|------|
-| `classic`  | 经典     | 纯净玻璃盘 · 炭黑指针 + 琥珀秒针 · 仅 3/6/9/12 数字 |
-| `midnight` | 深夜     | 青色玻璃 · 青色锥形指针 |
-| `luxe`     | 暗金     | 金色玻璃 · 金色菱形指针 |
-| `gufeng`   | 古风     | 暖棕玻璃 · 墨色剑形指针 · **中文数字** |
-| `railgun`  | 超电磁炮 | 粉橙玻璃 · 电弧蓝秒针 · 等宽字体 |
-| `sky`      | 天空     | 蓝色玻璃 · 阳光白云 · 金色指针 |
-| `custom`   | 自定义   | 玻璃着色 / 三根指针 / 刻度 / 数字 / 字体……全部可调 |
-
-在时钟上 **右键** → 主题选择器，或打开设置窗口中的主题编辑器即可切换 / 自定义。
+**Variant discovery order**: `$TOKENCLOCK_GLASS` / `$TOKENCLOCK_NORMAL` env vars → `~/.tokenclock/` → `/Applications/` → repo `.build/debug/`.
 
 ---
 
-## 🧊 液态玻璃（Liquid Glass）
+## 🎨 Themes
 
-TokenClock 提供两套构建：
+7 built-in faces, plus full custom:
 
-| 分支 | 目标系统 | 渲染 |
-|------|---------|------|
-| `main`   | **macOS 26+** | 原生 Liquid Glass 材质，玻璃盘体随壁纸自适应、带氛围着色 |
-| `normal` | macOS 12+     | 经典不透明主题表盘，向前兼容 |
+| Theme | Name | Personality |
+|-------|------|-------------|
+| `classic`  | Classic    | Clear glass disc · charcoal hands + amber second hand · 3/6/9/12 only |
+| `glacier`  | Glacier    | Crystal ice-blue glass · ink sword hands + cherry-blossom pink second hand · ice-blue numerals & ticks |
+| `midnight` | Midnight   | Cyan glass · cyan tapered hands |
+| `luxe`     | Luxe       | Gold glass · gold lance hands |
+| `gufeng`   | Gu Feng    | Warm-brown glass · ink sword hands · **Chinese numerals** |
+| `railgun`  | Railgun    | Pink-orange glass · electric-blue second hand · monospaced |
+| `sky`      | Sky        | Blue glass · sun & clouds · gold hands |
+| `custom`   | Custom     | Glass tint / hands / ticks / numerals / fonts… fully customizable |
 
-- 玻璃表盘采用 **氛围着色（glass tint）** 取代旧版不透明底色：纯净玻璃基础上叠加主题提示色，保留各表盘个性又不遮挡壁纸。
-- **可调毛玻璃底板**：清透折射玻璃下层叠加一层公开毛玻璃底板，透明度 0–100% 五档可调（0 = 纯净玻璃通透，100 = 实心底板），在通透与实心之间自由拿捏（仅 macOS 26 液态玻璃版）。
-- 浅色 tint 主题（暗金 / 超电磁炮 / 天空）自动使用 **高对比近黑墨色** 文字、刻度与数字；深 / 中 tint 主题（经典 / 深夜 / 古风）使用纯白。
-- `tokenclock` CLI 会根据 `sw_vers` 主版本号自动选用匹配变体，无需手动判断。
+**Right-click** the clock → theme picker, or open the theme editor in the settings window to switch or customize.
 
 ---
 
-## 🔌 本地 API 服务器
+## 🧊 Liquid Glass
 
-TokenClock 在本地启动一个 `NWListener` HTTP 服务器：
+TokenClock ships in two builds:
+
+| Branch | Target | Rendering |
+|--------|--------|-----------|
+| `main`   | **macOS 26+** | Native Liquid Glass material; the disc adapts to the wallpaper and carries a subtle tint |
+| `normal` | macOS 12+     | Classic opaque themed dial, for backward compatibility |
+
+- The glass disc uses an **ambient tint (glass tint)** instead of the old opaque dial fill: a clean glass base plus a theme hint color, preserving each face's character without hiding your wallpaper.
+- **Adjustable frosted backing** — a public frosted-glass plate sits beneath the clear refractive glass, with opacity adjustable across 5 steps (0 = clean see-through glass, 100 = solid plate), letting you dial translucency to taste (macOS 26 Liquid Glass build only).
+- Lighter-tinted themes (Luxe / Railgun / Sky) automatically use **high-contrast near-black ink** for text, ticks, and numerals; darker/mid tints (Classic / Midnight / Gu Feng) use pure white.
+- The `tokenclock` CLI selects the matching variant from the `sw_vers` major version — no manual guessing.
+
+---
+
+## 🔌 Local API server
+
+TokenClock starts a local `NWListener` HTTP server:
 
 ```
-GET http://127.0.0.1:9988/api/usage          # 实时聚合用量（今日总量 / 各工具 / session 明细）
-GET http://127.0.0.1:9988/api/history?days=30 # 过去 N 天的日结快照（最多 30 天，便于画趋势）
+GET http://127.0.0.1:9988/api/usage          # live aggregated usage (today's totals / per-tool / session detail)
+GET http://127.0.0.1:9988/api/history?days=30 # daily snapshots for the last N days (max 30, for trend charts)
 ```
 
-返回 JSON 用量数据，便于外部脚本 / 仪表盘集成。仅监听本机回环，**不会对外暴露**。
+It returns JSON usage data, handy for external scripts / dashboards. It listens on loopback only and is **never exposed externally**.
 
 ---
 
-## 🔒 隐私
+## 🔒 Privacy
 
-- 所有用量数据均 **在本地读取** 自各 AI 工具自身写入的日志文件——TokenClock **不上传任何 token / 会话信息**。
-- 本地 API 服务器仅监听 `127.0.0.1`，且为可选项。
-- 天气功能通过 IP 大致定位或手动选择城市获取，仅用于显示当前天气与预报。
-
----
-
-## 🛣 未来支持计划
-
-- [ ] 支持更多 AI 编程工具（持续扩展检测器）
-- [ ] 提供签名 / 公证的 release 构建（`.app`）—— 当前走未签名 Gitea 分发，此项需 Apple Developer 账号（$99/年），暂不计划，欢迎赞助 / 认领
-- [ ] 更丰富的历史统计与图表
+- All usage data is **read locally** from the log files each AI tool writes itself — TokenClock **uploads no token / session data**.
+- The local API server listens only on `127.0.0.1` and is opt-in.
+- Weather uses approximate IP geolocation or a city you pick, solely to show current conditions and a forecast.
 
 ---
 
-## 📦 技术栈
+## 🛣 Roadmap
+
+- [ ] Support more AI coding tools (keep extending the detector)
+- [ ] Signed / notarized release builds (`.app`) — currently shipping unsigned via GitHub; this needs an Apple Developer account ($99/yr) and isn't currently planned — open to sponsorship / volunteers
+- [ ] Richer history stats and charts
+
+---
+
+## 📦 Tech stack
 
 | | |
 |---|---|
-| **语言** | Swift 6（`-parse-as-library`） |
-| **UI** | SwiftUI + AppKit（无锁 NSPanel 双窗口架构） |
-| **构建** | Swift Package Manager（无 `.xcodeproj`） |
-| **平台** | macOS 26 SDK（`main` 分支）/ macOS 12 SDK（`normal` 分支） |
-| **定位** | 自研 `L10n` 引擎（zh-Hans / zh-Hant / en，无 `.xcstrings`） |
-| **规模** | 约 12,400 行 Swift |
+| **Language** | Swift 6 (`-parse-as-library`) |
+| **UI** | SwiftUI + AppKit (lock-free dual-`NSPanel` architecture) |
+| **Build** | Swift Package Manager (no `.xcodeproj`) |
+| **Platforms** | macOS 26 SDK (`main` branch) / macOS 12 SDK (`normal` branch) |
+| **i18n** | Custom `L10n` engine (zh-Hans / zh-Hant / en, no `.xcstrings`) |
+| **Size** | ~12,400 lines of Swift |
 
 ---
 
-## 📄 许可证
+## 📄 License
 
-TokenClock 基于 **[GPL v3 协议](LICENSE)** 开源 —— © 2026 Neo-Isshin。您可以自由使用、分发与修改，但任何分发或修改后的衍生版本也必须以 GPL v3 协议开源。
+TokenClock is open-sourced under the **[GPL v3 License](LICENSE)** — © 2026 Neo-Isshin. You are free to use, distribute, and modify it, but any distributed or modified derivative works must also be open-sourced under the GPL v3 License.
 
 ---
 
-## 🙏 致谢
+## 🙏 Acknowledgments
 
-TokenClock 的诞生得益于众多优秀的 AI 编程工具及其社区。感谢这些工具将 token 用量写入本地日志，使统一可视化成为可能。表盘设计灵感来自传统机械腕表与流行文化（古风 / 超电磁炮主题）。
+- TokenClock exists thanks to the many excellent AI coding tools and their communities. Thanks to these tools for writing token usage to local logs, making unified visualization possible..
 
+- The Liquid Glass refraction effect (macOS 26+) is powered by reverse-engineered macOS private API `NSGlassEffectView`. Special thanks to the pioneering open-source project **[electron-liquid-glass](https://github.com/Meridius-Labs/electron-liquid-glass)** (maintained by Meridius-Labs).
+
+- The dial designs draw inspiration from traditional mechanical watches and pop culture (the Gu Feng / Railgun themes).
 ---
 
 <div align="center">
 
-<h3>⭐ 觉得 TokenClock 好用？</h3>
+<h3>⭐ Finding TokenClock useful?</h3>
 
-**欢迎给项目一个 Star —— 你的支持是持续迭代的动力 🚀**
+**A Star means a lot — it's what keeps the project going 🚀**
 
 [![Star](https://img.shields.io/badge/⭐-Star%20on%20GitHub-181717?style=for-the-badge&logo=github&logoColor=white)](https://github.com/Neo-Isshin/TokenClock)
 

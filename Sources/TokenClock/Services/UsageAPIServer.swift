@@ -194,6 +194,8 @@ final class UsageAPIServer: @unchecked Sendable {
             requested = maxDays
         }
         let days = min(maxDays, max(1, requested))
+        // ?detail=sessions → 在每天每工具下展开 session 明细（默认不展开，保持向后兼容）
+        let includeSessions = (query["detail"] == "sessions")
 
         // 查 DB 拿真实存在的快照
         let snapshots = HistoryStore.shared.queryRecent(days: days)
@@ -210,13 +212,21 @@ final class UsageAPIServer: @unchecked Sendable {
                     "totalTokens": snap.totalTokens,
                     "totalMessages": snap.totalMessages,
                     "tools": snap.tools.map { t -> [String: Any] in
-                        [
+                        var dict: [String: Any] = [
                             "name": t.name,
                             "tokens": t.tokens,
                             "messages": t.messages,
                             "cacheRate": t.cacheRate,
                             "isActive": t.isActive,
                         ]
+                        if includeSessions {
+                            dict["sessions"] = t.sessions.map { s -> [String: Any] in
+                                ["id": s.id, "displayName": s.displayName,
+                                 "tokens": s.tokens, "messages": s.messages,
+                                 "isActive": s.isActive]
+                            }
+                        }
+                        return dict
                     },
                 ])
             } else {

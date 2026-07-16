@@ -557,12 +557,20 @@ final class ViewModel: ObservableObject {
         // 这里用 module-level 的 UsageServiceProtocol.ToolSnapshot(HistoryStore 需要),
         // 走全限定避免命名冲突。
         let snapshots: [TokenClock.ToolSnapshot] = tools.map { tool in
-            TokenClock.ToolSnapshot(
+            // 提取为显式类型局部变量：避免把带闭包的 map 表达式内联进 memberwise init 参数
+            // 触发 Swift 类型推断误报（曾报 extra argument 'sessions'）。
+            let sessions: [SessionSnapshot] = tool.sessions.map {
+                SessionSnapshot(id: $0.rawId, displayName: $0.displayName,
+                                tokens: $0.todayTokens, messages: $0.todayMessages,
+                                isActive: $0.isActive)
+            }
+            return TokenClock.ToolSnapshot(
                 name: tool.name,
                 tokens: tool.todayTokens,
                 messages: tool.todayMessages,
                 cacheRate: tool.cacheRate,
-                isActive: tool.isActive
+                isActive: tool.isActive,
+                sessions: sessions
             )
         }
         HistoryStore.shared.upsertDay(dateKey: dateKey, snapshots: snapshots)
