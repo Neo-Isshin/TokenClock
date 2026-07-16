@@ -4,14 +4,13 @@
 
 # 🕰️ TokenClock
 
-**A native Liquid Glass token clock · every agent's consumption on a single dial**
+**A native Liquid Glass desktop clock for your AI coding usage**
+
+Track Claude Code, Codex, Gemini CLI, OpenCode, and 10 more tools on one living glass dial — **entirely on your Mac**.
 
 [![macOS 12+](https://img.shields.io/badge/macOS-12%2B-000000?style=for-the-badge&logo=apple&logoColor=white)](https://www.apple.com/macos/)
 [![macOS 26+](https://img.shields.io/badge/macOS%2026-Liquid%20Glass-00B0F0?style=for-the-badge)](https://developer.apple.com/macos/)
 
-[![Swift 6](https://img.shields.io/static/v1?label=Swift&message=6&color=F05138&logo=swift&logoColor=white)](https://www.swift.org/)
-[![SwiftUI](https://img.shields.io/static/v1?label=UI&message=SwiftUI%20%2B%20AppKit&color=blueviolet)](https://developer.apple.com/xcode/swiftui/)
-[![SwiftPM](https://img.shields.io/static/v1?label=Build&message=SwiftPM&color=FA7343)](https://www.swift.org/package-manager/)
 [![Privacy](https://img.shields.io/static/v1?label=Privacy&message=local%20only&color=success)](#-privacy)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
 [![Releases](https://img.shields.io/badge/releases-GitHub-181717?logo=github&logoColor=white)](https://github.com/Neo-Isshin/TokenClock/releases)
@@ -20,20 +19,37 @@
 
 <div align="center">
 
-<table>
-  <tr>
-    <td width="50%" align="center"><img src="docs/screenshots/glass_en.png" alt="Liquid Glass build" width="300"><br><sub><b>Liquid Glass build</b> · macOS 26+</sub></td>
-    <td width="30%" align="center"><img src="docs/screenshots/normal_en.png" alt="Normal build" width="300"><br><sub><b>Normal build</b> · macOS 12+</sub></td>
-  </tr>
-</table>
+<img src="docs/screenshots/glass_en.png" alt="TokenClock native Liquid Glass clock showing local AI coding token usage" width="520">
+
+<sub><b>Native Liquid Glass on macOS 26+</b> · wallpaper-aware refraction · ambient tint · adaptive contrast · always-on-top</sub>
 
 </div>
 
 ---
 
-TokenClock is an **always-on-top floating clock** for your desktop (draggable · remembers its position). The dial overlays live data: **today's total token consumption, message counts, the AI tools currently active, a rate indicator, and the weather**. Click the clock to expand a dropdown panel that breaks usage down by **each tool → each session / agent**.
+## 🧊 Liquid Glass is the interface, not a skin
 
-It's built with the macOS 26 **Liquid Glass** material for a crystal clock disc, ships with 7 carefully designed built-in faces plus a fully custom theme editor, and reads **everything locally** — nothing is ever uploaded.
+TokenClock turns macOS 26's native **Liquid Glass** into a useful, glanceable instrument. The clock disc refracts the desktop behind it, picks up a subtle theme tint, and automatically switches its ink contrast to stay readable as the wallpaper changes. An adjustable frosted backing lets you move from clean, transparent glass to a denser dial without losing the native material.
+
+The result is not a dashboard hidden in another window. It is an **always-on-top glass object** that belongs on the desktop: draggable, position-aware, and calm enough to live beside your work all day.
+
+<div align="center">
+
+**7 glass faces** · **adjustable translucency** · **full theme editor** · **macOS-native rendering**
+
+</div>
+
+## ⚡ Install in one line
+
+The installer automatically selects the native Liquid Glass build on macOS 26+ and the classic compatible build on macOS 12–15.
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Neo-Isshin/TokenClock/main/cli/install.sh | bash
+```
+
+TokenClock overlays live data on the dial: **today's token consumption, message count, active AI tools, usage rate, and weather**. Click it to drill down from **tool → session / agent** and see exactly where the tokens went.
+
+It reads the logs your AI coding tools already keep on your Mac. **Nothing is uploaded.**
 
 > [!NOTE]
 > Liquid Glass build has supported macOS 27 beta 3, but may break with beta version updates.
@@ -62,15 +78,15 @@ It's built with the macOS 26 **Liquid Glass** material for a crystal clock disc,
 
 <table>
   <tr>
-    <td width="50%" valign="top"><b>🤖 All your tools, one dial</b><br><sub>Token / message usage from <b>14 AI coding tools</b> flows into a single clock face — no more hopping between terminals and web dashboards.</sub></td>
-    <td width="50%" valign="top"><b>🔍 Drill down per session / agent</b><br><sub>From a per-tool overview all the way down to every session / agent — see exactly where the tokens went and which conversation burned them.</sub></td>
+    <td width="50%" valign="top"><b>🧊 Native Liquid Glass</b><br><sub>A refractive glass disc that responds to the wallpaper behind it, with ambient tint and adaptive high-contrast ink.</sub></td>
+    <td width="50%" valign="top"><b>🎨 Glass you can make your own</b><br><sub>7 built-in faces, adjustable frosted backing, glass tint, hands, ticks, numerals, fonts, dial size, and window opacity.</sub></td>
   </tr>
   <tr>
-    <td valign="top"><b>🌤️ Always on the desktop, zero friction</b><br><sub>A floating, always-on-top, translucent Liquid Glass disc; a glance gives you the live consumption and rate (🔥 burst / 🌊 calm).</sub></td>
-    <td valign="top"><b>📈 Multi-dimensional live insight</b><br><sub>Today's totals, cache rate, future-trend forecast, and active tools in one picture.</sub></td>
+    <td valign="top"><b>🤖 All your tools, one dial</b><br><sub>Token / message usage from <b>14 AI coding tools</b> flows into a single clock face — no more hopping between terminals and web dashboards.</sub></td>
+    <td valign="top"><b>🔍 Drill down per session / agent</b><br><sub>From a per-tool overview all the way down to every session / agent — see exactly where the tokens went and which conversation burned them.</sub></td>
   </tr>
   <tr>
-    <td valign="top"><b>🎨 Rich customization</b><br><sub>6 built-in faces + a fully custom theme: frosted backing opacity, glass tint, text color, hands, ticks, numerals, fonts, dial size, window opacity.</sub></td>
+    <td valign="top"><b>🌤️ Always visible, never disruptive</b><br><sub>A floating, always-on-top instrument; a glance gives you the live consumption and rate (🔥 burst / 🌊 calm) without breaking focus.</sub></td>
     <td valign="top"><b>📜 Usage history you can revisit</b><br><sub>Each day's usage is auto-settled into a local SQLite store (30 days) and exposed via the local API — feed your own charts.</sub></td>
   </tr>
   <tr>
@@ -100,7 +116,7 @@ It's built with the macOS 26 **Liquid Glass** material for a crystal clock disc,
 - The normal build runs on **macOS 12+**, the Liquid Glass build on **macOS 26+**. The one-liner picks the right variant for your OS automatically, and the lightweight `tokenclock` CLI handles start / stop / switch / diagnose. See the [install guide](https://github.com/Neo-Isshin/TokenClock).
 
 ### 🎨 Multiple faces & thoughtful design
-- 6 built-in faces (Classic / Midnight / Luxe / Gu Feng / Railgun / Sky), each with its own personality.
+- 7 built-in faces (Classic / Glacier / Midnight / Luxe / Gu Feng / Railgun / Sky), each with its own personality.
 - 4 hand styles (round / tapered / lance / sword); numerals in Arabic or Chinese.
 - **Fully custom themes**: dial color, glass tint, all three hands, ticks, numerals, borders, and fonts are all adjustable.
 
@@ -147,7 +163,7 @@ It's built with the macOS 26 **Liquid Glass** material for a crystal clock disc,
 <table>
   <tr>
     <td width="44%" align="center"><b>Settings panel</b><br><sub>Auto-detected tool paths & parameters configuration</sub></td>
-    <td width="34%" align="center"><b>Theme picker</b><br><sub>6 built-in faces & fully custom theme editing</sub></td>
+    <td width="34%" align="center"><b>Theme picker</b><br><sub>7 built-in faces & fully custom theme editing</sub></td>
     <td width="22%" align="center"><b>Context menu</b><br><sub>Quick access to dial themes, sizes & preferences</sub></td>
   </tr>
   <tr>
