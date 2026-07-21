@@ -121,7 +121,7 @@ final class L10n: @unchecked Sendable {
         "detail.groupByModel":   [.zhHans: "按模型", .zhHant: "按模型",   .en: "By Model"],
         "detail.unknownModel":   [.zhHans: "未知",   .zhHant: "未知",    .en: "Unknown"],
         "detail.model":          [.zhHans: "模型",   .zhHant: "模型",    .en: "Model"],
-        "detail.percent":        [.zhHans: "百分比", .zhHant: "百分比",  .en: "Percent"],
+        "detail.percent":        [.zhHans: "按百分比", .zhHant: "按百分比", .en: "By Percent"],
         "detail.share":          [.zhHans: "占比",   .zhHant: "佔比",    .en: "Share"],
 
         // MARK: Theme picker
