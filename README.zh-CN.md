@@ -6,7 +6,7 @@
 
 **专为 AI 编程用量而生的原生 Liquid Glass 桌面时钟**
 
-Claude Code、Codex、Gemini CLI、OpenCode 等 14 款工具的消耗，在一只流动的玻璃表盘上一目了然——**全部留在你的 Mac 上**。
+Claude Code、Codex、Antigravity(可区分IDE、CLI、App)、OpenCode 等 14 款工具的消耗，在一只流动的玻璃表盘上一目了然——**全部留在你的 Mac 上**。
 
 [![macOS 12+](https://img.shields.io/badge/macOS-12%2B-000000?style=for-the-badge&logo=apple&logoColor=white)](https://www.apple.com/macos/)
 [![macOS 26+](https://img.shields.io/badge/macOS%2026-Liquid%20Glass-00B0F0?style=for-the-badge)](https://developer.apple.com/macos/)
