@@ -8,6 +8,16 @@ private func formatPercent(_ tokens: Int, of total: Int) -> String {
     return String(format: "%.0f%%", pct)
 }
 
+/// 小型 chip 按钮的按压反馈：按下时轻微缩放 + 降透明，给纯文字 toggle 一个"可点"手感。
+private struct ChipPressStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.94 : 1.0)
+            .opacity(configuration.isPressed ? 0.8 : 1.0)
+            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+    }
+}
+
 /// 展开态详情列表（主题感知，支持 session/agent 展开）
 struct DetailDropdownView: View {
     let tools: [ToolUsage]
@@ -26,6 +36,9 @@ struct DetailDropdownView: View {
     var showPercentage: Bool = false
     /// 百分比显示切换回调
     var onShowPercentageChange: ((Bool) -> Void)? = nil
+
+    /// 百分比 chip 的悬停态（驱动背景底色透明度）
+    @State private var percentHovered = false
 
     /// 过滤掉今日消耗为 0 的工具
     private var activeTools: [ToolUsage] {
@@ -93,27 +106,36 @@ struct DetailDropdownView: View {
                 .padding(.bottom, 2)
 
                 // 百分比显示开关：置于分组胶囊正下方，切换用量列在「绝对 token」与「占总数百分比」之间。
-                // 复用胶囊同款圆角块高亮表示选中态，与上方分段视觉一致。
+                // 做成带常驻底色 + 描边的胶囊 chip（与上方分组胶囊同语言），悬停/按下有反馈，
+                // 确保一眼能看出是可点交互元素（而非一行说明文字）。
                 HStack {
                     Spacer()
                     Button { onShowPercentageChange?(!showPercentage) } label: {
-                        HStack(spacing: 3) {
+                        HStack(spacing: 4) {
                             Image(systemName: "percent")
+                                .font(.system(size: 11, weight: .semibold))
                             Text(L10n.shared.tr("detail.percent"))
+                                .font(.system(size: 10, weight: showPercentage ? .semibold : .regular))
                         }
-                        .font(.system(size: 9, weight: showPercentage ? .semibold : .regular))
                         .foregroundColor(showPercentage ? theme.dropdownTextColor : theme.dropdownSubtextColor)
-                        .padding(.horizontal, 7)
-                        .padding(.vertical, 2)
+                        .padding(.horizontal, 9)
+                        .padding(.vertical, 4)
                         .background(
-                            RoundedRectangle(cornerRadius: 4, style: .continuous)
-                                .fill(theme.dropdownTextColor.opacity(showPercentage ? 0.12 : 0))
+                            Capsule(style: .continuous)
+                                .fill(theme.dropdownTextColor.opacity(showPercentage ? 0.18 : (percentHovered ? 0.11 : 0.07)))
+                        )
+                        .overlay(
+                            Capsule(style: .continuous)
+                                .strokeBorder(theme.dropdownTextColor.opacity(showPercentage ? 0.32 : 0.15), lineWidth: 0.5)
                         )
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(ChipPressStyle())
+                    .onHover { percentHovered = $0 }
+                    .help(L10n.shared.tr("detail.percent"))
                     .accessibilityLabel(L10n.shared.tr("detail.percent"))
                 }
                 .padding(.horizontal, 12)
+                .padding(.top, 2)
                 .padding(.bottom, 2)
 
                 // 表头
