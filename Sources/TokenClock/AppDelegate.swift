@@ -644,7 +644,9 @@ private struct DropdownPanelView: View {
                 localizedCityName: viewModel.localizedCityName,
                 isLoading: viewModel.isInitialLoading,
                 groupingMode: viewModel.groupingMode,
-                onGroupingChange: { viewModel.groupingMode = $0 }
+                onGroupingChange: { viewModel.groupingMode = $0 },
+                showPercentage: viewModel.showPercentage,
+                onShowPercentageChange: { viewModel.showPercentage = $0 }
             )
             .frame(maxHeight: .infinity, alignment: .top)
 

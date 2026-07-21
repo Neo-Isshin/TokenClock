@@ -44,6 +44,13 @@ final class ViewModel: ObservableObject {
         didSet { UserDefaults.standard.setInt(groupingMode.rawValue, for: .dropdownGrouping) }
     }
 
+    /// 下拉面板用量列是否以「占总数百分比」显示（true=百分比，false=绝对 token），持久化
+    @Published var showPercentage: Bool = {
+        UserDefaults.standard.bool(for: .dropdownShowPercentage, default: false)
+    }() {
+        didSet { UserDefaults.standard.setBool(showPercentage, for: .dropdownShowPercentage) }
+    }
+
     @Published var windowOpacity: Double = 1.0 { didSet { UserDefaults.standard.set(windowOpacity, forKey: SettingsKey.windowOpacity.rawValue) } }
     @Published var alwaysOnTop: Bool = {
         UserDefaults.standard.bool(for: .alwaysOnTop, default: true)
