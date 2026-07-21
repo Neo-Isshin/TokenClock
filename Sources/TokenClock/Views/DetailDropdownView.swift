@@ -1,5 +1,13 @@
 import SwiftUI
 
+/// 将 token 数格式化为「占总数百分比」字符串：0 → "-"，(0%,1%) → "<1%"，其余取整（与缓存率风格一致）。
+private func formatPercent(_ tokens: Int, of total: Int) -> String {
+    if tokens <= 0 || total <= 0 { return "-" }
+    let pct = Double(tokens) / Double(total) * 100
+    if pct < 1 { return "<1%" }
+    return String(format: "%.0f%%", pct)
+}
+
 /// 展开态详情列表（主题感知，支持 session/agent 展开）
 struct DetailDropdownView: View {
     let tools: [ToolUsage]
@@ -16,6 +24,11 @@ struct DetailDropdownView: View {
     /// 分组模式切换回调
     var onGroupingChange: ((GroupingMode) -> Void)? = nil
 
+    /// 用量列是否以「占总数百分比」显示（true=百分比，false=绝对 token）
+    var showPercentage: Bool = false
+    /// 百分比显示切换回调
+    var onShowPercentageChange: ((Bool) -> Void)? = nil
+
     /// 实际面板主文字色：有覆写则用覆写，否则用主题色。
     private var textColor: Color { dropdownTextColorOverride ?? theme.dropdownTextColor }
     private var subtextColor: Color { dropdownTextColorOverride.map { $0.opacity(0.65) } ?? theme.dropdownSubtextColor }
@@ -29,6 +42,12 @@ struct DetailDropdownView: View {
     /// 「按模型」分组的视图数据（跨工具归并）
     private var modelGroups: [ModelGroup] {
         UsageAggregator.groupedByModel(tools, unknownLabel: L10n.shared.tr("detail.unknownModel"))
+    }
+
+    /// 百分比分母：所有工具当日 token 总和。未激活工具 todayTokens 为 0，
+    /// 故该值与「仅活跃工具之和」「各模型分组之和」三者一致，两种分组模式可共用。
+    private var grandTotal: Int {
+        tools.reduce(0) { $0 + $1.todayTokens }
     }
 
     var body: some View {
@@ -80,11 +99,35 @@ struct DetailDropdownView: View {
                 .padding(.top, 6)
                 .padding(.bottom, 2)
 
+                // 百分比显示开关：置于分组胶囊正下方，切换用量列在「绝对 token」与「占总数百分比」之间。
+                // 复用胶囊同款圆角块高亮表示选中态，与上方分段视觉一致。
+                HStack {
+                    Spacer()
+                    Button { onShowPercentageChange?(!showPercentage) } label: {
+                        HStack(spacing: 3) {
+                            Image(systemName: "percent")
+                            Text(L10n.shared.tr("detail.percent"))
+                        }
+                        .font(.system(size: 9, weight: showPercentage ? .semibold : .regular))
+                        .foregroundColor(showPercentage ? textColor : subtextColor)
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 2)
+                        .background(
+                            RoundedRectangle(cornerRadius: 4, style: .continuous)
+                                .fill(textColor.opacity(showPercentage ? 0.12 : 0))
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(L10n.shared.tr("detail.percent"))
+                }
+                .padding(.horizontal, 12)
+                .padding(.bottom, 2)
+
                 // 表头
                 HStack(spacing: 0) {
                     Text(L10n.shared.tr(groupingMode == .model ? "detail.model" : "detail.instance"))
                         .frame(maxWidth: .infinity, alignment: .leading)
-                    Text(L10n.shared.tr("detail.todayUsage"))
+                    Text(L10n.shared.tr(showPercentage ? "detail.share" : "detail.todayUsage"))
                         .frame(width: 62, alignment: .trailing)
                     Text(L10n.shared.tr("detail.messages"))
                         .frame(width: 36, alignment: .trailing)
@@ -108,7 +151,7 @@ struct DetailDropdownView: View {
                                     Divider()
                                         .background(theme.dropdownDividerColor)
                                 }
-                                ToolExpandableRow(tool: tool, theme: theme, textColorOverride: dropdownTextColorOverride)
+                                ToolExpandableRow(tool: tool, theme: theme, textColorOverride: dropdownTextColorOverride, showPercentage: showPercentage, grandTotal: grandTotal)
                             }
                         } else {
                             ForEach(Array(modelGroups.enumerated()), id: \.element.id) { index, group in
@@ -116,7 +159,7 @@ struct DetailDropdownView: View {
                                     Divider()
                                         .background(theme.dropdownDividerColor)
                                 }
-                                ModelExpandableRow(group: group, theme: theme, textColorOverride: dropdownTextColorOverride)
+                                ModelExpandableRow(group: group, theme: theme, textColorOverride: dropdownTextColorOverride, showPercentage: showPercentage, grandTotal: grandTotal)
                             }
                         }
                     }
@@ -236,6 +279,10 @@ private struct ToolExpandableRow: View {
     let theme: ClockFaceTheme
     /// 面板主文字色覆写（nil = 跟随主题）。
     var textColorOverride: Color? = nil
+    /// 用量列是否显示百分比
+    var showPercentage: Bool = false
+    /// 百分比分母（所有工具当日 token 总和）
+    var grandTotal: Int = 0
     private var textColor: Color { textColorOverride ?? theme.dropdownTextColor }
     private var subtextColor: Color { textColorOverride.map { $0.opacity(0.65) } ?? theme.dropdownSubtextColor }
     private var headerColor: Color { textColorOverride.map { $0.opacity(0.7) } ?? theme.dropdownHeaderColor }
@@ -259,7 +306,7 @@ private struct ToolExpandableRow: View {
                         .truncationMode(.tail)
                         .frame(maxWidth: .infinity, alignment: .leading)
 
-                    Text(tool.formattedTokens)
+                    Text(showPercentage ? formatPercent(tool.todayTokens, of: grandTotal) : tool.formattedTokens)
                         .font(.system(size: 11, weight: .semibold, design: .monospaced))
                         .foregroundColor(textColor)
                         .frame(width: 62, alignment: .trailing)
@@ -292,7 +339,9 @@ private struct ToolExpandableRow: View {
                             session: session,
                             isOpenClaw: tool.name == "OpenClaw",
                             theme: theme,
-                            textColorOverride: textColorOverride
+                            textColorOverride: textColorOverride,
+                            showPercentage: showPercentage,
+                            grandTotal: grandTotal
                         )
                     }
                 }
@@ -315,6 +364,10 @@ private struct SessionRow: View {
     let theme: ClockFaceTheme
     /// 面板主文字色覆写（nil = 跟随主题）。
     var textColorOverride: Color? = nil
+    /// 用量列是否显示百分比
+    var showPercentage: Bool = false
+    /// 百分比分母（所有工具当日 token 总和）
+    var grandTotal: Int = 0
     private var textColor: Color { textColorOverride ?? theme.dropdownTextColor }
     private var subtextColor: Color { textColorOverride.map { $0.opacity(0.65) } ?? theme.dropdownSubtextColor }
     private var headerColor: Color { textColorOverride.map { $0.opacity(0.7) } ?? theme.dropdownHeaderColor }
@@ -364,7 +417,7 @@ private struct SessionRow: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
-            Text(session.formattedTokens)
+            Text(showPercentage ? formatPercent(session.todayTokens, of: grandTotal) : session.formattedTokens)
                 .font(.system(size: 10, weight: .semibold, design: .monospaced))
                 .foregroundColor(subtextColor)
                 .frame(width: 62, alignment: .trailing)
@@ -396,6 +449,10 @@ private struct ModelExpandableRow: View {
     let theme: ClockFaceTheme
     /// 面板主文字色覆写（nil = 跟随主题）。
     var textColorOverride: Color? = nil
+    /// 用量列是否显示百分比
+    var showPercentage: Bool = false
+    /// 百分比分母（所有工具当日 token 总和）
+    var grandTotal: Int = 0
     private var textColor: Color { textColorOverride ?? theme.dropdownTextColor }
     private var subtextColor: Color { textColorOverride.map { $0.opacity(0.65) } ?? theme.dropdownSubtextColor }
     private var headerColor: Color { textColorOverride.map { $0.opacity(0.7) } ?? theme.dropdownHeaderColor }
@@ -417,7 +474,7 @@ private struct ModelExpandableRow: View {
                         .truncationMode(.middle)
                         .frame(maxWidth: .infinity, alignment: .leading)
 
-                    Text(group.formattedTokens)
+                    Text(showPercentage ? formatPercent(group.totalTokens, of: grandTotal) : group.formattedTokens)
                         .font(.system(size: 11, weight: .semibold, design: .monospaced))
                         .foregroundColor(textColor)
                         .frame(width: 62, alignment: .trailing)
@@ -440,7 +497,7 @@ private struct ModelExpandableRow: View {
                         .padding(.horizontal, 12)
 
                     ForEach(group.contributions) { c in
-                        ModelContributionRow(contribution: c, theme: theme, textColorOverride: textColorOverride)
+                        ModelContributionRow(contribution: c, theme: theme, textColorOverride: textColorOverride, showPercentage: showPercentage, grandTotal: grandTotal)
                     }
                 }
                 .transition(.opacity.combined(with: .move(edge: .top)))
@@ -456,6 +513,10 @@ private struct ModelContributionRow: View {
     let theme: ClockFaceTheme
     /// 面板主文字色覆写（nil = 跟随主题）。
     var textColorOverride: Color? = nil
+    /// 用量列是否显示百分比
+    var showPercentage: Bool = false
+    /// 百分比分母（所有工具当日 token 总和）
+    var grandTotal: Int = 0
     private var textColor: Color { textColorOverride ?? theme.dropdownTextColor }
     private var subtextColor: Color { textColorOverride.map { $0.opacity(0.65) } ?? theme.dropdownSubtextColor }
     private var headerColor: Color { textColorOverride.map { $0.opacity(0.7) } ?? theme.dropdownHeaderColor }
@@ -473,7 +534,7 @@ private struct ModelContributionRow: View {
                 .truncationMode(.tail)
                 .frame(maxWidth: .infinity, alignment: .leading)
 
-            Text(TokenFormat.compact(contribution.tokens))
+            Text(showPercentage ? formatPercent(contribution.tokens, of: grandTotal) : TokenFormat.compact(contribution.tokens))
                 .font(.system(size: 10, weight: .semibold, design: .monospaced))
                 .foregroundColor(subtextColor)
                 .frame(width: 62, alignment: .trailing)

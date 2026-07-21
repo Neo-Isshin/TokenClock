@@ -86,6 +86,8 @@ enum SettingsKey: String {
     // MARK: - 下拉面板
     /// 分组模式：0=按会话 1=按模型
     case dropdownGrouping = "TC_dropdownGrouping"
+    /// 用量列是否以「占总数百分比」显示（true=百分比，false=绝对 token）
+    case dropdownShowPercentage = "TC_dropdownShowPercentage"
 
     // MARK: - 首次启动标记
     case hasRunInitialDetection = "TC_hasRunInitialDetection"
