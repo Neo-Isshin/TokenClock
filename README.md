@@ -6,7 +6,7 @@
 
 **A native Liquid Glass desktop clock for your AI coding usage**
 
-Track Claude Code, Codex, Gemini CLI, OpenCode, and 10 more tools on one living glass dial — **entirely on your Mac**.
+Track Claude Code, Codex, Antigravity(parse by CLI IDE App), OpenCode, and 10 more tools on one living glass dial — **entirely on your Mac**.
 
 [![macOS 12+](https://img.shields.io/badge/macOS-12%2B-000000?style=for-the-badge&logo=apple&logoColor=white)](https://www.apple.com/macos/)
 [![macOS 26+](https://img.shields.io/badge/macOS%2026-Liquid%20Glass-00B0F0?style=for-the-badge)](https://developer.apple.com/macos/)
