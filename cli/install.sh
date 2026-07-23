@@ -159,7 +159,7 @@ ensure_source() {
 # ── 4. Obtain the binary (prefer the prebuilt download; fall back to building from source on failure / --build-from-source) ──
 # Prebuilt assets come from the GitHub release (universal: arm64+x86_64); no Xcode, no compilation.
 # When cutting a new release, update RELEASE_TAG and both SHA256 hashes (done by scripts/release.sh).
-RELEASE_TAG="${TOKENCLOCK_RELEASE_TAG:-v1.3.4}"
+RELEASE_TAG="${TOKENCLOCK_RELEASE_TAG:-v1.3.5}"
 RELEASE_URL_BASE="${TOKENCLOCK_RELEASE_BASE:-https://github.com/Neo-Isshin/TokenClock/releases/download/$RELEASE_TAG}"
 
 # variant → tarball filename / expected SHA256 (bash 3.2 has no associative arrays, so use case)
@@ -171,8 +171,8 @@ tarball_name() {
 }
 tarball_sha256() {
   case "$1" in
-    glass)  echo "0bd37b53fae27c773973160824ba73dccaeae057b8ffb1932f7532ea26f974b4" ;;
-    normal) echo "7270d0c5160876ec92b6078d768aecb824ac8026ed8b9677aaf775d267ecbcbe" ;;
+    glass)  echo "70aa1cbf15c595de94bded8847ff2f83dfed1a19c5acbe9df4aa11f05b2144c4" ;;
+    normal) echo "035e1e419eee687b9f1147c790b5ecb870d0943ccd6f5b96901a9372f89f44f8" ;;
   esac
 }
 
