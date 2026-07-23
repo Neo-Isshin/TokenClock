@@ -44,8 +44,10 @@ final class FloatingPanel: NSPanel {
 
         // 不拦截其他应用的激活事件
         self.becomesKeyOnlyIfNeeded = true
-        // 默认只在普通桌面 Space 显示，全屏 Space 中隐藏
-        self.collectionBehavior = [.canJoinAllSpaces]
+        // 普通窗口默认：collectionBehavior 置空（不 join 任何 Space）→ 不进入全屏 Space，
+        // 原生全屏播放器可覆盖。alwaysOnTop 开启时由 AppDelegate 覆写为
+        // [.canJoinAllSpaces, .fullScreenAuxiliary]（跨桌面 + 全屏置顶）。
+        self.collectionBehavior = []
 
         // 默认位置
         if let screen = NSScreen.main {
@@ -104,7 +106,7 @@ final class DropdownPanel: NSPanel {
         hasShadow = true
         isMovableByWindowBackground = false
         becomesKeyOnlyIfNeeded = true
-        collectionBehavior = [.canJoinAllSpaces]
+        collectionBehavior = []
     }
 
     override var canBecomeKey: Bool { false }
@@ -116,7 +118,7 @@ final class DropdownPanel: NSPanel {
             collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         } else {
             level = .normal
-            collectionBehavior = [.canJoinAllSpaces]
+            collectionBehavior = []   // 普通窗口：不进全屏 Space，全屏播放器可覆盖
         }
     }
 
