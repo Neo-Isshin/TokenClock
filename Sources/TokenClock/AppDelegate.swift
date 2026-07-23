@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import CoreGraphics
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
@@ -10,6 +11,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var aboutWindow: NSWindow?
     private var themePickerPanel: NSPanel?
     private var themePickerEventMonitor: Any?
+
+    // 全屏智能隐藏（仅 alwaysOnTop=OFF 时启用）：见下方 MARK 区
+    private var fullscreenCheckTimer: Timer?
+    private var isHiddenForFullscreen = false
 
     nonisolated func applicationDidFinishLaunching(_ notification: Notification) {
         Task { @MainActor in
@@ -62,6 +67,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         if viewModel.alwaysOnTop {
             panel.level = .statusBar
             panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        } else {
+            // 非置顶 = 普通窗口：NSPanel 即使 level=normal 也排在普通窗口之上，故 Apple TV 等
+            // 播放器的伪全屏（铺屏普通窗口）盖不住它。这里启用智能隐藏：被大面积覆盖就隐藏。
+            panel.level = .normal
+            panel.collectionBehavior = []
+            startFullscreenDetection()
         }
         dropdownPanel.configureLevel(alwaysOnTop: viewModel.alwaysOnTop)
 
@@ -530,7 +541,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         if sender.state == .on {
             sender.state = .off
             panel.level = .normal
-            panel.collectionBehavior = [.canJoinAllSpaces]
+            panel.collectionBehavior = []
             dropdownPanel.configureLevel(alwaysOnTop: false)
             viewModel.alwaysOnTop = false
         } else {
@@ -540,11 +551,95 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             dropdownPanel.configureLevel(alwaysOnTop: true)
             viewModel.alwaysOnTop = true
         }
-        // 以新属性重显（用 orderFront 而非 orderFrontRegardless：后者会无视 collectionBehavior
-        // 强制把窗口塞进当前全屏 Space，导致"取消置顶"瞬间又被拉回）。orderFront 尊重规则：
-        // OFF 时 .normal + 仅 canJoinAllSpaces → 不进入全屏 Space（不覆盖全屏视频）；ON 时进入。
+        // 重显（用 orderFront 而非 orderFrontRegardless：后者无视 collectionBehavior 强制塞进
+        // 当前全屏 Space）。OFF 模式下被播放器全屏覆盖改由下方智能隐藏机制处理。
         panel.orderFront(nil)
         UserDefaults.standard.set(viewModel.alwaysOnTop, forKey: SettingsKey.alwaysOnTop.rawValue)
+        // OFF：在重显后启动智能隐藏（避免立即 orderOut 与上面的 orderFront 打架）；
+        // ON：停止检测（若曾被隐藏，顺带恢复可见）。
+        if viewModel.alwaysOnTop { stopFullscreenDetection() } else { startFullscreenDetection() }
+    }
+
+    // MARK: - 全屏智能隐藏（仅 alwaysOnTop=OFF 时启用）
+    //
+    // NSPanel（nonactivatingPanel）即使 level=normal 也排在普通窗口之上，故"取消置顶"后仍会
+    // 浮在 Apple TV 等播放器的伪全屏窗口（铺满副屏的普通窗口，非系统原生全屏）之上 —— level
+    // 与 collectionBehavior 都治不了它（panel 的固有 z-order）。这里在 OFF 模式轮询窗口栈：
+    // 若时钟面板被其他 app 的「大窗口」（layer≤0 且面积≥所在屏 60%，即全屏/最大化级别）覆盖，
+    // 就 orderOut 主动隐藏让视频干净呈现；退出该状态再 orderFront 恢复。ON 模式不轮询
+    //（statusBar level 最高，本就不会被盖）。用户正展开下拉详情时不隐藏，避免打断阅读。
+    private func startFullscreenDetection() {
+        guard fullscreenCheckTimer == nil else { return }
+        // 0.5s 轮询：CGWindowListCopyWindowInfo 只读窗口元数据（非截图），开销极小；
+        // 用 0.5s 而非 1s 让进入/退出全屏的隐藏与恢复都更跟手。
+        fullscreenCheckTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+            // Timer 回调在主线程（main runloop）；assumeIsolated 把执行交接回 @MainActor 上下文。
+            MainActor.assumeIsolated { self?.evaluateFullscreenHide() }
+        }
+        evaluateFullscreenHide()
+    }
+
+    private func stopFullscreenDetection() {
+        fullscreenCheckTimer?.invalidate()
+        fullscreenCheckTimer = nil
+        if isHiddenForFullscreen { unhideForFullscreen() }
+    }
+
+    private func evaluateFullscreenHide() {
+        guard let panel = self.panel else { return }
+        if dropdownPanel.isVisible { return }   // 用户正在看下拉详情，不打断
+        let center = NSPoint(x: panel.frame.midX, y: panel.frame.midY)
+        guard let clockScreen = (NSScreen.screens.first { $0.frame.contains(center) }) ?? NSScreen.main else { return }
+        let screenFrameCG = nsToCG(clockScreen.frame)
+        let clockFrame = nsToCG(panel.frame)
+
+        guard let info = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] else { return }
+
+        var shouldHide = false
+        for w in info {
+            if (w[kCGWindowOwnerName as String] as? String) == "TokenClock" { continue }
+            let layer = (w[kCGWindowLayer as String] as? Int) ?? -1
+            guard layer == 0 else { continue }   // 仅普通 app 窗口（排除菜单栏/Dock 正层 + 桌面/WindowServer 负层）
+            guard let b = w[kCGWindowBounds as String] as? [String: Any] else { continue }
+            let rect = CGRect(x: (b["X"] as? NSNumber)?.doubleValue ?? 0,
+                              y: (b["Y"] as? NSNumber)?.doubleValue ?? 0,
+                              width: (b["Width"] as? NSNumber)?.doubleValue ?? 0,
+                              height: (b["Height"] as? NSNumber)?.doubleValue ?? 0)
+            let inter = clockFrame.intersection(rect)
+            guard !inter.isNull else { continue }   // 必须与时钟有重叠
+            // 真全屏判据：窗口贴屏顶 + 近满高 + 近满宽（即覆盖菜单栏区）。以此区分「全屏」与
+            // 「最大化（顶部留菜单栏）」——后者不该隐藏时钟，让用户退出全屏（变最大化）后时钟可见。
+            let isFullscreen = rect.minY <= screenFrameCG.minY + 5
+                && rect.height >= screenFrameCG.height - 5
+                && rect.width >= screenFrameCG.width - 5
+            if isFullscreen { shouldHide = true; break }
+        }
+
+        if shouldHide {
+            if !isHiddenForFullscreen { hideForFullscreen() }
+        } else if isHiddenForFullscreen {
+            unhideForFullscreen()
+        }
+    }
+
+    private func hideForFullscreen() {
+        isHiddenForFullscreen = true
+        panel.orderOut(nil)
+    }
+
+    private func unhideForFullscreen() {
+        isHiddenForFullscreen = false
+        panel.orderFront(nil)
+    }
+
+    /// NSWindow.frame 用 NSScreen 全局坐标（左下原点）；CGWindowList 的 bounds 用 CG 全局坐标
+    /// （左上原点）。统一到 CG 坐标做交集。
+    private func nsToCG(_ nsRect: CGRect) -> CGRect {
+        guard let main = NSScreen.main else { return nsRect }
+        return CGRect(x: nsRect.minX,
+                      y: main.frame.height - nsRect.maxY,
+                      width: nsRect.width,
+                      height: nsRect.height)
     }
 
     @objc private func toggleLaunchAtLogin(_ sender: NSMenuItem) {
