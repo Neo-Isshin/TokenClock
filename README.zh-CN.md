@@ -12,7 +12,7 @@ Claude Code、Codex、Antigravity(可区分IDE、CLI、App)、OpenCode 等 14 �
 [![macOS 26+](https://img.shields.io/badge/macOS%2026-Liquid%20Glass-00B0F0?style=for-the-badge)](https://developer.apple.com/macos/)
 
 [![Privacy](https://img.shields.io/static/v1?label=Privacy&message=local%20only&color=success)](#-隐私)
-[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Releases](https://img.shields.io/badge/releases-GitHub-181717?logo=github&logoColor=white)](https://github.com/Neo-Isshin/TokenClock/releases)
 
 </div>
@@ -345,7 +345,7 @@ GET http://127.0.0.1:9988/api/history?days=30 # 过去 N 天的日结快照（�
 
 ## 📄 许可证
 
-TokenClock 基于 **[GPL v3 协议](LICENSE)** 开源 —— © 2026 Neo-Isshin。您可以自由使用、分发与修改，但任何分发或修改后的衍生版本也必须以 GPL v3 协议开源。
+TokenClock 基于 **[MIT 协议](LICENSE)** 开源 —— © 2026 Neo-Isshin。您可以自由使用、分发与修改，亦可用于商业或闭源项目，仅需保留版权与许可声明。
 
 ---
 

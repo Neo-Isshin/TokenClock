@@ -82,7 +82,7 @@ final class L10n: @unchecked Sendable {
         "menu.about":            [.zhHans: "关于 TokenClock",       .zhHant: "關於 TokenClock",       .en: "About TokenClock"],
 
         // MARK: About
-        "about.license":         [.zhHans: "许可证：GPL v3",         .zhHant: "許可證：GPL v3",         .en: "License: GPL v3"],
+        "about.license":         [.zhHans: "许可证：MIT",         .zhHant: "許可證：MIT",         .en: "License: MIT"],
         "about.contact":         [.zhHans: "联系方式",              .zhHant: "聯絡方式",              .en: "Contact"],
         "about.close":           [.zhHans: "关闭",                  .zhHant: "關閉",                  .en: "Close"],
 

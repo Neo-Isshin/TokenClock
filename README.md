@@ -12,7 +12,7 @@ Track Claude Code, Codex, Antigravity(parse by CLI IDE App), OpenCode, and 10 mo
 [![macOS 26+](https://img.shields.io/badge/macOS%2026-Liquid%20Glass-00B0F0?style=for-the-badge)](https://developer.apple.com/macos/)
 
 [![Privacy](https://img.shields.io/static/v1?label=Privacy&message=local%20only&color=success)](#-privacy)
-[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Releases](https://img.shields.io/badge/releases-GitHub-181717?logo=github&logoColor=white)](https://github.com/Neo-Isshin/TokenClock/releases)
 
 </div>
@@ -346,7 +346,7 @@ It returns JSON usage data, handy for external scripts / dashboards. It listens 
 
 ## 📄 License
 
-TokenClock is open-sourced under the **[GPL v3 License](LICENSE)** — © 2026 Neo-Isshin. You are free to use, distribute, and modify it, but any distributed or modified derivative works must also be open-sourced under the GPL v3 License.
+TokenClock is open-sourced under the **[MIT License](LICENSE)** — © 2026 Neo-Isshin. You are free to use, modify, and distribute it, including in commercial and closed-source projects, provided the copyright and license notice is included.
 
 ---
 
