@@ -2,8 +2,7 @@
 #
 # tokenclock — TokenClock lightweight command-line
 #
-# Manages launching the floating clock: auto-selects the liquid-glass (26+) or normal (12+) build
-# based on the macOS version, plus stop / restart / doctor / update.
+# Manages the floating clock on macOS and Linux. Linux supports the normal GTK3 build only.
 #
 # Designed to be POSIX/bash-3.2 compatible (the system /bin/bash is enough), no compilation needed.
 # Install: sudo install -m755 cli/tokenclock /usr/local/bin/tokenclock
@@ -24,6 +23,10 @@ LIQUID_GLASS_MIN_MACOS=26 # minimum major version for the liquid-glass variant
 # Update source: cmd_update pulls the latest install.sh from here (GitHub raw, CDN-cached ~5min).
 # Override with the TOKENCLOCK_INSTALL_URL environment variable.
 INSTALL_URL="${TOKENCLOCK_INSTALL_URL:-https://raw.githubusercontent.com/Neo-Isshin/TokenClock/main/cli/install.sh}"
+PLATFORM="$(uname -s 2>/dev/null || echo unknown)"
+if [ "$PLATFORM" = Linux ] && [ -z "${TOKENCLOCK_INSTALL_URL:-}" ]; then
+  INSTALL_URL="https://raw.githubusercontent.com/Neo-Isshin/TokenClock/normal/cli/install.sh"
+fi
 
 # ─────────────────────────── helpers ───────────────────────────
 
@@ -45,6 +48,7 @@ validate_variant_compat() {
   local variant="$1"
   case "$variant" in
     glass)
+      [ "$PLATFORM" != Linux ] || die "The glass variant is unavailable on Linux; use --normal."
       local m; m="$(os_major)"
       if [ "${m:-0}" -lt "$LIQUID_GLASS_MIN_MACOS" ]; then
         die "The glass variant requires macOS $LIQUID_GLASS_MIN_MACOS+ (Liquid Glass material); current macOS is ${m:-unknown}. Use --normal to launch the classic build."
@@ -75,31 +79,41 @@ first_existing() {
   return 1
 }
 
-# If the script lives under <repo>/cli, return the repo root (for dev .build/debug builds); otherwise empty.
-repo_dev_build() {
-  local d p
+# If the script lives under <repo>/cli, return a local SwiftPM binary.
+# SwiftPM may use either .build/<configuration> or an architecture-qualified directory on Linux.
+repo_dev_binary() {
+  local d root p
   d="$(cd "$(dirname "$0")" 2>/dev/null && pwd)" || return 0
-  p="$d/../.build/debug/TokenClock"
-  if [ -f "$p" ]; then (cd "$d/.." && pwd); return; fi
+  root="$(cd "$d/.." 2>/dev/null && pwd)" || return 0
+  for p in \
+    "$root/.build/release/TokenClock" \
+    "$root/.build/debug/TokenClock" \
+    "$root"/.build/*/release/TokenClock \
+    "$root"/.build/*/debug/TokenClock
+  do
+    [ -f "$p" ] && { echo "$p"; return 0; }
+  done
   return 0
 }
 
 find_glass() {
-  local repo; repo="$(repo_dev_build)"
+  local repo; repo="$(repo_dev_binary)"
   first_existing \
     "${TOKENCLOCK_GLASS:-}" \
     "$HOME/.tokenclock/TokenClock Glass.app" \
     "$HOME/.tokenclock/glass/TokenClock" \
     "/Applications/TokenClock Glass.app" \
-    ${repo:+"$repo/.build/debug/TokenClock"}
+    ${repo:+"$repo"}
 }
 
 find_normal() {
+  local repo; repo="$(repo_dev_binary)"
   first_existing \
     "${TOKENCLOCK_NORMAL:-}" \
     "$HOME/.tokenclock/TokenClock.app" \
     "$HOME/.tokenclock/normal/TokenClock" \
-    "/Applications/TokenClock.app"
+    "/Applications/TokenClock.app" \
+    ${repo:+"$repo"}
 }
 
 # Launch a given path: .app via open (auto-dedupes/activates), bare binary via nohup in the background.
@@ -118,6 +132,7 @@ env_var_for() { case "$1" in glass) echo TOKENCLOCK_GLASS ;; normal) echo TOKENC
 # ~/Library/LaunchAgents/com.tokenclock.app.<variant>.plist
 launchagent_plist() { echo "$HOME/Library/LaunchAgents/com.tokenclock.app.$1.plist"; }
 unload_launchagent() {
+  [ "$PLATFORM" = Darwin ] || return 0
   local plist; plist="$(launchagent_plist "$1")"
   [ -f "$plist" ] && launchctl unload "$plist" 2>/dev/null || true
 }
@@ -145,8 +160,12 @@ cmd_start() {
     return 0
   fi
 
-  # If not specified explicitly, auto-select by macOS version
-  if [ -z "$variant" ]; then
+  # Linux has only the normal build; macOS selects by system version.
+  if [ "$PLATFORM" = Linux ]; then
+    [ "$variant" != glass ] || die "The glass variant is unavailable on Linux; use --normal."
+    variant=normal
+    echo "Detected Linux → selecting the normal GTK3 build"
+  elif [ -z "$variant" ]; then
     local m; m="$(os_major)"
     if   [ "$m" -ge "$LIQUID_GLASS_MIN_MACOS" ]; then variant=glass;  echo "Detected macOS $m → auto-selecting the liquid-glass build"
     elif [ "$m" -ge "$MIN_MACOS" ]; then variant=normal; echo "Detected macOS $m → auto-selecting the normal build"
@@ -212,16 +231,20 @@ cmd_uninstall() {
   pkill -x "$APP_PROCESS" 2>/dev/null
   sleep 1
   # 2. Remove both variants' plists
-  local v
-  for v in glass normal; do
-    rm -f "$(launchagent_plist "$v")"
-  done
+  if [ "$PLATFORM" = Darwin ]; then
+    local v
+    for v in glass normal; do
+      rm -f "$(launchagent_plist "$v")"
+    done
+  else
+    rm -f "${XDG_CONFIG_HOME:-$HOME/.config}/autostart/tokenclock.desktop"
+  fi
   # 3. Remove the runtime directory (binary + resource bundle)
   if [ -d "$HOME/.tokenclock" ]; then
     rm -rf "$HOME/.tokenclock"
     echo "  ✓ Removed ~/.tokenclock"
   fi
-  echo "${C_GREEN}✓ Uninstalled TokenClock (runtime + LaunchAgent plist).${C_RESET}"
+  echo "${C_GREEN}✓ Uninstalled TokenClock (runtime + login-autostart config).${C_RESET}"
   echo "  The 'tokenclock' CLI command is kept. To reinstall:"
   echo "    curl -fsSL https://raw.githubusercontent.com/Neo-Isshin/TokenClock/main/cli/install.sh | bash"
   echo "  To also remove the CLI itself: sudo rm -f /usr/local/bin/tokenclock"
@@ -231,14 +254,21 @@ cmd_doctor() {
   local m path pids
   m="$(os_major)"
   echo "TokenClock CLI v$CLI_VERSION"
-  echo "macOS $(sw_vers -productVersion 2>/dev/null) (major version ${m:-unknown})"
-  if   [ "$m" -ge "$LIQUID_GLASS_MIN_MACOS" ]; then echo "→ Auto-select: liquid-glass build"
+  if [ "$PLATFORM" = Linux ]; then
+    echo "Linux $(uname -r)"
+    echo "→ Auto-select: normal GTK3 build"
+  else
+    echo "macOS $(sw_vers -productVersion 2>/dev/null) (major version ${m:-unknown})"
+    if   [ "$m" -ge "$LIQUID_GLASS_MIN_MACOS" ]; then echo "→ Auto-select: liquid-glass build"
   elif [ "$m" -ge "$MIN_MACOS" ]; then echo "→ Auto-select: normal build"
   else echo "→ ⚠ System version too low (needs macOS $MIN_MACOS+)"
+    fi
   fi
   echo
 
-  path="$(find_glass)";  [ -n "$path" ] && echo "liquid-glass:  ✓ $path" || echo "liquid-glass:  ✗ not found"
+  if [ "$PLATFORM" = Darwin ]; then
+    path="$(find_glass)";  [ -n "$path" ] && echo "liquid-glass:  ✓ $path" || echo "liquid-glass:  ✗ not found"
+  fi
   path="$(find_normal)"; [ -n "$path" ] && echo "normal:        ✓ $path" || echo "normal:        ✗ not found"
   echo
 
@@ -343,18 +373,18 @@ usage() {
 tokenclock v$CLI_VERSION — TokenClock lightweight command-line
 
 Usage:
-  tokenclock start [--glass|--normal] [--force]   start (auto-selects by macOS version; the flag forces it)
-  tokenclock stop                                 stop all instances (unloads the LaunchAgent so KeepAlive won't revive it)
+  tokenclock start [--glass|--normal] [--force]   start (auto-selects by platform/version)
+  tokenclock stop                                 stop all instances
   tokenclock restart [--glass|--normal]           restart
-  tokenclock uninstall                            uninstall (stops the service + removes both variant plists + removes ~/.tokenclock; keeps the CLI)
+  tokenclock uninstall                            uninstall (stops the service + removes login autostart + ~/.tokenclock; keeps the CLI)
   tokenclock doctor                               diagnose the environment and installed versions
   tokenclock update [--glass|--normal] [--check] [--force]  update (rebuilds + restarts only on change; --force forces it)
   tokenclock help                                 show this help
 
 Lookup order for each variant:
-  \$TOKENCLOCK_GLASS / \$TOKENCLOCK_NORMAL  →  ~/.tokenclock/  →  /Applications/  →  repo .build/debug/
+  \$TOKENCLOCK_GLASS / \$TOKENCLOCK_NORMAL  →  ~/.tokenclock/  →  /Applications/ (macOS)  →  repo .build/debug/
 
-Note: --glass requires macOS 26+; --normal works on macOS 12+.
+Note: --glass requires macOS 26+; Linux supports --normal only (GTK3).
 
 Install onto PATH: sudo install -m755 cli/tokenclock /usr/local/bin/tokenclock
 EOF

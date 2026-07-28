@@ -1,5 +1,9 @@
 import Foundation
+#if os(Linux)
+import CSQLite
+#else
 import SQLite3
+#endif
 
 /// 从 Codex CLI 读取 token 使用数据
 /// Token 计数直接使用 last_token_usage（每条消息的增量值），取 total_tokens。

@@ -1,0 +1,38 @@
+# syntax=docker/dockerfile:1
+
+FROM swift:6.0-jammy AS builder
+
+ARG UBUNTU_PORTS_MIRROR=http://ports.ubuntu.com/ubuntu-ports
+RUN sed -i "s@http://ports.ubuntu.com/ubuntu-ports@${UBUNTU_PORTS_MIRROR}@g" /etc/apt/sources.list \
+    && apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        libgtk-3-dev \
+        libsqlite3-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /src
+COPY . .
+RUN swift build -c release -Xswiftc -static-stdlib
+
+FROM builder AS tester
+RUN apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        curl \
+        xvfb \
+    && rm -rf /var/lib/apt/lists/*
+
+FROM ubuntu:22.04
+
+ARG UBUNTU_PORTS_MIRROR=http://ports.ubuntu.com/ubuntu-ports
+RUN runtime_mirror="$(printf '%s' "${UBUNTU_PORTS_MIRROR}" | sed 's@^https:@http:@')" \
+    && sed -i "s@http://ports.ubuntu.com/ubuntu-ports@${runtime_mirror}@g" /etc/apt/sources.list \
+    && apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        ca-certificates \
+        libcurl4 \
+        libgtk-3-0 \
+        libsqlite3-0 \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /src/.build/release/TokenClock /usr/local/bin/tokenclock-gui
+ENTRYPOINT ["/usr/local/bin/tokenclock-gui"]

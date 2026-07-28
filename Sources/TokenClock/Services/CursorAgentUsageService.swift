@@ -1,5 +1,12 @@
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
+#if os(Linux)
+import CSQLite
+#else
 import SQLite3
+#endif
 
 /// 通过 Cursor 官方 usage API 拉取 token 消耗。
 ///
@@ -109,7 +116,7 @@ final class CursorAgentUsageService: @unchecked Sendable {
         userId = uid
     }
 
-    /// macOS 上 Cursor IDE 的 state.vscdb 路径
+    /// Cursor IDE 的 state.vscdb 路径（macOS: Library，Linux: XDG config）
     private func cursorStateDbPath() -> String {
         AppPaths.appSupport("Cursor", "User", "globalStorage", "state.vscdb")
     }

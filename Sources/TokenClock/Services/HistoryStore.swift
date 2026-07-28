@@ -1,5 +1,9 @@
 import Foundation
+#if os(Linux)
+import CSQLite
+#else
 import SQLite3
+#endif
 
 /// 日结历史持久化：每天 00:01 抓 viewModel.tools 快照写入 SQLite
 /// 路径：~/Library/Application Support/TokenClock/history.sqlite
@@ -100,6 +104,15 @@ final class HistoryStore: @unchecked Sendable {
     }
 
     static func dbPath() -> URL {
+#if os(Linux)
+        let environment = ProcessInfo.processInfo.environment
+        let dataHome = environment["XDG_DATA_HOME"].flatMap { $0.isEmpty ? nil : $0 }
+            ?? URL(fileURLWithPath: NSHomeDirectory())
+                .appendingPathComponent(".local/share", isDirectory: true).path
+        return URL(fileURLWithPath: dataHome, isDirectory: true)
+            .appendingPathComponent("tokenclock", isDirectory: true)
+            .appendingPathComponent("history.sqlite")
+#else
         let appSupport = (try? FileManager.default.url(
             for: .applicationSupportDirectory, in: .userDomainMask,
             appropriateFor: nil, create: true
@@ -107,6 +120,7 @@ final class HistoryStore: @unchecked Sendable {
         return appSupport
             .appendingPathComponent("TokenClock", isDirectory: true)
             .appendingPathComponent("history.sqlite")
+#endif
     }
 
     /// 写入或覆盖一个 date_key 的所有工具快照(幂等:重跑只留最新)

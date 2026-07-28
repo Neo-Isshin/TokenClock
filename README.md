@@ -8,6 +8,7 @@
 
 [![macOS 12+](https://img.shields.io/badge/macOS-12%2B-000000?style=for-the-badge&logo=apple&logoColor=white)](https://www.apple.com/macos/)
 [![macOS 26+](https://img.shields.io/badge/macOS%2026-Liquid%20Glass-00B0F0?style=for-the-badge)](https://developer.apple.com/macos/)
+[![Linux normal](https://img.shields.io/badge/Linux-normal-FCC624?style=for-the-badge&logo=linux&logoColor=black)](#linux-normal-build)
 
 [![Swift 6](https://img.shields.io/static/v1?label=Swift&message=6&color=F05138&logo=swift&logoColor=white)](https://www.swift.org/)
 [![SwiftUI](https://img.shields.io/static/v1?label=UI&message=SwiftUI%20%2B%20AppKit&color=blueviolet)](https://developer.apple.com/xcode/swiftui/)
@@ -97,7 +98,7 @@ It's built with the macOS 26 **Liquid Glass** material for a crystal clock disc,
 - Ships in **two variants** — `main` (macOS 26) and `normal` (macOS 12) — and the `tokenclock` CLI picks the right one for your OS automatically.
 
 ### 📦 One-line install & CLI
-- The normal build runs on **macOS 12+**, the Liquid Glass build on **macOS 26+**. The one-liner picks the right variant for your OS automatically, and the lightweight `tokenclock` CLI handles start / stop / switch / diagnose. See the [install guide](https://github.com/Neo-Isshin/TokenClock).
+- The normal build runs on **macOS 12+ and Linux**, while the Liquid Glass build remains macOS 26+ only. The lightweight `tokenclock` CLI handles start / stop / diagnose on both platforms.
 
 ### 🎨 Multiple faces & thoughtful design
 - 6 built-in faces (Classic / Midnight / Luxe / Gu Feng / Railgun / Sky), each with its own personality.
@@ -203,6 +204,26 @@ curl -fsSL https://raw.githubusercontent.com/Neo-Isshin/TokenClock/main/cli/inst
 ./cli/install.sh
 ```
 
+### Linux normal build
+
+Linux intentionally ships the **normal classic dial only**. It uses GTK3, keeps the existing 14 local usage parsers, stores history under XDG data directories, registers XDG autostart, and exposes the same loopback API on `127.0.0.1:9988`. Liquid Glass, the macOS theme editor, and weather/location UI are not part of the Linux build.
+
+Install [Swift 6](https://www.swift.org/install/linux/) first, then:
+
+```bash
+# Ubuntu / Debian build dependencies
+sudo apt install git pkg-config libcurl4 libgtk-3-dev libsqlite3-dev
+
+# Linux installer (builds the normal branch from source)
+curl -fsSL https://raw.githubusercontent.com/Neo-Isshin/TokenClock/normal/cli/install.sh | bash
+```
+
+Or use the reproducible container build:
+
+```bash
+docker build -f Dockerfile.linux -t tokenclock-linux .
+```
+
 Options: `--normal` / `--glass` (pick the variant) / `--no-start` (don't auto-launch) / `--build-from-source` (force a local build) / `--check` (check only, don't install) / `--debug` (debug build).
 
 > Or build manually from source below.
@@ -210,6 +231,7 @@ Options: `--normal` / `--glass` (pick the variant) / `--no-start` (don't auto-la
 ### Prerequisites
 - **macOS 12+** (normal build); **macOS 26+** (Liquid Glass build)
 - The precompiled install needs **no toolchain at all**; Swift 6 (Xcode 16+ / Command Line Tools) is only required for `--build-from-source` local builds
+- **Linux normal:** Swift 6, GTK3 development headers, SQLite3 development headers, `libcurl4`, and `pkg-config`
 
 ### Build & run from source
 
@@ -228,6 +250,8 @@ swift build -c release # release
 
 > The `main` branch's `Package.swift` declares `.macOS(.v26)`, so `swift run` produces the Liquid Glass build; the classic (opaque) macOS 12-compatible build lives on the `normal` branch.
 
+> On Linux, clone or select the `normal` branch before running `swift build`; SwiftPM automatically selects the GTK3 target.
+
 > Gotcha: on **macOS 27 with only Command Line Tools** installed (no full Xcode), a bare `swift build` on the `main` branch fails because the 27 SDK macro-expands `@State`; pass `SDKROOT=/Library/Developer/CommandLineTools/SDKs/MacOSX26.sdk swift build` to fix it (in the 26 SDK `@State` is still a plain property wrapper). The `normal` branch is unaffected.
 
 ### Use the `tokenclock` CLI
@@ -240,7 +264,7 @@ sudo install -m755 cli/tokenclock /usr/local/bin/tokenclock
 
 | Command | Description |
 |---------|-------------|
-| `tokenclock start [--glass\|--normal] [--force]` | Start the clock; auto-picks by OS (26+ → glass, 12+ → normal); `--force` opens another instance |
+| `tokenclock start [--glass\|--normal] [--force]` | Start the clock; auto-picks by OS (macOS 26+ → glass, macOS 12–25/Linux → normal); `--force` opens another instance |
 | `tokenclock stop` | Stop all running TokenClock instances |
 | `tokenclock restart [--glass\|--normal]` | Restart |
 | `tokenclock doctor` | Diagnose: OS version, installed variant paths, running processes, env vars |
@@ -320,9 +344,9 @@ It returns JSON usage data, handy for external scripts / dashboards. It listens 
 | | |
 |---|---|
 | **Language** | Swift 6 (`-parse-as-library`) |
-| **UI** | SwiftUI + AppKit (lock-free dual-`NSPanel` architecture) |
+| **UI** | macOS: SwiftUI + AppKit; Linux normal: GTK3 + Cairo |
 | **Build** | Swift Package Manager (no `.xcodeproj`) |
-| **Platforms** | macOS 26 SDK (`main` branch) / macOS 12 SDK (`normal` branch) |
+| **Platforms** | macOS 26 SDK (`main`) / macOS 12 and Linux GTK3 (`normal`) |
 | **i18n** | Custom `L10n` engine (zh-Hans / zh-Hant / en, no `.xcstrings`) |
 | **Size** | ~12,400 lines of Swift |
 

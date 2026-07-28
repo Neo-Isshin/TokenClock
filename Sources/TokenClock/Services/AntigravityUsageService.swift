@@ -1,5 +1,9 @@
 import Foundation
+#if os(Linux)
+import CSQLite
+#else
 import SQLite3
+#endif
 
 /// 从 Antigravity 本地 SQLite 数据库读取 token 使用数据（CLI + IDE + 主应用）
 /// 数据库位置:

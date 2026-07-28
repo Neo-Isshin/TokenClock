@@ -8,6 +8,7 @@
 
 [![macOS 12+](https://img.shields.io/badge/macOS-12%2B-000000?style=for-the-badge&logo=apple&logoColor=white)](https://www.apple.com/macos/)
 [![macOS 26+](https://img.shields.io/badge/macOS%2026-Liquid%20Glass-00B0F0?style=for-the-badge)](https://developer.apple.com/macos/)
+[![Linux normal](https://img.shields.io/badge/Linux-normal-FCC624?style=for-the-badge&logo=linux&logoColor=black)](#linux-normal-版)
 
 [![Swift 6](https://img.shields.io/static/v1?label=Swift&message=6&color=F05138&logo=swift&logoColor=white)](https://www.swift.org/)
 [![SwiftUI](https://img.shields.io/static/v1?label=UI&message=SwiftUI%20%2B%20AppKit&color=blueviolet)](https://developer.apple.com/xcode/swiftui/)
@@ -96,7 +97,7 @@ TokenClock 是一个常驻桌面的 **悬浮时钟**（置顶 · 可拖拽 · �
 - 提供 `main`（macOS 26）与 `normal`（macOS 12）**双版本**，由 `tokenclock` CLI 按系统版本自动选用。
 
 ### 📦 一行安装 & CLI
-- `normal` 适用于 **macOS 12+**，液态玻璃适用于 **macOS 26+**。一行安装脚本会根据系统自动选变体，简单的 `tokenclock` CLI 即可启动 / 停止 / 切换 / 诊断。详见 [安装指南](https://github.com/Neo-Isshin/TokenClock)。
+- `normal` 适用于 **macOS 12+ 与 Linux**，液态玻璃仅适用于 **macOS 26+**。`tokenclock` CLI 可在两个平台启动 / 停止 / 诊断。
 
 ### 🎨 多表盘 + 美观设计 + 支持深度自定义
 - 6 款内置表盘（经典 / 深夜 / 暗金 / 古风 / 超电磁炮 / 天空），风格各异。
@@ -202,6 +203,26 @@ curl -fsSL https://raw.githubusercontent.com/Neo-Isshin/TokenClock/main/cli/inst
 ./cli/install.sh
 ```
 
+### Linux normal 版
+
+Linux 仅适配 **normal 经典不透明表盘**：使用 GTK3，复用现有 14 个本地用量解析器，历史数据按 XDG 目录保存，支持 XDG 登录自启动，并在 `127.0.0.1:9988` 提供同构 API。Linux 版不包含 Liquid Glass、macOS 主题编辑器和天气/定位界面。
+
+先安装 [Swift 6](https://www.swift.org/install/linux/)，然后执行：
+
+```bash
+# Ubuntu / Debian 构建依赖
+sudo apt install git pkg-config libcurl4 libgtk-3-dev libsqlite3-dev
+
+# Linux 安装器（从 normal 分支源码构建）
+curl -fsSL https://raw.githubusercontent.com/Neo-Isshin/TokenClock/normal/cli/install.sh | bash
+```
+
+也可以使用可复现的容器构建：
+
+```bash
+docker build -f Dockerfile.linux -t tokenclock-linux .
+```
+
 可选参数：`--normal` / `--glass`（指定变体）/ `--no-start`（装完不自动启动）/ `--build-from-source`（强制本地编译）/ `--check`（仅检查不安装）/ `--debug`（debug 构建）。
 
 > 也可手动从源码构建，见下方。
@@ -209,6 +230,7 @@ curl -fsSL https://raw.githubusercontent.com/Neo-Isshin/TokenClock/main/cli/inst
 ### 前置要求
 - **macOS 12+**（普通版）；**macOS 26+**（Liquid Glass 版）
 - 预编译安装**无需任何工具链**；仅 `--build-from-source` 本地编译时需要 Swift 6（Xcode 16+ / Command Line Tools）
+- **Linux normal**：Swift 6、GTK3/SQLite3 开发头文件、`libcurl4` 与 `pkg-config`
 
 ### 从源码构建运行
 
@@ -227,6 +249,8 @@ swift build -c release # 发布
 
 > `main` 分支的 `Package.swift` 声明为 `.macOS(.v26)`，`swift run` 直接产出 Liquid Glass 版；兼容 macOS 12 的经典（不透明）版本位于 `normal` 分支。
 
+> Linux 上请克隆或切换到 `normal` 分支再运行 `swift build`；SwiftPM 会自动选择 GTK3 目标。
+
 > 小坑：在 **macOS 27 且只装了 Command Line Tools**（无完整 Xcode）的机器上，`main` 分支裸 `swift build` 会因 27 SDK 把 `@State` 宏化而失败；指定 `SDKROOT=/Library/Developer/CommandLineTools/SDKs/MacOSX26.sdk swift build` 即可（26 SDK 里 `@State` 仍是普通属性包装器）。`normal` 分支不受影响。
 
 ### 使用 `tokenclock` CLI
@@ -239,7 +263,7 @@ sudo install -m755 cli/tokenclock /usr/local/bin/tokenclock
 
 | 命令 | 说明 |
 |------|------|
-| `tokenclock start [--glass\|--normal] [--force]` | 启动时钟；未指定版本时 **按系统版本自动选**（26+ → glass，12+ → normal）；`--force` 强制另开一份 |
+| `tokenclock start [--glass\|--normal] [--force]` | 启动时钟；自动选择（macOS 26+ → glass，macOS 12–25/Linux → normal）；`--force` 强制另开一份 |
 | `tokenclock stop` | 停止所有运行中的 TokenClock 实例 |
 | `tokenclock restart [--glass\|--normal]` | 重启 |
 | `tokenclock doctor` | 诊断环境：系统版本、已安装变体路径、运行中的进程、环境变量 |
@@ -319,9 +343,9 @@ GET http://127.0.0.1:9988/api/history?days=30 # 过去 N 天的日结快照（�
 | | |
 |---|---|
 | **语言** | Swift 6（`-parse-as-library`） |
-| **UI** | SwiftUI + AppKit（无锁 NSPanel 双窗口架构） |
+| **UI** | macOS：SwiftUI + AppKit；Linux normal：GTK3 + Cairo |
 | **构建** | Swift Package Manager（无 `.xcodeproj`） |
-| **平台** | macOS 26 SDK（`main` 分支）/ macOS 12 SDK（`normal` 分支） |
+| **平台** | macOS 26 SDK（`main`）/ macOS 12 与 Linux GTK3（`normal`） |
 | **定位** | 自研 `L10n` 引擎（zh-Hans / zh-Hant / en，无 `.xcstrings`） |
 | **规模** | 约 12,400 行 Swift |
 
