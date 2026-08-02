@@ -206,16 +206,22 @@ curl -fsSL https://raw.githubusercontent.com/Neo-Isshin/TokenClock/main/cli/inst
 
 ### Linux normal build
 
-Linux intentionally ships the **normal classic dial only**. It uses GTK3, keeps the existing 14 local usage parsers, stores history under XDG data directories, registers XDG autostart, and exposes the same loopback API on `127.0.0.1:9988`. Liquid Glass, the macOS theme editor, and weather/location UI are not part of the Linux build.
+Linux intentionally ships the **normal classic dial only** (GTK3). It keeps the existing 14 local usage parsers, stores history under XDG data directories, registers XDG autostart, and exposes the same loopback API on `127.0.0.1:9988`. Liquid Glass, the macOS theme editor, and weather/location UI are not part of the Linux build.
 
-Install [Swift 6](https://www.swift.org/install/linux/) first, then:
+**x86_64 — prebuilt AppImage (default):** the universal one-liner downloads a self-contained AppImage (GTK3 bundled, needs only glibc ≥ 2.35) — no Swift, no compilation, no dev headers:
 
 ```bash
-# Ubuntu / Debian build dependencies
-sudo apt install git pkg-config libcurl4 libgtk-3-dev libsqlite3-dev
-
-# same universal one-liner — detects Linux and builds the normal GTK3 build from source
+# the same universal one-liner — on x86_64 Linux it fetches the prebuilt AppImage
 curl -fsSL https://raw.githubusercontent.com/Neo-Isshin/TokenClock/main/cli/install.sh | bash
+```
+
+The AppImage needs `libfuse2` at runtime (present on most desktop distros; if missing: `sudo apt install libfuse2`, or `libfuse2t64` on Ubuntu 24.04+).
+
+**Other arches / `--build-from-source`** — build from source (needs Swift 6 + GTK3/SQLite3 dev headers):
+
+```bash
+sudo apt install git pkg-config libcurl4 libgtk-3-dev libsqlite3-dev   # Ubuntu/Debian build deps
+curl -fsSL https://raw.githubusercontent.com/Neo-Isshin/TokenClock/main/cli/install.sh | bash -s -- --build-from-source
 ```
 
 Or use the reproducible container build:
@@ -224,14 +230,14 @@ Or use the reproducible container build:
 docker build -f Dockerfile.linux -t tokenclock-linux .
 ```
 
-Options: `--normal` / `--glass` (pick the variant) / `--no-start` (don't auto-launch) / `--build-from-source` (force a local build) / `--check` (check only, don't install) / `--debug` (debug build).
+Options: `--normal` / `--glass` (pick the variant) / `--no-start` (don't auto-launch) / `--build-from-source` (force a local source build) / `--check` (check only, don't install) / `--debug` (debug build).
 
-> Or build manually from source below.
+> Note: on newer-glibc distros the AppImage may print a harmless `libgvfs … undefined symbol / Failed to load module` line to the terminal — TokenClock doesn't use gvfs; ignore it (it's invisible when launched from the desktop menu).
 
 ### Prerequisites
 - **macOS 12+** (normal build); **macOS 26+** (Liquid Glass build)
 - The precompiled install needs **no toolchain at all**; Swift 6 (Xcode 16+ / Command Line Tools) is only required for `--build-from-source` local builds
-- **Linux normal:** Swift 6, GTK3 development headers, SQLite3 development headers, `libcurl4`, and `pkg-config`
+- **Linux normal:** x86_64 uses the prebuilt AppImage (needs only `libfuse2` + glibc ≥ 2.35, both standard on desktop distros); other arches / `--build-from-source` need Swift 6, GTK3/SQLite3 dev headers, `libcurl4`, and `pkg-config`
 
 ### Build & run from source
 

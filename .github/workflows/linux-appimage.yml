@@ -1,0 +1,40 @@
+# 在 tag 推送时为 Linux x86_64 构建 AppImage 并附加到对应 release。
+#
+# 流程：release.sh（Mac）构建 macOS 双变体 + 建 release + 推 tag → 本 workflow 被 tag 触发 →
+# 在 swift:6.0-jammy 容器（glibc 2.35，覆盖 2022+ 发行版）里 checkout normal（含 Linux 源码）
+# → 跑 scripts/build-appimage.sh → 把 TokenClock-x86_64.AppImage + .sha256 附加到该 release。
+# 与 release.sh 之间是异步的（AppImage 约在发版后 5–10 分钟出现）；softprops/action-gh-release
+# 的 create-or-update 语义避免「release 还没建好」的竞态。
+name: linux-appimage
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:       # 允许手动触发，便于在不打 tag 时验证
+
+permissions:
+  contents: write          # 附加资产到 release 需要
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container:
+      image: swift:6.0-jammy
+    steps:
+      - name: Checkout normal branch (Linux sources + build script)
+        uses: actions/checkout@v4
+        with:
+          ref: normal
+
+      - name: Build AppImage
+        run: |
+          chmod +x scripts/build-appimage.sh
+          ./scripts/build-appimage.sh
+
+      - name: Attach AppImage + SHA256 to the release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          files: |
+            TokenClock-x86_64.AppImage
+            TokenClock-x86_64.AppImage.sha256
