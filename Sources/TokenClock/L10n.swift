@@ -25,8 +25,41 @@ final class L10n: @unchecked Sendable {
     }
 
     private init() {
-        let saved = UserDefaults.standard.string(forKey: Self.storageKey) ?? "zh-Hans"
-        self.language = AppLanguage(rawValue: saved) ?? .zhHans
+        let defaults = UserDefaults.standard
+        if let saved = defaults.string(forKey: Self.storageKey),
+           let lang = AppLanguage(rawValue: saved) {
+            // 已有记录（用户手动选择过，或上次自动探测过）→ 沿用
+            self.language = lang
+        } else {
+            // 首次启动：未记录过语言 → 按系统语言自动探测并落盘（之后以用户手动选择为准）
+            let detected = Self.detectSystemLanguage()
+            self.language = detected
+            defaults.set(detected.rawValue, forKey: Self.storageKey)
+        }
+    }
+
+    /// 探测系统语言并映射到 AppLanguage：简/繁中文 → 对应中文，其余（含英文及一切非中文）→ 英文。
+    private static func detectSystemLanguage() -> AppLanguage {
+        #if os(Linux)
+        // Linux：依次读 LC_ALL / LC_MESSAGES / LANG（形如 zh_CN.UTF-8、zh_TW.UTF-8、en_US.UTF-8）
+        let env = ProcessInfo.processInfo.environment
+        let tag = env["LC_ALL"] ?? env["LC_MESSAGES"] ?? env["LANG"] ?? ""
+        #else
+        // macOS / 其他 Apple 平台：取用户首选语言列表第一项（形如 zh-Hans-CN、zh-Hant、en-US）
+        let tag = Locale.preferredLanguages.first ?? ""
+        #endif
+        return matchLanguage(tag)
+    }
+
+    /// 把任意语言标签归一化为 AppLanguage：以 zh 开头 → 按繁/简判定，否则一律英文。
+    private static func matchLanguage(_ tag: String) -> AppLanguage {
+        let lower = tag.lowercased()
+        guard lower.hasPrefix("zh") else { return .en }
+        // 繁体标识：zh-Hant / zh-TW / zh-HK / zh-MO
+        if lower.contains("hant") || lower.contains("tw") || lower.contains("hk") || lower.contains("mo") {
+            return .zhHant
+        }
+        return .zhHans
     }
 
     func tr(_ key: String) -> String {
@@ -82,7 +115,7 @@ final class L10n: @unchecked Sendable {
         "menu.about":            [.zhHans: "关于 TokenClock",       .zhHant: "關於 TokenClock",       .en: "About TokenClock"],
 
         // MARK: About
-        "about.license":         [.zhHans: "许可证：GPL v3",         .zhHant: "許可證：GPL v3",         .en: "License: GPL v3"],
+        "about.license":         [.zhHans: "许可证：MIT",           .zhHant: "許可證：MIT",            .en: "License: MIT"],
         "about.contact":         [.zhHans: "联系方式",              .zhHant: "聯絡方式",              .en: "Contact"],
         "about.close":           [.zhHans: "关闭",                  .zhHant: "關閉",                  .en: "Close"],
 

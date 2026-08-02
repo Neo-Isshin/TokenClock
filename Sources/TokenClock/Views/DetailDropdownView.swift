@@ -383,10 +383,11 @@ private struct SessionRow: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            // 缩进
+            // 子行缩进：先留出与主行 chevron 等宽的对齐空间（14），再额外右移，
+            // 让 session 子行明显内缩于「工具名」主条目，避免两者在同一垂直线上造成视觉混淆。
             Rectangle()
                 .fill(Color.clear)
-                .frame(width: 14)
+                .frame(width: 26)
 
             // 名称区域
             VStack(alignment: .leading, spacing: 1) {
@@ -522,9 +523,10 @@ private struct ModelContributionRow: View {
 
     var body: some View {
         HStack(spacing: 0) {
+            // 子行缩进：对齐 chevron 后额外右移，与 session 子行保持一致
             Rectangle()
                 .fill(Color.clear)
-                .frame(width: 14)
+                .frame(width: 26)
 
             Text("\(contribution.emoji) \(contribution.tool)")
                 .font(.system(size: 10, weight: .medium))
