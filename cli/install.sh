@@ -262,7 +262,8 @@ download_variant() {
 # 校验通过则把 AppImage 路径写入全局 APPIMAGE_PATH 并返回 0；失败返回 1（调用方回退源码编译）。
 APPIMAGE_PATH=""
 download_appimage() {
-  local name="TokenClock-x86_64.AppImage" sha_name="$name.sha256" url tmp got expect
+  local name="TokenClock-x86_64.AppImage" sha_name url tmp got expect
+  sha_name="$name.sha256"
   url="$RELEASE_URL_BASE/$name"
   step "Downloading prebuilt AppImage (Linux x86_64 · $RELEASE_TAG)"
   tmp="$(mktemp -d 2>/dev/null)" || return 1
