@@ -207,14 +207,20 @@ curl -fsSL https://raw.githubusercontent.com/Neo-Isshin/TokenClock/main/cli/inst
 
 Linux 仅适配 **normal 经典不透明表盘**：使用 GTK3，复用现有 14 个本地用量解析器，历史数据按 XDG 目录保存，支持 XDG 登录自启动，并在 `127.0.0.1:9988` 提供同构 API。Linux 版不包含 Liquid Glass、macOS 主题编辑器和天气/定位界面。
 
-先安装 [Swift 6](https://www.swift.org/install/linux/)，然后执行：
+**x86_64 —— 预编译 AppImage（默认）：** 通用一键命令会下载一个自带 GTK3 的 AppImage（仅要求 glibc ≥ 2.35），无需 Swift、无需编译、无需开发头文件：
 
 ```bash
-# Ubuntu / Debian 构建依赖
-sudo apt install git pkg-config libcurl4 libgtk-3-dev libsqlite3-dev
-
-# 同一条通用安装命令 —— 自动识别 Linux 并从源码编译 normal GTK3 版
+# 同一条通用安装命令 —— 在 x86_64 Linux 上自动下载预编译 AppImage
 curl -fsSL https://raw.githubusercontent.com/Neo-Isshin/TokenClock/main/cli/install.sh | bash
+```
+
+AppImage 运行期需要 `libfuse2`（多数桌面发行版自带；缺失时：`sudo apt install libfuse2`，Ubuntu 24.04+ 为 `libfuse2t64`）。
+
+**其它架构 / `--build-from-source`** —— 从源码编译（需要 Swift 6 + GTK3/SQLite3 开发头文件）：
+
+```bash
+sudo apt install git pkg-config libcurl4 libgtk-3-dev libsqlite3-dev   # Ubuntu/Debian 构建依赖
+curl -fsSL https://raw.githubusercontent.com/Neo-Isshin/TokenClock/main/cli/install.sh | bash -s -- --build-from-source
 ```
 
 也可以使用可复现的容器构建：
@@ -223,14 +229,14 @@ curl -fsSL https://raw.githubusercontent.com/Neo-Isshin/TokenClock/main/cli/inst
 docker build -f Dockerfile.linux -t tokenclock-linux .
 ```
 
-可选参数：`--normal` / `--glass`（指定变体）/ `--no-start`（装完不自动启动）/ `--build-from-source`（强制本地编译）/ `--check`（仅检查不安装）/ `--debug`（debug 构建）。
+可选参数：`--normal` / `--glass`（指定变体）/ `--no-start`（装完不自动启动）/ `--build-from-source`（强制本地源码编译）/ `--check`（仅检查不安装）/ `--debug`（debug 构建）。
 
-> 也可手动从源码构建，见下方。
+> 注：在较新 glibc 的发行版上，AppImage 启动时终端可能打印一行无害的 `libgvfs … undefined symbol / Failed to load module` —— TokenClock 不使用 gvfs，可忽略（从桌面菜单启动时看不到）。
 
 ### 前置要求
 - **macOS 12+**（普通版）；**macOS 26+**（Liquid Glass 版）
 - 预编译安装**无需任何工具链**；仅 `--build-from-source` 本地编译时需要 Swift 6（Xcode 16+ / Command Line Tools）
-- **Linux normal**：Swift 6、GTK3/SQLite3 开发头文件、`libcurl4` 与 `pkg-config`
+- **Linux normal**：x86_64 走预编译 AppImage（仅需 `libfuse2` + glibc ≥ 2.35，桌面发行版均自带）；其它架构 / `--build-from-source` 需 Swift 6、GTK3/SQLite3 开发头文件、`libcurl4` 与 `pkg-config`
 
 ### 从源码构建运行
 

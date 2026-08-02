@@ -41,6 +41,7 @@ FORCE=0             # --force: bypass the "no change" short-circuit and redeploy
 DEPLOYED_ANYTHING=0 # whether anything was actually deployed this run (reported to tokenclock update to decide whether to restart)
 BUILT_BINS=()       # collected build-artifact paths, as path:variant
 BUILD_FROM_SOURCE=0 # --build-from-source: skip the prebuilt download and force a local swift build
+LINUX_APPIMAGE=0    # Linux x86_64 默认走预编译 AppImage（置 1 后由 download_appimage 处理）
 
 say()  { printf '%s\n' "$*"; }
 step() { printf '\n🛠  %s\n' "$*"; }
@@ -97,16 +98,28 @@ case "$KERNEL" in
   Linux)
     PLATFORM=linux
     OS_MAJOR=0
-    BUILD_FROM_SOURCE=1
     [ "$VARIANT" != glass ] || die "Linux supports the normal variant only; remove --glass."
-    command -v git >/dev/null 2>&1 || die "git is required on Linux."
-    command -v swift >/dev/null 2>&1 || die "Swift 6 is required on Linux (https://www.swift.org/install/linux/)."
-    command -v pkg-config >/dev/null 2>&1 || die "pkg-config is required on Linux."
-    pkg-config --exists gtk+-3.0 || die "GTK3 development files are required (Ubuntu/Debian: sudo apt install libgtk-3-dev)."
-    pkg-config --exists sqlite3 || die "SQLite development files are required (Ubuntu/Debian: sudo apt install libsqlite3-dev)."
+    if [ "$(uname -m)" = x86_64 ] && [ "$BUILD_FROM_SOURCE" -eq 0 ]; then
+      # x86_64 默认走预编译 AppImage：无需 Swift/GTK 工具链，下载即用。
+      # AppImage 运行期需要 libfuse2（多数桌面发行版自带；缺失时给一行安装提示）。
+      LINUX_APPIMAGE=1
+      if ! ldconfig -p 2>/dev/null | grep -q 'libfuse.so.2'; then
+        say "  ⚠ 未检测到 libfuse2（AppImage 运行所需）。如启动失败请安装："
+        say "      Ubuntu/Debian: sudo apt install libfuse2    (24.04+ 为 libfuse2t64)"
+      fi
+      say "  Linux $(uname -m) · 预编译 AppImage（--build-from-source 可改走源码编译）"
+    else
+      # 其它架构（如 aarch64）或 --build-from-source：源码编译，需 Swift6 + GTK/SQLite 开发头文件。
+      BUILD_FROM_SOURCE=1
+      command -v git >/dev/null 2>&1 || die "git is required on Linux."
+      command -v swift >/dev/null 2>&1 || die "Swift 6 is required on Linux (https://www.swift.org/install/linux/)."
+      command -v pkg-config >/dev/null 2>&1 || die "pkg-config is required on Linux."
+      pkg-config --exists gtk+-3.0 || die "GTK3 development files are required (Ubuntu/Debian: sudo apt install libgtk-3-dev)."
+      pkg-config --exists sqlite3 || die "SQLite development files are required (Ubuntu/Debian: sudo apt install libsqlite3-dev)."
+      say "  Linux $(uname -r) · normal GTK3 build · source build"
+    fi
     [ "$INSTALL_URL" != "https://raw.githubusercontent.com/Neo-Isshin/TokenClock/main/cli/install.sh" ] \
       || INSTALL_URL="https://raw.githubusercontent.com/Neo-Isshin/TokenClock/normal/cli/install.sh"
-    say "  Linux $(uname -r) · normal GTK3 build · source build"
     ;;
   *)
     die "Unsupported platform: $KERNEL (TokenClock supports macOS and Linux)."
@@ -245,6 +258,36 @@ download_variant() {
   return 0
 }
 
+# Linux x86_64: 下载预编译 AppImage + sidecar SHA256（由 CI 在发版后产出，故不写死在脚本里），
+# 校验通过则把 AppImage 路径写入全局 APPIMAGE_PATH 并返回 0；失败返回 1（调用方回退源码编译）。
+APPIMAGE_PATH=""
+download_appimage() {
+  local name="TokenClock-x86_64.AppImage" sha_name="$name.sha256" url tmp got expect
+  url="$RELEASE_URL_BASE/$name"
+  step "Downloading prebuilt AppImage (Linux x86_64 · $RELEASE_TAG)"
+  tmp="$(mktemp -d 2>/dev/null)" || return 1
+  if ! curl -fL --retry 6 --retry-delay 2 --retry-all-errors --connect-timeout 15 -o "$tmp/$name" "$url" 2>/dev/null; then
+    say "  ⚠ AppImage 下载失败（$url，可能 CI 尚未构建完成）→ 回退源码编译"
+    rm -rf "$tmp"; return 1
+  fi
+  if ! curl -fL --retry 6 --retry-delay 2 --retry-all-errors --connect-timeout 15 -o "$tmp/$sha_name" "$RELEASE_URL_BASE/$sha_name" 2>/dev/null; then
+    say "  ⚠ AppImage 的 SHA256 sidecar 下载失败 → 回退源码编译"
+    rm -rf "$tmp"; return 1
+  fi
+  expect="$(awk '{print $1}' "$tmp/$sha_name" 2>/dev/null)"
+  [ -n "$expect" ] || { say "  ⚠ SHA256 sidecar 为空 → 回退源码编译"; rm -rf "$tmp"; return 1; }
+  got="$(sha256_file "$tmp/$name")"
+  if [ "$got" != "$expect" ]; then
+    say "  ⚠ AppImage SHA256 不符（expected ${expect:0:12}… got ${got:0:12}…）→ 回退源码编译"
+    rm -rf "$tmp"; return 1
+  fi
+  chmod +x "$tmp/$name"
+  say "  ✓ AppImage 就绪（SHA256 ${got:0:12}…）"
+  APPIMAGE_PATH="$tmp/$name"
+  DOWNLOAD_TMPDIRS+=("$tmp")
+  return 0
+}
+
 # Local source build: on macOS 27 with only CLT, automatically pin to the 26 SDK (works around missing SwiftUIMacros).
 swift_build_fallback() {
   local subdir="$1"
@@ -263,13 +306,19 @@ for i in "${!VARIANTS[@]}"; do
   branch="${BRANCHES[$i]}"
   subdir="$BUILD_DIR/$branch"
 
-  # 4a. Prefer the prebuilt binary
-  if [ "$BUILD_FROM_SOURCE" -eq 0 ] && download_variant "$variant"; then
+  # 4a. Linux x86_64: 优先下载预编译 AppImage
+  if [ "${LINUX_APPIMAGE:-0}" = 1 ] && download_appimage; then
+    BUILT_BINS+=("$APPIMAGE_PATH:$variant")
+    continue
+  fi
+
+  # 4b. macOS: 优先下载预编译 universal 二进制（Linux 上不下载 macOS tarball）
+  if [ "$PLATFORM" != linux ] && [ "$BUILD_FROM_SOURCE" -eq 0 ] && download_variant "$variant"; then
     BUILT_BINS+=("$DL_DIR/TokenClock:$variant")
     continue
   fi
 
-  # 4b. Fallback: build from source locally (this is the only path that needs a clone)
+  # 4c. Fallback: build from source locally (this is the only path that needs a clone)
   ensure_source "$variant" "$branch"
   step "Building [$variant] (swift build -c $CONFIG · first run may take a few minutes)"
   swift_build_fallback "$subdir" \
