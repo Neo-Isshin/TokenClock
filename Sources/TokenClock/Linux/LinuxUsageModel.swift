@@ -1,0 +1,323 @@
+import Foundation
+
+/// `WeatherInfo` 的跨平台字段类型；Linux normal 暂不发起定位/天气网络请求。
+struct HourlyForecast: Sendable {
+    let time: String
+    let tempC: Int
+    let emoji: String
+    let description: String
+}
+
+/// Linux normal 版的数据层。复用 macOS normal 的 14 个统计服务，只替换 UI 和平台服务。
+final class LinuxUsageModel: @unchecked Sendable {
+    private let lock = NSLock()
+    private var storedTools: [ToolUsage]
+    private var scanning = false
+
+    private let openclawService = OpenClawUsageService()
+    private let claudeCodeService = ClaudeCodeUsageService()
+    private let geminiService = GeminiUsageService()
+    private let codexService = CodexUsageService()
+    private let hermesService = HermesUsageService()
+    private let opencodeService = OpenCodeUsageService()
+    private let qwenService = QwenCodeUsageService()
+    private let copilotService = CopilotUsageService()
+    private let grokService = GrokUsageService()
+    private let aiderService = AiderUsageService()
+    private let antigravityService = AntigravityUsageService()
+    private let clineService = ClineUsageService()
+    private let continueService = ContinueUsageService()
+    private let cursorAgentService = CursorAgentUsageService()
+
+    private static let allToolNames = Set([
+        "OpenClaw", "Claude Code", "Gemini CLI", "Codex", "Hermes", "OpenCode",
+        "Qwen Code", "Copilot", "Grok", "Aider", "Antigravity", "Cline",
+        "Continue", "Cursor Agent",
+    ])
+
+    let enabledTools: Set<String>
+    let rateWindowMinutes: Int
+
+    init() {
+        let saved = UserDefaults.standard.stringArray(for: .enabledTools)
+        enabledTools = Set(saved ?? Array(Self.allToolNames))
+        let savedWindow = UserDefaults.standard.int(for: .rateWindow)
+        rateWindowMinutes = savedWindow > 0 ? savedWindow : 10
+        storedTools = MockUsageService.generateInitialData(enabledTools: enabledTools)
+
+        if !PathConfig.hasRunInitialDetection {
+            PathConfig.hasRunInitialDetection = true
+            let summary = PathDetector.runFullDetection()
+            saveDetectedPaths(summary.results)
+        }
+    }
+
+    var tools: [ToolUsage] {
+        lock.lock()
+        defer { lock.unlock() }
+        return storedTools
+            .filter { enabledTools.contains($0.name) }
+            .sorted { $0.todayTokens > $1.todayTokens }
+    }
+
+    @discardableResult
+    func scan(incremental: Bool) -> Bool {
+        lock.lock()
+        if scanning {
+            lock.unlock()
+            return false
+        }
+        scanning = true
+        lock.unlock()
+
+        defer {
+            lock.lock()
+            scanning = false
+            lock.unlock()
+        }
+
+        if enabledTools.contains("OpenClaw") { incremental ? openclawService.incrementalScan() : openclawService.fullScan() }
+        if enabledTools.contains("Claude Code") { incremental ? claudeCodeService.incrementalScan() : claudeCodeService.fullScan() }
+        if enabledTools.contains("Gemini CLI") { incremental ? geminiService.incrementalScan() : geminiService.fullScan() }
+        if enabledTools.contains("Codex") { incremental ? codexService.incrementalScan() : codexService.fullScan() }
+        if enabledTools.contains("Hermes") { incremental ? hermesService.incrementalScan() : hermesService.fullScan() }
+        if enabledTools.contains("OpenCode") { incremental ? opencodeService.incrementalScan() : opencodeService.fullScan() }
+        if enabledTools.contains("Qwen Code") { incremental ? qwenService.incrementalScan() : qwenService.fullScan() }
+        if enabledTools.contains("Copilot") { incremental ? copilotService.incrementalScan() : copilotService.fullScan() }
+        if enabledTools.contains("Grok") { incremental ? grokService.incrementalScan() : grokService.fullScan() }
+        if enabledTools.contains("Aider") { incremental ? aiderService.incrementalScan() : aiderService.fullScan() }
+        if enabledTools.contains("Antigravity") { incremental ? antigravityService.incrementalScan() : antigravityService.fullScan() }
+        if enabledTools.contains("Cline") { incremental ? clineService.incrementalScan() : clineService.fullScan() }
+        if enabledTools.contains("Continue") { incremental ? continueService.incrementalScan() : continueService.fullScan() }
+        if enabledTools.contains("Cursor Agent") { incremental ? cursorAgentService.incrementalScan() : cursorAgentService.fullScan() }
+
+        var results: [String: ScanSnapshot] = [:]
+        if enabledTools.contains("OpenClaw") {
+            let usage = openclawService.todayUsage()
+            results["OpenClaw"] = snapshot(usage, openclawService.recentUsage(minutes: rateWindowMinutes).tokens, openclawService.currentHourTokens(), openclawService.isActive(), openclawService.todaySessions())
+        }
+        if enabledTools.contains("Claude Code") {
+            let usage = claudeCodeService.todayUsage()
+            results["Claude Code"] = snapshot(usage, claudeCodeService.recentUsage(minutes: rateWindowMinutes).tokens, claudeCodeService.currentHourTokens(), claudeCodeService.isActive(), claudeCodeService.todaySessions())
+        }
+        if enabledTools.contains("Gemini CLI") {
+            let usage = geminiService.todayUsage()
+            results["Gemini CLI"] = snapshot(usage, geminiService.recentUsage(minutes: rateWindowMinutes).tokens, geminiService.currentHourTokens(), geminiService.isActive(), geminiService.todaySessions())
+        }
+        if enabledTools.contains("Codex") {
+            let usage = codexService.todayUsage()
+            results["Codex"] = snapshot(usage, codexService.recentUsage(minutes: rateWindowMinutes).tokens, codexService.currentHourTokens(), codexService.isActive(), codexService.todaySessions())
+        }
+        if enabledTools.contains("Hermes") {
+            let usage = hermesService.todayUsage()
+            results["Hermes"] = snapshot(usage, hermesService.recentUsage(minutes: rateWindowMinutes).tokens, hermesService.currentHourTokens(), hermesService.isActive(), hermesService.todaySessions())
+        }
+        if enabledTools.contains("OpenCode") {
+            let usage = opencodeService.todayUsage()
+            results["OpenCode"] = snapshot(usage, opencodeService.recentUsage(minutes: rateWindowMinutes).tokens, opencodeService.currentHourTokens(), opencodeService.isActive(), opencodeService.todaySessions())
+        }
+        if enabledTools.contains("Qwen Code") {
+            let usage = qwenService.todayUsage()
+            results["Qwen Code"] = snapshot(usage, qwenService.recentUsage(minutes: rateWindowMinutes).tokens, qwenService.currentHourTokens(), qwenService.isActive(), qwenService.todaySessions())
+        }
+        if enabledTools.contains("Copilot") {
+            let usage = copilotService.todayUsage()
+            results["Copilot"] = snapshot(usage, copilotService.recentUsage(minutes: rateWindowMinutes).tokens, copilotService.currentHourTokens(), copilotService.isActive(), copilotService.todaySessions())
+        }
+        if enabledTools.contains("Grok") {
+            let usage = grokService.todayUsage()
+            results["Grok"] = snapshot(usage, grokService.recentUsage(minutes: rateWindowMinutes).tokens, grokService.currentHourTokens(), grokService.isActive(), grokService.todaySessions())
+        }
+        if enabledTools.contains("Aider") {
+            let usage = aiderService.todayUsage()
+            results["Aider"] = snapshot(usage, aiderService.recentUsage(minutes: rateWindowMinutes).tokens, aiderService.currentHourTokens(), aiderService.isActive(), aiderService.todaySessions())
+        }
+        if enabledTools.contains("Antigravity") {
+            let usage = antigravityService.todayUsage()
+            results["Antigravity"] = snapshot(usage, antigravityService.recentUsage(minutes: rateWindowMinutes).tokens, antigravityService.currentHourTokens(), antigravityService.isActive(), antigravityService.todaySessions())
+        }
+        if enabledTools.contains("Cline") {
+            let usage = clineService.todayUsage()
+            results["Cline"] = snapshot(usage, clineService.recentUsage(minutes: rateWindowMinutes).tokens, clineService.currentHourTokens(), clineService.isActive(), clineService.todaySessions())
+        }
+        if enabledTools.contains("Continue") {
+            let usage = continueService.todayUsage()
+            results["Continue"] = snapshot(usage, continueService.recentUsage(minutes: rateWindowMinutes).tokens, continueService.currentHourTokens(), continueService.isActive(), continueService.todaySessions())
+        }
+        if enabledTools.contains("Cursor Agent") {
+            let usage = cursorAgentService.todayUsage()
+            results["Cursor Agent"] = snapshot(usage, cursorAgentService.recentUsage(minutes: rateWindowMinutes).tokens, cursorAgentService.currentHourTokens(), cursorAgentService.isActive(), cursorAgentService.todaySessions())
+        }
+
+        lock.lock()
+        for (name, result) in results {
+            guard let index = storedTools.firstIndex(where: { $0.name == name }) else { continue }
+            let old = storedTools[index]
+            storedTools[index] = ToolUsage(
+                name: old.name,
+                abbreviation: old.abbreviation,
+                emoji: old.emoji,
+                todayTokens: result.tokens,
+                todayMessages: result.messages,
+                isActive: result.active,
+                cacheRate: result.cacheRate,
+                recentTokens: result.recent,
+                hourlyTokens: result.hourly,
+                sessions: result.sessions
+            )
+        }
+        let current = storedTools
+        lock.unlock()
+
+        persistToday(current)
+        return true
+    }
+
+    func usageJSONObject() -> [String: Any] {
+        let current = tools
+        return [
+            "timestamp": ISO8601DateFormatter().string(from: Date()),
+            "totalTokens": UsageAggregator.totalTokens(current),
+            "totalMessages": UsageAggregator.totalMessages(current),
+            "rateEmoji": UsageAggregator.rateEmoji(current),
+            "windowMinutes": rateWindowMinutes,
+            "variant": "normal",
+            "platform": "linux",
+            "tools": current.map { tool -> [String: Any] in
+                [
+                    "name": tool.name,
+                    "emoji": tool.emoji,
+                    "todayTokens": tool.todayTokens,
+                    "todayMessages": tool.todayMessages,
+                    "isActive": tool.isActive,
+                    "cacheRate": tool.cacheRate,
+                    "recentTokens": tool.recentTokens,
+                    "hourlyTokens": tool.hourlyTokens,
+                    "sessions": tool.sessions.map {
+                        [
+                            "id": $0.rawId,
+                            "displayName": $0.displayName,
+                            "todayTokens": $0.todayTokens,
+                            "todayMessages": $0.todayMessages,
+                            "isActive": $0.isActive,
+                        ] as [String: Any]
+                    },
+                ]
+            },
+        ]
+    }
+
+    func historyJSONObject(days requestedDays: Int, includeSessions: Bool) -> [String: Any] {
+        let days = min(AppConfig.History.retentionDays, max(1, requestedDays))
+        let snapshots = HistoryStore.shared.queryRecent(days: days)
+        let calendar = Calendar.current
+        let rows: [[String: Any]] = (0..<days).compactMap { offset in
+            guard let date = calendar.date(byAdding: .day, value: -offset, to: Date()) else { return nil }
+            let key = DateHelper.dateKey(from: date)
+            guard let snapshot = snapshots.first(where: { $0.date == key }) else {
+                return ["date": key, "totalTokens": 0, "totalMessages": 0, "tools": []]
+            }
+            return [
+                "date": snapshot.date,
+                "totalTokens": snapshot.totalTokens,
+                "totalMessages": snapshot.totalMessages,
+                "tools": snapshot.tools.map { tool -> [String: Any] in
+                    var value: [String: Any] = [
+                        "name": tool.name,
+                        "tokens": tool.tokens,
+                        "messages": tool.messages,
+                        "cacheRate": tool.cacheRate,
+                        "isActive": tool.isActive,
+                    ]
+                    if includeSessions {
+                        value["sessions"] = tool.sessions.map {
+                            [
+                                "id": $0.id,
+                                "displayName": $0.displayName,
+                                "tokens": $0.tokens,
+                                "messages": $0.messages,
+                                "isActive": $0.isActive,
+                            ] as [String: Any]
+                        }
+                    }
+                    return value
+                },
+            ]
+        }
+        return ["windowDays": days, "days": rows]
+    }
+
+    private struct ScanSnapshot {
+        let tokens: Int
+        let messages: Int
+        let recent: Int
+        let hourly: Int
+        let active: Bool
+        let cacheRate: Double
+        let sessions: [SessionInfo]
+    }
+
+    private func snapshot(
+        _ usage: (tokens: Int, messages: Int, cacheRate: Double),
+        _ recent: Int,
+        _ hourly: Int,
+        _ active: Bool,
+        _ sessions: [SessionInfo]
+    ) -> ScanSnapshot {
+        ScanSnapshot(
+            tokens: usage.tokens,
+            messages: usage.messages,
+            recent: recent,
+            hourly: hourly,
+            active: active,
+            cacheRate: usage.cacheRate,
+            sessions: sessions
+        )
+    }
+
+    private func persistToday(_ tools: [ToolUsage]) {
+        let snapshots = tools.map { tool in
+            ToolSnapshot(
+                name: tool.name,
+                tokens: tool.todayTokens,
+                messages: tool.todayMessages,
+                cacheRate: tool.cacheRate,
+                isActive: tool.isActive,
+                sessions: tool.sessions.map {
+                    SessionSnapshot(
+                        id: $0.rawId,
+                        displayName: $0.displayName,
+                        tokens: $0.todayTokens,
+                        messages: $0.todayMessages,
+                        isActive: $0.isActive
+                    )
+                }
+            )
+        }
+        HistoryStore.shared.upsertDay(dateKey: DateHelper.todayKey(), snapshots: snapshots)
+    }
+
+    private func saveDetectedPaths(_ results: [PathDetector.DetectionResult]) {
+        for result in results where result.exists {
+            switch result.service {
+            case "openclaw": PathConfig.setOpenclawPath(result.detectedPath)
+            case "claudeCode": PathConfig.setClaudeCodePath(result.detectedPath)
+            case "gemini": PathConfig.setGeminiPath(result.detectedPath)
+            case "codex": PathConfig.setCodexPath(result.detectedPath)
+            case "hermes": PathConfig.setHermesPath(result.detectedPath)
+            case "opencode": PathConfig.setOpenCodePath(result.detectedPath)
+            case "qwen": PathConfig.setQwenPath(result.detectedPath)
+            case "copilot": PathConfig.setCopilotPath(result.detectedPath)
+            case "grok": PathConfig.setGrokPath(result.detectedPath)
+            case "aider": PathConfig.setAiderPath(result.detectedPath)
+            case "antigravity": PathConfig.setAntigravityPath(result.detectedPath)
+            case "cline": PathConfig.setClinePath(result.detectedPath)
+            case "continue": PathConfig.setContinuePath(result.detectedPath)
+            case "cursorAgent": PathConfig.setCursorAgentPath(result.detectedPath)
+            default: break
+            }
+        }
+        let found = results.filter(\.exists).count
+        print("[TokenClock] Linux path detection: \(found)/\(results.count) data sources found")
+    }
+}

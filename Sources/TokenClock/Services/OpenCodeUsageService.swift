@@ -1,5 +1,9 @@
 import Foundation
+#if os(Linux)
+import CSQLite
+#else
 import SQLite3
+#endif
 
 /// 从 OpenCode 本地 SQLite 数据库读取 token 使用数据
 /// 数据库位置: ~/.local/share/opencode/opencode.db
