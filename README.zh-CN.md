@@ -191,7 +191,7 @@ TokenClock 通过读取各工具在本地写入的 **JSONL / SQLite 用量文件
 
 ### 一键安装（最简单）
 
-自动检测 macOS 版本 → **下载预编译**对应变体（universal，SHA256 校验 + 去隔离）→ 安装到 `~/.tokenclock` → 把 `tokenclock` 加入 PATH → 首次启动并扫描各 AI 工具的本地路径，全程无需手动干预。下载失败或加 `--build-from-source` 才回退本地编译。
+自动检测系统平台与版本（**Linux / macOS 12+ / macOS 26+**）→ 安装对应变体：macOS 下**下载预编译** universal 二进制（SHA256 校验 + 去隔离）—— 26+ 装 Liquid Glass + normal，12–25 仅 normal；Linux 下**从源码编译 normal GTK3 版**。随后安装到 `~/.tokenclock` → 把 `tokenclock` 加入 PATH → 首次启动并扫描各 AI 工具的本地路径。macOS 下仅当下载失败或加 `--build-from-source` 才回退本地编译。
 
 > 💡 **下载即用** —— 无需 Xcode、无需 $99/年公证：自动下载预编译 universal 二进制（SHA256 校验 + 去隔离），普通用户开箱即用。
 
@@ -213,8 +213,8 @@ Linux 仅适配 **normal 经典不透明表盘**：使用 GTK3，复用现有 14
 # Ubuntu / Debian 构建依赖
 sudo apt install git pkg-config libcurl4 libgtk-3-dev libsqlite3-dev
 
-# Linux 安装器（从 normal 分支源码构建）
-curl -fsSL https://raw.githubusercontent.com/Neo-Isshin/TokenClock/normal/cli/install.sh | bash
+# 同一条通用安装命令 —— 自动识别 Linux 并从源码编译 normal GTK3 版
+curl -fsSL https://raw.githubusercontent.com/Neo-Isshin/TokenClock/main/cli/install.sh | bash
 ```
 
 也可以使用可复现的容器构建：

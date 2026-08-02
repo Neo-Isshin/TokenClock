@@ -192,7 +192,7 @@ TokenClock reads the **JSONL / SQLite usage files** that each tool writes locall
 
 ### One-line install (easiest)
 
-Auto-detects the macOS version → **downloads the precompiled** matching variant (universal, SHA256-checked + de-quarantined) → installs to `~/.tokenclock` → puts `tokenclock` on your PATH → launches and scans each AI tool's local paths — no manual steps. Falls back to a local build only on download failure or with `--build-from-source`.
+Auto-detects your platform and version (**Linux / macOS 12+ / macOS 26+**) → installs the matching variant: on macOS it **downloads the precompiled** universal binary (SHA256-checked + de-quarantined) — Liquid Glass + normal on 26+, normal only on 12–25; on Linux it **builds the normal GTK3 build from source**. Then installs to `~/.tokenclock` → puts `tokenclock` on your PATH → launches and scans each AI tool's local paths. On macOS it falls back to a local build only on download failure or with `--build-from-source`.
 
 > 💡 **Download & run** — no Xcode, no $99/yr notarization: it fetches precompiled universal binaries (SHA256-checked + de-quarantined) and just works.
 
@@ -214,8 +214,8 @@ Install [Swift 6](https://www.swift.org/install/linux/) first, then:
 # Ubuntu / Debian build dependencies
 sudo apt install git pkg-config libcurl4 libgtk-3-dev libsqlite3-dev
 
-# Linux installer (builds the normal branch from source)
-curl -fsSL https://raw.githubusercontent.com/Neo-Isshin/TokenClock/normal/cli/install.sh | bash
+# same universal one-liner — detects Linux and builds the normal GTK3 build from source
+curl -fsSL https://raw.githubusercontent.com/Neo-Isshin/TokenClock/main/cli/install.sh | bash
 ```
 
 Or use the reproducible container build:

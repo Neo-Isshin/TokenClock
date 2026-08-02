@@ -542,11 +542,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     @objc private func showAbout(_ sender: NSMenuItem) {
-        // 复用设置窗口的激活+层级模式：表盘 .statusBar 时关于面板也置顶，否则会被压底。
+        // 关于面板恒定浮于普通窗口之上（独立于时钟 alwaysOnTop 设置），
+        // 确保从菜单调用时始终可见、不会被其它 app 压底。
         NSApp.activate(ignoringOtherApps: true)
-        let clockLevel = panel?.level ?? .statusBar
         if let window = aboutWindow {
-            window.level = clockLevel
+            window.level = .floating
             window.makeKeyAndOrderFront(nil)
             return
         }
@@ -567,7 +567,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         window.isReleasedWhenClosed = false
         window.delegate = self
         window.contentView = hostingView
-        window.level = clockLevel
+        window.level = .floating
         window.center()
         window.makeKeyAndOrderFront(nil)
 
@@ -580,11 +580,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         // 时钟面板是非激活的 floating 窗；打开设置时必须显式激活 app，否则前台仍是
         // 终端等其它 app，设置窗口里的 TextField 收不到键盘输入（敲字全跑到前台 app）。
         NSApp.activate(ignoringOtherApps: true)
-        // 弹出窗口层级跟随表盘：表盘是 .statusBar（常驻置顶）时，设置窗口也提到 .statusBar，
-        // 否则它与其它 app 的 .normal 窗口同层、会被压到最下，点开后看不到。
-        let clockLevel = panel?.level ?? .statusBar
+        // 设置窗口恒定浮于普通窗口之上（独立于时钟 alwaysOnTop 设置），
+        // 点开后不会被其它 app 的 .normal 窗口压底。
         if let window = settingsWindow {
-            window.level = clockLevel
+            window.level = .floating
             window.makeKeyAndOrderFront(nil)
             return
         }
@@ -605,7 +604,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         window.isReleasedWhenClosed = false
         window.delegate = self
         window.contentView = hostingView
-        window.level = clockLevel
+        window.level = .floating
         window.center()
         window.makeKeyAndOrderFront(nil)
 
