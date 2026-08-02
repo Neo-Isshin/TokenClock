@@ -2,8 +2,9 @@
 #
 # install.sh — TokenClock one-shot installer
 #
-# Automatically: check the environment → build the right variant for the macOS version
-#      (26+: Liquid Glass + normal / 12+: normal) → install to ~/.tokenclock → install the tokenclock CLI → launch (auto-scans AI tool paths).
+# Automatically: check the environment → select the supported variant
+#      (macOS 26+: Liquid Glass + normal / macOS 12+: normal / Linux: normal)
+#      → install to ~/.tokenclock → install the tokenclock CLI → launch.
 #
 # Usage:
 #   ./cli/install.sh              # auto-detect variant · download prebuilt binary by default · launch when done
@@ -34,7 +35,7 @@ BUILD_DIR="${TOKENCLOCK_BUILD:-$HOME_DIR/src}"
 INSTALL_URL="${TOKENCLOCK_INSTALL_URL:-https://raw.githubusercontent.com/Neo-Isshin/TokenClock/main/cli/install.sh}"
 
 CONFIG="release"
-VARIANT=""          # "" = auto-select by macOS version
+VARIANT=""          # "" = auto-select by platform / macOS version
 NO_START=0
 FORCE=0             # --force: bypass the "no change" short-circuit and redeploy the binary
 DEPLOYED_ANYTHING=0 # whether anything was actually deployed this run (reported to tokenclock update to decide whether to restart)
@@ -43,6 +44,11 @@ BUILD_FROM_SOURCE=0 # --build-from-source: skip the prebuilt download and force 
 
 say()  { printf '%s\n' "$*"; }
 step() { printf '\n🛠  %s\n' "$*"; }
+sha256_file() {
+  if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | cut -d' ' -f1
+  else shasum -a 256 "$1" | cut -d' ' -f1
+  fi
+}
 
 # Color output: only colorize on a TTY (curl|bash and other pipes strip it, avoiding escape codes polluting logs).
 if [ -t 1 ]; then
@@ -80,12 +86,33 @@ done
 
 # ── 1. Preflight checks ──
 step "Checking environment"
-command -v sw_vers >/dev/null || die "macOS is required (sw_vers not found)."
-# git / swift are only needed for the build-from-source path; the prebuilt-download path (default) does not depend on them at all.
-command -v git   >/dev/null 2>&1 || say "  ⚠ git not found (only needed for --build-from-source; the default download path is unaffected)"
-command -v swift >/dev/null 2>&1 || say "  ⚠ swift not found (only needed for --build-from-source; the default download path is unaffected)"
+KERNEL="$(uname -s 2>/dev/null || echo unknown)"
+case "$KERNEL" in
+  Darwin)
+    PLATFORM=macos
+    OS_MAJOR="$(sw_vers -productVersion | cut -d. -f1)"
+    command -v git   >/dev/null 2>&1 || say "  ⚠ git not found (only needed for --build-from-source; the default download path is unaffected)"
+    command -v swift >/dev/null 2>&1 || say "  ⚠ swift not found (only needed for --build-from-source; the default download path is unaffected)"
+    ;;
+  Linux)
+    PLATFORM=linux
+    OS_MAJOR=0
+    BUILD_FROM_SOURCE=1
+    [ "$VARIANT" != glass ] || die "Linux supports the normal variant only; remove --glass."
+    command -v git >/dev/null 2>&1 || die "git is required on Linux."
+    command -v swift >/dev/null 2>&1 || die "Swift 6 is required on Linux (https://www.swift.org/install/linux/)."
+    command -v pkg-config >/dev/null 2>&1 || die "pkg-config is required on Linux."
+    pkg-config --exists gtk+-3.0 || die "GTK3 development files are required (Ubuntu/Debian: sudo apt install libgtk-3-dev)."
+    pkg-config --exists sqlite3 || die "SQLite development files are required (Ubuntu/Debian: sudo apt install libsqlite3-dev)."
+    [ "$INSTALL_URL" != "https://raw.githubusercontent.com/Neo-Isshin/TokenClock/main/cli/install.sh" ] \
+      || INSTALL_URL="https://raw.githubusercontent.com/Neo-Isshin/TokenClock/normal/cli/install.sh"
+    say "  Linux $(uname -r) · normal GTK3 build · source build"
+    ;;
+  *)
+    die "Unsupported platform: $KERNEL (TokenClock supports macOS and Linux)."
+    ;;
+esac
 
-OS_MAJOR="$(sw_vers -productVersion | cut -d. -f1)"
 if command -v swift >/dev/null 2>&1; then
   TC_TOOLCHAIN="$(swift --version 2>&1 | head -1)"
 else
@@ -100,14 +127,22 @@ case "$TC_TOOLCHAIN" in
     say "      sudo xcode-select -s /Library/Developer/CommandLineTools   # switch back to CLT"
     ;;
   *)
-    [ -n "$TC_TOOLCHAIN" ] \
-      && say "  macOS $(sw_vers -productVersion) · major version $OS_MAJOR · toolchain $TC_TOOLCHAIN" \
-      || say "  macOS $(sw_vers -productVersion) · major version $OS_MAJOR · toolchain (swift not installed)"
+    if [ "$PLATFORM" = macos ]; then
+      [ -n "$TC_TOOLCHAIN" ] \
+        && say "  macOS $(sw_vers -productVersion) · major version $OS_MAJOR · toolchain $TC_TOOLCHAIN" \
+        || say "  macOS $(sw_vers -productVersion) · major version $OS_MAJOR · toolchain (swift not installed)"
+    else
+      say "  Toolchain: $TC_TOOLCHAIN"
+    fi
     ;;
 esac
 
 # ── 2. Select variant ──
-if [ -z "$VARIANT" ]; then
+if [ "$PLATFORM" = linux ]; then
+  VARIANTS=(normal)
+  BRANCHES=(normal)
+  PRIMARY_VARIANT=normal
+elif [ -z "$VARIANT" ]; then
   if [ "$OS_MAJOR" -ge 26 ]; then
     # macOS 26+: pull both variants (Liquid Glass + normal)
     VARIANTS=(glass normal)
@@ -194,7 +229,7 @@ download_variant() {
     say "  ⚠ [$variant] prebuilt download failed ($url) → falling back to source build"
     rm -rf "$tmp"; return 1
   fi
-  got="$(shasum -a 256 "$tmp/$name" | cut -d' ' -f1)"
+  got="$(sha256_file "$tmp/$name")"
   if [ "$got" != "$expect" ]; then
     say "  ⚠ [$variant] SHA256 mismatch (expected ${expect:0:12}… got ${got:0:12}…) → falling back to source build"
     rm -rf "$tmp"; return 1
@@ -238,7 +273,7 @@ for i in "${!VARIANTS[@]}"; do
   ensure_source "$variant" "$branch"
   step "Building [$variant] (swift build -c $CONFIG · first run may take a few minutes)"
   swift_build_fallback "$subdir" \
-    || die "[$variant] build failed (the prebuilt download also failed). Common cause: full Xcode is not installed (the @State macro on the macOS 27 SDK needs SwiftUIMacros, which CLT alone lacks). Install Xcode and retry, or make sure MacOSX26.sdk is present so this script can pin to it automatically."
+    || die "[$variant] build failed. On Linux, verify Swift 6 + libgtk-3-dev + libsqlite3-dev; on macOS 27, install Xcode or the macOS 26 SDK."
   BIN_PATH="$subdir/.build/$CONFIG/TokenClock"
   [ -f "$BIN_PATH" ] || BIN_PATH="$subdir/.build/out/Products/$([ "$CONFIG" = release ] && echo Release || echo Debug)/TokenClock"
   [ -f "$BIN_PATH" ] || die "Build artifact not found: $BIN_PATH"
@@ -257,7 +292,7 @@ for entry in "${BUILT_BINS[@]}"; do
   bin_changed=0
   if [ "$FORCE" -eq 1 ] || [ ! -f "$dest_bin" ]; then
     bin_changed=1
-  elif [ "$(shasum -a 256 "$bin_path" | cut -d' ' -f1)" != "$(shasum -a 256 "$dest_bin" | cut -d' ' -f1)" ]; then
+  elif [ "$(sha256_file "$bin_path")" != "$(sha256_file "$dest_bin")" ]; then
     bin_changed=1
   fi
   if [ "$bin_changed" -eq 1 ]; then
@@ -267,7 +302,9 @@ for entry in "${BUILT_BINS[@]}"; do
     # linker-signed adhoc (flags=0x20002), which taskgated kills on macOS 27. `--force --sign -`
     # produces a proper adhoc (0x2). release.sh already signs before packaging; this re-signs
     # $dest_bin to cover the source-fallback path and self-heal any signing damage from transfer/extraction.
-    codesign --force --sign - "$dest_bin" >/dev/null 2>&1 || warn "[$variant] ad-hoc re-sign failed: $dest_bin (may crash on launch under macOS 27)"
+    if [ "$PLATFORM" = macos ]; then
+      codesign --force --sign - "$dest_bin" >/dev/null 2>&1 || warn "[$variant] ad-hoc re-sign failed: $dest_bin (may crash on launch under macOS 27)"
+    fi
     say "  ✓ $dest_bin"
     DEPLOYED_ANYTHING=1
   else
@@ -296,7 +333,7 @@ mkdir -p "$BIN_DIR"
 # Record the old wrapper SHA, compare after deploy → WRAPPER_CHANGED (only used to report "CLI updated"
 # from update; it does not trigger an app restart — the wrapper and the running clock binary are independent).
 WRAPPER_OLD_SHA=""
-[ -f "$BIN_DIR/tokenclock" ] && WRAPPER_OLD_SHA="$(shasum -a 256 "$BIN_DIR/tokenclock" 2>/dev/null | cut -d' ' -f1)"
+[ -f "$BIN_DIR/tokenclock" ] && WRAPPER_OLD_SHA="$(sha256_file "$BIN_DIR/tokenclock" 2>/dev/null)"
 # Atomic deploy: write to a temp file first, then mv into place. tokenclock update invokes this script
 # via the wrapper, so the "running wrapper" IS $BIN_DIR/tokenclock; an in-place cp/curl would make bash
 # keep reading the new file from the wrong offset → executing comments/fragments ("command not found" +
@@ -327,7 +364,7 @@ mv -f "$WRAPPER_TMP" "$BIN_DIR/tokenclock"
 # Compare new vs old wrapper (on first install the old SHA is empty → treated as changed, but first
 # install does not go through the update path, so no side effects)
 WRAPPER_CHANGED=0
-WRAPPER_NEW_SHA="$(shasum -a 256 "$BIN_DIR/tokenclock" 2>/dev/null | cut -d' ' -f1)"
+WRAPPER_NEW_SHA="$(sha256_file "$BIN_DIR/tokenclock" 2>/dev/null)"
 [ "$WRAPPER_NEW_SHA" != "$WRAPPER_OLD_SHA" ] && WRAPPER_CHANGED=1
 export PATH="$BIN_DIR:$PATH"   # let later commands in this script use tokenclock directly
 
@@ -411,12 +448,36 @@ EOF
   fi
 }
 
+enable_linux_autostart() {
+  local binary_path="$1"
+  local autostart_dir="${XDG_CONFIG_HOME:-$HOME/.config}/autostart"
+  local desktop_path="$autostart_dir/tokenclock.desktop"
+  mkdir -p "$autostart_dir" || die "Failed to create $autostart_dir"
+  cat > "$desktop_path" <<EOF || die "Failed to write $desktop_path"
+[Desktop Entry]
+Type=Application
+Name=TokenClock
+Comment=Local AI coding usage clock
+Exec=$binary_path
+Terminal=false
+X-GNOME-Autostart-enabled=true
+EOF
+  say "  ✓ XDG autostart registered: $desktop_path"
+}
+
 # y/N prompt; defaults to N (least surprise). Skipped when non-interactive (curl | bash).
 prompt_api_server() {
   local API_PORT_DEFAULT=9988
   local API_PORT_TRIES=5
   local API_PORT_FALLBACK_MSG=" (launch may fail)"
   local API_PORT_RANGE_END=$((API_PORT_DEFAULT + API_PORT_TRIES))   # 9993
+
+  if [ "$PLATFORM" = linux ]; then
+    API_ENABLED=1
+    API_CHOSEN_PORT="$API_PORT_DEFAULT"
+    say "  ✓ API server: enabled on loopback port $API_PORT_DEFAULT"
+    return 0
+  fi
 
   # Non-interactive mode (curl|bash, heredoc): enable by default, quietly probe for a free port
   if [ ! -t 0 ]; then
@@ -485,11 +546,13 @@ fi
 ensure_in_path() {
   case ":$PATH:" in *":$BIN_DIR:"*) return 0 ;; esac      # already on PATH in the current shell
   local rc
-  for rc in "$HOME/.zshrc" "$HOME/.bash_profile"; do
+  for rc in "$HOME/.zshrc" "$HOME/.bash_profile" "$HOME/.bashrc"; do
     [ -f "$rc" ] && grep -qF "$BIN_DIR" "$rc" && return 0  # some rc already configures it
   done
-  printf '\n# Added by tokenclock installer\nexport PATH="%s:$PATH"\n' "$BIN_DIR" >> "$HOME/.zshrc"
-  say "  Added $BIN_DIR to ~/.zshrc (takes effect in a new terminal)"
+  local target_rc="$HOME/.zshrc"
+  [ "$PLATFORM" = linux ] && target_rc="$HOME/.bashrc"
+  printf '\n# Added by tokenclock installer\nexport PATH="%s:$PATH"\n' "$BIN_DIR" >> "$target_rc"
+  say "  Added $BIN_DIR to $target_rc (takes effect in a new terminal)"
 }
 ensure_in_path
 
@@ -497,9 +560,17 @@ ensure_in_path
 # Explicitly register the plist so install.sh's "auto-start on by default" promise lands on disk.
 # The Swift-side LaunchAgentHelper.cleanupLegacy() "adopts" this plist, avoiding an inconsistent right-click menu toggle state.
 LAUNCH_AGENT_OK=0
-LAUNCH_AGENT_PATH="$HOME/Library/LaunchAgents/com.tokenclock.app.${PRIMARY_VARIANT}.plist"
+if [ "$PLATFORM" = linux ]; then
+  LAUNCH_AGENT_PATH="${XDG_CONFIG_HOME:-$HOME/.config}/autostart/tokenclock.desktop"
+else
+  LAUNCH_AGENT_PATH="$HOME/Library/LaunchAgents/com.tokenclock.app.${PRIMARY_VARIANT}.plist"
+fi
 if [ "$NO_START" -eq 1 ]; then
-  say "  ⏭ LaunchAgent: skipped (--no-start)"
+  say "  ⏭ Login autostart: skipped (--no-start)"
+elif [ "$PLATFORM" = linux ]; then
+  step "Registering XDG login autostart (normal)"
+  enable_linux_autostart "$HOME_DIR/normal/TokenClock"
+  LAUNCH_AGENT_OK=1
 else
   step "Registering login LaunchAgent ($PRIMARY_VARIANT)"
   enable_launch_agent "$PRIMARY_VARIANT" "$HOME_DIR/$PRIMARY_VARIANT/TokenClock"
@@ -513,7 +584,7 @@ fi
 # now exclusively handled by the LaunchAgent above (launchd launches directly, no terminal); here we make a
 # best-effort attempt to delete any classic login item named TokenClock (needs "Automation" permission,
 # failures are silently ignored).
-if [ "$NO_START" -eq 0 ]; then
+if [ "$NO_START" -eq 0 ] && [ "$PLATFORM" = macos ]; then
   if osascript -e 'tell application "System Events" to delete (every login item whose name is "TokenClock")' >/dev/null 2>&1; then
     say "  ✓ Cleaned up leftover classic Login Item (if any)"
   else
@@ -534,8 +605,11 @@ else
   tokenclock start --"$PRIMARY_VARIANT" >/dev/null 2>&1 || die "Launch failed"
   say "  Started the $PRIMARY_VARIANT build"
   sleep 3                                                    # wait for the first scan
-  enabled="$(defaults read TokenClock TC_enabledTools 2>/dev/null \
-             | tr -d '()"' | tr ',' '\n' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' | grep -v '^$' | paste -sd ',' - | sed 's/,/, /g')"
+  enabled=""
+  if [ "$PLATFORM" = macos ]; then
+    enabled="$(defaults read TokenClock TC_enabledTools 2>/dev/null \
+               | tr -d '()"' | tr ',' '\n' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' | grep -v '^$' | paste -sd ',' - | sed 's/,/, /g')"
+  fi
   if [ -n "$enabled" ]; then
     say "  🔍 Detected enabled tools: $enabled"
   else
@@ -610,22 +684,24 @@ EOF
 # Launch-at-login banner: reflect the real state
 if [ "$LAUNCH_AGENT_OK" -eq 1 ] && [ -f "$LAUNCH_AGENT_PATH" ]; then
   printf '  Launch at login: ✓ enabled (%s)\n' "$LAUNCH_AGENT_PATH"
-  printf '                    toggle via the clock right-click → Settings\n'
+  if [ "$PLATFORM" = macos ]; then
+    printf '                    toggle via the clock right-click → Settings\n'
+  else
+    printf '                    remove this .desktop file to disable\n'
+  fi
 else
   printf '  Launch at login: ⏭ not enabled\n'
 fi
 
 cat <<EOF
 
-Common commands (available after opening a new terminal or running source ~/.zshrc):
-  tokenclock start [--glass|--normal]   start (auto-selects by macOS version)
+Common commands (available after opening a new terminal):
+  tokenclock start [--glass|--normal]   start (auto-selects by platform/version)
   tokenclock stop                       stop
   tokenclock restart [--glass|--normal] restart
   tokenclock doctor                     diagnose environment and installed versions
   tokenclock update [--glass|--normal]  pull the latest install.sh, upgrade and restart
   tokenclock update --check             only download the latest script, do not upgrade
-
-Turn off launch-at-login: right-click the clock → uncheck Launch at login
 
 ── tokenclock doctor ──
 EOF

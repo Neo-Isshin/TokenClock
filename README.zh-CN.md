@@ -4,52 +4,37 @@
 
 # 🕰️ TokenClock
 
-**专为 AI 编程用量而生的原生 Liquid Glass 桌面时钟**
-
-Claude Code、Codex、Antigravity(可区分IDE、CLI、App)、OpenCode 等 14 款工具的消耗，在一只流动的玻璃表盘上一目了然——**全部留在你的 Mac 上**。
+**原生液态玻璃（Liquid Glass）token 时钟 · 一屏掌握你所有 Agent 的消耗**
 
 [![macOS 12+](https://img.shields.io/badge/macOS-12%2B-000000?style=for-the-badge&logo=apple&logoColor=white)](https://www.apple.com/macos/)
 [![macOS 26+](https://img.shields.io/badge/macOS%2026-Liquid%20Glass-00B0F0?style=for-the-badge)](https://developer.apple.com/macos/)
+[![Linux normal](https://img.shields.io/badge/Linux-normal-FCC624?style=for-the-badge&logo=linux&logoColor=black)](#linux-normal-版)
 
+[![Swift 6](https://img.shields.io/static/v1?label=Swift&message=6&color=F05138&logo=swift&logoColor=white)](https://www.swift.org/)
+[![SwiftUI](https://img.shields.io/static/v1?label=UI&message=SwiftUI%20%2B%20AppKit&color=blueviolet)](https://developer.apple.com/xcode/swiftui/)
+[![SwiftPM](https://img.shields.io/static/v1?label=Build&message=SwiftPM&color=FA7343)](https://www.swift.org/package-manager/)
 [![Privacy](https://img.shields.io/static/v1?label=Privacy&message=local%20only&color=success)](#-隐私)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
 [![Releases](https://img.shields.io/badge/releases-GitHub-181717?logo=github&logoColor=white)](https://github.com/Neo-Isshin/TokenClock/releases)
 
 </div>
 
 <div align="center">
 
-<img src="docs/screenshots/glass_zh.png" alt="TokenClock 原生 Liquid Glass 表盘，显示本地 AI 编程工具 token 用量" width="520">
-
-<sub><b>macOS 26+ 原生 Liquid Glass</b> · 随壁纸折射 · 氛围着色 · 自适应对比度 · 常驻桌面</sub>
+<table>
+  <tr>
+    <td width="50%" align="center"><img src="docs/screenshots/glass_zh.png" alt="Liquid Glass 版" width="300"><br><sub><b>Liquid Glass版</b> · macOS 26+</sub></td>
+    <td width="30%" align="center"><img src="docs/screenshots/normal_zh.png" alt="Normal 版" width="300"><br><sub><b>Normal版</b> · macOS 12+</sub></td>
+  </tr>
+</table>
 
 </div>
 
 ---
 
-## 🧊 Liquid Glass 是界面本身，不是一层玻璃风皮肤
+TokenClock 是一个常驻桌面的 **悬浮时钟**（置顶 · 可拖拽 · 记忆位置）。表盘上实时叠加显示：**今日总 token 消耗、消息条数、当前活跃的 AI 工具、速率指示器与天气**。点击时钟即可展开下拉面板，查看 **每个工具 → 每个 session / agent** 的明细用量。
 
-TokenClock 把 macOS 26 原生 **Liquid Glass** 变成一件真正有用、抬眼可见的桌面仪表。玻璃盘体会折射身后的桌面，带上细腻的主题氛围色，并随壁纸明暗自动切换墨色对比度。可调毛玻璃底板让你在纯净通透与高可读性的厚实表盘之间自由选择，同时保留原生材质的质感。
-
-它不是藏在另一个窗口里的 Dashboard，而是一件真正属于桌面的 **悬浮玻璃对象**：常驻置顶、自由拖拽、记忆位置，安静地陪在工作区旁边。
-
-<div align="center">
-
-**7 款玻璃表盘** · **透明度自由调节** · **完整主题编辑器** · **macOS 原生渲染**
-
-</div>
-
-## ⚡ 一行安装
-
-安装器会在 macOS 26+ 自动选择原生 Liquid Glass 版，在 macOS 12–15 自动选择经典兼容版。
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/Neo-Isshin/TokenClock/main/cli/install.sh | bash
-```
-
-表盘实时显示：**今日 token 消耗、消息条数、活跃 AI 工具、用量速率与天气**。点击即可从 **工具 → session / agent** 逐级下钻，看清 token 究竟花在了哪里。
-
-TokenClock 只读取各 AI 编程工具已经保存在 Mac 上的本地日志，**不上传任何信息**。
+采用 macOS 26 的 **Liquid Glass** 材质打造玻璃质感表盘，并提供 7 款精心设计的内置表盘与完全自定义主题。所有数据都在 **本地** 读取——不上传任何信息。
 
 > [!NOTE]
 > Liquid Glass 版已支持 macOS 27 beta 3，但可能随 beta 版本更新而失效。
@@ -77,15 +62,15 @@ TokenClock 只读取各 AI 编程工具已经保存在 Mac 上的本地日志，
 
 <table>
   <tr>
-    <td width="50%" valign="top"><b>🧊 原生 Liquid Glass</b><br><sub>随身后壁纸实时折射的玻璃盘体，带氛围着色与自适应高对比墨色，真正融入桌面。</sub></td>
-    <td width="50%" valign="top"><b>🎨 属于你自己的玻璃</b><br><sub>7 款内置表盘、可调毛玻璃底板，以及玻璃着色、指针、刻度、数字、字体、尺寸和窗口透明度。</sub></td>
+    <td width="50%" valign="top"><b>🤖 多工具总览，一屏尽览</b><br><sub>把 <b>14 款</b> AI 编程工具的 token / 消息用量汇聚到同一只表盘，告别多终端、多后台来回切换。</sub></td>
+    <td width="50%" valign="top"><b>🔍 分 session / agent 下钻</b><br><sub>从工具级总览一路深入到每条 session / agent 明细，立刻看清消耗花在哪、是哪段对话烧的。</sub></td>
   </tr>
   <tr>
-    <td valign="top"><b>🤖 多工具总览，一屏尽览</b><br><sub>把 <b>14 款</b> AI 编程工具的 token / 消息用量汇聚到同一只表盘，告别多终端、多后台来回切换。</sub></td>
-    <td valign="top"><b>🔍 分 session / agent 下钻</b><br><sub>从工具级总览一路深入到每条 session / agent 明细，立刻看清消耗花在哪、是哪段对话烧的。</sub></td>
+    <td valign="top"><b>🌤️ 常驻桌面，零打扰</b><br><sub>悬浮置顶的半透明液态玻璃表盘，余光即知实时消耗与速率（🔥 爆发 / 🌊 平稳），不打断编码节奏。</sub></td>
+    <td valign="top"><b>📈 多维实时洞察</b><br><sub>今日总量、缓存率、未来趋势预测、活跃工具一图打尽。</sub></td>
   </tr>
   <tr>
-    <td valign="top"><b>🌤️ 常驻桌面，零打扰</b><br><sub>抬眼即知实时消耗与速率（🔥 爆发 / 🌊 平稳），不打开窗口、不打断编码节奏。</sub></td>
+    <td valign="top"><b>🎨 丰富的自定义选项</b><br><sub>6 款表盘 + 完全自定义：毛玻璃底板透明度、玻璃着色、文字 / 指针 / 刻度 / 数字 / 字体 / 尺寸 / 窗口透明度全可调。</sub></td>
     <td valign="top"><b>📜 历史用量可回溯</b><br><sub>每日快照存入本地 SQLite（保留 30 天），经本地 API 暴露，可回溯过往、对接你自己的图表。</sub></td>
   </tr>
   <tr>
@@ -112,10 +97,10 @@ TokenClock 只读取各 AI 编程工具已经保存在 Mac 上的本地日志，
 - 提供 `main`（macOS 26）与 `normal`（macOS 12）**双版本**，由 `tokenclock` CLI 按系统版本自动选用。
 
 ### 📦 一行安装 & CLI
-- `normal` 适用于 **macOS 12+**，液态玻璃适用于 **macOS 26+**。一行安装脚本会根据系统自动选变体，简单的 `tokenclock` CLI 即可启动 / 停止 / 切换 / 诊断。详见 [安装指南](https://github.com/Neo-Isshin/TokenClock)。
+- `normal` 适用于 **macOS 12+ 与 Linux**，液态玻璃仅适用于 **macOS 26+**。`tokenclock` CLI 可在两个平台启动 / 停止 / 诊断。
 
 ### 🎨 多表盘 + 美观设计 + 支持深度自定义
-- 7 款内置表盘（经典 / 冰川 / 深夜 / 暗金 / 古风 / 超电磁炮 / 天空），风格各异。
+- 6 款内置表盘（经典 / 深夜 / 暗金 / 古风 / 超电磁炮 / 天空），风格各异。
 - 4 种指针样式（圆头 / 锥形 / 菱形 / 剑形），数字风格含阿拉伯数字与中文数字。
 - **完全自定义主题**：表盘色、玻璃着色、三根指针、刻度、数字、边框颜色与字体全部可调。
 
@@ -162,7 +147,7 @@ TokenClock 只读取各 AI 编程工具已经保存在 Mac 上的本地日志，
 <table>
   <tr>
     <td width="44%" align="center"><b>功能设置面板</b><br><sub>自动探测工具路径与详细参数配置</sub></td>
-    <td width="34%" align="center"><b>表盘主题选择器</b><br><sub>7 款内置表盘与完全自定义配置</sub></td>
+    <td width="34%" align="center"><b>表盘主题选择器</b><br><sub>6 款内置表盘与完全自定义配置</sub></td>
     <td width="22%" align="center"><b>右键快捷菜单</b><br><sub>快速调整表盘、尺寸与常用设置</sub></td>
   </tr>
   <tr>
@@ -206,7 +191,7 @@ TokenClock 通过读取各工具在本地写入的 **JSONL / SQLite 用量文件
 
 ### 一键安装（最简单）
 
-自动检测 macOS 版本 → **下载预编译**对应变体（universal，SHA256 校验 + 去隔离）→ 安装到 `~/.tokenclock` → 把 `tokenclock` 加入 PATH → 首次启动并扫描各 AI 工具的本地路径，全程无需手动干预。下载失败或加 `--build-from-source` 才回退本地编译。
+自动检测系统平台与版本（**Linux / macOS 12+ / macOS 26+**）→ 安装对应变体：macOS 下**下载预编译** universal 二进制（SHA256 校验 + 去隔离）—— 26+ 装 Liquid Glass + normal，12–25 仅 normal；Linux 下**从源码编译 normal GTK3 版**。随后安装到 `~/.tokenclock` → 把 `tokenclock` 加入 PATH → 首次启动并扫描各 AI 工具的本地路径。macOS 下仅当下载失败或加 `--build-from-source` 才回退本地编译。
 
 > 💡 **下载即用** —— 无需 Xcode、无需 $99/年公证：自动下载预编译 universal 二进制（SHA256 校验 + 去隔离），普通用户开箱即用。
 
@@ -218,6 +203,26 @@ curl -fsSL https://raw.githubusercontent.com/Neo-Isshin/TokenClock/main/cli/inst
 ./cli/install.sh
 ```
 
+### Linux normal 版
+
+Linux 仅适配 **normal 经典不透明表盘**：使用 GTK3，复用现有 14 个本地用量解析器，历史数据按 XDG 目录保存，支持 XDG 登录自启动，并在 `127.0.0.1:9988` 提供同构 API。Linux 版不包含 Liquid Glass、macOS 主题编辑器和天气/定位界面。
+
+先安装 [Swift 6](https://www.swift.org/install/linux/)，然后执行：
+
+```bash
+# Ubuntu / Debian 构建依赖
+sudo apt install git pkg-config libcurl4 libgtk-3-dev libsqlite3-dev
+
+# 同一条通用安装命令 —— 自动识别 Linux 并从源码编译 normal GTK3 版
+curl -fsSL https://raw.githubusercontent.com/Neo-Isshin/TokenClock/main/cli/install.sh | bash
+```
+
+也可以使用可复现的容器构建：
+
+```bash
+docker build -f Dockerfile.linux -t tokenclock-linux .
+```
+
 可选参数：`--normal` / `--glass`（指定变体）/ `--no-start`（装完不自动启动）/ `--build-from-source`（强制本地编译）/ `--check`（仅检查不安装）/ `--debug`（debug 构建）。
 
 > 也可手动从源码构建，见下方。
@@ -225,6 +230,7 @@ curl -fsSL https://raw.githubusercontent.com/Neo-Isshin/TokenClock/main/cli/inst
 ### 前置要求
 - **macOS 12+**（普通版）；**macOS 26+**（Liquid Glass 版）
 - 预编译安装**无需任何工具链**；仅 `--build-from-source` 本地编译时需要 Swift 6（Xcode 16+ / Command Line Tools）
+- **Linux normal**：Swift 6、GTK3/SQLite3 开发头文件、`libcurl4` 与 `pkg-config`
 
 ### 从源码构建运行
 
@@ -243,6 +249,8 @@ swift build -c release # 发布
 
 > `main` 分支的 `Package.swift` 声明为 `.macOS(.v26)`，`swift run` 直接产出 Liquid Glass 版；兼容 macOS 12 的经典（不透明）版本位于 `normal` 分支。
 
+> Linux 上请克隆或切换到 `normal` 分支再运行 `swift build`；SwiftPM 会自动选择 GTK3 目标。
+
 > 小坑：在 **macOS 27 且只装了 Command Line Tools**（无完整 Xcode）的机器上，`main` 分支裸 `swift build` 会因 27 SDK 把 `@State` 宏化而失败；指定 `SDKROOT=/Library/Developer/CommandLineTools/SDKs/MacOSX26.sdk swift build` 即可（26 SDK 里 `@State` 仍是普通属性包装器）。`normal` 分支不受影响。
 
 ### 使用 `tokenclock` CLI
@@ -255,7 +263,7 @@ sudo install -m755 cli/tokenclock /usr/local/bin/tokenclock
 
 | 命令 | 说明 |
 |------|------|
-| `tokenclock start [--glass\|--normal] [--force]` | 启动时钟；未指定版本时 **按系统版本自动选**（26+ → glass，12+ → normal）；`--force` 强制另开一份 |
+| `tokenclock start [--glass\|--normal] [--force]` | 启动时钟；自动选择（macOS 26+ → glass，macOS 12–25/Linux → normal）；`--force` 强制另开一份 |
 | `tokenclock stop` | 停止所有运行中的 TokenClock 实例 |
 | `tokenclock restart [--glass\|--normal]` | 重启 |
 | `tokenclock doctor` | 诊断环境：系统版本、已安装变体路径、运行中的进程、环境变量 |
@@ -335,9 +343,9 @@ GET http://127.0.0.1:9988/api/history?days=30 # 过去 N 天的日结快照（�
 | | |
 |---|---|
 | **语言** | Swift 6（`-parse-as-library`） |
-| **UI** | SwiftUI + AppKit（无锁 NSPanel 双窗口架构） |
+| **UI** | macOS：SwiftUI + AppKit；Linux normal：GTK3 + Cairo |
 | **构建** | Swift Package Manager（无 `.xcodeproj`） |
-| **平台** | macOS 26 SDK（`main` 分支）/ macOS 12 SDK（`normal` 分支） |
+| **平台** | macOS 26 SDK（`main`）/ macOS 12 与 Linux GTK3（`normal`） |
 | **定位** | 自研 `L10n` 引擎（zh-Hans / zh-Hant / en，无 `.xcstrings`） |
 | **规模** | 约 12,400 行 Swift |
 
@@ -345,7 +353,7 @@ GET http://127.0.0.1:9988/api/history?days=30 # 过去 N 天的日结快照（�
 
 ## 📄 许可证
 
-TokenClock 基于 **[MIT 协议](LICENSE)** 开源 —— © 2026 Neo-Isshin。您可以自由使用、分发与修改，亦可用于商业或闭源项目，仅需保留版权与许可声明。
+TokenClock 基于 **[GPL v3 协议](LICENSE)** 开源 —— © 2026 Neo-Isshin。您可以自由使用、分发与修改，但任何分发或修改后的衍生版本也必须以 GPL v3 协议开源。
 
 ---
 
