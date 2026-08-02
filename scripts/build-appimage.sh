@@ -107,10 +107,12 @@ step "SHA256 sidecar"
 ( cd "$ROOT" && sha256sum "$APPIMAGE" > "$APPIMAGE.sha256" )
 ok "$APPIMAGE.sha256"
 
-# ── 6. 修产物属主（容器内以 root 构建、挂载到主机时，把属主还给主机用户）──
+# ── 6. 修产物/中间产物属主（容器内以 root 构建、挂载到主机时，把属主还给主机用户）──
+# CI 里 workspace 通常属 root → 守卫跳过；Debian 开发主机挂载属普通用户 → 还原，便于清理。
 HOST_OWNER="$(stat -c %u:%g "$ROOT" 2>/dev/null || true)"
 if [ -n "$HOST_OWNER" ] && [ "$(id -u)" = 0 ] && [ "${HOST_OWNER%%:*}" != 0 ]; then
-  chown "$HOST_OWNER" "$ROOT/$APPIMAGE" "$ROOT/$APPIMAGE.sha256" 2>/dev/null || true
+  chown -R "$HOST_OWNER" "$ROOT/.build" "$ROOT/AppDir" "$ROOT/.appimage-tools" \
+                            "$ROOT/$APPIMAGE" "$ROOT/$APPIMAGE.sha256" 2>/dev/null || true
   ok "ownership → $HOST_OWNER"
 fi
 
