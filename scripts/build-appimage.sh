@@ -73,28 +73,27 @@ StartupWMClass=TokenClock
 EOF
 ok "desktop entry written"
 
-# ── 4. linuxdeploy + GTK 插件 → bundle GTK，产出 AppImage ──
-step "Fetching linuxdeploy + GTK plugin"
+# ── 4. linuxdeploy → bundle 全部动态依赖（含 GTK3 全家桶，经 ldd 发现），产出 AppImage ──
+# 注：官方 linuxdeploy-plugin-gtk 当前无预编译 release（仓库 releases 页为空），
+# 故改用 linuxdeploy 核心：它经 ldd 把二进制链接的全部 .so（含 libgtk-3/glib/pango/cairo/…）
+# 连同 gdk-pixbuf loaders、glib schemas 一起收进 AppDir，用户机无需装 GTK，只剩 glibc ≥ 2.35。
+step "Fetching linuxdeploy"
 TOOLS="$ROOT/.appimage-tools"
 mkdir -p "$TOOLS"
 LD="$TOOLS/linuxdeploy-$ARCH.AppImage"
-LDGTK="$TOOLS/linuxdeploy-plugin-gtk-$ARCH.AppImage"
-[ -f "$LD" ]    || wget -q -O "$LD"    "https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-$ARCH.AppImage"
-[ -f "$LDGTK" ] || wget -q -O "$LDGTK" "https://github.com/linuxdeploy/linuxdeploy-plugin-gtk/releases/download/continuous/linuxdeploy-plugin-gtk-$ARCH.AppImage"
-chmod +x "$LD" "$LDGTK"
-ok "linuxdeploy + gtk plugin ready"
+[ -f "$LD" ] || wget -q -O "$LD" "https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-$ARCH.AppImage"
+[ -s "$LD" ] || die "linuxdeploy download failed (empty file)"
+chmod +x "$LD"
+ok "linuxdeploy ready"
 
-# 容器内无 FUSE：让 AppImage 工具自解压运行
+# 容器内无 FUSE：让 linuxdeploy 这个 AppImage 自解压到 /tmp 运行
 export APPIMAGE_EXTRACT_AND_RUN=1
 export ARCH="$ARCH"
 export VERSION="${VERSION:-0.0.0}"          # linuxdeploy 要求 VERSION 环境变量
 export OUTPUT="$APPIMAGE"
-export DEPLOY_GTK_VERSION=3                 # GTK 插件：bundle GTK3 全家桶
 
-step "Packaging AppImage (linuxdeploy --plugin gtk --output appimage)"
-# 用 linuxdeploy-plugin-gtk 提供的入口（它在内部调 linuxdeploy，并注入 GTK bundle 逻辑）
+step "Packaging AppImage (linuxdeploy --output appimage)"
 "$LD" --appdir "$APPDIR" \
-      --plugin gtk \
       --desktop-file "$APPDIR/usr/share/applications/$APP.desktop" \
       --icon-file    "$APPDIR/usr/share/icons/hicolor/256x256/apps/$ICON_NAME.png" \
       --output appimage \
