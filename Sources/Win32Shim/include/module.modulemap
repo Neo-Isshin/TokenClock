@@ -1,0 +1,8 @@
+module Win32Shim {
+    header "winshim.h"
+    link "User32"
+    link "Shell32"
+    link "Gdi32"
+    link "Advapi32"
+    export *
+}

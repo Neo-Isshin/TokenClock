@@ -72,6 +72,31 @@ let package = Package(
         ),
     ]
 )
+#elseif os(Windows)
+// Windows 原生（Win32）normal 版。
+// P1：仅 Windows/ UI 骨架 + Win32Shim（C 互操作层）。共享 Services + CSQLite 在 P2/P3 接入。
+let package = Package(
+    name: "TokenClock",
+    targets: [
+        .target(
+            name: "Win32Shim",
+            path: "Sources/Win32Shim",
+            linkerSettings: [
+                .linkedLibrary("User32"),
+                .linkedLibrary("Shell32"),
+                .linkedLibrary("Gdi32"),
+                .linkedLibrary("Advapi32"),
+            ]
+        ),
+        .executableTarget(
+            name: "TokenClock",
+            dependencies: ["Win32Shim"],
+            path: "Sources/TokenClock",
+            sources: ["Windows"],
+            swiftSettings: [.unsafeFlags(["-parse-as-library"])]
+        ),
+    ]
+)
 #else
 let package = Package(
     name: "TokenClock",
@@ -80,7 +105,7 @@ let package = Package(
         .executableTarget(
             name: "TokenClock",
             path: "Sources/TokenClock",
-            exclude: ["Linux"],
+            exclude: ["Linux", "Windows"],
             resources: [.copy("Resources/glass_disc.png")],
             swiftSettings: [.unsafeFlags(["-parse-as-library"])]
         )
