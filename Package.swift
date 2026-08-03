@@ -92,7 +92,10 @@ let package = Package(
             name: "TokenClock",
             dependencies: ["Win32Shim"],
             path: "Sources/TokenClock",
-            sources: ["Windows"],
+            exclude: [
+                "AppDelegate.swift", "FloatingPanel.swift", "ViewModel.swift", "main.swift",
+                "L10n.swift", "Config", "Models", "Services", "Views", "Linux", "Resources",
+            ],
             swiftSettings: [.unsafeFlags(["-parse-as-library"])]
         ),
     ]

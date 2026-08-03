@@ -4,7 +4,7 @@ import Win32Shim
 /// P1 skeleton: prove the Win32 plumbing (floating window + tray + menu + GDI paint + timers).
 /// P2 replaces the placeholder paint with the real clock face and wires the usage data.
 final class WindowsApp {
-    static let shared = WindowsApp()
+    nonisolated(unsafe) static let shared = WindowsApp()
     private init() {}
 
     // Menu command ids (must match what buildMenu assigns).

@@ -51,6 +51,10 @@ static void remove_tray(void) {
 }
 
 static LRESULT CALLBACK wnd_proc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
+    if (msg == g_taskbar_created) {   /* explorer restarted: re-add the tray icon */
+        add_tray();
+        return 0;
+    }
     switch (msg) {
     case WM_CREATE:
         g_hwnd = h;
@@ -102,10 +106,6 @@ static LRESULT CALLBACK wnd_proc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
 
     case WM_NCHITTEST:
         return HTCAPTION;   /* whole window is draggable */
-
-    case g_taskbar_created:   /* explorer restarted: re-add the tray icon */
-        add_tray();
-        return 0;
 
     case WM_DESTROY:
         remove_tray();
