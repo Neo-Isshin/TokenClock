@@ -73,11 +73,15 @@ let package = Package(
     ]
 )
 #elseif os(Windows)
-// Windows 原生（Win32）normal 版。
-// P1：仅 Windows/ UI 骨架 + Win32Shim（C 互操作层）。共享 Services + CSQLite 在 P2/P3 接入。
+// Windows 原生（Win32）normal 版：Win32Shim（C 互操作）+ CSQLite（vendor amalgamation）+ 共享数据层 + Windows/ UI。
 let package = Package(
     name: "TokenClock",
     targets: [
+        .target(
+            name: "CSQLite",
+            path: "Sources/CSQLiteWin",
+            publicHeadersPath: "."
+        ),
         .target(
             name: "Win32Shim",
             path: "Sources/Win32Shim",
@@ -86,15 +90,26 @@ let package = Package(
                 .linkedLibrary("Shell32"),
                 .linkedLibrary("Gdi32"),
                 .linkedLibrary("Advapi32"),
+                .linkedLibrary("Ws2_32"),
             ]
         ),
         .executableTarget(
             name: "TokenClock",
-            dependencies: ["Win32Shim"],
+            dependencies: ["CSQLite", "Win32Shim"],
             path: "Sources/TokenClock",
             exclude: [
-                "AppDelegate.swift", "FloatingPanel.swift", "ViewModel.swift", "main.swift",
-                "L10n.swift", "Config", "Models", "Services", "Views", "Linux", "Resources",
+                "AppDelegate.swift",
+                "FloatingPanel.swift",
+                "ViewModel.swift",
+                "main.swift",
+                "Views",
+                "Linux",
+                "Resources",
+                "Models/ClockFaceTheme.swift",
+                "Models/ClockSize.swift",
+                "Models/CustomThemeConfig.swift",
+                "Services/LaunchAgentHelper.swift",
+                "Services/UsageAPIServer.swift",
             ],
             swiftSettings: [.unsafeFlags(["-parse-as-library"])]
         ),

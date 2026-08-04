@@ -1,8 +1,8 @@
 import Foundation
-#if os(Linux)
-import CSQLite
-#else
+#if os(macOS)
 import SQLite3
+#else
+import CSQLite
 #endif
 
 /// 日结历史持久化：每天 00:01 抓 viewModel.tools 快照写入 SQLite
@@ -111,6 +111,15 @@ final class HistoryStore: @unchecked Sendable {
                 .appendingPathComponent(".local/share", isDirectory: true).path
         return URL(fileURLWithPath: dataHome, isDirectory: true)
             .appendingPathComponent("tokenclock", isDirectory: true)
+            .appendingPathComponent("history.sqlite")
+#elseif os(Windows)
+        // Windows: %LOCALAPPDATA%\TokenClock\history.sqlite
+        let env = ProcessInfo.processInfo.environment
+        let local = env["LOCALAPPDATA"]
+            ?? env["USERPROFILE"].map { $0 + "\\AppData\\Local" }
+            ?? "C:\\TokenClock"
+        return URL(fileURLWithPath: local, isDirectory: true)
+            .appendingPathComponent("TokenClock", isDirectory: true)
             .appendingPathComponent("history.sqlite")
 #else
         let appSupport = (try? FileManager.default.url(

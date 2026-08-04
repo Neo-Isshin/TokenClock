@@ -1,8 +1,8 @@
 import Foundation
-#if os(Linux)
-import CSQLite
-#else
+#if os(macOS)
 import SQLite3
+#else
+import CSQLite
 #endif
 
 /// 从 Codex CLI 读取 token 使用数据

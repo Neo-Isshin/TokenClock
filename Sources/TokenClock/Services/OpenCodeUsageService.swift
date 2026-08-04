@@ -1,8 +1,8 @@
 import Foundation
-#if os(Linux)
-import CSQLite
-#else
+#if os(macOS)
 import SQLite3
+#else
+import CSQLite
 #endif
 
 /// 从 OpenCode 本地 SQLite 数据库读取 token 使用数据

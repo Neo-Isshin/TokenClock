@@ -2,10 +2,10 @@ import Foundation
 #if canImport(FoundationNetworking)
 import FoundationNetworking
 #endif
-#if os(Linux)
-import CSQLite
-#else
+#if os(macOS)
 import SQLite3
+#else
+import CSQLite
 #endif
 
 /// 通过 Cursor 官方 usage API 拉取 token 消耗。

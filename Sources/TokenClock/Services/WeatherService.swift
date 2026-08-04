@@ -1,5 +1,10 @@
 import Foundation
+#if os(macOS)
 import CoreLocation
+#endif
+#if canImport(FoundationNetworking)
+import FoundationNetworking   // swift-corelibs 在 Windows 把 URLSession 拆到独立模块
+#endif
 
 /// 逐小时预报（3小时间隔）
 struct HourlyForecast: Sendable {
@@ -12,10 +17,12 @@ struct HourlyForecast: Sendable {
 /// 天气服务：支持自动定位 + wttr.in 免费天气 API
 /// 使用 JSON 格式解析，支持 weatherCode 精确映射 + 逐小时预报
 @MainActor
-final class WeatherService: NSObject, CLLocationManagerDelegate {
+final class WeatherService: NSObject {
     static let shared = WeatherService()
 
+#if os(macOS)
     private let locationManager = CLLocationManager()
+#endif
 
     /// 天气请求代次：每次发起网络抓取自增；post 前比对，旧请求被新请求超越时不 post，
     /// 杜绝慢请求用旧数据覆盖快请求刚拿到的新数据。
@@ -34,13 +41,16 @@ final class WeatherService: NSObject, CLLocationManagerDelegate {
 
     override private init() {
         super.init()
+        #if os(macOS)
         locationManager.delegate = self
         locationManager.desiredAccuracy = kCLLocationAccuracyThreeKilometers
+        #endif
     }
 
     // MARK: - 定位
 
     func fetchLocalWeather() {
+        #if os(macOS)
         let status = locationManager.authorizationStatus
         switch status {
         case .authorizedAlways, .authorizedWhenInUse:
@@ -56,8 +66,15 @@ final class WeatherService: NSObject, CLLocationManagerDelegate {
                 await self.fetchWeatherByIP()
             }
         }
+        #else
+        // 非 macOS（Windows/Linux）无 CoreLocation：直接用 IP 定位
+        Task { @MainActor in
+            await self.fetchWeatherByIP()
+        }
+        #endif
     }
 
+    #if os(macOS)
     nonisolated func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
         guard let location = locations.last else { return }
         let lat = location.coordinate.latitude
@@ -77,6 +94,7 @@ final class WeatherService: NSObject, CLLocationManagerDelegate {
             manager.requestLocation()
         }
     }
+    #endif
 
     // MARK: - 按城市名获取天气
 
@@ -305,8 +323,9 @@ final class WeatherService: NSObject, CLLocationManagerDelegate {
         }
     }
 
-    // MARK: - 反向地理编码
+    // MARK: - 反向地理编码（仅 macOS，CoreLocation/CLGeocoder）
 
+    #if os(macOS)
     private func reverseGeocode(lat: Double, lon: Double) async -> String {
         let location = CLLocation(latitude: lat, longitude: lon)
         // normal 分支部署目标 .macOS(.v15),MKReverseGeocodingRequest 是 macOS 26+ API。
@@ -323,9 +342,15 @@ final class WeatherService: NSObject, CLLocationManagerDelegate {
         }
         return "未知位置"
     }
+    #endif
 }
 
 extension Notification.Name {
     static let weatherUpdated = Notification.Name("weatherUpdated")
     static let customThemeApplied = Notification.Name("customThemeApplied")
 }
+
+#if os(macOS)
+// CLLocationManager 只有 macOS 有；用空 extension 声明协议一致性（委托方法在类体内 #if os(macOS)）。
+extension WeatherService: CLLocationManagerDelegate {}
+#endif
