@@ -58,8 +58,9 @@ static LRESULT CALLBACK wnd_proc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
     switch (msg) {
     case WM_CREATE:
         g_hwnd = h;
-        if (g_cb.initial_opacity < 1.0)
-            SetLayeredWindowAttributes(h, 0, (BYTE)(g_cb.initial_opacity * 255.0), LWA_ALPHA);
+        /* WS_EX_LAYERED windows need SetLayeredWindowAttributes to be initialized/render at all;
+         * always call it (alpha 255 at full opacity paints normally). */
+        SetLayeredWindowAttributes(h, 0, (BYTE)(g_cb.initial_opacity * 255.0), LWA_ALPHA);
         SetTimer(h, IDM_TICK, 1000, NULL);
         if (g_cb.scan_interval_ms > 0)
             SetTimer(h, IDM_SCAN, g_cb.scan_interval_ms, NULL);
