@@ -67,6 +67,16 @@ void  menu_add_separator(void *hmenu);
 void  menu_add_submenu(void *hmenu, const char *label_utf8, void *submenu);
 void  menu_track(void *hmenu, void *hwnd);
 
+/* --- GDI+ render (implemented in winrender.cpp) ---
+ * Draws one antialiased clock frame into a per-pixel-alpha bitmap and presents it via
+ * UpdateLayeredWindow — the window is fully transparent outside the dial (no rectangle). */
+void gdip_init(void);
+void gdip_shutdown(void);
+void win_render_clock(int w, int h, int hh, int mm, int ss, const char *token_utf8,
+                      unsigned int dial_fill, unsigned int dial_stroke,
+                      unsigned int tick_rgb, unsigned int hand_rgb,
+                      unsigned int sec_rgb, unsigned int text_rgb);
+
 #ifdef __cplusplus
 }
 #endif

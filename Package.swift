@@ -89,6 +89,7 @@ let package = Package(
                 .linkedLibrary("User32"),
                 .linkedLibrary("Shell32"),
                 .linkedLibrary("Gdi32"),
+                .linkedLibrary("gdiplus"),
                 .linkedLibrary("Advapi32"),
                 .linkedLibrary("Ws2_32"),
             ]

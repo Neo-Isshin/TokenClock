@@ -13,7 +13,7 @@
 #define WM_TRAY    (WM_APP + 1)
 
 static win_callbacks g_cb;
-static HWND  g_hwnd = NULL;
+HWND  g_hwnd = NULL;                  /* non-static: shared with winrender.cpp */
 static UINT  g_taskbar_created = 0;   /* registered msg: explorer restarted */
 
 static COLORREF to_cr(unsigned int rgb) {
@@ -58,9 +58,9 @@ static LRESULT CALLBACK wnd_proc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
     switch (msg) {
     case WM_CREATE:
         g_hwnd = h;
-        /* WS_EX_LAYERED windows need SetLayeredWindowAttributes to be initialized/render at all;
-         * always call it (alpha 255 at full opacity paints normally). */
-        SetLayeredWindowAttributes(h, 0, (BYTE)(g_cb.initial_opacity * 255.0), LWA_ALPHA);
+        /* WS_EX_LAYERED is set on the window; content is composited per-pixel via
+         * UpdateLayeredWindow in win_render_clock — do NOT call SetLayeredWindowAttributes
+         * (constant-alpha) here, it conflicts with per-pixel-alpha. */
         SetTimer(h, IDM_TICK, 1000, NULL);
         if (g_cb.scan_interval_ms > 0)
             SetTimer(h, IDM_SCAN, g_cb.scan_interval_ms, NULL);
@@ -146,11 +146,15 @@ int win_run(const win_callbacks *cb) {
     ShowWindow(hwnd, SW_SHOWNORMAL);
     UpdateWindow(hwnd);
 
+    gdip_init();
+    if (g_cb.on_tick) g_cb.on_tick(g_cb.ctx);   // first frame immediately (no 1s blank)
+
     MSG msg;
     while (GetMessageW(&msg, NULL, 0, 0) > 0) {
         TranslateMessage(&msg);
         DispatchMessageW(&msg);
     }
+    gdip_shutdown();
     return 0;
 }
 
