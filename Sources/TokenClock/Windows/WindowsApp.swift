@@ -35,16 +35,47 @@ final class WindowsApp {
 
 extension WindowsApp {
     func paint(hdc: UnsafeMutableRawPointer?, w: Int32, h: Int32) {
-        // Placeholder: cream dial + "TokenClock". P2 paints the real clock face.
+        gdi_clear(hdc, w, h, 0xF3F3F3)
+        drawClock(hdc: hdc, w: w, h: h, date: Date())
+    }
+
+    /// GDI 复刻 Linux/Cairo 的经典表盘：奶白表盘 + 60 刻度 + 时/分/秒针 + 中心帽 + token 文本。
+    private func drawClock(hdc: UnsafeMutableRawPointer?, w: Int32, h: Int32, date: Date) {
         let cx = w / 2
         let cy = h / 2
-        let r = min(w, h) / 2 - 12
-        gdi_clear(hdc, w, h, 0xF3F3F3)
-        gdi_fill_circle(hdc, cx, cy, r, 0xE8E0CF, 0x403933, 3)
-        let df = DateFormatter(); df.dateFormat = "HH:mm:ss"
-        drawText(hdc, cx: cx, cy: cy - 8, df.string(from: Date()), size: 22, rgb: 0x403933, bold: true)
-        drawText(hdc, cx: cx, cy: cy + 22, "TokenClock · Windows", size: 11, rgb: 0x8A8074, bold: false)
+        let r = Double(min(w, h) / 2 - 12)
+        let cxd = Double(cx), cyd = Double(cy)
+
+        gdi_fill_circle(hdc, cx, cy, Int32(r), 0xE8E0CF, 0x403933, 3)   // dial
+
+        for i in 0..<60 {                                                 // ticks
+            let a = deg2rad(Double(i) * 6.0 - 90.0)
+            let isHour = (i % 5 == 0)
+            let inner = isHour ? r - 18.0 : r - 10.0
+            let outer = r - 2.0
+            gdi_line(hdc,
+                     Int32(cxd + cos(a) * inner), Int32(cyd + sin(a) * inner),
+                     Int32(cxd + cos(a) * outer), Int32(cyd + sin(a) * outer),
+                     isHour ? 3 : 1, isHour ? 0x403933 : 0x6A5F52)
+        }
+
+        let comps = Calendar.current.dateComponents([.hour, .minute, .second], from: date)
+        let h = Double(comps.hour ?? 0), m = Double(comps.minute ?? 0), s = Double(comps.second ?? 0)
+        drawHand(hdc, cx, cy, deg: (h.truncatingRemainder(dividingBy: 12) + m / 60) * 30, len: r * 0.5,  width: 6, rgb: 0x403933)
+        drawHand(hdc, cx, cy, deg: (m + s / 60) * 6,                  len: r * 0.72, width: 4, rgb: 0x403933)
+        drawHand(hdc, cx, cy, deg: s * 6,                             len: r * 0.78, width: 2, rgb: 0xC7331F)
+
+        gdi_fill_circle(hdc, cx, cy, 6, 0x403933, 0x403933, 0)          // center cap
+        drawText(hdc, cx: cx, cy: Int32(cyd + r * 0.52), "—", size: 20, rgb: 0x403933, bold: true) // token (P2 data)
     }
+
+    private func drawHand(_ hdc: UnsafeMutableRawPointer?, _ cx: Int32, _ cy: Int32, deg: Double, len: Double, width: Int32, rgb: UInt32) {
+        let a = deg2rad(deg - 90)
+        gdi_line(hdc, cx, cy,
+                 Int32(Double(cx) + cos(a) * len), Int32(Double(cy) + sin(a) * len),
+                 width, rgb)
+    }
+    private func deg2rad(_ d: Double) -> Double { d * .pi / 180.0 }
 
     func trayClick(button: Int32) {
         // P2: left-click/double-click toggles the detail panel.
