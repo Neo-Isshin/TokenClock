@@ -14,10 +14,17 @@ import FoundationNetworking   // swift-corelibs 把 URLSession 拆到独立模�
 private final class DataBox: @unchecked Sendable { var value: Data? }
 
 enum WindowsWeather {
-    /// 触发一次后台抓取（IPIP.net 定位 → wttr.in 自动定位回退）；完成后 post `.weatherUpdated`。
-    static func refresh() {
+    /// 触发一次后台抓取。city 为空或 "Auto" ⇒ IP 自动定位（IPIP→wttr.in）；否则按城市名走 wttr.in。
+    /// 完成后 post `.weatherUpdated`。
+    static func refresh(forCity city: String = "Auto") {
         DispatchQueue.global(qos: .utility).async {
-            if let info = fetch() {
+            let info: WeatherInfo?
+            if city.isEmpty || city == "Auto" {
+                info = fetch()
+            } else {
+                info = weather(city: city) ?? fetch()   // 指定城市失败时回退 IP 自动定位
+            }
+            if let info {
                 NotificationCenter.default.post(name: .weatherUpdated, object: info)
             }
         }

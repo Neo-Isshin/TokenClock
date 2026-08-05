@@ -18,6 +18,10 @@ final class WindowsApp: @unchecked Sendable {
     private let cmdLaunch: Int32 = 40
     private let cmdAbout: Int32 = 50
     private let cmdThemeBase: Int32 = 60   // + 索引 → WindowsClockTheme.allCases[i]
+    private let cmdTempC: Int32 = 70, cmdTempF: Int32 = 71
+    private let cmdCityBase: Int32 = 80    // + 索引 → cities[i]
+    private let cmdTzBase: Int32 = 90      // + 索引 → timezones[i]
+    private let cmdApi: Int32 = 100
 
     /// 当前浮窗边长（pt）。表盘半径 = size/2 - 24；classic 主题按 radius 116（medium）校准，
     /// 其余尺寸由 winrender 按 r/116 等比缩放。切换尺寸时此值同步更新并 resize 窗口。
@@ -60,17 +64,19 @@ final class WindowsApp: @unchecked Sendable {
         cb.class_name = nil
         cb.window_title = nil
 
-        // 数据层：本地 API 服务 + 首次全量扫描（后台线程，下一帧起渲染真实用量）
-        api = WindowsAPIServer(model: model)
-        api?.start()
+        // 数据层：本地 API 服务（可经菜单关闭）+ 首次全量扫描（后台线程，下一帧起渲染真实用量）
+        if apiEnabled {
+            api = WindowsAPIServer(model: model)
+            api?.start()
+        }
         scheduleScan(incremental: false)
 
-        // 天气（IP 定位）：监听 .weatherUpdated → 格式化暂存，render 时叠到盘面顶部
+        // 天气：监听 .weatherUpdated → 格式化暂存，render 时叠到盘面顶部；按选定城市抓取
         NotificationCenter.default.addObserver(forName: .weatherUpdated, object: nil, queue: nil) { [weak self] note in
             guard let info = note.object as? WeatherInfo else { return }
             self?.updateWeather(info)
         }
-        WindowsWeather.refresh()
+        WindowsWeather.refresh(forCity: selectedCity)
 
         _ = win_run(&cb)
     }
@@ -90,7 +96,7 @@ final class WindowsApp: @unchecked Sendable {
         }
 
         let now = Date()
-        let comps = Calendar.current.dateComponents([.hour, .minute, .second], from: now)
+        let comps = effectiveCalendar.dateComponents([.hour, .minute, .second], from: now)
         let date = dateFmt.string(from: now)
 
         let tools = model.tools
@@ -154,7 +160,7 @@ final class WindowsApp: @unchecked Sendable {
             self?.model.scan(incremental: incremental)
         }
         scanCount &+= 1
-        if scanCount % 20 == 0 { WindowsWeather.refresh() }   // 每 ~10 分钟刷新一次天气
+        if scanCount % 20 == 0 { WindowsWeather.refresh(forCity: selectedCity) }   // 每 ~10 分钟刷新一次天气
     }
 
     func trayClick(button: Int32) {
@@ -192,6 +198,27 @@ final class WindowsApp: @unchecked Sendable {
             addSubmenu(menu, L.tr("menu.size"), sm)
         }
         addMenuItem(menu, cmdTopmost, L.tr("menu.alwaysOnTop"), alwaysOnTop)
+
+        // 温度单位
+        if let um = menu_create() {
+            addMenuItem(um, cmdTempC, L.tr("menu.celsius"), !useFahrenheit)
+            addMenuItem(um, cmdTempF, L.tr("menu.fahrenheit"), useFahrenheit)
+            addSubmenu(menu, L.tr("menu.temperature"), um)
+        }
+        // 城市（Auto=IP 定位 + 6 预置）
+        if let cm = menu_create() {
+            for (i, c) in Self.cities.enumerated() {
+                addMenuItem(cm, cmdCityBase + Int32(i), cityLabel(c), c == selectedCity)
+            }
+            addSubmenu(menu, L.tr("menu.city"), cm)
+        }
+        // 时区
+        if let zm = menu_create() {
+            for (i, tz) in Self.timezones.enumerated() {
+                addMenuItem(zm, cmdTzBase + Int32(i), tzLabel(tz), tz == selectedTimezoneRaw)
+            }
+            addSubmenu(menu, L.tr("menu.timezone"), zm)
+        }
         addSeparator(menu)
 
         // 语言子菜单
@@ -202,6 +229,7 @@ final class WindowsApp: @unchecked Sendable {
             addMenuItem(lm, cmdLangEn,   AppLanguage.en.displayName,     lang == .en)
             addSubmenu(menu, L.tr("menu.language"), lm)
         }
+        addMenuItem(menu, cmdApi, L.language == .en ? "🔌 API Server" : "🔌 API 服务", apiEnabled)
         addMenuItem(menu, cmdLaunch, L.tr("menu.launchAtLogin"), launchAtLogin)
         addSeparator(menu)
         addMenuItem(menu, cmdAbout, L.tr("menu.about"), false)
@@ -223,6 +251,13 @@ final class WindowsApp: @unchecked Sendable {
         case cmdLangEn:     setLang(.en)
         case cmdLaunch:     setLaunchAtLogin(!launchAtLogin)
         case cmdAbout:      showAbout()
+        case cmdTempC:      setUseFahrenheit(false)
+        case cmdTempF:      setUseFahrenheit(true)
+        case cmdApi:        apiEnabled.toggle()
+        case let c where c >= cmdCityBase && c < cmdCityBase + Int32(Self.cities.count):
+            setCity(Self.cities[Int(c - cmdCityBase)])
+        case let c where c >= cmdTzBase && c < cmdTzBase + Int32(Self.timezones.count):
+            setTimezone(Self.timezones[Int(c - cmdTzBase)])
         case let c where c >= cmdThemeBase && c < cmdThemeBase + Int32(WindowsClockTheme.allCases.count):
             setTheme(WindowsClockTheme.allCases[Int(c - cmdThemeBase)])
         default: break
@@ -295,6 +330,66 @@ final class WindowsApp: @unchecked Sendable {
     private var launchAtLogin: Bool { win_autostart_get() == 1 }
     private func setLaunchAtLogin(_ on: Bool) { _ = win_autostart_set(on ? 1 : 0) }
 
+    // 城市 / 温度 / 时区 / API（镜像 macOS SettingsKey）
+    private static let cities = ["Auto", "Hong Kong", "Shanghai", "Beijing", "Tokyo", "Singapore", "New York"]
+    private static let timezones = ["auto", "Asia/Hong_Kong", "Asia/Shanghai", "Asia/Tokyo"]
+
+    private var selectedCity: String {
+        ProcessInfo.processInfo.environment["TC_CITY"] ?? UserDefaults.standard.string(for: .selectedCity) ?? "Auto"
+    }
+    private var selectedTimezoneRaw: String {
+        ProcessInfo.processInfo.environment["TC_TZ"] ?? UserDefaults.standard.string(for: .selectedTimezone) ?? "auto"
+    }
+    private var useFahrenheit: Bool { UserDefaults.standard.bool(for: .useFahrenheit) }
+
+    private var apiEnabled: Bool {
+        get {
+            if UserDefaults.standard.object(forKey: SettingsKey.apiServerEnabled.rawValue) == nil { return true }
+            return UserDefaults.standard.bool(for: .apiServerEnabled)
+        }
+        set {
+            UserDefaults.standard.setBool(newValue, for: .apiServerEnabled)
+            if newValue { if api == nil { api = WindowsAPIServer(model: model) }; api?.start() }
+            else { api?.stop() }
+        }
+    }
+
+    /// 按选定时区取 Calendar（auto ⇒ 系统时区）。
+    private var effectiveCalendar: Calendar {
+        var c = Calendar.current
+        let raw = selectedTimezoneRaw
+        c.timeZone = (raw == "auto") ? TimeZone.current : (TimeZone(identifier: raw) ?? TimeZone.current)
+        return c
+    }
+
+    private func setUseFahrenheit(_ v: Bool) {
+        UserDefaults.standard.setBool(v, for: .useFahrenheit)
+        WindowsWeather.refresh(forCity: selectedCity)   // 重新按新单位格式化温度
+        render()
+    }
+    private func setCity(_ c: String) {
+        UserDefaults.standard.setString(c, for: .selectedCity)
+        WindowsWeather.refresh(forCity: c)
+        render()
+    }
+    private func setTimezone(_ tz: String) {
+        UserDefaults.standard.setString(tz, for: .selectedTimezone)
+        render()   // 时钟按新时区走
+    }
+
+    private func cityLabel(_ c: String) -> String {
+        if c == "Auto" { return L10n.shared.language == .en ? "Auto" : "自动" }
+        return c
+    }
+    private func tzLabel(_ id: String) -> String {
+        switch id {
+        case "Asia/Hong_Kong": return L10n.shared.tr("tz.hongKong")
+        case "Asia/Shanghai":  return L10n.shared.tr("tz.shanghai")
+        case "Asia/Tokyo":     return L10n.shared.tr("tz.tokyo")
+        default:               return L10n.shared.tr("tz.auto")
+        }
+    }
+
     /// 顶部日期格式器（镜像 ViewModel.dateString：zh `M月d日 EEEE`，en 本地化模板）。
     /// 实例计算属性——语言切换后下一帧即用新 locale。
     private var dateFmt: DateFormatter {
@@ -304,6 +399,8 @@ final class WindowsApp: @unchecked Sendable {
         case .zhHant: f.locale = Locale(identifier: "zh_TW"); f.dateFormat = "M月d日 EEEE"
         case .en:     f.locale = Locale(identifier: "en_US"); f.setLocalizedDateFormatFromTemplate("EEEEMMMd")
         }
+        let raw = selectedTimezoneRaw
+        f.timeZone = (raw == "auto") ? TimeZone.current : (TimeZone(identifier: raw) ?? TimeZone.current)
         return f
     }
 
