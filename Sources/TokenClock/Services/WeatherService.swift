@@ -147,7 +147,7 @@ final class WeatherService: NSObject {
     // MARK: - JSON 解析
 
     /// 解析 wttr.in JSON 响应
-    nonisolated private static func parseJSON(data: Data?, fallbackCity: String) -> WeatherInfo {
+    nonisolated static func parseJSON(data: Data?, fallbackCity: String) -> WeatherInfo {
         guard let data = data,
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             return WeatherInfo(emoji: "🌤️", temperature: 0, cityName: fallbackCity)

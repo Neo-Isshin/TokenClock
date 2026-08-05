@@ -25,6 +25,8 @@ final class WindowsApp: @unchecked Sendable {
     private let model = WindowsUsageModel()
     fileprivate var api: WindowsAPIServer?
     private var didStartup = false
+    private var weatherString = ""           // 由 .weatherUpdated 通知更新，render 时叠到盘面顶部
+    private var scanCount: Int = 0           // 天气刷新节流（每 20 次扫描≈10 分钟刷新一次）
 
     func run() {
         win_set_dpi_aware()
@@ -58,7 +60,20 @@ final class WindowsApp: @unchecked Sendable {
         api?.start()
         scheduleScan(incremental: false)
 
+        // 天气（IP 定位）：监听 .weatherUpdated → 格式化暂存，render 时叠到盘面顶部
+        NotificationCenter.default.addObserver(forName: .weatherUpdated, object: nil, queue: nil) { [weak self] note in
+            guard let info = note.object as? WeatherInfo else { return }
+            self?.updateWeather(info)
+        }
+        WindowsWeather.refresh()
+
         _ = win_run(&cb)
+    }
+
+    private func updateWeather(_ info: WeatherInfo) {
+        let f = UserDefaults.standard.bool(for: .useFahrenheit)
+        let temp = f ? Int(Double(info.temperature) * 9.0 / 5.0 + 32.0) : info.temperature
+        weatherString = "\(info.emoji) \(temp)°\(f ? "F" : "C")"
     }
 
     /// 渲染一帧：忠实 classic 表盘 + 叠加真实用量（日期 / token 计数 / 消息数 / 活跃工具）。
@@ -79,7 +94,7 @@ final class WindowsApp: @unchecked Sendable {
         let top = UsageAggregator.topToolsByTokens(tools, limit: 2)
         let tool1 = top.first.map { "\($0.emoji) \($0.abbreviation)" } ?? ""
         let tool2 = top.count > 1 ? "\(top[1].emoji) \(top[1].abbreviation)" : ""
-        let weather = ""   // TODO: 接入 WeatherService IP 定位
+        let weather = weatherString
 
         Self.withCStrings([date, weather, tokens, messages, tool1, tool2]) { ptrs in
             var ov = win_overlay()
@@ -105,6 +120,8 @@ final class WindowsApp: @unchecked Sendable {
         DispatchQueue.global(qos: .utility).async { [weak self] in
             self?.model.scan(incremental: incremental)
         }
+        scanCount &+= 1
+        if scanCount % 20 == 0 { WindowsWeather.refresh() }   // 每 ~10 分钟刷新一次天气
     }
 
     func trayClick(button: Int32) { /* TODO: 左键展开详情面板（P6） */ }
