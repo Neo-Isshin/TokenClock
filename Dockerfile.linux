@@ -45,4 +45,5 @@ RUN runtime_mirror="$(printf '%s' "${UBUNTU_PORTS_MIRROR}" | sed 's@^https:@http
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /src/.build/release/TokenClock /usr/local/bin/tokenclock-gui
+COPY --from=builder /src/.build/release/TokenClock_TokenClock.resources /usr/local/bin/TokenClock_TokenClock.resources
 ENTRYPOINT ["/usr/local/bin/tokenclock-gui"]

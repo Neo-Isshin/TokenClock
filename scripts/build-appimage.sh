@@ -57,6 +57,11 @@ mkdir -p "$APPDIR/usr/share/fonts/truetype/noto"
 cp "$BIN" "$APPDIR/usr/bin/$APP"
 chmod +x "$APPDIR/usr/bin/$APP"
 
+RESOURCE_BUNDLE="$ROOT/.build/release/TokenClock_TokenClock.resources"
+[ -d "$RESOURCE_BUNDLE" ] || die "resource bundle not found: $RESOURCE_BUNDLE"
+cp -R "$RESOURCE_BUNDLE" "$APPDIR/usr/bin/"
+ok "SwiftPM resource bundle installed"
+
 ICON_SRC="$ROOT/Sources/TokenClock/Resources/glass_disc.png"
 [ -f "$ICON_SRC" ] || die "icon source not found: $ICON_SRC"
 cp "$ICON_SRC" "$APPDIR/usr/share/icons/hicolor/256x256/apps/$ICON_NAME.png"
