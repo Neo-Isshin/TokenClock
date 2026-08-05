@@ -59,6 +59,7 @@ void  *win_self(void);              /* the main window HWND (for invalidate/resi
 int    win_autostart_get(void);          /* 1 if the Run\TokenClock value exists */
 int    win_autostart_set(int enable);    /* write/delete Run\TokenClock = this exe path; 1 on success */
 void   win_message_box(const char *title_utf8, const char *body_utf8);
+int    win_user_locale(char *buf, int n); /* GetUserDefaultLocaleName → UTF-8 (e.g. "zh-CN"); returns wchars incl. NUL, 0 on failure */
 
 /* --- GDI helpers (called from Swift on_paint with the hdc it received) --- */
 void gdi_clear(void *hdc, int w, int h, unsigned int rgb);

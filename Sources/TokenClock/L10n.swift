@@ -1,4 +1,7 @@
 import Foundation
+#if os(Windows)
+import Win32Shim     // win_user_locale (GetUserDefaultLocaleName)
+#endif
 
 enum AppLanguage: String, CaseIterable, Identifiable {
     case zhHans = "zh-Hans"
@@ -44,6 +47,12 @@ final class L10n: @unchecked Sendable {
         // Linux：依次读 LC_ALL / LC_MESSAGES / LANG（形如 zh_CN.UTF-8、zh_TW.UTF-8、en_US.UTF-8）
         let env = ProcessInfo.processInfo.environment
         let tag = env["LC_ALL"] ?? env["LC_MESSAGES"] ?? env["LANG"] ?? ""
+        #elseif os(Windows)
+        // Windows：读用户默认 locale（GetUserDefaultLocaleName，形如 zh-CN、zh-TW、en-US）。
+        // 比 Locale.preferredLanguages（corelibs 上常为空）更可靠。
+        let buf = UnsafeMutablePointer<CChar>.allocate(capacity: 86)
+        defer { buf.deallocate() }
+        let tag = (win_user_locale(buf, 86) > 0) ? String(cString: buf) : ""
         #else
         // macOS / 其他 Apple 平台：取用户首选语言列表第一项（形如 zh-Hans-CN、zh-Hant、en-US）
         let tag = Locale.preferredLanguages.first ?? ""

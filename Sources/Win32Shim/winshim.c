@@ -232,6 +232,13 @@ void win_message_box(const char *title_utf8, const char *body_utf8) {
     MessageBoxW(NULL, b, t, MB_OK | MB_ICONINFORMATION);
 }
 
+int win_user_locale(char *buf, int n) {
+    if (!buf || n <= 0) return 0;
+    wchar_t w[LOCALE_NAME_MAX_LENGTH];
+    if (GetUserDefaultLocaleName(w, LOCALE_NAME_MAX_LENGTH) == 0) { buf[0] = 0; return 0; }
+    return WideCharToMultiByte(CP_UTF8, 0, w, -1, buf, n, NULL, NULL);   /* incl. NUL on success */
+}
+
 /* --- GDI helpers --- */
 void gdi_clear(void *hdc, int w, int h, unsigned int rgb) {
     RECT rc = {0, 0, w, h};
