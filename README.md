@@ -206,7 +206,7 @@ curl -fsSL https://raw.githubusercontent.com/Neo-Isshin/TokenClock/main/cli/inst
 
 ### Linux normal build
 
-Linux intentionally ships the **normal classic dial only** (GTK3). It keeps the existing 14 local usage parsers, stores history under XDG data directories, registers XDG autostart, and exposes the same loopback API on `127.0.0.1:9988`. Liquid Glass, the macOS theme editor, and weather/location UI are not part of the Linux build.
+Linux ships the **normal dial experience** in GTK3/Cairo: a transparent circular widget with the same on-dial information layout, all 8 built-in normal faces (Glass, Classic, Glacier, Midnight, Luxe, Antique, Railgun, and Sky), their hand shapes, numerals, ticks, and decorations. Left-click opens the themed session/model detail panel with percentages and weather forecast; right-click opens the visual face picker plus size, opacity, always-on-top, temperature, city, timezone, language, settings, XDG autostart, API copy, and About controls. The GTK settings window covers auto-detection, all 14 tool switches and data paths, live API configuration, usage thresholds, and saved custom faces. Automatic Linux weather uses wttr.in's IP-based location fallback; manually selected cities behave like macOS normal.
 
 **x86_64 — prebuilt AppImage (default):** the universal one-liner downloads a self-contained AppImage (GTK3 bundled, needs only glibc ≥ 2.35) — no Swift, no compilation, no dev headers:
 

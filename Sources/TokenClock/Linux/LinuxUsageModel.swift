@@ -12,6 +12,8 @@ struct HourlyForecast: Sendable {
 final class LinuxUsageModel: @unchecked Sendable {
     private let lock = NSLock()
     private var storedTools: [ToolUsage]
+    private var storedEnabledTools: Set<String>
+    private var storedRateWindowMinutes: Int
     private var scanning = false
 
     private let openclawService = OpenClawUsageService()
@@ -29,21 +31,20 @@ final class LinuxUsageModel: @unchecked Sendable {
     private let continueService = ContinueUsageService()
     private let cursorAgentService = CursorAgentUsageService()
 
-    private static let allToolNames = Set([
+    static let allToolNames = Set([
         "OpenClaw", "Claude Code", "Gemini CLI", "Codex", "Hermes", "OpenCode",
         "Qwen Code", "Copilot", "Grok", "Aider", "Antigravity", "Cline",
         "Continue", "Cursor Agent",
     ])
 
-    let enabledTools: Set<String>
-    let rateWindowMinutes: Int
-
     init() {
         let saved = UserDefaults.standard.stringArray(for: .enabledTools)
-        enabledTools = Set(saved ?? Array(Self.allToolNames))
+        let enabled = Set(saved ?? Array(Self.allToolNames))
         let savedWindow = UserDefaults.standard.int(for: .rateWindow)
-        rateWindowMinutes = savedWindow > 0 ? savedWindow : 10
-        storedTools = MockUsageService.generateInitialData(enabledTools: enabledTools)
+        let rateWindow = savedWindow > 0 ? savedWindow : 10
+        storedEnabledTools = enabled
+        storedRateWindowMinutes = rateWindow
+        storedTools = MockUsageService.generateInitialData(enabledTools: enabled)
 
         if !PathConfig.hasRunInitialDetection {
             PathConfig.hasRunInitialDetection = true
@@ -56,8 +57,32 @@ final class LinuxUsageModel: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         return storedTools
-            .filter { enabledTools.contains($0.name) }
+            .filter { storedEnabledTools.contains($0.name) }
             .sorted { $0.todayTokens > $1.todayTokens }
+    }
+
+    var enabledTools: Set<String> {
+        lock.lock()
+        defer { lock.unlock() }
+        return storedEnabledTools
+    }
+
+    var rateWindowMinutes: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return storedRateWindowMinutes
+    }
+
+    func applyPreferences(enabledTools: Set<String>, rateWindowMinutes: Int) {
+        let normalizedTools = enabledTools.intersection(Self.allToolNames)
+        let normalizedWindow = [10, 30, 60].contains(rateWindowMinutes)
+            ? rateWindowMinutes : 10
+        lock.lock()
+        storedEnabledTools = normalizedTools
+        storedRateWindowMinutes = normalizedWindow
+        lock.unlock()
+        UserDefaults.standard.setStringArray(Array(normalizedTools), for: .enabledTools)
+        UserDefaults.standard.setInt(normalizedWindow, for: .rateWindow)
     }
 
     @discardableResult
@@ -68,6 +93,8 @@ final class LinuxUsageModel: @unchecked Sendable {
             return false
         }
         scanning = true
+        let enabled = storedEnabledTools
+        let rateWindow = storedRateWindowMinutes
         lock.unlock()
 
         defer {
@@ -76,77 +103,77 @@ final class LinuxUsageModel: @unchecked Sendable {
             lock.unlock()
         }
 
-        if enabledTools.contains("OpenClaw") { incremental ? openclawService.incrementalScan() : openclawService.fullScan() }
-        if enabledTools.contains("Claude Code") { incremental ? claudeCodeService.incrementalScan() : claudeCodeService.fullScan() }
-        if enabledTools.contains("Gemini CLI") { incremental ? geminiService.incrementalScan() : geminiService.fullScan() }
-        if enabledTools.contains("Codex") { incremental ? codexService.incrementalScan() : codexService.fullScan() }
-        if enabledTools.contains("Hermes") { incremental ? hermesService.incrementalScan() : hermesService.fullScan() }
-        if enabledTools.contains("OpenCode") { incremental ? opencodeService.incrementalScan() : opencodeService.fullScan() }
-        if enabledTools.contains("Qwen Code") { incremental ? qwenService.incrementalScan() : qwenService.fullScan() }
-        if enabledTools.contains("Copilot") { incremental ? copilotService.incrementalScan() : copilotService.fullScan() }
-        if enabledTools.contains("Grok") { incremental ? grokService.incrementalScan() : grokService.fullScan() }
-        if enabledTools.contains("Aider") { incremental ? aiderService.incrementalScan() : aiderService.fullScan() }
-        if enabledTools.contains("Antigravity") { incremental ? antigravityService.incrementalScan() : antigravityService.fullScan() }
-        if enabledTools.contains("Cline") { incremental ? clineService.incrementalScan() : clineService.fullScan() }
-        if enabledTools.contains("Continue") { incremental ? continueService.incrementalScan() : continueService.fullScan() }
-        if enabledTools.contains("Cursor Agent") { incremental ? cursorAgentService.incrementalScan() : cursorAgentService.fullScan() }
+        if enabled.contains("OpenClaw") { incremental ? openclawService.incrementalScan() : openclawService.fullScan() }
+        if enabled.contains("Claude Code") { incremental ? claudeCodeService.incrementalScan() : claudeCodeService.fullScan() }
+        if enabled.contains("Gemini CLI") { incremental ? geminiService.incrementalScan() : geminiService.fullScan() }
+        if enabled.contains("Codex") { incremental ? codexService.incrementalScan() : codexService.fullScan() }
+        if enabled.contains("Hermes") { incremental ? hermesService.incrementalScan() : hermesService.fullScan() }
+        if enabled.contains("OpenCode") { incremental ? opencodeService.incrementalScan() : opencodeService.fullScan() }
+        if enabled.contains("Qwen Code") { incremental ? qwenService.incrementalScan() : qwenService.fullScan() }
+        if enabled.contains("Copilot") { incremental ? copilotService.incrementalScan() : copilotService.fullScan() }
+        if enabled.contains("Grok") { incremental ? grokService.incrementalScan() : grokService.fullScan() }
+        if enabled.contains("Aider") { incremental ? aiderService.incrementalScan() : aiderService.fullScan() }
+        if enabled.contains("Antigravity") { incremental ? antigravityService.incrementalScan() : antigravityService.fullScan() }
+        if enabled.contains("Cline") { incremental ? clineService.incrementalScan() : clineService.fullScan() }
+        if enabled.contains("Continue") { incremental ? continueService.incrementalScan() : continueService.fullScan() }
+        if enabled.contains("Cursor Agent") { incremental ? cursorAgentService.incrementalScan() : cursorAgentService.fullScan() }
 
         var results: [String: ScanSnapshot] = [:]
-        if enabledTools.contains("OpenClaw") {
+        if enabled.contains("OpenClaw") {
             let usage = openclawService.todayUsage()
-            results["OpenClaw"] = snapshot(usage, openclawService.recentUsage(minutes: rateWindowMinutes).tokens, openclawService.currentHourTokens(), openclawService.isActive(), openclawService.todaySessions())
+            results["OpenClaw"] = snapshot(usage, openclawService.recentUsage(minutes: rateWindow).tokens, openclawService.currentHourTokens(), openclawService.isActive(), openclawService.todaySessions())
         }
-        if enabledTools.contains("Claude Code") {
+        if enabled.contains("Claude Code") {
             let usage = claudeCodeService.todayUsage()
-            results["Claude Code"] = snapshot(usage, claudeCodeService.recentUsage(minutes: rateWindowMinutes).tokens, claudeCodeService.currentHourTokens(), claudeCodeService.isActive(), claudeCodeService.todaySessions())
+            results["Claude Code"] = snapshot(usage, claudeCodeService.recentUsage(minutes: rateWindow).tokens, claudeCodeService.currentHourTokens(), claudeCodeService.isActive(), claudeCodeService.todaySessions())
         }
-        if enabledTools.contains("Gemini CLI") {
+        if enabled.contains("Gemini CLI") {
             let usage = geminiService.todayUsage()
-            results["Gemini CLI"] = snapshot(usage, geminiService.recentUsage(minutes: rateWindowMinutes).tokens, geminiService.currentHourTokens(), geminiService.isActive(), geminiService.todaySessions())
+            results["Gemini CLI"] = snapshot(usage, geminiService.recentUsage(minutes: rateWindow).tokens, geminiService.currentHourTokens(), geminiService.isActive(), geminiService.todaySessions())
         }
-        if enabledTools.contains("Codex") {
+        if enabled.contains("Codex") {
             let usage = codexService.todayUsage()
-            results["Codex"] = snapshot(usage, codexService.recentUsage(minutes: rateWindowMinutes).tokens, codexService.currentHourTokens(), codexService.isActive(), codexService.todaySessions())
+            results["Codex"] = snapshot(usage, codexService.recentUsage(minutes: rateWindow).tokens, codexService.currentHourTokens(), codexService.isActive(), codexService.todaySessions())
         }
-        if enabledTools.contains("Hermes") {
+        if enabled.contains("Hermes") {
             let usage = hermesService.todayUsage()
-            results["Hermes"] = snapshot(usage, hermesService.recentUsage(minutes: rateWindowMinutes).tokens, hermesService.currentHourTokens(), hermesService.isActive(), hermesService.todaySessions())
+            results["Hermes"] = snapshot(usage, hermesService.recentUsage(minutes: rateWindow).tokens, hermesService.currentHourTokens(), hermesService.isActive(), hermesService.todaySessions())
         }
-        if enabledTools.contains("OpenCode") {
+        if enabled.contains("OpenCode") {
             let usage = opencodeService.todayUsage()
-            results["OpenCode"] = snapshot(usage, opencodeService.recentUsage(minutes: rateWindowMinutes).tokens, opencodeService.currentHourTokens(), opencodeService.isActive(), opencodeService.todaySessions())
+            results["OpenCode"] = snapshot(usage, opencodeService.recentUsage(minutes: rateWindow).tokens, opencodeService.currentHourTokens(), opencodeService.isActive(), opencodeService.todaySessions())
         }
-        if enabledTools.contains("Qwen Code") {
+        if enabled.contains("Qwen Code") {
             let usage = qwenService.todayUsage()
-            results["Qwen Code"] = snapshot(usage, qwenService.recentUsage(minutes: rateWindowMinutes).tokens, qwenService.currentHourTokens(), qwenService.isActive(), qwenService.todaySessions())
+            results["Qwen Code"] = snapshot(usage, qwenService.recentUsage(minutes: rateWindow).tokens, qwenService.currentHourTokens(), qwenService.isActive(), qwenService.todaySessions())
         }
-        if enabledTools.contains("Copilot") {
+        if enabled.contains("Copilot") {
             let usage = copilotService.todayUsage()
-            results["Copilot"] = snapshot(usage, copilotService.recentUsage(minutes: rateWindowMinutes).tokens, copilotService.currentHourTokens(), copilotService.isActive(), copilotService.todaySessions())
+            results["Copilot"] = snapshot(usage, copilotService.recentUsage(minutes: rateWindow).tokens, copilotService.currentHourTokens(), copilotService.isActive(), copilotService.todaySessions())
         }
-        if enabledTools.contains("Grok") {
+        if enabled.contains("Grok") {
             let usage = grokService.todayUsage()
-            results["Grok"] = snapshot(usage, grokService.recentUsage(minutes: rateWindowMinutes).tokens, grokService.currentHourTokens(), grokService.isActive(), grokService.todaySessions())
+            results["Grok"] = snapshot(usage, grokService.recentUsage(minutes: rateWindow).tokens, grokService.currentHourTokens(), grokService.isActive(), grokService.todaySessions())
         }
-        if enabledTools.contains("Aider") {
+        if enabled.contains("Aider") {
             let usage = aiderService.todayUsage()
-            results["Aider"] = snapshot(usage, aiderService.recentUsage(minutes: rateWindowMinutes).tokens, aiderService.currentHourTokens(), aiderService.isActive(), aiderService.todaySessions())
+            results["Aider"] = snapshot(usage, aiderService.recentUsage(minutes: rateWindow).tokens, aiderService.currentHourTokens(), aiderService.isActive(), aiderService.todaySessions())
         }
-        if enabledTools.contains("Antigravity") {
+        if enabled.contains("Antigravity") {
             let usage = antigravityService.todayUsage()
-            results["Antigravity"] = snapshot(usage, antigravityService.recentUsage(minutes: rateWindowMinutes).tokens, antigravityService.currentHourTokens(), antigravityService.isActive(), antigravityService.todaySessions())
+            results["Antigravity"] = snapshot(usage, antigravityService.recentUsage(minutes: rateWindow).tokens, antigravityService.currentHourTokens(), antigravityService.isActive(), antigravityService.todaySessions())
         }
-        if enabledTools.contains("Cline") {
+        if enabled.contains("Cline") {
             let usage = clineService.todayUsage()
-            results["Cline"] = snapshot(usage, clineService.recentUsage(minutes: rateWindowMinutes).tokens, clineService.currentHourTokens(), clineService.isActive(), clineService.todaySessions())
+            results["Cline"] = snapshot(usage, clineService.recentUsage(minutes: rateWindow).tokens, clineService.currentHourTokens(), clineService.isActive(), clineService.todaySessions())
         }
-        if enabledTools.contains("Continue") {
+        if enabled.contains("Continue") {
             let usage = continueService.todayUsage()
-            results["Continue"] = snapshot(usage, continueService.recentUsage(minutes: rateWindowMinutes).tokens, continueService.currentHourTokens(), continueService.isActive(), continueService.todaySessions())
+            results["Continue"] = snapshot(usage, continueService.recentUsage(minutes: rateWindow).tokens, continueService.currentHourTokens(), continueService.isActive(), continueService.todaySessions())
         }
-        if enabledTools.contains("Cursor Agent") {
+        if enabled.contains("Cursor Agent") {
             let usage = cursorAgentService.todayUsage()
-            results["Cursor Agent"] = snapshot(usage, cursorAgentService.recentUsage(minutes: rateWindowMinutes).tokens, cursorAgentService.currentHourTokens(), cursorAgentService.isActive(), cursorAgentService.todaySessions())
+            results["Cursor Agent"] = snapshot(usage, cursorAgentService.recentUsage(minutes: rateWindow).tokens, cursorAgentService.currentHourTokens(), cursorAgentService.isActive(), cursorAgentService.todaySessions())
         }
 
         lock.lock()

@@ -32,6 +32,14 @@ let linuxSources = [
     "Services/UsageServiceProtocol.swift",
     "Linux/LinuxAPIServer.swift",
     "Linux/LinuxApp.swift",
+    "Linux/LinuxAutostart.swift",
+    "Linux/LinuxClockTheme.swift",
+    "Linux/LinuxCustomTheme.swift",
+    "Linux/LinuxClockRenderer.swift",
+    "Linux/LinuxDetailsPanel.swift",
+    "Linux/LinuxSettingsWindow.swift",
+    "Linux/LinuxThemePicker.swift",
+    "Linux/LinuxWeatherService.swift",
     "Linux/LinuxMain.swift",
     "Linux/LinuxUsageModel.swift",
 ]
@@ -59,7 +67,6 @@ let package = Package(
                 "Models/ClockFaceTheme.swift",
                 "Models/ClockSize.swift",
                 "Models/CustomThemeConfig.swift",
-                "Resources",
                 "Services/LaunchAgentHelper.swift",
                 "Services/UsageAPIServer.swift",
                 "Services/WeatherService.swift",
@@ -68,6 +75,7 @@ let package = Package(
                 "main.swift",
             ],
             sources: linuxSources,
+            resources: [.copy("Resources/glass_disc.png")],
             swiftSettings: [.unsafeFlags(["-parse-as-library"])]
         ),
     ]

@@ -34,7 +34,8 @@ step "Installing build deps (apt)"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
 apt-get install -y --no-install-recommends \
-  libgtk-3-dev libsqlite3-dev libcurl4-openssl-dev \
+  libgtk-3-dev libsqlite3-dev libcurl4-openssl-dev adwaita-icon-theme \
+  fonts-noto-color-emoji fonts-noto-cjk librsvg2-common shared-mime-info \
   pkg-config file ca-certificates wget libfuse2 \
   >/dev/null
 ok "deps installed"
@@ -51,6 +52,7 @@ step "Assembling AppDir"
 APPDIR="$ROOT/AppDir"
 rm -rf "$APPDIR"
 mkdir -p "$APPDIR/usr/bin" "$APPDIR/usr/share/applications" "$APPDIR/usr/share/icons/hicolor/256x256/apps"
+mkdir -p "$APPDIR/usr/share/fonts/truetype/noto"
 
 cp "$BIN" "$APPDIR/usr/bin/$APP"
 chmod +x "$APPDIR/usr/bin/$APP"
@@ -59,6 +61,12 @@ ICON_SRC="$ROOT/Sources/TokenClock/Resources/glass_disc.png"
 [ -f "$ICON_SRC" ] || die "icon source not found: $ICON_SRC"
 cp "$ICON_SRC" "$APPDIR/usr/share/icons/hicolor/256x256/apps/$ICON_NAME.png"
 ok "icon installed ($ICON_SRC)"
+
+# Keep the dial's CJK labels and activity emoji available on minimal desktop installs.
+find /usr/share/fonts -type f \
+  \( -name 'NotoColorEmoji.ttf' -o -name 'NotoSansCJK-Regular.ttc' -o -name 'NotoSerifCJK-Regular.ttc' \) \
+  -exec cp {} "$APPDIR/usr/share/fonts/truetype/noto/" \;
+ok "CJK/emoji fallback fonts bundled"
 
 cat > "$APPDIR/usr/share/applications/$APP.desktop" <<EOF
 [Desktop Entry]

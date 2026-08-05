@@ -205,7 +205,7 @@ curl -fsSL https://raw.githubusercontent.com/Neo-Isshin/TokenClock/main/cli/inst
 
 ### Linux normal 版
 
-Linux 仅适配 **normal 经典不透明表盘**：使用 GTK3，复用现有 14 个本地用量解析器，历史数据按 XDG 目录保存，支持 XDG 登录自启动，并在 `127.0.0.1:9988` 提供同构 API。Linux 版不包含 Liquid Glass、macOS 主题编辑器和天气/定位界面。
+Linux 使用 GTK3/Cairo 还原 **normal 表盘体验**：主窗口是透明的圆形小组件，盘面信息布局与 macOS normal 一致，并完整提供玻璃、经典、冰川、深夜、暗金、古风、超电磁炮、天空 8 套内置表盘及其指针形状、数字、刻度和装饰。左键展开与主题配套的详情面板，可按会话/模型分组、显示占比、展开来源并查看天气趋势；右键提供图形化表盘选择器、尺寸、透明度、置顶、温标、城市、时区、语言、设置、XDG 开机自启、复制 API 和关于。GTK 设置窗口包含自动探测、14 种工具开关与数据路径、API 即时配置、速率阈值和可保存的自定义表盘。Linux 自动天气使用 wttr.in 的 IP 定位回退，手选城市行为与 macOS normal 一致。
 
 **x86_64 —— 预编译 AppImage（默认）：** 通用一键命令会下载一个自带 GTK3 的 AppImage（仅要求 glibc ≥ 2.35），无需 Swift、无需编译、无需开发头文件：
 
