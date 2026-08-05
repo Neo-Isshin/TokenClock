@@ -71,8 +71,7 @@ static int to_wide(const char *u8, wchar_t *buf, int n) {
 
 // Draw one clock frame into the memory ARGB bitmap and present it via UpdateLayeredWindow.
 // Faithful classic theme. authored at radius 116 (diameter 240pt); window 280 ⇒ r = 116.
-void win_render_clock(int w, int h, int hh, int mm, int ss,
-                      const char *date_utf8, const char *tokens_utf8) {
+void win_render_clock(int w, int h, int hh, int mm, int ss, const win_overlay *ov) {
     if (!g_hwnd) return;
     ensure_mem(w, h);
     // clear to fully transparent (premultiplied alpha 0)
@@ -134,11 +133,11 @@ void win_render_clock(int w, int h, int hh, int mm, int ss,
 
     // overlay text (drawn last ⇒ on top of hands, matching ClockContentView ZStack order)
     Gdiplus::FontFamily fam(L"Segoe UI");
-    Gdiplus::StringFormat sf;
-    sf.SetAlignment(Gdiplus::StringAlignmentCenter);
-    sf.SetLineAlignment(Gdiplus::StringAlignmentCenter);
-    auto text = [&](const char *u8, double px, double py, float size,
-                    unsigned int rgb, bool bold) {
+    Gdiplus::StringFormat sfCenter;
+    sfCenter.SetAlignment(Gdiplus::StringAlignmentCenter);
+    sfCenter.SetLineAlignment(Gdiplus::StringAlignmentCenter);
+    auto textC = [&](const char *u8, double px, double py, float size,
+                     unsigned int rgb, bool bold) {
         wchar_t wb[128];
         if (to_wide(u8, wb, 128) == 0) return;
         Gdiplus::Font f(&fam, size, bold ? Gdiplus::FontStyleBold : Gdiplus::FontStyleRegular,
@@ -146,13 +145,33 @@ void win_render_clock(int w, int h, int hh, int mm, int ss,
         Gdiplus::SolidBrush b(cr(rgb));
         Gdiplus::RectF rect(Gdiplus::REAL(px - 130.0), Gdiplus::REAL(py - size),
                             260.0f, Gdiplus::REAL(size * 2.0f));
+        gfx.DrawString(wb, -1, &f, rect, &sfCenter, &b);
+    };
+    // left-aligned text: anchored at px (left edge), vertically centred at py.
+    auto textL = [&](const char *u8, double px, double py, float size, unsigned int rgb) {
+        wchar_t wb[128];
+        if (to_wide(u8, wb, 128) == 0) return;
+        Gdiplus::Font f(&fam, size, Gdiplus::FontStyleRegular, Gdiplus::UnitPixel);
+        Gdiplus::SolidBrush b(cr(rgb));
+        Gdiplus::StringFormat sf;
+        sf.SetAlignment(Gdiplus::StringAlignmentNear);
+        sf.SetLineAlignment(Gdiplus::StringAlignmentCenter);
+        Gdiplus::RectF rect(Gdiplus::REAL(px), Gdiplus::REAL(py - size),
+                            200.0f, Gdiplus::REAL(size * 2.0f));
         gfx.DrawString(wb, -1, &f, rect, &sf, &b);
     };
 
-    // top: date (secondary, 11px) — mirrors ClockContentView upper group
-    text(date_utf8, cxd, cyd - r * 0.42, 11.0f, C_TEXT_SEC, false);
-    // bottom: token count (primary, 20px bold) — mirrors the lower group's count line
-    text(tokens_utf8, cxd, cyd + r * 0.42, 20.0f, C_TEXT_PRI, true);
+    if (ov) {
+        // top centre: date (secondary 11px) then weather (primary 13px) beneath it
+        textC(ov->date,    cxd, cyd - r * 0.42, 11.0f, C_TEXT_SEC, false);
+        textC(ov->weather, cxd, cyd - r * 0.42 + 16.0, 13.0f, C_TEXT_PRI, false);
+        // bottom centre: token count (primary 20px bold) then messages (secondary 10px)
+        textC(ov->tokens,   cxd, cyd + r * 0.40, 20.0f, C_TEXT_PRI, true);
+        textC(ov->messages, cxd, cyd + r * 0.40 + 18.0, 10.0f, C_TEXT_SEC, false);
+        // left side: up to two active tools (primary 13px), like ClockContentView's leading HStack
+        textL(ov->tool_left1, cxd - r * 0.72, cyd - 10.0, 13.0f, C_TEXT_PRI);
+        textL(ov->tool_left2, cxd - r * 0.72, cyd + 12.0, 13.0f, C_TEXT_PRI);
+    }
 
     // present with per-pixel alpha
     POINT zero{0, 0};

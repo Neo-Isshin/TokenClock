@@ -70,11 +70,30 @@ void  menu_track(void *hmenu, void *hwnd);
 /* --- GDI+ render (implemented in winrender.cpp) ---
  * Draws one antialiased clock frame into a per-pixel-alpha bitmap and presents it via
  * UpdateLayeredWindow — the window is fully transparent outside the dial (no rectangle).
- * Faithful classic theme: palette + geometry baked in; Swift supplies time + overlay text. */
+ * Faithful classic theme: palette + geometry baked in; Swift supplies time + overlay text.
+ * Each overlay string may be NULL/empty ⇒ that field is skipped. */
+typedef struct {
+    const char *date;        /* top centre, secondary 11px */
+    const char *weather;     /* top centre (under date), primary 13px */
+    const char *tokens;      /* bottom centre, primary 20px bold */
+    const char *messages;    /* bottom centre (under tokens), secondary 10px */
+    const char *tool_left1;  /* left side, primary 13px */
+    const char *tool_left2;  /* left side (under tool_left1) */
+} win_overlay;
+
 void gdip_init(void);
 void gdip_shutdown(void);
-void win_render_clock(int w, int h, int hh, int mm, int ss,
-                      const char *date_utf8, const char *tokens_utf8);
+void win_render_clock(int w, int h, int hh, int mm, int ss, const win_overlay *ov);
+
+/* --- loopback HTTP API server (implemented in winhttp.c, Winsock) ---
+ * Runs on a background thread bound to 127.0.0.1:port. For each GET it calls `responder`
+ * which fills `out` (up to out_size-1 bytes) with the UTF-8 JSON body and returns its
+ * length, or -1 for 404. Non-GET ⇒ 405. win_start_api_server returns an opaque handle
+ * (NULL on failure); pass it to win_stop_api_server to shut the thread down. */
+typedef int (*win_api_responder_t)(void *ctx, const char *path, const char *query,
+                                   char *out, int out_size);
+void *win_start_api_server(unsigned short port, win_api_responder_t responder, void *ctx);
+void  win_stop_api_server(void *handle);
 
 #ifdef __cplusplus
 }
