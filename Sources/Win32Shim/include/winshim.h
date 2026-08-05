@@ -33,6 +33,9 @@ typedef struct {
   int    width;
   int    height;
   double initial_opacity;    /* 0..1 */
+  int    use_initial_position;  /* 1 ⇒ place at initial_x/initial_y; 0 ⇒ centre on primary screen */
+  int    initial_x;
+  int    initial_y;
   const wchar_t *class_name;
   const wchar_t *window_title;
 } win_callbacks;
@@ -49,7 +52,13 @@ void   win_set_pos(void *hwnd, int x, int y);
 void   win_show(void *hwnd, int show);
 void   win_quit(void *hwnd);
 void   win_set_dpi_aware(void);
+void   win_set_topmost(void *hwnd, int topmost);   /* HWND_TOPMOST / HWND_NOTOPMOST */
 void  *win_self(void);              /* the main window HWND (for invalidate/resize/opacity from Swift) */
+
+/* --- autostart (HKCU\…\Run) + modal info box --- */
+int    win_autostart_get(void);          /* 1 if the Run\TokenClock value exists */
+int    win_autostart_set(int enable);    /* write/delete Run\TokenClock = this exe path; 1 on success */
+void   win_message_box(const char *title_utf8, const char *body_utf8);
 
 /* --- GDI helpers (called from Swift on_paint with the hdc it received) --- */
 void gdi_clear(void *hdc, int w, int h, unsigned int rgb);

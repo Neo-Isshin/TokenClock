@@ -76,6 +76,7 @@ final class L10n: @unchecked Sendable {
     private let table: [String: [AppLanguage: String]] = [
         // MARK: Menu
         "menu.clockFace":        [.zhHans: "🎨 表盘",               .zhHant: "🎨 錶盤",              .en: "🎨 Clock Face"],
+        "menu.size":             [.zhHans: "表盘大小",              .zhHant: "錶盤大小",            .en: "Clock Size"],
         "menu.myClockFaces":     [.zhHans: "✏️ 我的表盘",            .zhHant: "✏️ 我的錶盤",           .en: "✏️ My Clock Faces"],
         "menu.api":              [.zhHans: "🔌 API: localhost:%d/api/usage", .zhHant: "🔌 API: localhost:%d/api/usage", .en: "🔌 API: localhost:%d/api/usage"],
         "menu.opacity":          [.zhHans: "透明度",                .zhHant: "透明度",              .en: "Opacity"],

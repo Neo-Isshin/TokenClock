@@ -6,6 +6,7 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <shellapi.h>
+#include <stdio.h>
 #include "winshim.h"
 
 #define IDM_TICK   1001
@@ -133,13 +134,15 @@ int win_run(const win_callbacks *cb) {
     int sh = GetSystemMetrics(SM_CYSCREEN);
     int w = cb->width  ? cb->width  : 360;
     int h = cb->height ? cb->height : 430;
+    int x = cb->use_initial_position ? cb->initial_x : (sw - w) / 2;
+    int y = cb->use_initial_position ? cb->initial_y : (sh - h) / 2;
 
     HWND hwnd = CreateWindowExW(
         WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_LAYERED,
         wc.lpszClassName,
         cb->window_title ? cb->window_title : L"TokenClock",
         WS_POPUP,
-        (sw - w) / 2, (sh - h) / 2, w, h,
+        x, y, w, h,
         NULL, NULL, wc.hInstance, NULL);
     if (!hwnd) return 1;
 
@@ -176,6 +179,58 @@ void win_set_dpi_aware(void) {
     SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
 }
 void *win_self(void) { return g_hwnd; }
+void win_set_topmost(void *hwnd, int topmost) {
+    SetWindowPos((HWND)hwnd, topmost ? HWND_TOPMOST : HWND_NOTOPMOST,
+                 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+}
+
+/* --- autostart (per-user HKCU\Software\Microsoft\Windows\CurrentVersion\Run\TokenClock) --- */
+#define TC_RUN_SUBKEY  L"Software\\Microsoft\\Windows\\CurrentVersion\\Run"
+#define TC_RUN_VALUE   L"TokenClock"
+
+/* 本进程 exe 的完整路径（带引号，供注册表 Run 项直接使用）。失败返回空串。 */
+static void current_exe_quoted(wchar_t *out, int n) {
+    out[0] = 0;
+    wchar_t path[MAX_PATH];
+    if (GetModuleFileNameW(NULL, path, MAX_PATH) == 0) return;
+    _snwprintf(out, n, L"\"%s\"", path);
+    out[n - 1] = 0;
+}
+
+int win_autostart_get(void) {
+    HKEY key;
+    if (RegOpenKeyExW(HKEY_CURRENT_USER, TC_RUN_SUBKEY, 0, KEY_READ, &key) != ERROR_SUCCESS)
+        return 0;
+    int exists = (RegQueryValueExW(key, TC_RUN_VALUE, NULL, NULL, NULL, NULL) == ERROR_SUCCESS);
+    RegCloseKey(key);
+    return exists ? 1 : 0;
+}
+
+int win_autostart_set(int enable) {
+    HKEY key;
+    if (RegCreateKeyExW(HKEY_CURRENT_USER, TC_RUN_SUBKEY, 0, NULL, 0,
+                        KEY_SET_VALUE, NULL, &key, NULL) != ERROR_SUCCESS)
+        return 0;
+    int ok = 1;
+    if (enable) {
+        wchar_t val[MAX_PATH + 4];
+        current_exe_quoted(val, MAX_PATH + 4);
+        ok = (RegSetValueExW(key, TC_RUN_VALUE, 0, REG_SZ,
+                             (const BYTE *)val,
+                             (DWORD)((wcslen(val) + 1) * sizeof(wchar_t))) == ERROR_SUCCESS);
+    } else {
+        RegDeleteValueW(key, TC_RUN_VALUE);
+    }
+    RegCloseKey(key);
+    return ok ? 1 : 0;
+}
+
+void win_message_box(const char *title_utf8, const char *body_utf8) {
+    wchar_t t[256], b[1024];
+    if (to_wide(title_utf8, t, 256) == 0) t[0] = 0;
+    if (to_wide(body_utf8, b, 1024) == 0) b[0] = 0;
+    MessageBoxW(NULL, b, t, MB_OK | MB_ICONINFORMATION);
+}
 
 /* --- GDI helpers --- */
 void gdi_clear(void *hdc, int w, int h, unsigned int rgb) {

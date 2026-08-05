@@ -85,6 +85,9 @@ void win_render_clock(int w, int h, int hh, int mm, int ss, const win_overlay *o
 
     const double cxd = w / 2.0, cyd = h / 2.0;
     const double r = (w < h ? w : h) / 2.0 - 24.0;   // ⇒ 116 at window 280 (matches macOS medium)
+    // classic 主题按 radius 116（diameter 240pt）校准；窗口尺寸变化时按 r/116 等比缩放
+    // 描边/指针/字号，与 macOS 的 scale = diameter/240 行为一致。
+    const double S = r / 116.0;
 
     // soft drop shadow: a few translucent rings just outside the dial, offset slightly down.
     for (int i = 1; i <= 6; i++) {
@@ -99,7 +102,7 @@ void win_render_clock(int w, int h, int hh, int mm, int ss, const win_overlay *o
         Gdiplus::SolidBrush fill(cr(C_DIAL));
         gfx.FillEllipse(&fill, Gdiplus::REAL(cxd - r), Gdiplus::REAL(cyd - r),
                         Gdiplus::REAL(r * 2), Gdiplus::REAL(r * 2));
-        Gdiplus::Pen rim(cr(C_RIM), 6.0f);
+        Gdiplus::Pen rim(cr(C_RIM), (Gdiplus::REAL)(6.0 * S));
         gfx.DrawEllipse(&rim, Gdiplus::REAL(cxd - r), Gdiplus::REAL(cyd - r),
                         Gdiplus::REAL(r * 2), Gdiplus::REAL(r * 2));
     }
@@ -119,16 +122,19 @@ void win_render_clock(int w, int h, int hh, int mm, int ss, const win_overlay *o
     double hourDeg   = (double)(hh % 12) * 30.0 + (double)mm * 0.5;
     double minuteDeg = (double)mm * 6.0;
     double secondDeg = (double)ss * 6.0;
-    hand(hourDeg,   0.48, 4.5f, C_HOUR);
-    hand(minuteDeg, 0.68, 3.0f, C_MINUTE);
-    hand(secondDeg, 0.78, 1.5f, C_SECOND);
+    hand(hourDeg,   0.48, (float)(4.5 * S), C_HOUR);
+    hand(minuteDeg, 0.68, (float)(3.0 * S), C_MINUTE);
+    hand(secondDeg, 0.78, (float)(1.5 * S), C_SECOND);
 
-    // centre cap: outer gray disc (r=4) + inner red disc (r=2)
+    // centre cap: outer gray disc (r=4) + inner red disc (r=2), scaled
     {
+        double co = 4.0 * S, ci = 2.0 * S;
         Gdiplus::SolidBrush o(cr(C_CAP_OUT));
-        gfx.FillEllipse(&o, Gdiplus::REAL(cxd - 4.0), Gdiplus::REAL(cyd - 4.0), 8.0f, 8.0f);
+        gfx.FillEllipse(&o, Gdiplus::REAL(cxd - co), Gdiplus::REAL(cyd - co),
+                        Gdiplus::REAL(co * 2), Gdiplus::REAL(co * 2));
         Gdiplus::SolidBrush in(cr(C_CAP_IN));
-        gfx.FillEllipse(&in, Gdiplus::REAL(cxd - 2.0), Gdiplus::REAL(cyd - 2.0), 4.0f, 4.0f);
+        gfx.FillEllipse(&in, Gdiplus::REAL(cxd - ci), Gdiplus::REAL(cyd - ci),
+                        Gdiplus::REAL(ci * 2), Gdiplus::REAL(ci * 2));
     }
 
     // overlay text (drawn last ⇒ on top of hands, matching ClockContentView ZStack order)
@@ -162,15 +168,15 @@ void win_render_clock(int w, int h, int hh, int mm, int ss, const win_overlay *o
     };
 
     if (ov) {
-        // top centre: date (secondary 11px) then weather (primary 13px) beneath it
-        textC(ov->date,    cxd, cyd - r * 0.42, 11.0f, C_TEXT_SEC, false);
-        textC(ov->weather, cxd, cyd - r * 0.42 + 16.0, 13.0f, C_TEXT_PRI, false);
-        // bottom centre: token count (primary 20px bold) then messages (secondary 10px)
-        textC(ov->tokens,   cxd, cyd + r * 0.40, 20.0f, C_TEXT_PRI, true);
-        textC(ov->messages, cxd, cyd + r * 0.40 + 18.0, 10.0f, C_TEXT_SEC, false);
-        // left side: up to two active tools (primary 13px), like ClockContentView's leading HStack
-        textL(ov->tool_left1, cxd - r * 0.72, cyd - 10.0, 13.0f, C_TEXT_PRI);
-        textL(ov->tool_left2, cxd - r * 0.72, cyd + 12.0, 13.0f, C_TEXT_PRI);
+        // top centre: date (secondary) then weather (primary) beneath it
+        textC(ov->date,    cxd, cyd - r * 0.42, (float)(11.0 * S), C_TEXT_SEC, false);
+        textC(ov->weather, cxd, cyd - r * 0.42 + 16.0 * S, (float)(13.0 * S), C_TEXT_PRI, false);
+        // bottom centre: token count (primary, bold) then messages (secondary)
+        textC(ov->tokens,   cxd, cyd + r * 0.40, (float)(20.0 * S), C_TEXT_PRI, true);
+        textC(ov->messages, cxd, cyd + r * 0.40 + 18.0 * S, (float)(10.0 * S), C_TEXT_SEC, false);
+        // left side: up to two active tools (primary), like ClockContentView's leading HStack
+        textL(ov->tool_left1, cxd - r * 0.72, cyd - 10.0 * S, (float)(13.0 * S), C_TEXT_PRI);
+        textL(ov->tool_left2, cxd - r * 0.72, cyd + 12.0 * S, (float)(13.0 * S), C_TEXT_PRI);
     }
 
     // present with per-pixel alpha
