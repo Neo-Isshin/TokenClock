@@ -8,7 +8,20 @@ final class WindowsApp {
     private init() {}
 
     private let cmdQuit: Int32 = 1
-    private let size: Int32 = 320   // 浮窗尺寸（正方形，表盘填满，表盘外透明）
+    /// 浮窗尺寸。280 ⇒ 表盘半径 116，与 macOS 中档（diameter 240pt）一致——
+    /// classic 主题的描边/指针宽度均按 radius 116 校准，故窗口也按此对齐以像素级还原。
+    private let size: Int32 = 280
+
+    /// 顶部日期格式器（镜像 ViewModel.dateString：zh `M月d日 EEEE`，en 本地化模板）。
+    private static let dateFmt: DateFormatter = {
+        let f = DateFormatter()
+        switch L10n.shared.language {
+        case .zhHans: f.locale = Locale(identifier: "zh_CN"); f.dateFormat = "M月d日 EEEE"
+        case .zhHant: f.locale = Locale(identifier: "zh_TW"); f.dateFormat = "M月d日 EEEE"
+        case .en:     f.locale = Locale(identifier: "en_US"); f.setLocalizedDateFormatFromTemplate("EEEEMMMd")
+        }
+        return f
+    }()
 
     func run() {
         win_set_dpi_aware()
@@ -30,19 +43,19 @@ final class WindowsApp {
         _ = win_run(&cb)
     }
 
-    /// 渲染一帧（时间 + token 文本 + 经典配色）。token 目前占位，P2 接上 WindowsUsageModel 后显示真实用量。
+    /// 渲染一帧：忠实 classic 表盘（配色/几何由 winrender.cpp 内置）+ 真实日期 + token 计数。
+    /// token 暂为 "0"（尚未扫描用量）；P2 接上 WindowsUsageModel 后改为 TokenFormat.compact(真实值)。
     func render() {
-        let comps = Calendar.current.dateComponents([.hour, .minute, .second], from: Date())
-        let token = "—"   // TODO(P2): compact today token count
-        token.withCString { p in
-            win_render_clock(size, size,
-                             Int32(comps.hour ?? 0), Int32(comps.minute ?? 0), Int32(comps.second ?? 0), p,
-                             0xE8E0CF,  // dial fill (cream)
-                             0x403933,  // dial stroke (dark brown)
-                             0x6A5F52,  // ticks
-                             0x403933,  // hour/minute hands (dark)
-                             0xC7331F,  // second hand (red)
-                             0x403933)  // token text
+        let now = Date()
+        let comps = Calendar.current.dateComponents([.hour, .minute, .second], from: now)
+        let date = Self.dateFmt.string(from: now)
+        let tokens = "0"   // TODO(P2): TokenFormat.compact(todayTokens)
+        date.withCString { dp in
+            tokens.withCString { tp in
+                win_render_clock(size, size,
+                                 Int32(comps.hour ?? 0), Int32(comps.minute ?? 0), Int32(comps.second ?? 0),
+                                 dp, tp)
+            }
         }
     }
 

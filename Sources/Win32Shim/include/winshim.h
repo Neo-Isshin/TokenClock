@@ -69,13 +69,12 @@ void  menu_track(void *hmenu, void *hwnd);
 
 /* --- GDI+ render (implemented in winrender.cpp) ---
  * Draws one antialiased clock frame into a per-pixel-alpha bitmap and presents it via
- * UpdateLayeredWindow — the window is fully transparent outside the dial (no rectangle). */
+ * UpdateLayeredWindow — the window is fully transparent outside the dial (no rectangle).
+ * Faithful classic theme: palette + geometry baked in; Swift supplies time + overlay text. */
 void gdip_init(void);
 void gdip_shutdown(void);
-void win_render_clock(int w, int h, int hh, int mm, int ss, const char *token_utf8,
-                      unsigned int dial_fill, unsigned int dial_stroke,
-                      unsigned int tick_rgb, unsigned int hand_rgb,
-                      unsigned int sec_rgb, unsigned int text_rgb);
+void win_render_clock(int w, int h, int hh, int mm, int ss,
+                      const char *date_utf8, const char *tokens_utf8);
 
 #ifdef __cplusplus
 }
