@@ -83,8 +83,10 @@ void win_render_clock(int w, int h, int hh, int mm, int ss, const win_overlay *o
     gfx.SetTextRenderingHint(Gdiplus::TextRenderingHintAntiAliasGridFit);
     gfx.SetPixelOffsetMode(Gdiplus::PixelOffsetModeHighQuality);
 
-    const double cxd = w / 2.0, cyd = h / 2.0;
-    const double r = (w < h ? w : h) / 2.0 - 24.0;   // ⇒ 116 at window 280 (matches macOS medium)
+    const bool expanded = ov && ov->detail_text && ov->detail_text[0];
+    // 收起态：表盘居中于正方形窗口。展开态：表盘居中于顶部 w×w 区域，下方留明细列表。
+    const double cxd = w / 2.0, cyd = expanded ? (w / 2.0) : (h / 2.0);
+    const double r = w / 2.0 - 24.0;   // 表盘直径 = 窗口宽；r 基于 w（收起 h==w，展开 h>w，皆取 w）
     // classic 主题按 radius 116（diameter 240pt）校准；窗口尺寸变化时按 r/116 等比缩放
     // 描边/指针/字号，与 macOS 的 scale = diameter/240 行为一致。
     const double S = r / 116.0;
@@ -174,9 +176,40 @@ void win_render_clock(int w, int h, int hh, int mm, int ss, const win_overlay *o
         // bottom centre: token count (primary, bold) then messages (secondary)
         textC(ov->tokens,   cxd, cyd + r * 0.40, (float)(20.0 * S), C_TEXT_PRI, true);
         textC(ov->messages, cxd, cyd + r * 0.40 + 18.0 * S, (float)(10.0 * S), C_TEXT_SEC, false);
-        // left side: up to two active tools (primary), like ClockContentView's leading HStack
-        textL(ov->tool_left1, cxd - r * 0.72, cyd - 10.0 * S, (float)(13.0 * S), C_TEXT_PRI);
-        textL(ov->tool_left2, cxd - r * 0.72, cyd + 12.0 * S, (float)(13.0 * S), C_TEXT_PRI);
+        // left side: up to two active tools (collapsed only — expanded shows the full list below)
+        if (!expanded) {
+            textL(ov->tool_left1, cxd - r * 0.72, cyd - 10.0 * S, (float)(13.0 * S), C_TEXT_PRI);
+            textL(ov->tool_left2, cxd - r * 0.72, cyd + 12.0 * S, (float)(13.0 * S), C_TEXT_PRI);
+        }
+    }
+
+    // detail list (expanded): per-tool breakdown below the dial, '\n'-separated lines.
+    if (expanded) {
+        wchar_t wb[2048];
+        if (to_wide(ov->detail_text, wb, 2048) > 0) {
+            Gdiplus::Font f(&fam, (float)(12.0 * S), Gdiplus::FontStyleRegular, Gdiplus::UnitPixel);
+            Gdiplus::SolidBrush b(cr(C_TEXT_PRI));
+            Gdiplus::StringFormat sf;
+            sf.SetAlignment(Gdiplus::StringAlignmentNear);
+            sf.SetLineAlignment(Gdiplus::StringAlignmentCenter);
+            const double lh = 19.0 * S;                    // line advance (matches Swift height math)
+            const double lx = cxd - r * 0.86;              // near the dial's left edge
+            double y = w + 16.0 * S;                       // first line centre, just below the dial region
+            wchar_t *line = wb;
+            while (*line) {
+                wchar_t *nl = wcschr(line, L'\n');
+                if (nl) *nl = 0;
+                int len = (int)wcslen(line);
+                if (len > 0) {
+                    Gdiplus::RectF rect((Gdiplus::REAL)lx, (Gdiplus::REAL)(y - 12.0 * S),
+                                        400.0f, (Gdiplus::REAL)(24.0 * S));
+                    gfx.DrawString(line, len, &f, rect, &sf, &b);
+                }
+                if (!nl) break;
+                line = nl + 1;
+                y += lh;
+            }
+        }
     }
 
     // present with per-pixel alpha

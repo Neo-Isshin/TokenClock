@@ -27,11 +27,15 @@ final class WindowsApp: @unchecked Sendable {
     private var didStartup = false
     private var weatherString = ""           // 由 .weatherUpdated 通知更新，render 时叠到盘面顶部
     private var scanCount: Int = 0           // 天气刷新节流（每 20 次扫描≈10 分钟刷新一次）
+    private var detailsVisible = false       // 左键托盘切换：展开后窗口变高，盘面下方列工具明细
+    private var currentHeight: Int32 = 280   // 当前窗口高（收起 = currentSize；展开 = +明细区）
+    private var lastTrayToggle = Date.distantPast   // 左键去抖（双击连发两次）
 
     func run() {
         win_set_dpi_aware()
 
         currentSize = windowSize(for: clockSizeRaw)
+        currentHeight = currentSize
 
         var cb = win_callbacks()
         cb.ctx = nil
@@ -76,8 +80,8 @@ final class WindowsApp: @unchecked Sendable {
         weatherString = "\(info.emoji) \(temp)°\(f ? "F" : "C")"
     }
 
-    /// 渲染一帧：忠实 classic 表盘 + 叠加真实用量（日期 / token 计数 / 消息数 / 活跃工具）。
-    /// 天气（IP 定位）尚未接入，暂留空。表盘配色/几何由 winrender.cpp 内置并按尺寸缩放。
+    /// 渲染一帧：忠实 classic 表盘 + 叠加真实用量（日期 / 天气 / token 计数 / 消息数 / 活跃工具）。
+    /// 展开态额外在盘面下方列工具明细，并把窗口高度撑开。表盘配色/几何由 winrender.cpp 内置并按尺寸缩放。
     func render() {
         if !didStartup {
             didStartup = true
@@ -96,7 +100,21 @@ final class WindowsApp: @unchecked Sendable {
         let tool2 = top.count > 1 ? "\(top[1].emoji) \(top[1].abbreviation)" : ""
         let weather = weatherString
 
-        Self.withCStrings([date, weather, tokens, messages, tool1, tool2]) { ptrs in
+        // 展开态：盘面下方工具明细（多行）。空则给一句占位。
+        let detailLines = detailsVisible ? buildDetailLines(tools) : []
+        let detailText = detailLines.joined(separator: "\n")
+
+        // 窗口高度：收起 = currentSize；展开 = currentSize + 明细区（与 winrender 的 16*S 起始 + 19*S 行高 对齐）
+        let S = Double(currentSize / 2 - 24) / 116.0
+        let newHeight: Int32 = detailsVisible
+            ? currentSize + Int32((26.0 + 19.0 * Double(detailLines.count)) * S)
+            : currentSize
+        if newHeight != currentHeight {
+            currentHeight = newHeight
+            win_resize(win_self(), currentSize, currentHeight)
+        }
+
+        Self.withCStrings([date, weather, tokens, messages, tool1, tool2, detailText]) { ptrs in
             var ov = win_overlay()
             ov.date = ptrs[0]
             ov.weather = ptrs[1]
@@ -104,10 +122,23 @@ final class WindowsApp: @unchecked Sendable {
             ov.messages = ptrs[3]
             ov.tool_left1 = ptrs[4]
             ov.tool_left2 = ptrs[5]
-            win_render_clock(currentSize, currentSize,
+            ov.detail_text = ptrs[6]
+            win_render_clock(currentSize, currentHeight,
                              Int32(comps.hour ?? 0), Int32(comps.minute ?? 0), Int32(comps.second ?? 0),
                              &ov)
         }
+    }
+
+    /// 展开态的明细行：活跃工具（按 token 排序）「emoji 简写  用量」，最多 10 行；无用量时一句占位。
+    private func buildDetailLines(_ tools: [ToolUsage]) -> [String] {
+        let active = tools.filter { $0.isActive || $0.todayTokens > 0 }
+        if active.isEmpty {
+            switch L10n.shared.language {
+            case .zhHans, .zhHant: return ["今日暂无 AI 用量"]
+            case .en:              return ["No AI usage today"]
+            }
+        }
+        return active.prefix(10).map { "\($0.emoji) \($0.abbreviation)  \($0.formattedTokens)" }
     }
 
     /// 首帧前应用持久化的外观：非置顶时取消 TOPMOST（窗口默认创建为置顶）。
@@ -124,7 +155,18 @@ final class WindowsApp: @unchecked Sendable {
         if scanCount % 20 == 0 { WindowsWeather.refresh() }   // 每 ~10 分钟刷新一次天气
     }
 
-    func trayClick(button: Int32) { /* TODO: 左键展开详情面板（P6） */ }
+    func trayClick(button: Int32) {
+        // 左键托盘图标：切换详情面板（盘面下方展开工具明细）。
+        // 双击会连发两次 LBUTTONUP，用 0.35s 去抖保证单击/双击都只切一次。
+        if button == 1 {
+            let now = Date()
+            if now.timeIntervalSince(lastTrayToggle) > 0.35 {
+                lastTrayToggle = now
+                detailsVisible.toggle()
+                render()
+            }
+        }
+    }
 
     // MARK: - 托盘菜单
 

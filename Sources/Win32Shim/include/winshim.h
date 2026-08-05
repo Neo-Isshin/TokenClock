@@ -89,6 +89,7 @@ typedef struct {
     const char *messages;    /* bottom centre (under tokens), secondary 10px */
     const char *tool_left1;  /* left side, primary 13px */
     const char *tool_left2;  /* left side (under tool_left1) */
+    const char *detail_text; /* 展开时盘面下方的工具明细，多行 '\n' 分隔；空 ⇒ 收起态 */
 } win_overlay;
 
 void gdip_init(void);
