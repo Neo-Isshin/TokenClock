@@ -17,6 +17,7 @@ final class WindowsApp: @unchecked Sendable {
     private let cmdLangHans: Int32 = 30, cmdLangHant: Int32 = 31, cmdLangEn: Int32 = 32
     private let cmdLaunch: Int32 = 40
     private let cmdAbout: Int32 = 50
+    private let cmdThemeBase: Int32 = 60   // + 索引 → WindowsClockTheme.allCases[i]
 
     /// 当前浮窗边长（pt）。表盘半径 = size/2 - 24；classic 主题按 radius 116（medium）校准，
     /// 其余尺寸由 winrender 按 r/116 等比缩放。切换尺寸时此值同步更新并 resize 窗口。
@@ -114,6 +115,7 @@ final class WindowsApp: @unchecked Sendable {
             win_resize(win_self(), currentSize, currentHeight)
         }
 
+        var wt = selectedTheme.winTheme
         Self.withCStrings([date, weather, tokens, messages, tool1, tool2, detailText]) { ptrs in
             var ov = win_overlay()
             ov.date = ptrs[0]
@@ -125,7 +127,7 @@ final class WindowsApp: @unchecked Sendable {
             ov.detail_text = ptrs[6]
             win_render_clock(currentSize, currentHeight,
                              Int32(comps.hour ?? 0), Int32(comps.minute ?? 0), Int32(comps.second ?? 0),
-                             &ov)
+                             &wt, &ov)
         }
     }
 
@@ -174,6 +176,13 @@ final class WindowsApp: @unchecked Sendable {
         guard let menu else { return }
         let L = L10n.shared
 
+        // 表盘子菜单（8 个内置主题）
+        if let tm = menu_create() {
+            for (i, theme) in WindowsClockTheme.allCases.enumerated() {
+                addMenuItem(tm, cmdThemeBase + Int32(i), theme.displayName, theme.rawValue == selectedTheme.rawValue)
+            }
+            addSubmenu(menu, L.tr("menu.clockFace"), tm)
+        }
         // 尺寸子菜单
         if let sm = menu_create() {
             addMenuItem(sm, cmdSizeSmall,  L.tr("size.small"),      clockSizeRaw == "small")
@@ -214,6 +223,8 @@ final class WindowsApp: @unchecked Sendable {
         case cmdLangEn:     setLang(.en)
         case cmdLaunch:     setLaunchAtLogin(!launchAtLogin)
         case cmdAbout:      showAbout()
+        case let c where c >= cmdThemeBase && c < cmdThemeBase + Int32(WindowsClockTheme.allCases.count):
+            setTheme(WindowsClockTheme.allCases[Int(c - cmdThemeBase)])
         default: break
         }
     }
@@ -255,6 +266,17 @@ final class WindowsApp: @unchecked Sendable {
     // MARK: - 状态读取
 
     private var clockSizeRaw: String { UserDefaults.standard.string(for: .clockSize) ?? "medium" }
+
+    private var selectedTheme: WindowsClockTheme {
+        // 调试覆盖：TC_THEME=midnight 等可临时强制主题（不落盘）。生产取持久化值。
+        if let env = ProcessInfo.processInfo.environment["TC_THEME"],
+           let t = WindowsClockTheme(rawValue: env) { return t }
+        return WindowsClockTheme(rawValue: UserDefaults.standard.string(for: .selectedTheme) ?? "classic") ?? .classic
+    }
+    private func setTheme(_ t: WindowsClockTheme) {
+        UserDefaults.standard.setString(t.rawValue, for: .selectedTheme)
+        render()
+    }
 
     private func windowSize(for raw: String) -> Int32 {
         switch raw {

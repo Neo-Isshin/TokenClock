@@ -1,7 +1,7 @@
 // winrender.cpp — GDI+ 抗锯齿表盘绘制 + UpdateLayeredWindow 逐像素 alpha 合成。
-// 忠实复刻 macOS 经典（classic）主题：白色盘体 + 灰色外环 + 红色圆头指针 + 双色中心帽 +
-// 盘面叠加文本（顶部日期、底部 token 计数）。配色/几何取自 ClockFaceTheme.classic +
-// ClockContentView， authored at diameter=240pt (radius=116)。Swift 经 win_render_clock 驱动。
+// 主题驱动：Swift 构 win_theme（颜色 ARGB，可表达 .clear/opacity），winrender 据此绘制
+// 盘体/外环/刻度/数字(阿拉伯|中文)/4 种指针(圆/锥/菱/剑)/中心帽/天空装饰。指针与几何
+// 的路径数学逐行移植自 macOS ClockFaceView，配色取自 ClockFaceTheme，以求像素级对齐。
 #define UNICODE
 #define _UNICODE
 #define WIN32_LEAN_AND_MEAN
@@ -10,6 +10,7 @@
 #include <gdiplus.h>
 #include <string.h>
 #include <cmath>
+#include <utility>   // std::make_pair
 #include "winshim.h"
 
 extern "C" HWND g_hwnd;   // defined in winshim.c (C linkage)
@@ -19,19 +20,10 @@ static HDC        g_mem_dc = NULL;
 static HBITMAP    g_mem_bm = NULL;
 static int        g_mem_w = 0, g_mem_h = 0;
 
-// Classic theme palette (0xRRGGBB), lifted verbatim from ClockFaceTheme.classic.
-static const unsigned int C_DIAL       = 0xF7F7FA;  // Color(0.97,0.97,0.98)
-static const unsigned int C_RIM        = 0xD1D1D1;  // Color(white: 0.82)
-static const unsigned int C_HOUR       = 0xB71C1C;  // Color(0.718,0.110,0.110)
-static const unsigned int C_MINUTE     = 0xE53935;  // Color(0.898,0.224,0.208)
-static const unsigned int C_SECOND     = 0xFF5252;  // Color(1.0,0.322,0.322)
-static const unsigned int C_CAP_OUT    = 0xD1D1D1;  // centerDotOuterColor  white:0.82
-static const unsigned int C_CAP_IN     = 0xE53935;  // centerDotInnerColor  minute red
-static const unsigned int C_TEXT_PRI   = 0x2E2E33;  // textPrimaryColor  Color(0.18,0.18,0.20)
-static const unsigned int C_TEXT_SEC   = 0x73737A;  // textSecondaryColor Color(0.45,0.45,0.48)
-
-static Gdiplus::Color cr(unsigned int rgb, BYTE alpha = 255) {
-    return Gdiplus::Color(alpha, (rgb >> 16) & 0xff, (rgb >> 8) & 0xff, rgb & 0xff);
+// ARGB(0xAARRGGBB) → GDI+ Color。
+static Gdiplus::Color cr(unsigned int argb) {
+    return Gdiplus::Color((BYTE)((argb >> 24) & 0xff), (BYTE)((argb >> 16) & 0xff),
+                          (BYTE)((argb >> 8) & 0xff), (BYTE)(argb & 0xff));
 }
 static double deg2rad(double d) { return d * 3.14159265358979 / 180.0; }
 
@@ -63,18 +55,16 @@ static void ensure_mem(int w, int h) {
     g_mem_w = w; g_mem_h = h;
 }
 
-// UTF-8 → UTF-16 (Windows wchar). Returns wchars written (incl. NUL) on success, 0 on overflow/empty.
+// UTF-8 → UTF-16。返回写入 wchar 数（含 NUL）；空串/溢出返回 0。
 static int to_wide(const char *u8, wchar_t *buf, int n) {
     if (!u8 || !u8[0]) { if (n > 0) buf[0] = 0; return 0; }
     return MultiByteToWideChar(CP_UTF8, 0, u8, -1, buf, n);
 }
 
 // Draw one clock frame into the memory ARGB bitmap and present it via UpdateLayeredWindow.
-// Faithful classic theme. authored at radius 116 (diameter 240pt); window 280 ⇒ r = 116.
-void win_render_clock(int w, int h, int hh, int mm, int ss, const win_overlay *ov) {
-    if (!g_hwnd) return;
+void win_render_clock(int w, int h, int hh, int mm, int ss, const win_theme *t, const win_overlay *ov) {
+    if (!g_hwnd || !t) return;
     ensure_mem(w, h);
-    // clear to fully transparent (premultiplied alpha 0)
     DIBSECTION ds; GetObject(g_mem_bm, sizeof(ds), &ds);
     if (ds.dsBm.bmBits) memset(ds.dsBm.bmBits, 0, (size_t)w * h * 4);
 
@@ -84,14 +74,11 @@ void win_render_clock(int w, int h, int hh, int mm, int ss, const win_overlay *o
     gfx.SetPixelOffsetMode(Gdiplus::PixelOffsetModeHighQuality);
 
     const bool expanded = ov && ov->detail_text && ov->detail_text[0];
-    // 收起态：表盘居中于正方形窗口。展开态：表盘居中于顶部 w×w 区域，下方留明细列表。
     const double cxd = w / 2.0, cyd = expanded ? (w / 2.0) : (h / 2.0);
-    const double r = w / 2.0 - 24.0;   // 表盘直径 = 窗口宽；r 基于 w（收起 h==w，展开 h>w，皆取 w）
-    // classic 主题按 radius 116（diameter 240pt）校准；窗口尺寸变化时按 r/116 等比缩放
-    // 描边/指针/字号，与 macOS 的 scale = diameter/240 行为一致。
-    const double S = r / 116.0;
+    const double r = w / 2.0 - 24.0;          // 表盘半径；窗口宽 = 表盘直径
+    const double S = r / 116.0;               // 按 radius 116（diameter 240pt）等比缩放
 
-    // soft drop shadow: a few translucent rings just outside the dial, offset slightly down.
+    // 柔和阴影：表盘外几圈半透明黑，略向下偏移。
     for (int i = 1; i <= 6; i++) {
         Gdiplus::SolidBrush sb(Gdiplus::Color(20, 0, 0, 0));
         double rr = r + i * 1.8;
@@ -99,110 +86,215 @@ void win_render_clock(int w, int h, int hh, int mm, int ss, const win_overlay *o
                         Gdiplus::REAL(rr * 2), Gdiplus::REAL(rr * 2));
     }
 
-    // dial fill (white) + gray rim (width 6, centred on the path like SwiftUI stroke)
+    // 盘体 + 外环（宽度按主题，缩放）
     {
-        Gdiplus::SolidBrush fill(cr(C_DIAL));
+        Gdiplus::SolidBrush fill(cr(t->dial_fill));
         gfx.FillEllipse(&fill, Gdiplus::REAL(cxd - r), Gdiplus::REAL(cyd - r),
                         Gdiplus::REAL(r * 2), Gdiplus::REAL(r * 2));
-        Gdiplus::Pen rim(cr(C_RIM), (Gdiplus::REAL)(6.0 * S));
-        gfx.DrawEllipse(&rim, Gdiplus::REAL(cxd - r), Gdiplus::REAL(cyd - r),
-                        Gdiplus::REAL(r * 2), Gdiplus::REAL(r * 2));
+        if (t->rim_width > 0 && (t->dial_rim >> 24) > 0) {
+            Gdiplus::Pen rim(cr(t->dial_rim), (Gdiplus::REAL)(t->rim_width * S));
+            gfx.DrawEllipse(&rim, Gdiplus::REAL(cxd - r), Gdiplus::REAL(cyd - r),
+                            Gdiplus::REAL(r * 2), Gdiplus::REAL(r * 2));
+        }
     }
 
-    // hands — round-cap lines from centre. Angles match ClockFaceView exactly
-    // (hour carries minutes; minute/second are discrete steps like the original).
-    auto hand = [&](double deg, double lenRatio, float width, unsigned int rgb) {
-        double a = deg2rad(deg - 90.0);
-        double len = r * lenRatio;
-        Gdiplus::Pen p(cr(rgb), width);
-        p.SetLineCap(Gdiplus::LineCapRound, Gdiplus::LineCapRound, Gdiplus::DashCapRound);
-        gfx.DrawLine(&p,
-                     Gdiplus::PointF(Gdiplus::REAL(cxd), Gdiplus::REAL(cyd)),
-                     Gdiplus::PointF(Gdiplus::REAL(cxd + cos(a) * len),
-                                     Gdiplus::REAL(cyd + sin(a) * len)));
-    };
+    // 刻度（移植自 ClockFaceView.drawTickMarks：12 根，i%3==0 为主）
+    if (t->show_ticks) {
+        for (int i = 1; i <= 12; i++) {
+            double a = deg2rad(i * 30.0 - 90.0);
+            bool major = (i % 3 == 0);
+            double innerR = r * (major ? 0.91 : 0.935);
+            double outerR = r * 0.97;
+            unsigned int col = major ? t->major_tick_color : t->tick_color;
+            if ((col >> 24) == 0) continue;
+            Gdiplus::Pen tp(cr(col), (Gdiplus::REAL)((major ? 2.0 : 1.2) * S));
+            tp.SetLineCap(Gdiplus::LineCapRound, Gdiplus::LineCapRound, Gdiplus::DashCapRound);
+            gfx.DrawLine(&tp,
+                         Gdiplus::PointF(Gdiplus::REAL(cxd + cos(a) * innerR), Gdiplus::REAL(cyd + sin(a) * innerR)),
+                         Gdiplus::PointF(Gdiplus::REAL(cxd + cos(a) * outerR), Gdiplus::REAL(cyd + sin(a) * outerR)));
+        }
+    }
+
+    // 数字（移植自 drawNumbers：numberRadius 0.84r，font 13*scale；gufeng 用中文）
+    if (t->show_numbers && (t->number_color >> 24) > 0) {
+        const wchar_t *arabic[13] = { L"", L"1", L"2", L"3", L"4", L"5", L"6", L"7", L"8", L"9", L"10", L"11", L"12" };
+        const wchar_t *chinese[13] = { L"", L"\x58F9", L"\x8D30", L"\x53C1", L"\x8086", L"\x4F0D", L"\x9646",
+                                       L"\x67D2", L"\x6352", L"\x7396", L"\x62FE", L"\x62FE\x58F9", L"\x62FE\x8D30" };
+        const wchar_t *family = (t->show_numbers == 2) ? L"Microsoft YaHei" : L"Segoe UI";
+        Gdiplus::FontFamily fam(family);
+        Gdiplus::Font nf(&fam, (float)(13.0 * S), Gdiplus::FontStyleRegular, Gdiplus::UnitPixel);
+        Gdiplus::SolidBrush nb(cr(t->number_color));
+        Gdiplus::StringFormat sf; sf.SetAlignment(Gdiplus::StringAlignmentCenter); sf.SetLineAlignment(Gdiplus::StringAlignmentCenter);
+        double nr = r * 0.84;
+        for (int i = 1; i <= 12; i++) {
+            double a = deg2rad(i * 30.0 - 90.0);
+            const wchar_t *label = (t->show_numbers == 2) ? chinese[i] : arabic[i];
+            Gdiplus::RectF rect(Gdiplus::REAL(cxd + cos(a) * nr) - 40, Gdiplus::REAL(cyd + sin(a) * nr) - 16, 80, 32);
+            gfx.DrawString(label, -1, &nf, rect, &sf, &nb);
+        }
+    }
+
+    // 天空主题装饰：太阳 + 云朵（移植自 drawDialDecoration；飞鸟从略）
+    if (t->has_decoration) {
+        auto cloud = [&](double cx, double cy, double sc) {
+            Gdiplus::SolidBrush wb(Gdiplus::Color(242, 242, 242));
+            gfx.FillEllipse(&wb, Gdiplus::REAL(cx - sc * 1.1), Gdiplus::REAL(cy - sc * 0.4), Gdiplus::REAL(sc * 1.4), Gdiplus::REAL(sc * 1.0));
+            gfx.FillEllipse(&wb, Gdiplus::REAL(cx - sc * 0.4), Gdiplus::REAL(cy - sc * 0.9), Gdiplus::REAL(sc * 1.2), Gdiplus::REAL(sc * 1.0));
+            gfx.FillEllipse(&wb, Gdiplus::REAL(cx + sc * 0.2), Gdiplus::REAL(cy - sc * 0.3), Gdiplus::REAL(sc * 1.2), Gdiplus::REAL(sc * 0.9));
+        };
+        double sa = deg2rad(-55.0), sunR = r * 0.62, sunSize = r * 0.10;
+        double sx = cxd + sunR * cos(sa), sy = cyd + sunR * sin(sa);
+        Gdiplus::SolidBrush glow(Gdiplus::Color(64, 255, 235, 153));
+        gfx.FillEllipse(&glow, Gdiplus::REAL(sx - sunSize * 1.5), Gdiplus::REAL(sy - sunSize * 1.5), Gdiplus::REAL(sunSize * 3), Gdiplus::REAL(sunSize * 3));
+        Gdiplus::SolidBrush sun(Gdiplus::Color(255, 255, 217, 77));
+        gfx.FillEllipse(&sun, Gdiplus::REAL(sx - sunSize), Gdiplus::REAL(sy - sunSize), Gdiplus::REAL(sunSize * 2), Gdiplus::REAL(sunSize * 2));
+        cloud(cxd - r * 0.38, cyd - r * 0.28, r * 0.10);
+        cloud(cxd + r * 0.25, cyd + r * 0.32, r * 0.07);
+        cloud(cxd - r * 0.10, cyd + r * 0.50, r * 0.055);
+    }
+
+    // 指针（移植自 drawHands / drawRoundHand / drawTaperedHand / drawLanceHand / drawSwordHand）
     double hourDeg   = (double)(hh % 12) * 30.0 + (double)mm * 0.5;
     double minuteDeg = (double)mm * 6.0;
     double secondDeg = (double)ss * 6.0;
-    hand(hourDeg,   0.48, (float)(4.5 * S), C_HOUR);
-    hand(minuteDeg, 0.68, (float)(3.0 * S), C_MINUTE);
-    hand(secondDeg, 0.78, (float)(1.5 * S), C_SECOND);
+    int secStyle = (t->hand_style == 3) ? 3 : 0;   // 秒针：剑主题用剑，其余用圆头细线
 
-    // centre cap: outer gray disc (r=4) + inner red disc (r=2), scaled
+    auto roundHand = [&](double deg, double lenRatio, double width, unsigned int argb) {
+        double a = deg2rad(deg - 90.0), len = r * lenRatio;
+        Gdiplus::Pen p(cr(argb), (float)width);
+        p.SetLineCap(Gdiplus::LineCapRound, Gdiplus::LineCapRound, Gdiplus::DashCapRound);
+        gfx.DrawLine(&p, Gdiplus::PointF(Gdiplus::REAL(cxd), Gdiplus::REAL(cyd)),
+                     Gdiplus::PointF(Gdiplus::REAL(cxd + cos(a) * len), Gdiplus::REAL(cyd + sin(a) * len)));
+    };
+    auto polygon = [&](const Gdiplus::PointF *p, int n, unsigned int argb) {
+        Gdiplus::GraphicsPath path;
+        path.AddPolygon(p, n);
+        Gdiplus::SolidBrush b(cr(argb));
+        gfx.FillPath(&b, &path);
+    };
+    auto tapered = [&](double deg, double lenRatio, double baseW, double tipW, unsigned int argb) {
+        double a = deg2rad(deg - 90.0), ca = cos(a), sa = sin(a);
+        double rad = r * lenRatio, perp = deg2rad(deg), dx = cos(perp), dy = sin(perp);
+        double ex = cxd + ca * rad, ey = cyd + sa * rad;
+        double bx = cxd - ca * rad * 0.15, by = cyd - sa * rad * 0.15;
+        Gdiplus::PointF p[4] = {
+            { (float)(bx + dx * baseW / 2), (float)(by + dy * baseW / 2) },
+            { (float)(ex + dx * tipW / 2),  (float)(ey + dy * tipW / 2) },
+            { (float)(ex - dx * tipW / 2),  (float)(ey - dy * tipW / 2) },
+            { (float)(bx - dx * baseW / 2), (float)(by - dy * baseW / 2) },
+        };
+        polygon(p, 4, argb);
+    };
+    auto lance = [&](double deg, double lenRatio, double width, unsigned int argb) {
+        double a = deg2rad(deg - 90.0), ca = cos(a), sa = sin(a);
+        double rad = r * lenRatio, perp = deg2rad(deg), dx = cos(perp), dy = sin(perp);
+        double ex = cxd + ca * rad, ey = cyd + sa * rad;
+        double mx = cxd + ca * rad * 0.35, my = cyd + sa * rad * 0.35;
+        double bx = cxd - ca * rad * 0.12, by = cyd - sa * rad * 0.12;
+        Gdiplus::PointF p[4] = {
+            { (float)bx, (float)by },
+            { (float)(mx + dx * width / 2), (float)(my + dy * width / 2) },
+            { (float)ex, (float)ey },
+            { (float)(mx - dx * width / 2), (float)(my - dy * width / 2) },
+        };
+        polygon(p, 4, argb);
+    };
+    auto sword = [&](double deg, double lenRatio, double width, unsigned int argb) {
+        double a = deg2rad(deg - 90.0), ca = cos(a), sa = sin(a);
+        double rad = r * lenRatio, perp = deg2rad(deg), dx = cos(perp), dy = sin(perp);
+        auto along = [&](double fr) { return std::make_pair(cxd + ca * rad * fr, cyd + sa * rad * fr); };
+        auto endP = along(1.0), tipS = along(0.85), gF = along(0.10), gB = along(0.02), hEnd = along(-0.12), pom = along(-0.16);
+        double hw = width / 2, gw = width * 0.9, bw = width * 0.35, pw = width * 0.45;
+        Gdiplus::PointF p[13] = {
+            { (float)(pom.first + dx * pw),   (float)(pom.second + dy * pw) },
+            { (float)(hEnd.first + dx * bw),  (float)(hEnd.second + dy * bw) },
+            { (float)(gB.first + dx * gw),    (float)(gB.second + dy * gw) },
+            { (float)(gF.first + dx * gw),    (float)(gF.second + dy * gw) },
+            { (float)(gF.first + dx * hw),    (float)(gF.second + dy * hw) },
+            { (float)(tipS.first + dx * hw),  (float)(tipS.second + dy * hw) },
+            { (float)endP.first,              (float)endP.second },
+            { (float)(tipS.first - dx * hw),  (float)(tipS.second - dy * hw) },
+            { (float)(gF.first - dx * hw),    (float)(gF.second - dy * hw) },
+            { (float)(gF.first - dx * gw),    (float)(gF.second - dy * gw) },
+            { (float)(gB.first - dx * gw),    (float)(gB.second - dy * gw) },
+            { (float)(hEnd.first - dx * bw),  (float)(hEnd.second - dy * bw) },
+            { (float)(pom.first - dx * pw),   (float)(pom.second - dy * pw) },
+        };
+        polygon(p, 13, argb);
+    };
+    auto drawHand = [&](double deg, double lenRatio, double width, unsigned int argb, int style) {
+        switch (style) {
+        case 1: tapered(deg, lenRatio, width, width * 0.3, argb); break;
+        case 2: lance(deg, lenRatio, width, argb); break;
+        case 3: sword(deg, lenRatio, width, argb); break;
+        default: roundHand(deg, lenRatio, width, argb); break;
+        }
+    };
+    drawHand(hourDeg,   t->hour_len,   t->hour_w   * S, t->hour_color,   t->hand_style);
+    drawHand(minuteDeg, t->minute_len, t->minute_w * S, t->minute_color, t->hand_style);
+    drawHand(secondDeg, t->second_len, t->second_w * S, t->second_color, secStyle);
+
+    // 中心帽：外盘 r4 + 内盘 r2（缩放）
     {
         double co = 4.0 * S, ci = 2.0 * S;
-        Gdiplus::SolidBrush o(cr(C_CAP_OUT));
-        gfx.FillEllipse(&o, Gdiplus::REAL(cxd - co), Gdiplus::REAL(cyd - co),
-                        Gdiplus::REAL(co * 2), Gdiplus::REAL(co * 2));
-        Gdiplus::SolidBrush in(cr(C_CAP_IN));
-        gfx.FillEllipse(&in, Gdiplus::REAL(cxd - ci), Gdiplus::REAL(cyd - ci),
-                        Gdiplus::REAL(ci * 2), Gdiplus::REAL(ci * 2));
+        if ((t->cap_outer >> 24) > 0) {
+            Gdiplus::SolidBrush o(cr(t->cap_outer));
+            gfx.FillEllipse(&o, Gdiplus::REAL(cxd - co), Gdiplus::REAL(cyd - co), Gdiplus::REAL(co * 2), Gdiplus::REAL(co * 2));
+        }
+        if ((t->cap_inner >> 24) > 0) {
+            Gdiplus::SolidBrush in(cr(t->cap_inner));
+            gfx.FillEllipse(&in, Gdiplus::REAL(cxd - ci), Gdiplus::REAL(cyd - ci), Gdiplus::REAL(ci * 2), Gdiplus::REAL(ci * 2));
+        }
     }
 
-    // overlay text (drawn last ⇒ on top of hands, matching ClockContentView ZStack order)
+    // 叠加文本（drawn last ⇒ 盘面之上）
     Gdiplus::FontFamily fam(L"Segoe UI");
-    Gdiplus::StringFormat sfCenter;
-    sfCenter.SetAlignment(Gdiplus::StringAlignmentCenter);
-    sfCenter.SetLineAlignment(Gdiplus::StringAlignmentCenter);
-    auto textC = [&](const char *u8, double px, double py, float size,
-                     unsigned int rgb, bool bold) {
+    Gdiplus::StringFormat sfC; sfC.SetAlignment(Gdiplus::StringAlignmentCenter); sfC.SetLineAlignment(Gdiplus::StringAlignmentCenter);
+    auto textC = [&](const char *u8, double px, double py, float size, unsigned int argb, bool bold) {
         wchar_t wb[128];
-        if (to_wide(u8, wb, 128) == 0) return;
-        Gdiplus::Font f(&fam, size, bold ? Gdiplus::FontStyleBold : Gdiplus::FontStyleRegular,
-                        Gdiplus::UnitPixel);
-        Gdiplus::SolidBrush b(cr(rgb));
-        Gdiplus::RectF rect(Gdiplus::REAL(px - 130.0), Gdiplus::REAL(py - size),
-                            260.0f, Gdiplus::REAL(size * 2.0f));
-        gfx.DrawString(wb, -1, &f, rect, &sfCenter, &b);
+        if (to_wide(u8, wb, 128) == 0 || (argb >> 24) == 0) return;
+        Gdiplus::Font f(&fam, size, bold ? Gdiplus::FontStyleBold : Gdiplus::FontStyleRegular, Gdiplus::UnitPixel);
+        Gdiplus::SolidBrush b(cr(argb));
+        Gdiplus::RectF rect(Gdiplus::REAL(px - 130.0), Gdiplus::REAL(py - size), 260.0f, Gdiplus::REAL(size * 2.0f));
+        gfx.DrawString(wb, -1, &f, rect, &sfC, &b);
     };
-    // left-aligned text: anchored at px (left edge), vertically centred at py.
-    auto textL = [&](const char *u8, double px, double py, float size, unsigned int rgb) {
+    auto textL = [&](const char *u8, double px, double py, float size, unsigned int argb) {
         wchar_t wb[128];
-        if (to_wide(u8, wb, 128) == 0) return;
+        if (to_wide(u8, wb, 128) == 0 || (argb >> 24) == 0) return;
         Gdiplus::Font f(&fam, size, Gdiplus::FontStyleRegular, Gdiplus::UnitPixel);
-        Gdiplus::SolidBrush b(cr(rgb));
-        Gdiplus::StringFormat sf;
-        sf.SetAlignment(Gdiplus::StringAlignmentNear);
-        sf.SetLineAlignment(Gdiplus::StringAlignmentCenter);
-        Gdiplus::RectF rect(Gdiplus::REAL(px), Gdiplus::REAL(py - size),
-                            200.0f, Gdiplus::REAL(size * 2.0f));
+        Gdiplus::SolidBrush b(cr(argb));
+        Gdiplus::StringFormat sf; sf.SetAlignment(Gdiplus::StringAlignmentNear); sf.SetLineAlignment(Gdiplus::StringAlignmentCenter);
+        Gdiplus::RectF rect(Gdiplus::REAL(px), Gdiplus::REAL(py - size), 200.0f, Gdiplus::REAL(size * 2.0f));
         gfx.DrawString(wb, -1, &f, rect, &sf, &b);
     };
 
     if (ov) {
-        // top centre: date (secondary) then weather (primary) beneath it
-        textC(ov->date,    cxd, cyd - r * 0.42, (float)(11.0 * S), C_TEXT_SEC, false);
-        textC(ov->weather, cxd, cyd - r * 0.42 + 16.0 * S, (float)(13.0 * S), C_TEXT_PRI, false);
-        // bottom centre: token count (primary, bold) then messages (secondary)
-        textC(ov->tokens,   cxd, cyd + r * 0.40, (float)(20.0 * S), C_TEXT_PRI, true);
-        textC(ov->messages, cxd, cyd + r * 0.40 + 18.0 * S, (float)(10.0 * S), C_TEXT_SEC, false);
-        // left side: up to two active tools (collapsed only — expanded shows the full list below)
+        textC(ov->date,    cxd, cyd - r * 0.42, (float)(11.0 * S), t->text_secondary, false);
+        textC(ov->weather, cxd, cyd - r * 0.42 + 16.0 * S, (float)(13.0 * S), t->text_primary, false);
+        textC(ov->tokens,   cxd, cyd + r * 0.40, (float)(20.0 * S), t->text_primary, true);
+        textC(ov->messages, cxd, cyd + r * 0.40 + 18.0 * S, (float)(10.0 * S), t->text_secondary, false);
         if (!expanded) {
-            textL(ov->tool_left1, cxd - r * 0.72, cyd - 10.0 * S, (float)(13.0 * S), C_TEXT_PRI);
-            textL(ov->tool_left2, cxd - r * 0.72, cyd + 12.0 * S, (float)(13.0 * S), C_TEXT_PRI);
+            textL(ov->tool_left1, cxd - r * 0.72, cyd - 10.0 * S, (float)(13.0 * S), t->text_primary);
+            textL(ov->tool_left2, cxd - r * 0.72, cyd + 12.0 * S, (float)(13.0 * S), t->text_primary);
         }
     }
 
-    // detail list (expanded): per-tool breakdown below the dial, '\n'-separated lines.
+    // 展开态：盘面下方工具明细（多行 '\n' 分隔）
     if (expanded) {
         wchar_t wb[2048];
         if (to_wide(ov->detail_text, wb, 2048) > 0) {
             Gdiplus::Font f(&fam, (float)(12.0 * S), Gdiplus::FontStyleRegular, Gdiplus::UnitPixel);
-            Gdiplus::SolidBrush b(cr(C_TEXT_PRI));
-            Gdiplus::StringFormat sf;
-            sf.SetAlignment(Gdiplus::StringAlignmentNear);
-            sf.SetLineAlignment(Gdiplus::StringAlignmentCenter);
-            const double lh = 19.0 * S;                    // line advance (matches Swift height math)
-            const double lx = cxd - r * 0.86;              // near the dial's left edge
-            double y = w + 16.0 * S;                       // first line centre, just below the dial region
+            Gdiplus::SolidBrush b(cr(t->text_primary));
+            Gdiplus::StringFormat sf; sf.SetAlignment(Gdiplus::StringAlignmentNear); sf.SetLineAlignment(Gdiplus::StringAlignmentCenter);
+            const double lh = 19.0 * S, lx = cxd - r * 0.86;
+            double y = w + 16.0 * S;
             wchar_t *line = wb;
             while (*line) {
                 wchar_t *nl = wcschr(line, L'\n');
                 if (nl) *nl = 0;
                 int len = (int)wcslen(line);
                 if (len > 0) {
-                    Gdiplus::RectF rect((Gdiplus::REAL)lx, (Gdiplus::REAL)(y - 12.0 * S),
-                                        400.0f, (Gdiplus::REAL)(24.0 * S));
+                    Gdiplus::RectF rect((Gdiplus::REAL)lx, (Gdiplus::REAL)(y - 12.0 * S), 400.0f, (Gdiplus::REAL)(24.0 * S));
                     gfx.DrawString(line, len, &f, rect, &sf, &b);
                 }
                 if (!nl) break;
@@ -212,7 +304,6 @@ void win_render_clock(int w, int h, int hh, int mm, int ss, const win_overlay *o
         }
     }
 
-    // present with per-pixel alpha
     POINT zero{0, 0};
     RECT wrc; GetWindowRect(g_hwnd, &wrc); POINT pos{wrc.left, wrc.top};
     SIZE sz{w, h};

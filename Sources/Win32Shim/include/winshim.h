@@ -80,8 +80,26 @@ void  menu_track(void *hmenu, void *hwnd);
 /* --- GDI+ render (implemented in winrender.cpp) ---
  * Draws one antialiased clock frame into a per-pixel-alpha bitmap and presents it via
  * UpdateLayeredWindow — the window is fully transparent outside the dial (no rectangle).
- * Faithful classic theme: palette + geometry baked in; Swift supplies time + overlay text.
+ * Theme-driven: Swift builds a win_theme ( colours ARGB 0xAARRGGBB so .clear/opacity carry ),
+ * winrender renders dial/rim/ticks/numbers/4 hand-styles/centre-cap/sky-decoration from it.
  * Each overlay string may be NULL/empty ⇒ that field is skipped. */
+typedef struct {
+    unsigned int dial_fill;      /* 0xAARRGGBB */
+    unsigned int dial_rim;
+    double       rim_width;      /* px @ radius 116 (macOS 用分数 1.5/2.5) */
+    int          hand_style;     /* 0 round, 1 tapered, 2 lance, 3 sword */
+    unsigned int hour_color, minute_color, second_color;
+    double       hour_len, minute_len, second_len;   /* fraction of radius */
+    double       hour_w, minute_w, second_w;          /* px @ radius 116 */
+    unsigned int cap_outer, cap_inner;
+    int          show_ticks;
+    unsigned int tick_color, major_tick_color;
+    int          show_numbers;    /* 0 none, 1 arabic, 2 chinese */
+    unsigned int number_color;
+    int          has_decoration;  /* sky theme */
+    unsigned int text_primary, text_secondary;
+} win_theme;
+
 typedef struct {
     const char *date;        /* top centre, secondary 11px */
     const char *weather;     /* top centre (under date), primary 13px */
@@ -94,7 +112,7 @@ typedef struct {
 
 void gdip_init(void);
 void gdip_shutdown(void);
-void win_render_clock(int w, int h, int hh, int mm, int ss, const win_overlay *ov);
+void win_render_clock(int w, int h, int hh, int mm, int ss, const win_theme *t, const win_overlay *ov);
 
 /* --- loopback HTTP API server (implemented in winhttp.c, Winsock) ---
  * Runs on a background thread bound to 127.0.0.1:port. For each GET it calls `responder`
