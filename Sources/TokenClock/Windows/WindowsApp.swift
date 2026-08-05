@@ -22,6 +22,7 @@ final class WindowsApp: @unchecked Sendable {
     private let cmdCityBase: Int32 = 80    // + 索引 → cities[i]
     private let cmdTzBase: Int32 = 90      // + 索引 → timezones[i]
     private let cmdApi: Int32 = 100
+    private let cmdShowPercent: Int32 = 110
 
     /// 当前浮窗边长（pt）。表盘半径 = size/2 - 24；classic 主题按 radius 116（medium）校准，
     /// 其余尺寸由 winrender 按 r/116 等比缩放。切换尺寸时此值同步更新并 resize 窗口。
@@ -137,17 +138,37 @@ final class WindowsApp: @unchecked Sendable {
         }
     }
 
-    /// 展开态的明细行：活跃工具（按 token 排序）「emoji 简写  用量」，最多 10 行；无用量时一句占位。
+    /// 展开态明细：表头(工具数+总计) + 每个活跃工具(名+用量/百分比) + 该工具 top 会话(缩进)。
+    /// 对齐 macOS DetailDropdownView 的 session 视图（百分比开关、会话明细）；无用量时一句占位。
     private func buildDetailLines(_ tools: [ToolUsage]) -> [String] {
-        let active = tools.filter { $0.isActive || $0.todayTokens > 0 }
+        let L = L10n.shared
+        let pct = showPercentage
+        let active = tools.filter { $0.todayTokens > 0 }
         if active.isEmpty {
-            switch L10n.shared.language {
-            case .zhHans, .zhHant: return ["今日暂无 AI 用量"]
-            case .en:              return ["No AI usage today"]
+            return [L.language == .en ? "No AI usage today" : "今日暂无 AI 用量"]
+        }
+        let grand = active.reduce(0) { $0 + $1.todayTokens }
+        let total = pct ? "100%" : TokenFormat.compact(grand)
+        var lines: [String] = []
+        lines.append(L.language == .en ? "Today \(active.count) tools  ·  \(total)" : "今日 \(active.count) 个工具  ·  总计 \(total)")
+        for tool in active.prefix(6) {
+            lines.append("\(tool.emoji) \(tool.name)  \(rowValue(tool.todayTokens, formatted: tool.formattedTokens, grand: grand, pct: pct))")
+            let sessions = tool.sessions.filter { $0.todayTokens > 0 }.sorted { $0.todayTokens > $1.todayTokens }.prefix(3)
+            for s in sessions {
+                lines.append("     \(s.displayName)  \(rowValue(s.todayTokens, formatted: s.formattedTokens, grand: grand, pct: pct))")
             }
         }
-        return active.prefix(10).map { "\($0.emoji) \($0.abbreviation)  \($0.formattedTokens)" }
+        return lines
     }
+
+    /// pct=true ⇒ "42%"；否则用紧凑 token 数。
+    private func rowValue(_ tokens: Int, formatted: String, grand: Int, pct: Bool) -> String {
+        guard pct, grand > 0 else { return formatted }
+        let percent = Double(tokens) / Double(grand) * 100
+        return percent >= 10 ? String(format: "%.0f%%", percent) : String(format: "%.1f%%", percent)
+    }
+
+    private var showPercentage: Bool { UserDefaults.standard.bool(for: .dropdownShowPercentage) }
 
     /// 首帧前应用持久化的外观：非置顶时取消 TOPMOST（窗口默认创建为置顶）。
     private func applyStartupAppearance() {
@@ -230,6 +251,7 @@ final class WindowsApp: @unchecked Sendable {
             addSubmenu(menu, L.tr("menu.language"), lm)
         }
         addMenuItem(menu, cmdApi, L.language == .en ? "🔌 API Server" : "🔌 API 服务", apiEnabled)
+        addMenuItem(menu, cmdShowPercent, L.language == .en ? "Detail %" : "详情显示百分比", showPercentage)
         addMenuItem(menu, cmdLaunch, L.tr("menu.launchAtLogin"), launchAtLogin)
         addSeparator(menu)
         addMenuItem(menu, cmdAbout, L.tr("menu.about"), false)
@@ -254,6 +276,9 @@ final class WindowsApp: @unchecked Sendable {
         case cmdTempC:      setUseFahrenheit(false)
         case cmdTempF:      setUseFahrenheit(true)
         case cmdApi:        apiEnabled.toggle()
+        case cmdShowPercent:
+            UserDefaults.standard.setBool(!showPercentage, for: .dropdownShowPercentage)
+            render()
         case let c where c >= cmdCityBase && c < cmdCityBase + Int32(Self.cities.count):
             setCity(Self.cities[Int(c - cmdCityBase)])
         case let c where c >= cmdTzBase && c < cmdTzBase + Int32(Self.timezones.count):
