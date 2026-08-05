@@ -61,6 +61,18 @@ int    win_autostart_set(int enable);    /* write/delete Run\TokenClock = this e
 void   win_message_box(const char *title_utf8, const char *body_utf8);
 int    win_user_locale(char *buf, int n); /* GetUserDefaultLocaleName → UTF-8 (e.g. "zh-CN"); returns wchars incl. NUL, 0 on failure */
 
+/* --- modal settings dialog (programmatic child controls) ---
+ * dlg_create 建一个带标题的 overlapped 窗口；dlg_add_* 摆子控件（按 id 标识）；
+ * dlg_modal 跑自有消息循环，点 OK(id 1)/Cancel(id 2) 或关闭窗口时返回 1/0。 */
+void *dlg_create(const char *title_utf8, int w, int h);
+void  dlg_add_check(void *dlg, int id, const char *text_utf8, int x, int y, int w, int h, int checked);
+void  dlg_add_edit(void *dlg, int id, const char *text_utf8, int x, int y, int w, int h);
+void  dlg_add_static(void *dlg, const char *text_utf8, int x, int y, int w, int h);
+void  dlg_add_push(void *dlg, int id, const char *text_utf8, int x, int y, int w, int h);
+int   dlg_check_get(void *dlg, int id);                 /* 1 if checked */
+void  dlg_edit_get(void *dlg, int id, char *buf_utf8, int n);   /* read edit text → UTF-8 */
+int   dlg_modal(void *dlg);                             /* blocks; returns 1=OK 0=cancel */
+
 /* --- GDI helpers (called from Swift on_paint with the hdc it received) --- */
 void gdi_clear(void *hdc, int w, int h, unsigned int rgb);
 void gdi_fill_circle(void *hdc, int cx, int cy, int r,
@@ -76,6 +88,7 @@ void  menu_add_item(void *hmenu, int cmd_id, const char *label_utf8, int checked
 void  menu_add_separator(void *hmenu);
 void  menu_add_submenu(void *hmenu, const char *label_utf8, void *submenu);
 void  menu_track(void *hmenu, void *hwnd);
+void  menu_show_at(void *menu, void *hwnd, int x, int y);   /* TrackPopupMenu at fixed point (capture) */
 
 /* --- GDI+ render (implemented in winrender.cpp) ---
  * Draws one antialiased clock frame into a per-pixel-alpha bitmap and presents it via

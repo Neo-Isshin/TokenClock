@@ -239,6 +239,106 @@ int win_user_locale(char *buf, int n) {
     return WideCharToMultiByte(CP_UTF8, 0, w, -1, buf, n, NULL, NULL);   /* incl. NUL on success */
 }
 
+/* --- modal settings dialog --- */
+
+static HWND g_dlg = NULL;
+static int  g_dlg_result = 0;
+static int  g_dlg_done = 0;
+
+static LRESULT CALLBACK dlg_proc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
+    switch (msg) {
+    case WM_COMMAND:
+        if (LOWORD(wp) == 1) { g_dlg_result = 1; g_dlg_done = 1; DestroyWindow(h); return 0; }  /* OK */
+        if (LOWORD(wp) == 2) { g_dlg_result = 0; g_dlg_done = 1; DestroyWindow(h); return 0; }  /* Cancel */
+        return 0;
+    case WM_CLOSE:
+        g_dlg_result = 0; g_dlg_done = 1; DestroyWindow(h); return 0;
+    }
+    return DefWindowProcW(h, msg, wp, lp);
+}
+
+static HFONT dlg_font(void) {
+    static HFONT f = NULL;
+    if (!f) f = CreateFontW(15, 0, 0, 0, FW_NORMAL, 0, 0, 0, DEFAULT_CHARSET,
+                            OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
+                            DEFAULT_PITCH | FF_SWISS, L"Segoe UI");
+    return f;
+}
+
+static HWND dlg_child(HWND dlg, const wchar_t *cls, DWORD style, int id,
+                      const wchar_t *text, int x, int y, int w, int h) {
+    HWND c = CreateWindowExW(0, cls, text, WS_CHILD | WS_VISIBLE | style, x, y, w, h,
+                             (HWND)dlg, (HMENU)(LONG_PTR)id, GetModuleHandleW(NULL), NULL);
+    SendMessageW(c, WM_SETFONT, (WPARAM)dlg_font(), TRUE);
+    return c;
+}
+
+void *dlg_create(const char *title_utf8, int w, int h) {
+    static int registered = 0;
+    if (!registered) {
+        WNDCLASSEXW wc = {0};
+        wc.cbSize = sizeof(wc); wc.lpfnWndProc = dlg_proc;
+        wc.hInstance = GetModuleHandleW(NULL); wc.hCursor = LoadCursorW(NULL, IDC_ARROW);
+        wc.hbrBackground = (HBRUSH)(COLOR_BTNFACE + 1); wc.lpszClassName = L"TCDialog";
+        RegisterClassExW(&wc); registered = 1;
+    }
+    wchar_t title[256];
+    if (to_wide(title_utf8, title, 256) == 0) title[0] = 0;
+    int sw = GetSystemMetrics(SM_CXSCREEN), sh = GetSystemMetrics(SM_CYSCREEN);
+    HWND hwnd = CreateWindowExW(WS_EX_DLGMODALFRAME, L"TCDialog", title,
+                                WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU,
+                                (sw - w) / 2, (sh - h) / 2, w, h,
+                                NULL, NULL, GetModuleHandleW(NULL), NULL);
+    g_dlg = hwnd; g_dlg_done = 0; g_dlg_result = 0;
+    ShowWindow(hwnd, SW_SHOWNORMAL);
+    UpdateWindow(hwnd);
+    return hwnd;
+}
+
+void dlg_add_check(void *dlg, int id, const char *text_utf8, int x, int y, int w, int h, int checked) {
+    wchar_t t[256]; if (to_wide(text_utf8, t, 256) == 0) t[0] = 0;
+    HWND c = dlg_child((HWND)dlg, L"BUTTON", BS_AUTOCHECKBOX, id, t, x, y, w, h);
+    SendMessageW(c, BM_SETCHECK, checked ? BST_CHECKED : BST_UNCHECKED, 0);
+}
+
+void dlg_add_edit(void *dlg, int id, const char *text_utf8, int x, int y, int w, int h) {
+    wchar_t t[1024]; if (to_wide(text_utf8, t, 1024) == 0) t[0] = 0;
+    dlg_child((HWND)dlg, L"EDIT", ES_AUTOHSCROLL | WS_BORDER, id, t, x, y, w, h);
+}
+
+void dlg_add_static(void *dlg, const char *text_utf8, int x, int y, int w, int h) {
+    wchar_t t[256]; if (to_wide(text_utf8, t, 256) == 0) t[0] = 0;
+    dlg_child((HWND)dlg, L"STATIC", SS_LEFT, 0, t, x, y, w, h);
+}
+
+void dlg_add_push(void *dlg, int id, const char *text_utf8, int x, int y, int w, int h) {
+    wchar_t t[256]; if (to_wide(text_utf8, t, 256) == 0) t[0] = 0;
+    dlg_child((HWND)dlg, L"BUTTON", BS_PUSHBUTTON, id, t, x, y, w, h);
+}
+
+int dlg_check_get(void *dlg, int id) {
+    return IsDlgButtonChecked((HWND)dlg, id) == BST_CHECKED ? 1 : 0;
+}
+
+void dlg_edit_get(void *dlg, int id, char *buf_utf8, int n) {
+    wchar_t w[1024];
+    GetDlgItemTextW((HWND)dlg, id, w, 1024);
+    if (n > 0) buf_utf8[0] = 0;
+    WideCharToMultiByte(CP_UTF8, 0, w, -1, buf_utf8, n, NULL, NULL);
+}
+
+int dlg_modal(void *dlg) {
+    MSG msg;
+    while (GetMessageW(&msg, NULL, 0, 0) > 0) {
+        if (g_dlg_done) break;
+        if (IsWindow((HWND)dlg) && IsDialogMessageW((HWND)dlg, &msg)) continue;
+        TranslateMessage(&msg);
+        DispatchMessageW(&msg);
+        if (g_dlg_done) break;
+    }
+    return g_dlg_result;
+}
+
 /* --- GDI helpers --- */
 void gdi_clear(void *hdc, int w, int h, unsigned int rgb) {
     RECT rc = {0, 0, w, h};
@@ -311,4 +411,8 @@ void menu_track(void *hmenu, void *hwnd) {
     POINT pt; GetCursorPos(&pt);
     SetForegroundWindow((HWND)hwnd);
     TrackPopupMenu((HMENU)hmenu, TPM_RIGHTBUTTON, pt.x, pt.y, 0, (HWND)hwnd, NULL);
+}
+void menu_show_at(void *menu, void *hwnd, int x, int y) {
+    SetForegroundWindow((HWND)hwnd);
+    TrackPopupMenu((HMENU)menu, TPM_LEFTBUTTON | TPM_LEFTALIGN | TPM_TOPALIGN, x, y, 0, (HWND)hwnd, NULL);
 }

@@ -23,6 +23,7 @@ final class WindowsApp: @unchecked Sendable {
     private let cmdTzBase: Int32 = 90      // + 索引 → timezones[i]
     private let cmdApi: Int32 = 100
     private let cmdShowPercent: Int32 = 110
+    private let cmdSettings: Int32 = 120
 
     /// 当前浮窗边长（pt）。表盘半径 = size/2 - 24；classic 主题按 radius 116（medium）校准，
     /// 其余尺寸由 winrender 按 r/116 等比缩放。切换尺寸时此值同步更新并 resize 窗口。
@@ -79,7 +80,23 @@ final class WindowsApp: @unchecked Sendable {
         }
         WindowsWeather.refresh(forCity: selectedCity)
 
+        // 调试/截图钩子（正常流程不经此）：TC_DETAIL 启动即展开；TC_SETTINGS 启动即开设置对话框。
+        if ProcessInfo.processInfo.environment["TC_DETAIL"] != nil { detailsVisible = true }
+        if ProcessInfo.processInfo.environment["TC_SETTINGS"] != nil { openSettings() }
+
         _ = win_run(&cb)
+    }
+
+    /// 截图用：在时钟窗口处弹出右键菜单（TrackPopupMenu 阻塞，菜单保持打开便于截屏）。
+    private var menuShown = false
+    fileprivate func showTrayMenuForCapture() {
+        guard !menuShown else { return }
+        menuShown = true
+        guard let m = menu_create() else { return }
+        buildMenu(menu: m)
+        var x: Int32 = 0, y: Int32 = 0
+        win_get_pos(win_self(), &x, &y)
+        menu_show_at(m, win_self(), x + currentSize / 2, y + 8)
     }
 
     private func updateWeather(_ info: WeatherInfo) {
@@ -135,6 +152,11 @@ final class WindowsApp: @unchecked Sendable {
             win_render_clock(currentSize, currentHeight,
                              Int32(comps.hour ?? 0), Int32(comps.minute ?? 0), Int32(comps.second ?? 0),
                              &wt, &ov)
+        }
+
+        // 截图钩子：首帧画完后在时钟处弹出右键菜单（阻塞，保持打开）。
+        if !menuShown, ProcessInfo.processInfo.environment["TC_MENU"] != nil {
+            showTrayMenuForCapture()
         }
     }
 
@@ -254,6 +276,7 @@ final class WindowsApp: @unchecked Sendable {
         addMenuItem(menu, cmdShowPercent, L.language == .en ? "Detail %" : "详情显示百分比", showPercentage)
         addMenuItem(menu, cmdLaunch, L.tr("menu.launchAtLogin"), launchAtLogin)
         addSeparator(menu)
+        addMenuItem(menu, cmdSettings, L.tr("menu.settings"), false)
         addMenuItem(menu, cmdAbout, L.tr("menu.about"), false)
         addMenuItem(menu, cmdQuit, L.tr("menu.quit"), false)
     }
@@ -273,6 +296,7 @@ final class WindowsApp: @unchecked Sendable {
         case cmdLangEn:     setLang(.en)
         case cmdLaunch:     setLaunchAtLogin(!launchAtLogin)
         case cmdAbout:      showAbout()
+        case cmdSettings:   openSettings()
         case cmdTempC:      setUseFahrenheit(false)
         case cmdTempF:      setUseFahrenheit(true)
         case cmdApi:        apiEnabled.toggle()
@@ -312,6 +336,81 @@ final class WindowsApp: @unchecked Sendable {
             "TokenClock".withCString { tp in
                 win_message_box(tp, bp)
             }
+        }
+    }
+
+    /// 设置面板（对齐 macOS SettingsView 的核心）：14 个工具的「启用」勾选 + 数据源路径编辑。
+    /// OK 即落盘 enabledTools + 各 PathConfig，并即时刷新用量。
+    private func openSettings() {
+        let L = L10n.shared
+        let names = ["OpenClaw", "Claude Code", "Gemini CLI", "Codex", "Hermes", "OpenCode",
+                     "Qwen Code", "Copilot", "Grok", "Aider", "Antigravity", "Cline", "Continue", "Cursor Agent"]
+        let enabled = Set(UserDefaults.standard.stringArray(for: .enabledTools) ?? names)
+        guard let dlg = dlg_create(L.language == .en ? "TokenClock Settings" : "TokenClock 设置", 600, 560) else { return }
+        dlg_add_static(dlg, L.language == .en ? "Data sources  (enable + path)" : "数据源（启用 + 路径）", 14, 12, 400, 20)
+        let rowH: Int32 = 28
+        for (i, name) in names.enumerated() {
+            let y = Int32(40 + i * Int(rowH))
+            dlg_add_check(dlg, 300 + Int32(i), name, 14, y, 130, rowH, enabled.contains(name) ? 1 : 0)
+            dlg_add_edit(dlg, 200 + Int32(i), pathFor(name), 150, y, 430, rowH)
+        }
+        let by = Int32(40 + names.count * Int(rowH) + 12)
+        dlg_add_push(dlg, 1, "OK", 340, by, 110, 28)
+        dlg_add_push(dlg, 2, L.tr("about.close"), 460, by, 110, 28)
+        if dlg_modal(dlg) == 1 {
+            var onNames: [String] = []
+            let buf = UnsafeMutablePointer<CChar>.allocate(capacity: 1024)
+            defer { buf.deallocate() }
+            for (i, name) in names.enumerated() {
+                if dlg_check_get(dlg, 300 + Int32(i)) == 1 { onNames.append(name) }
+                dlg_edit_get(dlg, 200 + Int32(i), buf, 1024)
+                setPath(name, String(cString: buf))
+            }
+            let final = onNames.isEmpty ? names : onNames
+            UserDefaults.standard.setStringArray(final, for: .enabledTools)
+            model.updateEnabledTools(Set(final))
+            scheduleScan(incremental: false)
+            render()
+        }
+    }
+
+    private func pathFor(_ name: String) -> String {
+        switch name {
+        case "OpenClaw": return PathConfig.openclawHome()
+        case "Claude Code": return PathConfig.claudeCodeHome()
+        case "Gemini CLI": return PathConfig.geminiHome()
+        case "Codex": return PathConfig.codexHome()
+        case "Hermes": return PathConfig.hermesHome()
+        case "OpenCode": return PathConfig.opencodeHome()
+        case "Qwen Code": return PathConfig.qwenHome()
+        case "Copilot": return PathConfig.copilotHome()
+        case "Grok": return PathConfig.grokHome()
+        case "Aider": return PathConfig.aiderHome()
+        case "Antigravity": return PathConfig.antigravityHome()
+        case "Cline": return PathConfig.clineHome()
+        case "Continue": return PathConfig.continueHome()
+        case "Cursor Agent": return PathConfig.cursorAgentHome()
+        default: return ""
+        }
+    }
+
+    private func setPath(_ name: String, _ p: String) {
+        switch name {
+        case "OpenClaw": PathConfig.setOpenclawPath(p)
+        case "Claude Code": PathConfig.setClaudeCodePath(p)
+        case "Gemini CLI": PathConfig.setGeminiPath(p)
+        case "Codex": PathConfig.setCodexPath(p)
+        case "Hermes": PathConfig.setHermesPath(p)
+        case "OpenCode": PathConfig.setOpenCodePath(p)
+        case "Qwen Code": PathConfig.setQwenPath(p)
+        case "Copilot": PathConfig.setCopilotPath(p)
+        case "Grok": PathConfig.setGrokPath(p)
+        case "Aider": PathConfig.setAiderPath(p)
+        case "Antigravity": PathConfig.setAntigravityPath(p)
+        case "Cline": PathConfig.setClinePath(p)
+        case "Continue": PathConfig.setContinuePath(p)
+        case "Cursor Agent": PathConfig.setCursorAgentPath(p)
+        default: break
         }
     }
 

@@ -29,15 +29,16 @@ final class WindowsUsageModel: @unchecked Sendable {
         "Continue", "Cursor Agent",
     ])
 
-    let enabledTools: Set<String>
+    private var _enabledTools: Set<String>
+    var enabledTools: Set<String> { _enabledTools }
     let rateWindowMinutes: Int
 
     init() {
         let saved = UserDefaults.standard.stringArray(for: .enabledTools)
-        enabledTools = Set(saved ?? Array(Self.allToolNames))
+        _enabledTools = Set(saved ?? Array(Self.allToolNames))
         let savedWindow = UserDefaults.standard.int(for: .rateWindow)
         rateWindowMinutes = savedWindow > 0 ? savedWindow : 10
-        storedTools = MockUsageService.generateInitialData(enabledTools: enabledTools)
+        storedTools = MockUsageService.generateInitialData(enabledTools: _enabledTools)
 
         if !PathConfig.hasRunInitialDetection {
             PathConfig.hasRunInitialDetection = true
@@ -45,6 +46,9 @@ final class WindowsUsageModel: @unchecked Sendable {
             saveDetectedPaths(summary.results)
         }
     }
+
+    /// 设置面板改了启用工具集后立即生效（tools 过滤 + 下次扫描范围都读此集合）。
+    func updateEnabledTools(_ tools: Set<String>) { _enabledTools = tools }
 
     var tools: [ToolUsage] {
         lock.lock()
