@@ -31,13 +31,15 @@ final class WindowsUsageModel: @unchecked Sendable {
 
     private var _enabledTools: Set<String>
     var enabledTools: Set<String> { _enabledTools }
-    let rateWindowMinutes: Int
+    /// 速率窗口（分钟）：实时读 UserDefaults，设置面板改了即时生效（无需重启）。
+    var rateWindowMinutes: Int {
+        let v = UserDefaults.standard.int(for: .rateWindow)
+        return v > 0 ? v : 10
+    }
 
     init() {
         let saved = UserDefaults.standard.stringArray(for: .enabledTools)
         _enabledTools = Set(saved ?? Array(Self.allToolNames))
-        let savedWindow = UserDefaults.standard.int(for: .rateWindow)
-        rateWindowMinutes = savedWindow > 0 ? savedWindow : 10
         storedTools = MockUsageService.generateInitialData(enabledTools: _enabledTools)
 
         if !PathConfig.hasRunInitialDetection {

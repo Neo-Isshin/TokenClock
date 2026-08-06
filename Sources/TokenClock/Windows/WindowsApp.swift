@@ -375,7 +375,7 @@ final class WindowsApp: @unchecked Sendable {
         let names = ["OpenClaw", "Claude Code", "Gemini CLI", "Codex", "Hermes", "OpenCode",
                      "Qwen Code", "Copilot", "Grok", "Aider", "Antigravity", "Cline", "Continue", "Cursor Agent"]
         let enabled = Set(UserDefaults.standard.stringArray(for: .enabledTools) ?? names)
-        guard let dlg = dlg_create(L.language == .en ? "TokenClock Settings" : "TokenClock 设置", 640, 660) else { return }
+        guard let dlg = dlg_create(L.language == .en ? "TokenClock Settings" : "TokenClock 设置", 640, 720) else { return }
         dlg_add_title(dlg, L.language == .en ? "⚙️ TokenClock Settings" : "⚙️ TokenClock 设置", 20, 16, 600, 30)
         dlg_add_static(dlg, L.language == .en ? "Enable each tool and point it at its log directory." : "启用要统计的工具，并指定其日志目录。", 22, 50, 580, 20)
         dlg_add_sep(dlg, 20, 78, 600)
@@ -388,7 +388,10 @@ final class WindowsApp: @unchecked Sendable {
             dlg_add_check(dlg, 300 + Int32(i), name, 20, y, 140, rowH, enabled.contains(name) ? 1 : 0)
             dlg_add_edit(dlg, 200 + Int32(i), pathFor(name), 168, y, 446, rowH)
         }
-        let by = topY + Int32(names.count * Int(rowH)) + 12
+        let ry = topY + Int32(names.count * Int(rowH)) + 6
+        dlg_add_static(dlg, L.language == .en ? "Rate window (minutes)" : "速率窗口（分钟）", 24, ry + 4, 200, 22)
+        dlg_add_edit(dlg, 400, "\(model.rateWindowMinutes)", 230, ry, 80, rowH)
+        let by = ry + Int32(rowH) + 12
         dlg_add_sep(dlg, 20, by, 600)
         dlg_add_push(dlg, 1, "OK", 410, by + 14, 100, 30)
         dlg_add_push(dlg, 2, L.tr("about.close"), 520, by + 14, 100, 30)
@@ -404,6 +407,10 @@ final class WindowsApp: @unchecked Sendable {
             let final = onNames.isEmpty ? names : onNames
             UserDefaults.standard.setStringArray(final, for: .enabledTools)
             model.updateEnabledTools(Set(final))
+            dlg_edit_get(dlg, 400, buf, 1024)
+            if let mins = Int(String(cString: buf)), mins > 0 {
+                UserDefaults.standard.setInt(mins, for: .rateWindow)
+            }
             scheduleScan(incremental: false)
             render()
         }
