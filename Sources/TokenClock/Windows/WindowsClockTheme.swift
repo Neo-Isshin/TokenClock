@@ -5,7 +5,8 @@ import Win32Shim
 /// （颜色转 ARGB 以表达 .clear/opacity；指针/刻度/数字/装饰标志由 winrender.cpp 据此渲染）。
 /// custom 主题暂映射到 classic（自定义编辑器属后续设置面板范畴）。
 enum WindowsClockTheme: String, CaseIterable {
-    case classic, midnight, luxe, gufeng, railgun, sky, glass, glacier, custom
+    // Keep the picker/menu order identical to ClockFaceTheme.allCases on macOS normal.
+    case glass, classic, glacier, midnight, luxe, gufeng, railgun, sky, custom
 
     var displayName: String { L10n.shared.tr("themeName.\(rawValue)") }
 

@@ -9,14 +9,18 @@ enum PathConfig {
 
     private static let envOpenClaw = "OPENCLAW_HOME"
     private static let envClaudeCode = "CLAUDE_CONFIG_DIR"
-    private static let envGemini = "GEMINI_HOME"
+    /// Gemini CLI treats GEMINI_CLI_HOME as the *parent* of its `.gemini` data directory.
+    /// GEMINI_HOME was used by early community builds; keep it as a compatibility fallback only.
+    private static let envGeminiCLIHome = "GEMINI_CLI_HOME"
+    private static let envGeminiLegacy = "GEMINI_HOME"
     private static let envCodex = "CODEX_HOME"
     private static let envHermes = "HERMES_HOME"
     private static let envOpenCode = "OPENCODE_HOME"
     private static let envQwen = "QWEN_HOME"
+    private static let envQwenRuntime = "QWEN_RUNTIME_DIR"
     private static let envCopilot = "COPILOT_HOME"
     private static let envGrok = "GROK_HOME"
-    private static let envAider = "AIDER_HOME"
+    private static let envAiderAnalyticsLog = "AIDER_ANALYTICS_LOG"
     private static let envAntigravity = "ANTIGRAVITY_HOME"
     private static let envCline = "CLINE_HOME"
     private static let envContinue = "CONTINUE_HOME"
@@ -33,7 +37,7 @@ enum PathConfig {
     }
 
     static func geminiHome() -> String {
-        customPath(forKey: "geminiPath") ?? envPath(envGemini) ?? defaultGeminiHome()
+        customPath(forKey: "geminiPath") ?? geminiEnvironmentHome() ?? defaultGeminiHome()
     }
 
     static func codexHome() -> String {
@@ -49,7 +53,7 @@ enum PathConfig {
     }
 
     static func qwenHome() -> String {
-        customPath(forKey: "qwenPath") ?? envPath(envQwen) ?? defaultQwenHome()
+        customPath(forKey: "qwenPath") ?? envPath(envQwenRuntime) ?? envPath(envQwen) ?? defaultQwenHome()
     }
 
     static func copilotHome() -> String {
@@ -60,8 +64,18 @@ enum PathConfig {
         customPath(forKey: "grokPath") ?? envPath(envGrok) ?? defaultGrokHome()
     }
 
+    /// Aider does not own a standard data directory. Token usage is available only when the
+    /// official `--analytics-log` / `AIDER_ANALYTICS_LOG` option writes a JSONL file. For
+    /// compatibility, a directory entered in Settings resolves to `analytics.jsonl` inside it.
+    static func aiderAnalyticsPath() -> String {
+        if let custom = customPath(forKey: "aiderPath") { return analyticsFile(from: custom) }
+        if let environment = envPath(envAiderAnalyticsLog) { return analyticsFile(from: environment) }
+        return defaultAiderAnalyticsPath()
+    }
+
+    /// Settings-facing value: retain the user's exact file/directory entry.
     static func aiderHome() -> String {
-        customPath(forKey: "aiderPath") ?? envPath(envAider) ?? defaultAiderHome()
+        customPath(forKey: "aiderPath") ?? envPath(envAiderAnalyticsLog) ?? defaultAiderHome()
     }
 
     static func antigravityHome() -> String {
@@ -122,6 +136,10 @@ enum PathConfig {
         NSHomeDirectory() + "/.aider"
     }
 
+    static func defaultAiderAnalyticsPath() -> String {
+        defaultAiderHome() + "/analytics.jsonl"
+    }
+
     static func defaultAntigravityHome() -> String {
         NSHomeDirectory() + "/.gemini/antigravity-cli"
     }
@@ -135,7 +153,8 @@ enum PathConfig {
     }
 
     static func defaultCursorAgentHome() -> String {
-        NSHomeDirectory() + "/.cursor"
+        // Cursor IDE stores the credential used by Cursor Agent's cloud usage endpoint here.
+        AppPaths.appSupport("Cursor", "User", "globalStorage")
     }
 
     // MARK: - 备选探测路径（官方文档中的其他常见位置）
@@ -163,7 +182,7 @@ enum PathConfig {
     /// Gemini CLI 的所有可能数据目录候选
     static func geminiCandidates() -> [String] {
         var candidates: [String] = []
-        if let env = envPath(envGemini) { candidates.append(env) }
+        if let env = geminiEnvironmentHome() { candidates.append(env) }
         candidates.append(defaultGeminiHome())
         return candidates
     }
@@ -196,6 +215,7 @@ enum PathConfig {
 
     static func qwenCandidates() -> [String] {
         var candidates: [String] = []
+        if let env = envPath(envQwenRuntime) { candidates.append(env) }
         if let env = envPath(envQwen) { candidates.append(env) }
         candidates.append(defaultQwenHome())
         return candidates
@@ -217,8 +237,8 @@ enum PathConfig {
 
     static func aiderCandidates() -> [String] {
         var candidates: [String] = []
-        if let env = envPath(envAider) { candidates.append(env) }
-        candidates.append(defaultAiderHome())
+        if let env = envPath(envAiderAnalyticsLog) { candidates.append(analyticsFile(from: env)) }
+        candidates.append(defaultAiderAnalyticsPath())
         return candidates
     }
 
@@ -293,29 +313,65 @@ enum PathConfig {
     // MARK: - 首次启动标记
 
     static var hasRunInitialDetection: Bool {
-        get { UserDefaults.standard.bool(forKey: prefix + "hasRunInitialDetection") }
-        set { UserDefaults.standard.set(newValue, forKey: prefix + "hasRunInitialDetection") }
+        get { UserDefaults.standard.bool(for: .hasRunInitialDetection) }
+        set { UserDefaults.standard.setBool(newValue, for: .hasRunInitialDetection) }
     }
 
     // MARK: - 内部
 
     private static func customPath(forKey key: String) -> String? {
-        let val = UserDefaults.standard.string(forKey: prefix + key)
+        guard let settingsKey = SettingsKey(rawValue: prefix + key) else { return nil }
+        let val = UserDefaults.standard.string(for: settingsKey)
         guard let val, !val.isEmpty else { return nil }
-        return val
+        return expandedPath(val)
     }
 
     private static func setCustomPath(_ path: String, forKey key: String) {
+        guard let settingsKey = SettingsKey(rawValue: prefix + key) else { return }
         if path.isEmpty {
-            UserDefaults.standard.removeObject(forKey: prefix + key)
+            UserDefaults.standard.remove(settingsKey)
         } else {
-            UserDefaults.standard.set(path, forKey: prefix + key)
+            UserDefaults.standard.setString(path, for: settingsKey)
         }
     }
 
     private static func envPath(_ name: String) -> String? {
         let val = ProcessInfo.processInfo.environment[name]
         guard let val, !val.isEmpty else { return nil }
-        return val
+        return expandedPath(val)
+    }
+
+    /// Expand the path forms users naturally paste into Settings. Foundation's tilde expansion
+    /// is not consistent across Windows Foundation builds, so handle it explicitly as well as
+    /// `%APPDATA%`, `$env:APPDATA`, `${APPDATA}` and `$APPDATA` forms.
+    static func expandedPath(_ raw: String) -> String {
+        var value = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        let environment = ProcessInfo.processInfo.environment
+
+        if value == "~" || value.hasPrefix("~/") || value.hasPrefix("~\\") {
+            value = NSHomeDirectory() + String(value.dropFirst())
+        }
+
+        for (name, replacement) in environment where !name.isEmpty {
+            value = value.replacingOccurrences(of: "%\(name)%", with: replacement, options: .caseInsensitive)
+            value = value.replacingOccurrences(of: "$env:\(name)", with: replacement, options: .caseInsensitive)
+            value = value.replacingOccurrences(of: "${\(name)}", with: replacement)
+            value = value.replacingOccurrences(of: "$\(name)", with: replacement)
+        }
+        return (value as NSString).standardizingPath
+    }
+
+    private static func geminiEnvironmentHome() -> String? {
+        if let parent = envPath(envGeminiCLIHome) {
+            let normalized = parent.replacingOccurrences(of: "\\", with: "/")
+            if normalized.hasSuffix("/.gemini") { return parent }
+            return parent + "/.gemini"
+        }
+        return envPath(envGeminiLegacy)
+    }
+
+    private static func analyticsFile(from path: String) -> String {
+        let expanded = expandedPath(path)
+        return expanded.lowercased().hasSuffix(".jsonl") ? expanded : expanded + "/analytics.jsonl"
     }
 }

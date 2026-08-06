@@ -19,6 +19,9 @@ static ULONG_PTR  g_gdip_token = 0;
 static HDC        g_mem_dc = NULL;
 static HBITMAP    g_mem_bm = NULL;
 static int        g_mem_w = 0, g_mem_h = 0;
+static BYTE       g_window_alpha = 255;
+static Gdiplus::Image *g_dial_image = NULL;
+static wchar_t    g_dial_image_path[MAX_PATH] = {0};
 
 // ARGB(0xAARRGGBB) → GDI+ Color。
 static Gdiplus::Color cr(unsigned int argb) {
@@ -34,9 +37,16 @@ void gdip_init(void) {
     Gdiplus::GdiplusStartup(&g_gdip_token, &si, NULL);
 }
 void gdip_shutdown(void) {
+    if (g_dial_image) { delete g_dial_image; g_dial_image = NULL; g_dial_image_path[0] = 0; }
     if (g_mem_bm) { DeleteObject(g_mem_bm); g_mem_bm = NULL; }
     if (g_mem_dc) { DeleteDC(g_mem_dc); g_mem_dc = NULL; }
     if (g_gdip_token) { Gdiplus::GdiplusShutdown(g_gdip_token); g_gdip_token = 0; }
+}
+
+void win_render_set_opacity(double alpha) {
+    if (alpha < 0.0) alpha = 0.0;
+    if (alpha > 1.0) alpha = 1.0;
+    g_window_alpha = (BYTE)std::lround(alpha * 255.0);
 }
 
 static void ensure_mem(int w, int h) {
@@ -74,27 +84,36 @@ void win_render_clock(int w, int h, int hh, int mm, int ss, const win_theme *t, 
     gfx.SetPixelOffsetMode(Gdiplus::PixelOffsetModeHighQuality);
 
     const bool expanded = ov && ov->detail_text && ov->detail_text[0];
-    const double cxd = w / 2.0, cyd = expanded ? (w / 2.0) : (h / 2.0);
-    const double r = w / 2.0 - 24.0;          // 表盘半径；窗口宽 = 表盘直径
-    const double S = r / 116.0;               // 按 radius 116（diameter 240pt）等比缩放
+    const double clockH = w - 80.0;            // ClockSize.panelWidth = diameter + 80
+    const double cxd = w / 2.0, cyd = clockH / 2.0;
+    const double r = clockH / 2.0 - 4.0;        // exact ClockFaceView radius
+    const double S = r / 116.0;                 // medium macOS radius = 120 - 4
 
-    // 柔和阴影：表盘外几圈半透明黑，略向下偏移。
-    for (int i = 1; i <= 6; i++) {
-        Gdiplus::SolidBrush sb(Gdiplus::Color(20, 0, 0, 0));
-        double rr = r + i * 1.8;
-        gfx.FillEllipse(&sb, Gdiplus::REAL(cxd - rr), Gdiplus::REAL(cyd - rr + 5.0),
-                        Gdiplus::REAL(rr * 2), Gdiplus::REAL(rr * 2));
-    }
-
-    // 盘体 + 外环（宽度按主题，缩放）
+    // 盘体 + 外环。glass 使用与 macOS normal 相同的预捕获 Liquid Glass PNG。
     {
-        Gdiplus::SolidBrush fill(cr(t->dial_fill));
-        gfx.FillEllipse(&fill, Gdiplus::REAL(cxd - r), Gdiplus::REAL(cyd - r),
-                        Gdiplus::REAL(r * 2), Gdiplus::REAL(r * 2));
-        if (t->rim_width > 0 && (t->dial_rim >> 24) > 0) {
-            Gdiplus::Pen rim(cr(t->dial_rim), (Gdiplus::REAL)(t->rim_width * S));
-            gfx.DrawEllipse(&rim, Gdiplus::REAL(cxd - r), Gdiplus::REAL(cyd - r),
+        bool drewImage = false;
+        wchar_t imagePath[MAX_PATH];
+        if (ov && to_wide(ov->dial_image_path, imagePath, MAX_PATH) > 0) {
+            if (!g_dial_image || wcscmp(imagePath, g_dial_image_path) != 0) {
+                if (g_dial_image) delete g_dial_image;
+                g_dial_image = new Gdiplus::Image(imagePath);
+                wcsncpy_s(g_dial_image_path, imagePath, _TRUNCATE);
+            }
+            if (g_dial_image && g_dial_image->GetLastStatus() == Gdiplus::Ok) {
+                gfx.DrawImage(g_dial_image, Gdiplus::RectF((Gdiplus::REAL)(cxd - r), (Gdiplus::REAL)(cyd - r),
+                                                           (Gdiplus::REAL)(r * 2), (Gdiplus::REAL)(r * 2)));
+                drewImage = true;
+            }
+        }
+        if (!drewImage) {
+            Gdiplus::SolidBrush fill(cr(t->dial_fill));
+            gfx.FillEllipse(&fill, Gdiplus::REAL(cxd - r), Gdiplus::REAL(cyd - r),
                             Gdiplus::REAL(r * 2), Gdiplus::REAL(r * 2));
+            if (t->rim_width > 0 && (t->dial_rim >> 24) > 0) {
+                Gdiplus::Pen rim(cr(t->dial_rim), (Gdiplus::REAL)(t->rim_width * S));
+                gfx.DrawEllipse(&rim, Gdiplus::REAL(cxd - r), Gdiplus::REAL(cyd - r),
+                                Gdiplus::REAL(r * 2), Gdiplus::REAL(r * 2));
+            }
         }
     }
 
@@ -151,6 +170,22 @@ void win_render_clock(int w, int h, int hh, int mm, int ss, const win_theme *t, 
         cloud(cxd - r * 0.38, cyd - r * 0.28, r * 0.10);
         cloud(cxd + r * 0.25, cyd + r * 0.32, r * 0.07);
         cloud(cxd - r * 0.10, cyd + r * 0.50, r * 0.055);
+        auto bird = [&](double cx, double cy, double sc, BYTE opacity) {
+            Gdiplus::GraphicsPath path;
+            path.AddBezier(Gdiplus::PointF((float)(cx - sc), (float)(cy + sc * 0.3)),
+                           Gdiplus::PointF((float)(cx - sc * 0.3), (float)(cy - sc * 0.5)),
+                           Gdiplus::PointF((float)(cx - sc * 0.2), (float)(cy - sc * 0.25)),
+                           Gdiplus::PointF((float)cx, (float)(cy - sc * 0.2)));
+            path.AddBezier(Gdiplus::PointF((float)cx, (float)(cy - sc * 0.2)),
+                           Gdiplus::PointF((float)(cx + sc * 0.2), (float)(cy - sc * 0.25)),
+                           Gdiplus::PointF((float)(cx + sc * 0.3), (float)(cy - sc * 0.5)),
+                           Gdiplus::PointF((float)(cx + sc), (float)(cy + sc * 0.3)));
+            Gdiplus::Pen pen(Gdiplus::Color(opacity, 71, 97, 128), (Gdiplus::REAL)(sc * 0.25));
+            pen.SetLineCap(Gdiplus::LineCapRound, Gdiplus::LineCapRound, Gdiplus::DashCapRound);
+            gfx.DrawPath(&pen, &path);
+        };
+        bird(cxd - r * 0.35, cyd + r * 0.18, r * 0.05, 255);
+        bird(cxd - r * 0.22, cyd + r * 0.10, r * 0.035, 153);
     }
 
     // 指针（移植自 drawHands / drawRoundHand / drawTaperedHand / drawLanceHand / drawSwordHand）
@@ -267,37 +302,82 @@ void win_render_clock(int w, int h, int hh, int mm, int ss, const win_theme *t, 
         Gdiplus::RectF rect(Gdiplus::REAL(px), Gdiplus::REAL(py - size), 200.0f, Gdiplus::REAL(size * 2.0f));
         gfx.DrawString(wb, -1, &f, rect, &sf, &b);
     };
+    auto textEmoji = [&](const char *u8, double px, double py, float size, unsigned int argb) {
+        wchar_t wb[32];
+        if (to_wide(u8, wb, 32) == 0 || (argb >> 24) == 0) return;
+        Gdiplus::FontFamily emojiFam(L"Segoe UI Emoji");
+        Gdiplus::Font f(&emojiFam, size, Gdiplus::FontStyleRegular, Gdiplus::UnitPixel);
+        Gdiplus::SolidBrush b(cr(argb));
+        Gdiplus::RectF rect((Gdiplus::REAL)(px - size), (Gdiplus::REAL)(py - size), (Gdiplus::REAL)(size * 2), (Gdiplus::REAL)(size * 2));
+        gfx.DrawString(wb, -1, &f, rect, &sfC, &b);
+    };
+    auto textCEmojiLine = [&](const char *u8, double px, double py, float size, unsigned int argb) {
+        wchar_t wb[128];
+        if (to_wide(u8, wb, 128) == 0 || (argb >> 24) == 0) return;
+        Gdiplus::FontFamily emojiFam(L"Segoe UI Emoji");
+        Gdiplus::Font f(&emojiFam, size, Gdiplus::FontStyleRegular, Gdiplus::UnitPixel);
+        Gdiplus::SolidBrush b(cr(argb));
+        Gdiplus::RectF rect(Gdiplus::REAL(px - 130.0), Gdiplus::REAL(py - size), 260.0f, Gdiplus::REAL(size * 2.0f));
+        gfx.DrawString(wb, -1, &f, rect, &sfC, &b);
+    };
+    auto textLEmojiLine = [&](const char *u8, double px, double py, float size, unsigned int argb) {
+        wchar_t wb[128];
+        if (to_wide(u8, wb, 128) == 0 || (argb >> 24) == 0) return;
+        Gdiplus::FontFamily emojiFam(L"Segoe UI Emoji");
+        Gdiplus::Font f(&emojiFam, size, Gdiplus::FontStyleRegular, Gdiplus::UnitPixel);
+        Gdiplus::SolidBrush b(cr(argb));
+        Gdiplus::StringFormat sf; sf.SetAlignment(Gdiplus::StringAlignmentNear); sf.SetLineAlignment(Gdiplus::StringAlignmentCenter);
+        Gdiplus::RectF rect(Gdiplus::REAL(px), Gdiplus::REAL(py - size), 200.0f, Gdiplus::REAL(size * 2.0f));
+        gfx.DrawString(wb, -1, &f, rect, &sf, &b);
+    };
 
     if (ov) {
         textC(ov->date,    cxd, cyd - r * 0.42, (float)(11.0 * S), t->text_secondary, false);
-        textC(ov->weather, cxd, cyd - r * 0.42 + 16.0 * S, (float)(13.0 * S), t->text_primary, false);
+        textCEmojiLine(ov->weather, cxd, cyd - r * 0.42 + 16.0 * S, (float)(13.0 * S), t->text_primary);
+        textC(ov->today_label, cxd, cyd + r * 0.28, (float)(9.0 * S), t->text_secondary, false);
         textC(ov->tokens,   cxd, cyd + r * 0.40, (float)(20.0 * S), t->text_primary, true);
         textC(ov->messages, cxd, cyd + r * 0.40 + 18.0 * S, (float)(10.0 * S), t->text_secondary, false);
+        textEmoji(ov->rate, cxd + r * 0.72, cyd, (float)(25.0 * S), t->text_primary);
         if (!expanded) {
-            textL(ov->tool_left1, cxd - r * 0.72, cyd - 10.0 * S, (float)(13.0 * S), t->text_primary);
-            textL(ov->tool_left2, cxd - r * 0.72, cyd + 12.0 * S, (float)(13.0 * S), t->text_primary);
+            textLEmojiLine(ov->tool_left1, cxd - r * 0.72, cyd - 10.0 * S, (float)(13.0 * S), t->text_primary);
+            textLEmojiLine(ov->tool_left2, cxd - r * 0.72, cyd + 12.0 * S, (float)(13.0 * S), t->text_primary);
         }
     }
 
-    // 展开态：盘面下方一张主题色「卡片」——圆角背景 + 表头 + 数据行（label 左 / value 右，缩进表子项）。
-    // 行格式：表头无 \t；数据行 "label\tvalue"，前导空格为缩进。
+    // 展开态：与 macOS normal 对齐的交互卡片——分组胶囊、百分比 chip、四列表头、
+    // 可展开父行与缩进子行。Swift 负责点击状态，renderer 只画当前快照。
     if (expanded) {
         wchar_t wb[2048];
         if (to_wide(ov->detail_text, wb, 2048) > 0) {
             int n = 1;
             for (wchar_t *p = wb; *p; p++) if (*p == L'\n') n++;
-            const double gap = 14.0 * S, pad = 12.0 * S, rowH = 20.0 * S, radius = 12.0 * S;
-            const double cardLeft = cxd - r, cardW = 2.0 * r, cardRight = cxd + r;
-            const double cardTop = w + gap, cardH = 2.0 * pad + n * rowH;
+            const double gap = 14.0 * S, rowH = 30.0 * S, radius = 12.0 * S;
+            const bool hasForecast = ov->forecast_summary && ov->forecast_summary[0];
+            const double forecastH = hasForecast ? 76.0 * S : 0.0;
+            const double cardLeft = 8.0 * S, cardW = w - 16.0 * S, cardRight = cardLeft + cardW;
+            const double cardTop = clockH + gap, cardH = (94.0 + n * 30.0) * S + forecastH;
+
+            auto roundedPath = [](Gdiplus::GraphicsPath &path, double x, double y, double width, double height, double rad) {
+                Gdiplus::REAL rr = (Gdiplus::REAL)rad;
+                path.AddArc((Gdiplus::REAL)x, (Gdiplus::REAL)y, 2 * rr, 2 * rr, 180, 90);
+                path.AddArc((Gdiplus::REAL)(x + width - 2 * rad), (Gdiplus::REAL)y, 2 * rr, 2 * rr, 270, 90);
+                path.AddArc((Gdiplus::REAL)(x + width - 2 * rad), (Gdiplus::REAL)(y + height - 2 * rad), 2 * rr, 2 * rr, 0, 90);
+                path.AddArc((Gdiplus::REAL)x, (Gdiplus::REAL)(y + height - 2 * rad), 2 * rr, 2 * rr, 90, 90);
+                path.CloseFigure();
+            };
+            auto alpha = [](unsigned int color, BYTE a) { return ((unsigned int)a << 24) | (color & 0x00ffffff); };
+            auto splitTabs = [](wchar_t *text, wchar_t **fields, int count) {
+                for (int i = 0; i < count; i++) fields[i] = (wchar_t *)L"";
+                fields[0] = text;
+                int index = 1;
+                for (wchar_t *p = text; *p && index < count; p++) {
+                    if (*p == L'\t') { *p = 0; fields[index++] = p + 1; }
+                }
+            };
 
             // 圆角卡片：填充 + 描边
             Gdiplus::GraphicsPath card;
-            Gdiplus::REAL rr = (Gdiplus::REAL)radius;
-            card.AddArc((Gdiplus::REAL)cardLeft, (Gdiplus::REAL)cardTop, 2 * rr, 2 * rr, 180, 90);
-            card.AddArc((Gdiplus::REAL)(cardRight - 2 * radius), (Gdiplus::REAL)cardTop, 2 * rr, 2 * rr, 270, 90);
-            card.AddArc((Gdiplus::REAL)(cardRight - 2 * radius), (Gdiplus::REAL)(cardTop + cardH - 2 * radius), 2 * rr, 2 * rr, 0, 90);
-            card.AddArc((Gdiplus::REAL)cardLeft, (Gdiplus::REAL)(cardTop + cardH - 2 * radius), 2 * rr, 2 * rr, 90, 90);
-            card.CloseFigure();
+            roundedPath(card, cardLeft, cardTop, cardW, cardH, radius);
             Gdiplus::SolidBrush bg(cr(t->dd_bg));
             gfx.FillPath(&bg, &card);
             if ((t->dd_border >> 24) > 0) {
@@ -306,36 +386,151 @@ void win_render_clock(int w, int h, int hh, int mm, int ss, const win_theme *t, 
             }
 
             Gdiplus::FontFamily famD(L"Segoe UI");
-            Gdiplus::Font fHdr(&famD, (float)(11.0 * S), Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
-            Gdiplus::Font fRow(&famD, (float)(12.5 * S), Gdiplus::FontStyleRegular, Gdiplus::UnitPixel);
+            Gdiplus::FontFamily famEmoji(L"Segoe UI Emoji");
             Gdiplus::StringFormat sfL; sfL.SetAlignment(Gdiplus::StringAlignmentNear);  sfL.SetLineAlignment(Gdiplus::StringAlignmentCenter);
             Gdiplus::StringFormat sfR; sfR.SetAlignment(Gdiplus::StringAlignmentFar);   sfR.SetLineAlignment(Gdiplus::StringAlignmentCenter);
-            Gdiplus::RectF valRect((Gdiplus::REAL)(cardLeft + pad), 0.0f, (Gdiplus::REAL)(cardW - 2 * pad), (Gdiplus::REAL)rowH);
+            Gdiplus::StringFormat sfC2; sfC2.SetAlignment(Gdiplus::StringAlignmentCenter); sfC2.SetLineAlignment(Gdiplus::StringAlignmentCenter);
 
-            double y = cardTop + pad + rowH / 2.0;
+            // macOS normal weather trend: current conditions plus the current 3-hour slot and
+            // the next three slots. The divider remains visible even when the forecast is empty.
+            if (hasForecast) {
+                wchar_t summary[512];
+                if (to_wide(ov->forecast_summary, summary, 512) > 0) {
+                    wchar_t *forecastLabel = wcschr(summary, L'|');
+                    if (forecastLabel) { *forecastLabel = 0; forecastLabel++; }
+                    else forecastLabel = (wchar_t *)L"";
+                    Gdiplus::Font fSummary(&famEmoji, (float)(12.0 * S), Gdiplus::FontStyleRegular, Gdiplus::UnitPixel);
+                    Gdiplus::Font fForecastLabel(&famD, (float)(11.0 * S), Gdiplus::FontStyleRegular, Gdiplus::UnitPixel);
+                    Gdiplus::SolidBrush mainBrush(cr(t->dd_text)), subBrush(cr(t->dd_subtext));
+                    Gdiplus::RectF summaryRect((Gdiplus::REAL)(cardLeft + 12.0 * S), (Gdiplus::REAL)(cardTop + 4.0 * S),
+                                               (Gdiplus::REAL)(cardW - 100.0 * S), (Gdiplus::REAL)(22.0 * S));
+                    Gdiplus::RectF labelRect((Gdiplus::REAL)(cardRight - 96.0 * S), (Gdiplus::REAL)(cardTop + 4.0 * S),
+                                             (Gdiplus::REAL)(84.0 * S), (Gdiplus::REAL)(22.0 * S));
+                    gfx.DrawString(summary, -1, &fSummary, summaryRect, &sfL, &mainBrush);
+                    gfx.DrawString(forecastLabel, -1, &fForecastLabel, labelRect, &sfR, &subBrush);
+                }
+
+                wchar_t encoded[1024];
+                if (to_wide(ov->forecast_slots, encoded, 1024) > 0) {
+                    wchar_t *slots[4]; splitTabs(encoded, slots, 4);
+                    const double innerLeft = cardLeft + 12.0 * S, slotW = (cardW - 24.0 * S) / 4.0;
+                    Gdiplus::Font fTime(&famD, (float)(10.0 * S), Gdiplus::FontStyleRegular, Gdiplus::UnitPixel);
+                    Gdiplus::Font fWeatherEmoji(&famEmoji, (float)(16.0 * S), Gdiplus::FontStyleRegular, Gdiplus::UnitPixel);
+                    Gdiplus::Font fTemp(&famD, (float)(11.0 * S), Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
+                    Gdiplus::SolidBrush mainBrush(cr(t->dd_text)), subBrush(cr(t->dd_subtext));
+                    for (int i = 0; i < 4 && slots[i] && slots[i][0]; i++) {
+                        wchar_t *emoji = wcschr(slots[i], L'|');
+                        if (!emoji) continue;
+                        *emoji++ = 0;
+                        wchar_t *temp = wcschr(emoji, L'|');
+                        if (!temp) continue;
+                        *temp++ = 0;
+                        const double x = innerLeft + i * slotW;
+                        Gdiplus::RectF timeRect((Gdiplus::REAL)x, (Gdiplus::REAL)(cardTop + 23.0 * S), (Gdiplus::REAL)slotW, (Gdiplus::REAL)(15.0 * S));
+                        Gdiplus::RectF emojiRect((Gdiplus::REAL)x, (Gdiplus::REAL)(cardTop + 36.0 * S), (Gdiplus::REAL)slotW, (Gdiplus::REAL)(22.0 * S));
+                        Gdiplus::RectF tempRect((Gdiplus::REAL)x, (Gdiplus::REAL)(cardTop + 55.0 * S), (Gdiplus::REAL)slotW, (Gdiplus::REAL)(15.0 * S));
+                        gfx.DrawString(slots[i], -1, &fTime, timeRect, &sfC2, &subBrush);
+                        gfx.DrawString(emoji, -1, &fWeatherEmoji, emojiRect, &sfC2, &mainBrush);
+                        gfx.DrawString(temp, -1, &fTemp, tempRect, &sfC2, &mainBrush);
+                    }
+                }
+                Gdiplus::Pen forecastDivider(cr(alpha(t->dd_border, 105)), (Gdiplus::REAL)(0.7 * S));
+                gfx.DrawLine(&forecastDivider, (Gdiplus::REAL)(cardLeft + 8.0 * S), (Gdiplus::REAL)(cardTop + 75.0 * S),
+                             (Gdiplus::REAL)(cardRight - 8.0 * S), (Gdiplus::REAL)(cardTop + 75.0 * S));
+            }
+
+            const double contentTop = cardTop + forecastH;
+            // [By Session | By Model] segmented control.
+            const double controlLeft = cardLeft + 12.0 * S, controlTop = contentTop + 8.0 * S;
+            const double controlW = cardW - 24.0 * S, controlH = 26.0 * S, halfW = controlW / 2.0;
+            Gdiplus::GraphicsPath controlPath; roundedPath(controlPath, controlLeft, controlTop, controlW, controlH, 8.0 * S);
+            Gdiplus::SolidBrush controlBg(cr(alpha(t->dd_text, 18))); gfx.FillPath(&controlBg, &controlPath);
+            Gdiplus::GraphicsPath selectedPath;
+            roundedPath(selectedPath, controlLeft + (ov->detail_grouping ? halfW : 0), controlTop + 2.0 * S,
+                        halfW, controlH - 4.0 * S, 6.0 * S);
+            Gdiplus::SolidBrush selectedBg(cr(alpha(t->dd_text, 36))); gfx.FillPath(&selectedBg, &selectedPath);
+            wchar_t controls[256];
+            if (to_wide(ov->detail_controls, controls, 256) > 0) {
+                wchar_t *parts[3]; splitTabs(controls, parts, 3);
+                Gdiplus::Font fControl(&famD, (float)(10.0 * S), Gdiplus::FontStyleRegular, Gdiplus::UnitPixel);
+                Gdiplus::SolidBrush controlText(cr(t->dd_text));
+                for (int i = 0; i < 2; i++) {
+                    Gdiplus::RectF rect((Gdiplus::REAL)(controlLeft + i * halfW), (Gdiplus::REAL)controlTop,
+                                       (Gdiplus::REAL)halfW, (Gdiplus::REAL)controlH);
+                    gfx.DrawString(parts[i], -1, &fControl, rect, &sfC2, &controlText);
+                }
+
+                // Percent chip on the right, directly below the segmented control.
+                const double chipW = 104.0 * S, chipH = 22.0 * S, chipTop = contentTop + 38.0 * S;
+                const double chipLeft = cardRight - 12.0 * S - chipW;
+                Gdiplus::GraphicsPath chip; roundedPath(chip, chipLeft, chipTop, chipW, chipH, chipH / 2.0);
+                Gdiplus::SolidBrush chipBg(cr(alpha(t->dd_text, ov->detail_percentage ? 46 : 20))); gfx.FillPath(&chipBg, &chip);
+                Gdiplus::Pen chipBorder(cr(alpha(t->dd_text, ov->detail_percentage ? 82 : 38)), (Gdiplus::REAL)(0.7 * S)); gfx.DrawPath(&chipBorder, &chip);
+                Gdiplus::RectF chipRect((Gdiplus::REAL)chipLeft, (Gdiplus::REAL)chipTop, (Gdiplus::REAL)chipW, (Gdiplus::REAL)chipH);
+                gfx.DrawString(parts[2], -1, &fControl, chipRect, &sfC2, &controlText);
+            }
+
+            // Column header.
+            const double labelX = cardLeft + 14.0 * S;
+            const double cacheW = 42.0 * S, messagesW = 38.0 * S, usageW = 68.0 * S;
+            const double cacheX = cardRight - 12.0 * S - cacheW;
+            const double messagesX = cacheX - messagesW;
+            const double usageX = messagesX - usageW;
+            wchar_t header[256];
+            if (to_wide(ov->detail_header, header, 256) > 0) {
+                wchar_t *parts[4]; splitTabs(header, parts, 4);
+                Gdiplus::Font fHeader(&famD, (float)(9.0 * S), Gdiplus::FontStyleRegular, Gdiplus::UnitPixel);
+                Gdiplus::SolidBrush headerBrush(cr(t->dd_subtext));
+                double headerTop = contentTop + 64.0 * S;
+                Gdiplus::RectF lr((Gdiplus::REAL)labelX, (Gdiplus::REAL)headerTop, (Gdiplus::REAL)(usageX - labelX), (Gdiplus::REAL)(22.0 * S));
+                gfx.DrawString(parts[0], -1, &fHeader, lr, &sfL, &headerBrush);
+                Gdiplus::RectF ur((Gdiplus::REAL)usageX, (Gdiplus::REAL)headerTop, (Gdiplus::REAL)usageW, (Gdiplus::REAL)(22.0 * S));
+                Gdiplus::RectF mr((Gdiplus::REAL)messagesX, (Gdiplus::REAL)headerTop, (Gdiplus::REAL)messagesW, (Gdiplus::REAL)(22.0 * S));
+                Gdiplus::RectF crct((Gdiplus::REAL)cacheX, (Gdiplus::REAL)headerTop, (Gdiplus::REAL)cacheW, (Gdiplus::REAL)(22.0 * S));
+                gfx.DrawString(parts[1], -1, &fHeader, ur, &sfR, &headerBrush);
+                gfx.DrawString(parts[2], -1, &fHeader, mr, &sfR, &headerBrush);
+                gfx.DrawString(parts[3], -1, &fHeader, crct, &sfR, &headerBrush);
+            }
+
+            Gdiplus::Font fParent(&famD, (float)(11.0 * S), Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
+            Gdiplus::Font fChild(&famD, (float)(10.0 * S), Gdiplus::FontStyleRegular, Gdiplus::UnitPixel);
+            Gdiplus::Font fParentEmoji(&famEmoji, (float)(11.0 * S), Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
+            Gdiplus::Font fChildEmoji(&famEmoji, (float)(10.0 * S), Gdiplus::FontStyleRegular, Gdiplus::UnitPixel);
+            double y = contentTop + 86.0 * S;
             wchar_t *line = wb;
-            bool first = true;
             while (*line) {
                 wchar_t *nl = wcschr(line, L'\n');
                 if (nl) *nl = 0;
-                wchar_t *tab = wcschr(line, L'\t');
-                if (tab) *tab = 0;                  // 拆出 label / value
-                int indent = 0; while (line[indent] == L' ') indent++;
-                wchar_t *label = line + indent;
-                unsigned int labelCol = first ? t->dd_subtext : (indent > 0 ? t->dd_subtext : t->dd_text);
-                Gdiplus::SolidBrush lb(cr(labelCol));
-                Gdiplus::RectF lr((Gdiplus::REAL)(cardLeft + pad + indent * 4.0 * S),
-                                  (Gdiplus::REAL)(y - rowH / 2.0), (Gdiplus::REAL)(cardW * 0.72), (Gdiplus::REAL)rowH);
-                gfx.DrawString(label, -1, first ? &fHdr : &fRow, lr, &sfL, &lb);
-                if (tab) {
-                    Gdiplus::SolidBrush vb(cr(t->dd_text));
-                    valRect.Y = (Gdiplus::REAL)(y - rowH / 2.0);
-                    gfx.DrawString(tab + 1, -1, first ? &fHdr : &fRow, valRect, &sfR, &vb);
+                wchar_t kind = line[0];
+                wchar_t *content = (line[1] == L'|') ? line + 2 : line;
+                wchar_t *parts[4]; splitTabs(content, parts, 4);
+                bool child = kind == L'C';
+                unsigned int rowColor = child ? t->dd_subtext : t->dd_text;
+                Gdiplus::SolidBrush rowBrush(cr(rowColor));
+                Gdiplus::Font *rowFont = child ? &fChild : &fParent;
+                const double chevronW = 14.0 * S;
+                if (!child) {
+                    const wchar_t *chevron = kind == L'V' ? L"v" : L">";
+                    Gdiplus::RectF chevRect((Gdiplus::REAL)labelX, (Gdiplus::REAL)y, (Gdiplus::REAL)chevronW, (Gdiplus::REAL)rowH);
+                    gfx.DrawString(chevron, -1, &fChild, chevRect, &sfC2, &rowBrush);
                 }
+                double rowLabelX = labelX + (child ? 26.0 : 16.0) * S;
+                Gdiplus::RectF lr((Gdiplus::REAL)rowLabelX, (Gdiplus::REAL)y, (Gdiplus::REAL)(usageX - rowLabelX - 4.0 * S), (Gdiplus::REAL)rowH);
+                Gdiplus::Font *labelFont = child ? &fChildEmoji : &fParentEmoji;
+                gfx.DrawString(parts[0], -1, labelFont, lr, &sfL, &rowBrush);
+                Gdiplus::RectF ur((Gdiplus::REAL)usageX, (Gdiplus::REAL)y, (Gdiplus::REAL)usageW, (Gdiplus::REAL)rowH);
+                Gdiplus::RectF mr((Gdiplus::REAL)messagesX, (Gdiplus::REAL)y, (Gdiplus::REAL)messagesW, (Gdiplus::REAL)rowH);
+                Gdiplus::RectF crct((Gdiplus::REAL)cacheX, (Gdiplus::REAL)y, (Gdiplus::REAL)cacheW, (Gdiplus::REAL)rowH);
+                gfx.DrawString(parts[1], -1, rowFont, ur, &sfR, &rowBrush);
+                gfx.DrawString(parts[2], -1, &fChild, mr, &sfR, &rowBrush);
+                gfx.DrawString(parts[3], -1, &fChild, crct, &sfR, &rowBrush);
+
+                Gdiplus::Pen divider(cr(alpha(t->dd_border, 55)), (Gdiplus::REAL)(0.5 * S));
+                gfx.DrawLine(&divider, (Gdiplus::REAL)(cardLeft + 12.0 * S), (Gdiplus::REAL)(y + rowH),
+                             (Gdiplus::REAL)(cardRight - 12.0 * S), (Gdiplus::REAL)(y + rowH));
                 if (!nl) break;
                 line = nl + 1;
                 y += rowH;
-                first = false;
             }
         }
     }
@@ -343,7 +538,7 @@ void win_render_clock(int w, int h, int hh, int mm, int ss, const win_theme *t, 
     POINT zero{0, 0};
     RECT wrc; GetWindowRect(g_hwnd, &wrc); POINT pos{wrc.left, wrc.top};
     SIZE sz{w, h};
-    BLENDFUNCTION bf; bf.BlendOp = AC_SRC_OVER; bf.BlendFlags = 0; bf.SourceConstantAlpha = 255; bf.AlphaFormat = AC_SRC_ALPHA;
+    BLENDFUNCTION bf; bf.BlendOp = AC_SRC_OVER; bf.BlendFlags = 0; bf.SourceConstantAlpha = g_window_alpha; bf.AlphaFormat = AC_SRC_ALPHA;
     UpdateLayeredWindow(g_hwnd, NULL, &pos, &sz, g_mem_dc, &zero, 0, &bf, ULW_ALPHA);
 }
 

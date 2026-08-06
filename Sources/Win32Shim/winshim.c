@@ -5,7 +5,9 @@
 #define _UNICODE
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+#include <windowsx.h>
 #include <shellapi.h>
+#include <shlobj.h>
 #include <commdlg.h>   /* ChooseColor */
 #include <stdio.h>
 #include "winshim.h"
@@ -17,6 +19,9 @@
 static win_callbacks g_cb;
 HWND  g_hwnd = NULL;                  /* non-static: shared with winrender.cpp */
 static UINT  g_taskbar_created = 0;   /* registered msg: explorer restarted */
+static int   g_mouse_down = 0, g_mouse_dragged = 0, g_mouse_can_drag = 0;
+static POINT g_mouse_down_screen;
+static RECT  g_mouse_down_window;
 
 static COLORREF to_cr(unsigned int rgb) {
     return RGB((rgb >> 16) & 0xff, (rgb >> 8) & 0xff, rgb & 0xff);
@@ -38,7 +43,7 @@ static void add_tray(void) {
     nid.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP;
     nid.uCallbackMessage = WM_TRAY;
     nid.hIcon = LoadIconW(NULL, IDI_APPLICATION);
-    wcscpy(nid.szTip, L"TokenClock");
+    wcscpy_s(nid.szTip, ARRAYSIZE(nid.szTip), L"TokenClock");
     Shell_NotifyIconW(NIM_ADD, &nid);
     nid.uVersion = NOTIFYICON_VERSION_4;
     Shell_NotifyIconW(NIM_SETVERSION, &nid);
@@ -50,6 +55,16 @@ static void remove_tray(void) {
     nid.hWnd = g_hwnd;
     nid.uID = 1;
     Shell_NotifyIconW(NIM_DELETE, &nid);
+}
+
+static void show_context_menu(HWND h, int x, int y) {
+    HMENU hmenu = CreatePopupMenu();
+    if (g_cb.on_build_menu) g_cb.on_build_menu(g_cb.ctx, hmenu);
+    POINT pt = {x, y};
+    if (x < 0 || y < 0) GetCursorPos(&pt);
+    SetForegroundWindow(h);
+    TrackPopupMenu(hmenu, TPM_RIGHTBUTTON, pt.x, pt.y, 0, h, NULL);
+    DestroyMenu(hmenu);
 }
 
 static LRESULT CALLBACK wnd_proc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
@@ -90,13 +105,7 @@ static LRESULT CALLBACK wnd_proc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
             case WM_LBUTTONUP:
             case WM_LBUTTONDBLCLK: g_cb.on_tray_click(g_cb.ctx, 1); break;
             case WM_RBUTTONUP: {
-                /* Build + show the context menu at the cursor. */
-                HMENU hmenu = CreatePopupMenu();
-                if (g_cb.on_build_menu) g_cb.on_build_menu(g_cb.ctx, hmenu);
-                POINT pt; GetCursorPos(&pt);
-                SetForegroundWindow(h);   /* needed so menu dismisses on click-away */
-                TrackPopupMenu(hmenu, TPM_RIGHTBUTTON | TPM_BOTTOMALIGN, pt.x, pt.y, 0, h, NULL);
-                DestroyMenu(hmenu);
+                show_context_menu(h, -1, -1);
                 break;
             }
             }
@@ -107,8 +116,45 @@ static LRESULT CALLBACK wnd_proc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
         if (g_cb.on_menu_cmd) g_cb.on_menu_cmd(g_cb.ctx, (int)LOWORD(wp));
         return 0;
 
+    case WM_RBUTTONUP: {
+        POINT pt; GetCursorPos(&pt);
+        show_context_menu(h, pt.x, pt.y);
+        return 0;
+    }
+
+    case WM_LBUTTONDOWN: {
+        RECT client; GetClientRect(h, &client);
+        g_mouse_down = 1; g_mouse_dragged = 0;
+        /* normal layout: panel width = dial diameter + 80 transparent side margin */
+        g_mouse_can_drag = GET_Y_LPARAM(lp) < min(client.bottom - client.top, client.right - client.left - 80);
+        GetCursorPos(&g_mouse_down_screen);
+        GetWindowRect(h, &g_mouse_down_window);
+        SetCapture(h);
+        return 0;
+    }
+
+    case WM_MOUSEMOVE:
+        if (g_mouse_down && (wp & MK_LBUTTON) && g_mouse_can_drag) {
+            POINT now; GetCursorPos(&now);
+            int dx = now.x - g_mouse_down_screen.x, dy = now.y - g_mouse_down_screen.y;
+            if (abs(dx) > 3 || abs(dy) > 3) g_mouse_dragged = 1;
+            if (g_mouse_dragged) {
+                SetWindowPos(h, NULL, g_mouse_down_window.left + dx, g_mouse_down_window.top + dy,
+                             0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+            }
+        }
+        return 0;
+
+    case WM_LBUTTONUP:
+        if (g_mouse_down) {
+            int clicked = !g_mouse_dragged;
+            g_mouse_down = 0; ReleaseCapture();
+            if (clicked && g_cb.on_click) g_cb.on_click(g_cb.ctx, GET_X_LPARAM(lp), GET_Y_LPARAM(lp));
+        }
+        return 0;
+
     case WM_NCHITTEST:
-        return HTCAPTION;   /* whole window is draggable */
+        return HTCLIENT;    /* manual drag preserves click interaction */
 
     case WM_DESTROY:
         remove_tray();
@@ -151,6 +197,7 @@ int win_run(const win_callbacks *cb) {
     UpdateWindow(hwnd);
 
     gdip_init();
+    win_render_set_opacity(cb->initial_opacity);
     if (g_cb.on_tick) g_cb.on_tick(g_cb.ctx);   // first frame immediately (no 1s blank)
 
     MSG msg;
@@ -165,11 +212,8 @@ int win_run(const win_callbacks *cb) {
 /* --- window control --- */
 void win_invalidate(void *hwnd)      { InvalidateRect((HWND)hwnd, NULL, FALSE); }
 void win_set_opacity(void *hwnd, double a) {
-    if (a >= 1.0) { SetWindowLongPtrW((HWND)hwnd, GWL_EXSTYLE,
-                      GetWindowLongPtrW((HWND)hwnd, GWL_EXSTYLE) & ~WS_EX_LAYERED); }
-    else { SetWindowLongPtrW((HWND)hwnd, GWL_EXSTYLE,
-                      GetWindowLongPtrW((HWND)hwnd, GWL_EXSTYLE) | WS_EX_LAYERED);
-           SetLayeredWindowAttributes((HWND)hwnd, 0, (BYTE)(a * 255.0), LWA_ALPHA); }
+    win_render_set_opacity(a);
+    InvalidateRect((HWND)hwnd, NULL, FALSE);
 }
 void win_resize(void *hwnd, int w, int h) { SetWindowPos((HWND)hwnd, NULL, 0, 0, w, h, SWP_NOMOVE | SWP_NOZORDER); }
 void win_get_pos(void *hwnd, int *x, int *y) { RECT rc; GetWindowRect((HWND)hwnd, &rc); if (x) *x = rc.left; if (y) *y = rc.top; }
@@ -185,6 +229,26 @@ void win_set_topmost(void *hwnd, int topmost) {
                  0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
 }
 
+int win_clipboard_set_text(const char *text_utf8) {
+    if (!text_utf8) return 0;
+    int chars = MultiByteToWideChar(CP_UTF8, 0, text_utf8, -1, NULL, 0);
+    if (chars <= 0 || !OpenClipboard(g_hwnd)) return 0;
+    EmptyClipboard();
+    HGLOBAL memory = GlobalAlloc(GMEM_MOVEABLE, (SIZE_T)chars * sizeof(wchar_t));
+    if (!memory) { CloseClipboard(); return 0; }
+    wchar_t *text = (wchar_t *)GlobalLock(memory);
+    if (!text) { GlobalFree(memory); CloseClipboard(); return 0; }
+    MultiByteToWideChar(CP_UTF8, 0, text_utf8, -1, text, chars);
+    GlobalUnlock(memory);
+    if (!SetClipboardData(CF_UNICODETEXT, memory)) {
+        GlobalFree(memory);
+        CloseClipboard();
+        return 0;
+    }
+    CloseClipboard();
+    return 1;  /* clipboard owns memory after SetClipboardData succeeds */
+}
+
 /* --- autostart (per-user HKCU\Software\Microsoft\Windows\CurrentVersion\Run\TokenClock) --- */
 #define TC_RUN_SUBKEY  L"Software\\Microsoft\\Windows\\CurrentVersion\\Run"
 #define TC_RUN_VALUE   L"TokenClock"
@@ -194,7 +258,7 @@ static void current_exe_quoted(wchar_t *out, int n) {
     out[0] = 0;
     wchar_t path[MAX_PATH];
     if (GetModuleFileNameW(NULL, path, MAX_PATH) == 0) return;
-    _snwprintf(out, n, L"\"%s\"", path);
+    _snwprintf_s(out, n, _TRUNCATE, L"\"%s\"", path);
     out[n - 1] = 0;
 }
 
@@ -233,6 +297,13 @@ void win_message_box(const char *title_utf8, const char *body_utf8) {
     MessageBoxW(NULL, b, t, MB_OK | MB_ICONINFORMATION);
 }
 
+int win_confirm(const char *title_utf8, const char *body_utf8) {
+    wchar_t t[256], b[1024];
+    if (to_wide(title_utf8, t, 256) == 0) t[0] = 0;
+    if (to_wide(body_utf8, b, 1024) == 0) b[0] = 0;
+    return MessageBoxW(g_hwnd, b, t, MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON2) == IDYES ? 1 : 0;
+}
+
 int win_user_locale(char *buf, int n) {
     if (!buf || n <= 0) return 0;
     wchar_t w[LOCALE_NAME_MAX_LENGTH];
@@ -251,12 +322,14 @@ static void *g_dlg_cmdctx = NULL;
 static LRESULT CALLBACK dlg_proc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
     switch (msg) {
     case WM_COMMAND:
-        if (LOWORD(wp) == 1) { g_dlg_result = 1; g_dlg_done = 1; DestroyWindow(h); return 0; }  /* OK */
-        if (LOWORD(wp) == 2) { g_dlg_result = 0; g_dlg_done = 1; DestroyWindow(h); return 0; }  /* Cancel */
+        /* Keep the HWND and its child controls alive until Swift has read their
+         * values after dlg_modal returns.  The caller owns final destruction. */
+        if (LOWORD(wp) == 1) { g_dlg_result = 1; g_dlg_done = 1; ShowWindow(h, SW_HIDE); return 0; }  /* OK */
+        if (LOWORD(wp) == 2) { g_dlg_result = 0; g_dlg_done = 1; ShowWindow(h, SW_HIDE); return 0; }  /* Cancel */
         if (g_dlg_oncmd) g_dlg_oncmd(g_dlg_cmdctx, (int)LOWORD(wp));   /* 其余按钮 → 回调 */
         return 0;
     case WM_CLOSE:
-        g_dlg_result = 0; g_dlg_done = 1; DestroyWindow(h); return 0;
+        g_dlg_result = 0; g_dlg_done = 1; ShowWindow(h, SW_HIDE); return 0;
     }
     return DefWindowProcW(h, msg, wp, lp);
 }
@@ -292,7 +365,7 @@ void *dlg_create(const char *title_utf8, int w, int h) {
     HWND hwnd = CreateWindowExW(WS_EX_DLGMODALFRAME, L"TCDialog", title,
                                 WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU,
                                 (sw - w) / 2, (sh - h) / 2, w, h,
-                                NULL, NULL, GetModuleHandleW(NULL), NULL);
+                                IsWindow(g_hwnd) ? g_hwnd : NULL, NULL, GetModuleHandleW(NULL), NULL);
     g_dlg = hwnd; g_dlg_done = 0; g_dlg_result = 0;
     ShowWindow(hwnd, SW_SHOWNORMAL);
     UpdateWindow(hwnd);
@@ -337,6 +410,10 @@ int dlg_check_get(void *dlg, int id) {
     return IsDlgButtonChecked((HWND)dlg, id) == BST_CHECKED ? 1 : 0;
 }
 
+void dlg_set_check(void *dlg, int id, int checked) {
+    CheckDlgButton((HWND)dlg, id, checked ? BST_CHECKED : BST_UNCHECKED);
+}
+
 void dlg_edit_get(void *dlg, int id, char *buf_utf8, int n) {
     wchar_t w[1024];
     GetDlgItemTextW((HWND)dlg, id, w, 1024);
@@ -345,15 +422,30 @@ void dlg_edit_get(void *dlg, int id, char *buf_utf8, int n) {
 }
 
 int dlg_modal(void *dlg) {
+    HWND hwnd = (HWND)dlg;
+    HWND owner = GetWindow(hwnd, GW_OWNER);
+    if (IsWindow(owner)) EnableWindow(owner, FALSE);
+    SetForegroundWindow(hwnd);
+    SetFocus(hwnd);
     MSG msg;
     while (GetMessageW(&msg, NULL, 0, 0) > 0) {
         if (g_dlg_done) break;
-        if (IsWindow((HWND)dlg) && IsDialogMessageW((HWND)dlg, &msg)) continue;
+        if (IsWindow(hwnd) && IsDialogMessageW(hwnd, &msg)) continue;
         TranslateMessage(&msg);
         DispatchMessageW(&msg);
         if (g_dlg_done) break;
     }
+    if (IsWindow(owner)) {
+        EnableWindow(owner, TRUE);
+        SetForegroundWindow(owner);
+    }
     return g_dlg_result;
+}
+
+void dlg_destroy(void *dlg) {
+    HWND hwnd = (HWND)dlg;
+    if (IsWindow(hwnd)) DestroyWindow(hwnd);
+    if (g_dlg == hwnd) g_dlg = NULL;
 }
 
 void dlg_set_text(void *dlg, int id, const char *text_utf8) {
@@ -384,6 +476,35 @@ int win_pick_color(unsigned int initial_argb, unsigned int *out_argb) {
     /* COLORREF 0x00BBGGRR → ARGB 0xFFRRGGBB */
     *out_argb = 0xFF000000u | ((cc.rgbResult & 0xFF) << 16) | (cc.rgbResult & 0xFF00) | ((cc.rgbResult >> 16) & 0xFF);
     return 1;
+}
+
+static int CALLBACK browse_folder_cb(HWND h, UINT msg, LPARAM lp, LPARAM data) {
+    (void)lp;
+    if (msg == BFFM_INITIALIZED && data) {
+        SendMessageW(h, BFFM_SETSELECTIONW, TRUE, data);
+    }
+    return 0;
+}
+
+int win_pick_folder(void *owner, const char *title_utf8, const char *initial_utf8,
+                    char *out_utf8, int out_size) {
+    if (!out_utf8 || out_size <= 0) return 0;
+    out_utf8[0] = 0;
+    wchar_t title[256], initial[MAX_PATH], selected[MAX_PATH];
+    if (to_wide(title_utf8, title, 256) == 0) title[0] = 0;
+    if (to_wide(initial_utf8, initial, MAX_PATH) == 0) initial[0] = 0;
+    BROWSEINFOW bi = {0};
+    bi.hwndOwner = (HWND)owner;
+    bi.lpszTitle = title;
+    bi.ulFlags = BIF_RETURNONLYFSDIRS | BIF_NEWDIALOGSTYLE | BIF_EDITBOX;
+    bi.lpfn = browse_folder_cb;
+    bi.lParam = (LPARAM)initial;
+    PIDLIST_ABSOLUTE pidl = SHBrowseForFolderW(&bi);
+    if (!pidl) return 0;
+    BOOL ok = SHGetPathFromIDListW(pidl, selected);
+    CoTaskMemFree((LPVOID)pidl);
+    if (!ok) return 0;
+    return WideCharToMultiByte(CP_UTF8, 0, selected, -1, out_utf8, out_size, NULL, NULL) > 0 ? 1 : 0;
 }
 
 /* --- GDI helpers --- */

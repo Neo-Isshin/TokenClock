@@ -21,15 +21,14 @@ enum AppLanguage: String, CaseIterable, Identifiable {
 
 final class L10n: @unchecked Sendable {
     static let shared = L10n()
-    private static let storageKey = SettingsKey.language.rawValue
 
     var language: AppLanguage {
-        didSet { UserDefaults.standard.set(language.rawValue, forKey: Self.storageKey) }
+        didSet { UserDefaults.standard.setString(language.rawValue, for: .language) }
     }
 
     private init() {
         let defaults = UserDefaults.standard
-        if let saved = defaults.string(forKey: Self.storageKey),
+        if let saved = defaults.string(for: .language),
            let lang = AppLanguage(rawValue: saved) {
             // 已有记录（用户手动选择过，或上次自动探测过）→ 沿用
             self.language = lang
@@ -37,7 +36,7 @@ final class L10n: @unchecked Sendable {
             // 首次启动：未记录过语言 → 按系统语言自动探测并落盘（之后以用户手动选择为准）
             let detected = Self.detectSystemLanguage()
             self.language = detected
-            defaults.set(detected.rawValue, forKey: Self.storageKey)
+            defaults.setString(detected.rawValue, for: .language)
         }
     }
 
@@ -194,7 +193,7 @@ final class L10n: @unchecked Sendable {
         "settings.search":          [.zhHans: "检索",                      .zhHant: "檢索",                     .en: "Detect"],
         "settings.browse":          [.zhHans: "浏览",                      .zhHant: "瀏覽",                     .en: "Browse"],
         "settings.hint.emptyPath":  [.zhHans: "留空则使用默认路径。修改路径后需重启应用生效。", .zhHant: "留空則使用預設路徑。修改路徑後需重啟應用生效。", .en: "Leave empty for default path. Restart app after changing."],
-        "settings.hint.envVars":    [.zhHans: "支持环境变量覆盖：OPENCLAW_HOME、CLAUDE_CONFIG_DIR、GEMINI_HOME、CODEX_HOME、HERMES_HOME、OPENCODE_HOME、QWEN_HOME、COPILOT_HOME、GROK_HOME、AIDER_HOME、ANTIGRAVITY_HOME、CLINE_HOME、CONTINUE_HOME、CURSOR_AGENT_HOME", .zhHant: "支持環境變量覆蓋：OPENCLAW_HOME、CLAUDE_CONFIG_DIR、GEMINI_HOME、CODEX_HOME、HERMES_HOME、OPENCODE_HOME、QWEN_HOME、COPILOT_HOME、GROK_HOME、AIDER_HOME、ANTIGRAVITY_HOME、CLINE_HOME、CONTINUE_HOME、CURSOR_AGENT_HOME", .en: "Env vars: OPENCLAW_HOME, CLAUDE_CONFIG_DIR, GEMINI_HOME, CODEX_HOME, HERMES_HOME, OPENCODE_HOME, QWEN_HOME, COPILOT_HOME, GROK_HOME, AIDER_HOME, ANTIGRAVITY_HOME, CLINE_HOME, CONTINUE_HOME, CURSOR_AGENT_HOME"],
+        "settings.hint.envVars":    [.zhHans: "支持环境变量覆盖：OPENCLAW_HOME、CLAUDE_CONFIG_DIR、GEMINI_CLI_HOME、CODEX_HOME、HERMES_HOME、OPENCODE_HOME、QWEN_HOME、QWEN_RUNTIME_DIR、COPILOT_HOME、GROK_HOME、AIDER_ANALYTICS_LOG、ANTIGRAVITY_HOME、CLINE_HOME、CONTINUE_HOME、CURSOR_AGENT_HOME", .zhHant: "支持環境變量覆蓋：OPENCLAW_HOME、CLAUDE_CONFIG_DIR、GEMINI_CLI_HOME、CODEX_HOME、HERMES_HOME、OPENCODE_HOME、QWEN_HOME、QWEN_RUNTIME_DIR、COPILOT_HOME、GROK_HOME、AIDER_ANALYTICS_LOG、ANTIGRAVITY_HOME、CLINE_HOME、CONTINUE_HOME、CURSOR_AGENT_HOME", .en: "Env vars: OPENCLAW_HOME, CLAUDE_CONFIG_DIR, GEMINI_CLI_HOME, CODEX_HOME, HERMES_HOME, OPENCODE_HOME, QWEN_HOME, QWEN_RUNTIME_DIR, COPILOT_HOME, GROK_HOME, AIDER_ANALYTICS_LOG, ANTIGRAVITY_HOME, CLINE_HOME, CONTINUE_HOME, CURSOR_AGENT_HOME"],
         "settings.browseOpenClaw":  [.zhHans: "选择 OpenClaw 目录",        .zhHant: "選擇 OpenClaw 目錄",       .en: "Select OpenClaw Directory"],
         "settings.browseClaudeCode":[.zhHans: "选择 Claude Code 目录",      .zhHant: "選擇 Claude Code 目錄",    .en: "Select Claude Code Directory"],
         "settings.browseGemini":    [.zhHans: "选择 Gemini CLI 目录",       .zhHant: "選擇 Gemini CLI 目錄",     .en: "Select Gemini CLI Directory"],

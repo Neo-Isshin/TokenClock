@@ -11,10 +11,10 @@ final class AiderUsageService: @unchecked Sendable {
     private var lastScanTime: Date = .distantPast
 
     private let fm = FileManager.default
-    private let aiderHome: String
+    private let analyticsPath: String
 
     init() {
-        aiderHome = PathConfig.aiderHome()
+        analyticsPath = PathConfig.aiderAnalyticsPath()
     }
 
     func fullScan() {
@@ -49,10 +49,6 @@ final class AiderUsageService: @unchecked Sendable {
     }
 
     // MARK: - 内部
-
-    private var analyticsPath: String {
-        aiderHome + "/analytics.jsonl"
-    }
 
     private func scanAnalyticsFile() {
         let path = analyticsPath

@@ -19,6 +19,7 @@ typedef void (*win_on_tray_click_t) (void *ctx, int button); /* 1=left, 2=right 
 typedef void (*win_on_build_menu_t) (void *ctx, void *hmenu);
 typedef void (*win_on_menu_cmd_t)   (void *ctx, int cmd_id);
 typedef void (*win_on_destroy_t)    (void *ctx);
+typedef void (*win_on_click_t)      (void *ctx, int x, int y);
 
 typedef struct {
   void *ctx;
@@ -29,6 +30,7 @@ typedef struct {
   win_on_build_menu_t  on_build_menu;
   win_on_menu_cmd_t    on_menu_cmd;
   win_on_destroy_t     on_destroy;
+  win_on_click_t       on_click;
   int    scan_interval_ms;   /* 0 => no scan timer */
   int    width;
   int    height;
@@ -54,11 +56,13 @@ void   win_quit(void *hwnd);
 void   win_set_dpi_aware(void);
 void   win_set_topmost(void *hwnd, int topmost);   /* HWND_TOPMOST / HWND_NOTOPMOST */
 void  *win_self(void);              /* the main window HWND (for invalidate/resize/opacity from Swift) */
+int    win_clipboard_set_text(const char *text_utf8); /* copy UTF-8 text as CF_UNICODETEXT */
 
 /* --- autostart (HKCU\…\Run) + modal info box --- */
 int    win_autostart_get(void);          /* 1 if the Run\TokenClock value exists */
 int    win_autostart_set(int enable);    /* write/delete Run\TokenClock = this exe path; 1 on success */
 void   win_message_box(const char *title_utf8, const char *body_utf8);
+int    win_confirm(const char *title_utf8, const char *body_utf8); /* owner-modal Yes/No */
 int    win_user_locale(char *buf, int n); /* GetUserDefaultLocaleName → UTF-8 (e.g. "zh-CN"); returns wchars incl. NUL, 0 on failure */
 
 /* --- modal settings dialog (programmatic child controls) ---
@@ -72,14 +76,18 @@ void  dlg_add_title(void *dlg, const char *text_utf8, int x, int y, int w, int h
 void  dlg_add_sep(void *dlg, int x, int y, int w);                                   /* 凹陷横线 */
 void  dlg_add_push(void *dlg, int id, const char *text_utf8, int x, int y, int w, int h);
 int   dlg_check_get(void *dlg, int id);                 /* 1 if checked */
+void  dlg_set_check(void *dlg, int id, int checked);
 void  dlg_edit_get(void *dlg, int id, char *buf_utf8, int n);   /* read edit text → UTF-8 */
 void  dlg_set_text(void *dlg, int id, const char *text_utf8);   /* set a control's label/text */
 int   dlg_modal(void *dlg);                             /* blocks; returns 1=OK 0=cancel */
+void  dlg_destroy(void *dlg);                           /* caller destroys after reading child controls */
 typedef void (*dlg_on_cmd_t)(void *ctx, int id);
 int   dlg_modal_cb(void *dlg, dlg_on_cmd_t on_cmd, void *ctx);  /* 同 dlg_modal，非 OK/Cancel 的按钮点击回调 on_cmd */
 
 /* --- 颜色选择（系统 ChooseColor 对话框）→ ARGB；返回 1=选定 --- */
 int win_pick_color(unsigned int initial_argb, unsigned int *out_argb);
+int win_pick_folder(void *owner, const char *title_utf8, const char *initial_utf8,
+                    char *out_utf8, int out_size);
 
 /* --- GDI helpers (called from Swift on_paint with the hdc it received) --- */
 void gdi_clear(void *hdc, int w, int h, unsigned int rgb);
@@ -125,15 +133,25 @@ typedef struct {
 typedef struct {
     const char *date;        /* top centre, secondary 11px */
     const char *weather;     /* top centre (under date), primary 13px */
+    const char *today_label; /* bottom caption above token count */
     const char *tokens;      /* bottom centre, primary 20px bold */
     const char *messages;    /* bottom centre (under tokens), secondary 10px */
     const char *tool_left1;  /* left side, primary 13px */
     const char *tool_left2;  /* left side (under tool_left1) */
+    const char *rate;        /* right-side rate emoji */
+    const char *dial_image_path; /* glass_disc.png path; empty for vector dial */
     const char *detail_text; /* 展开时盘面下方的工具明细，多行 '\n' 分隔；空 ⇒ 收起态 */
+    const char *detail_controls; /* session label \t model label \t percent label */
+    const char *detail_header;   /* label \t usage \t messages \t cache */
+    const char *forecast_summary; /* emoji/city/temp \t-ish encoded as summary|label */
+    const char *forecast_slots;   /* time|emoji|temp, four slots separated by \t */
+    int detail_grouping;         /* 0 session / 1 model */
+    int detail_percentage;       /* 0 absolute / 1 percent */
 } win_overlay;
 
 void gdip_init(void);
 void gdip_shutdown(void);
+void win_render_set_opacity(double alpha);  /* SourceConstantAlpha for UpdateLayeredWindow */
 void win_render_clock(int w, int h, int hh, int mm, int ss, const win_theme *t, const win_overlay *ov);
 
 /* --- loopback HTTP API server (implemented in winhttp.c, Winsock) ---
@@ -144,6 +162,8 @@ void win_render_clock(int w, int h, int hh, int mm, int ss, const win_theme *t, 
 typedef int (*win_api_responder_t)(void *ctx, const char *path, const char *query,
                                    char *out, int out_size);
 void *win_start_api_server(unsigned short port, win_api_responder_t responder, void *ctx);
+void  win_pause_api_server(void *handle); /* close listener, keep the callback worker alive */
+void  win_reconfigure_api_server(void *handle, unsigned short port); /* rebind on same worker */
 void  win_stop_api_server(void *handle);
 
 #ifdef __cplusplus

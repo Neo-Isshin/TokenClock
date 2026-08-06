@@ -93,6 +93,7 @@ let package = Package(
                 .linkedLibrary("Advapi32"),
                 .linkedLibrary("Ws2_32"),
                 .linkedLibrary("Comdlg32"),   // ChooseColor（自定义主题取色器）
+                .linkedLibrary("Ole32"),      // SHBrowseForFolder 返回的 PIDL 释放
             ]
         ),
         .executableTarget(
@@ -106,14 +107,20 @@ let package = Package(
                 "main.swift",
                 "Views",
                 "Linux",
-                "Resources",
                 "Models/ClockFaceTheme.swift",
                 "Models/ClockSize.swift",
                 "Models/CustomThemeConfig.swift",
                 "Services/LaunchAgentHelper.swift",
                 "Services/UsageAPIServer.swift",
             ],
-            swiftSettings: [.unsafeFlags(["-parse-as-library"])]
+            resources: [.copy("Resources/glass_disc.png")],
+            swiftSettings: [.unsafeFlags(["-parse-as-library"])],
+            // SwiftPM otherwise emits a console-subsystem PE and Windows opens a black terminal
+            // beside the widget. Keep Swift's CRT entry point while marking the product as a GUI.
+            linkerSettings: [.unsafeFlags([
+                "-Xlinker", "/SUBSYSTEM:WINDOWS",
+                "-Xlinker", "/ENTRY:mainCRTStartup",
+            ])]
         ),
     ]
 )

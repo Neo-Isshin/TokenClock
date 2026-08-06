@@ -12,19 +12,42 @@ import FoundationNetworking   // swift-corelibs 把 URLSession 拆到独立模�
 
 /// 线程安全的 Data 容器：dataTask 回调在 URLSession 自有线程写，调用方在信号量唤醒后读。
 private final class DataBox: @unchecked Sendable { var value: Data? }
+private final class WeatherRequestState: @unchecked Sendable {
+    private let lock = NSLock()
+    private var generation = 0
+    func begin() -> Int { lock.withLock { generation += 1; return generation } }
+    func isLatest(_ value: Int) -> Bool { lock.withLock { generation == value } }
+}
 
 enum WindowsWeather {
-    /// 触发一次后台抓取。city 为空或 "Auto" ⇒ IP 自动定位（IPIP→wttr.in）；否则按城市名走 wttr.in。
+    private static let requestState = WeatherRequestState()
+
+    /// 触发一次后台抓取。city 为空或 "auto" ⇒ IP 自动定位（IPIP→wttr.in）；否则按城市名走 wttr.in。
     /// 完成后 post `.weatherUpdated`。
-    static func refresh(forCity city: String = "Auto") {
+    static func refresh(forCity city: String = "auto") {
+        let generation = requestState.begin()
         DispatchQueue.global(qos: .utility).async {
+            if ProcessInfo.processInfo.environment["TC_WEATHER_MOCK"] != nil {
+                let displayCity = city.caseInsensitiveCompare("auto") == .orderedSame ? "Seattle" : city
+                let forecast = stride(from: 0, through: 21, by: 3).map { hour in
+                    HourlyForecast(time: "\(hour)00", tempC: 18 + hour / 6,
+                                   emoji: hour < 12 ? "☀️" : "⛅", description: "Test forecast")
+                }
+                let info = WeatherInfo(emoji: "☀️", temperature: 21, cityName: displayCity, forecast: forecast)
+                if requestState.isLatest(generation) {
+                    NotificationCenter.default.post(name: .weatherUpdated, object: info)
+                }
+                return
+            }
             let info: WeatherInfo?
-            if city.isEmpty || city == "Auto" {
+            if city.isEmpty || city.caseInsensitiveCompare("auto") == .orderedSame {
                 info = fetch()
             } else {
                 info = weather(city: city) ?? fetch()   // 指定城市失败时回退 IP 自动定位
             }
-            if let info {
+            // Rapid city/unit menu changes may leave several URL requests in flight. Only the
+            // latest request is allowed to update the face, otherwise a slower old city wins.
+            if let info, requestState.isLatest(generation) {
                 NotificationCenter.default.post(name: .weatherUpdated, object: info)
             }
         }

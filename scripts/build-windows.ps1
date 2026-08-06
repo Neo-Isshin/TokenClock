@@ -48,9 +48,13 @@ New-Item -ItemType Directory -Path $dist | Out-Null
 Copy-Item $exe $dist
 Copy-Item (Join-Path $runtimeBin '*.dll') $dist
 if ($vcrt -and -not (Test-Path (Join-Path $dist 'vcruntime140.dll'))) { Copy-Item $vcrt $dist }
+$resources = Join-Path (Split-Path $exe) 'TokenClock_TokenClock.resources'
+if (-not (Test-Path $resources)) { throw "build did not produce resource bundle $resources" }
+Copy-Item $resources (Join-Path $dist 'TokenClock_TokenClock.resources') -Recurse
 
-$count = (Get-ChildItem $dist).Count
-$mb = [math]::Round((Get-ChildItem $dist | Measure-Object Length -Sum).Sum / 1MB, 1)
+$files = @(Get-ChildItem $dist -Recurse -File)
+$count = $files.Count
+$mb = [math]::Round(($files | Measure-Object Length -Sum).Sum / 1MB, 1)
 Write-Host "== dist: $count files, $mb MB =="
 
 if ($Zip) {

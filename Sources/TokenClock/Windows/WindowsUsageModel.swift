@@ -8,20 +8,21 @@ final class WindowsUsageModel: @unchecked Sendable {
     private var storedTools: [ToolUsage]
     private var scanning = false
 
-    private let openclawService = OpenClawUsageService()
-    private let claudeCodeService = ClaudeCodeUsageService()
-    private let geminiService = GeminiUsageService()
-    private let codexService = CodexUsageService()
-    private let hermesService = HermesUsageService()
-    private let opencodeService = OpenCodeUsageService()
-    private let qwenService = QwenCodeUsageService()
-    private let copilotService = CopilotUsageService()
-    private let grokService = GrokUsageService()
-    private let aiderService = AiderUsageService()
-    private let antigravityService = AntigravityUsageService()
-    private let clineService = ClineUsageService()
-    private let continueService = ContinueUsageService()
-    private let cursorAgentService = CursorAgentUsageService()
+    private var openclawService = OpenClawUsageService()
+    private var claudeCodeService = ClaudeCodeUsageService()
+    private var geminiService = GeminiUsageService()
+    private var codexService = CodexUsageService()
+    private var hermesService = HermesUsageService()
+    private var opencodeService = OpenCodeUsageService()
+    private var qwenService = QwenCodeUsageService()
+    private var copilotService = CopilotUsageService()
+    private var grokService = GrokUsageService()
+    private var aiderService = AiderUsageService()
+    private var antigravityService = AntigravityUsageService()
+    private var clineService = ClineUsageService()
+    private var continueService = ContinueUsageService()
+    private var cursorAgentService = CursorAgentUsageService()
+    private var reloadServicesBeforeNextScan = false
 
     private static let allToolNames = Set([
         "OpenClaw", "Claude Code", "Gemini CLI", "Codex", "Hermes", "OpenCode",
@@ -46,11 +47,23 @@ final class WindowsUsageModel: @unchecked Sendable {
             PathConfig.hasRunInitialDetection = true
             let summary = PathDetector.runFullDetection()
             saveDetectedPaths(summary.results)
+            // Service instances capture their paths during construction, which happens before
+            // this init body. Recreate them at the next scan after first-run detection saves an
+            // environment/alternate path.
+            reloadServicesBeforeNextScan = summary.foundCount > 0
         }
     }
 
     /// 设置面板改了启用工具集后立即生效（tools 过滤 + 下次扫描范围都读此集合）。
     func updateEnabledTools(_ tools: Set<String>) { _enabledTools = tools }
+
+    /// Settings paths are live: mark all readers for recreation before the next scan instead of
+    /// requiring an app restart. The flag is consumed only by the single active scanner.
+    func reloadProviderPaths() {
+        lock.lock()
+        reloadServicesBeforeNextScan = true
+        lock.unlock()
+    }
 
     var tools: [ToolUsage] {
         lock.lock()
@@ -68,7 +81,11 @@ final class WindowsUsageModel: @unchecked Sendable {
             return false
         }
         scanning = true
+        let shouldReload = reloadServicesBeforeNextScan
+        reloadServicesBeforeNextScan = false
         lock.unlock()
+
+        if shouldReload { recreateServices() }
 
         defer {
             lock.lock()
@@ -173,10 +190,30 @@ final class WindowsUsageModel: @unchecked Sendable {
         return true
     }
 
+    private func recreateServices() {
+        // Recreate only readers that can actually scan. In particular, constructing an unused
+        // Cursor URLSession allocates hundreds of native Windows handles. A provider newly
+        // enabled in Settings is already present in enabledTools before this method runs.
+        if enabledTools.contains("OpenClaw") { openclawService = OpenClawUsageService() }
+        if enabledTools.contains("Claude Code") { claudeCodeService = ClaudeCodeUsageService() }
+        if enabledTools.contains("Gemini CLI") { geminiService = GeminiUsageService() }
+        if enabledTools.contains("Codex") { codexService = CodexUsageService() }
+        if enabledTools.contains("Hermes") { hermesService = HermesUsageService() }
+        if enabledTools.contains("OpenCode") { opencodeService = OpenCodeUsageService() }
+        if enabledTools.contains("Qwen Code") { qwenService = QwenCodeUsageService() }
+        if enabledTools.contains("Copilot") { copilotService = CopilotUsageService() }
+        if enabledTools.contains("Grok") { grokService = GrokUsageService() }
+        if enabledTools.contains("Aider") { aiderService = AiderUsageService() }
+        if enabledTools.contains("Antigravity") { antigravityService = AntigravityUsageService() }
+        if enabledTools.contains("Cline") { clineService = ClineUsageService() }
+        if enabledTools.contains("Continue") { continueService = ContinueUsageService() }
+        if enabledTools.contains("Cursor Agent") { cursorAgentService = CursorAgentUsageService() }
+    }
+
     func usageJSONObject() -> [String: Any] {
         let current = tools
         return [
-            "timestamp": ISO8601DateFormatter().string(from: Date()),
+            "timestamp": Self.utcTimestamp(),
             "totalTokens": UsageAggregator.totalTokens(current),
             "totalMessages": UsageAggregator.totalMessages(current),
             "rateEmoji": UsageAggregator.rateEmoji(current),
@@ -205,6 +242,36 @@ final class WindowsUsageModel: @unchecked Sendable {
                 ]
             },
         ]
+    }
+
+    /// ISO-8601 UTC without DateFormatter/ICU. Repeated formatter calls on the Windows
+    /// swift-corelibs runtime retain native handles, which is unacceptable on a polled endpoint.
+    private static func utcTimestamp(_ date: Date = Date()) -> String {
+        let seconds = Int64(date.timeIntervalSince1970)
+        let days = seconds / 86_400
+        let secondsOfDay = Int(seconds % 86_400)
+
+        // Howard Hinnant's civil_from_days algorithm (days since 1970-01-01 → Gregorian date).
+        let z = days + 719_468
+        let era = (z >= 0 ? z : z - 146_096) / 146_097
+        let dayOfEra = z - era * 146_097
+        let yearOfEra = (dayOfEra - dayOfEra / 1_460 + dayOfEra / 36_524 - dayOfEra / 146_096) / 365
+        var year = yearOfEra + era * 400
+        let dayOfYear = dayOfEra - (365 * yearOfEra + yearOfEra / 4 - yearOfEra / 100)
+        let monthPrime = (5 * dayOfYear + 2) / 153
+        let day = dayOfYear - (153 * monthPrime + 2) / 5 + 1
+        let month = monthPrime + (monthPrime < 10 ? 3 : -9)
+        year += month <= 2 ? 1 : 0
+
+        let hour = secondsOfDay / 3_600
+        let minute = (secondsOfDay % 3_600) / 60
+        let second = secondsOfDay % 60
+        func padded(_ value: Int64, width: Int) -> String {
+            let raw = String(value)
+            return String(repeating: "0", count: max(0, width - raw.count)) + raw
+        }
+        return "\(padded(year, width: 4))-\(padded(month, width: 2))-\(padded(day, width: 2))T" +
+               "\(padded(Int64(hour), width: 2)):\(padded(Int64(minute), width: 2)):\(padded(Int64(second), width: 2))Z"
     }
 
     func historyJSONObject(days requestedDays: Int, includeSessions: Bool) -> [String: Any] {

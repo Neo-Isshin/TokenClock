@@ -16,16 +16,37 @@ struct WindowsCustomTheme {
     var capInner: UInt32 = 0xFFE53935
     var textPrimary: UInt32 = 0xFF2E2E33
     var textSecondary: UInt32 = 0xFF73737A
+    var numberColor: UInt32 = 0x00000000
+    var tickColor: UInt32 = 0x00000000
+    var majorTickColor: UInt32 = 0x00000000
+    var dropdownBg: UInt32 = 0xFFF0F0F2
+    var dropdownText: UInt32 = 0xFF2E2E33
+    var dropdownSubtext: UInt32 = 0xFF73737A
+    var dropdownBorder: UInt32 = 0xFFD1D1D1
+    var hourWidth: Double = 4.5
+    var minuteWidth: Double = 3.0
+    var secondWidth: Double = 1.5
+    var hourLength: Double = 0.48
+    var minuteLength: Double = 0.68
+    var secondLength: Double = 0.78
+    var showNumbers = false
+    var showTicks = false
+    var hasDecoration = false
+    var numberStyle = 1            // 1 arabic / 2 chinese
 
     /// 编辑器里 9 个颜色字段的顺序（与按钮 id 500+i 对应）。
     static let colorKeys = ["dialFill", "dialRim", "hourColor", "minuteColor", "secondColor",
-                            "capOuter", "capInner", "textPrimary", "textSecondary"]
+                            "capOuter", "capInner", "numberColor", "tickColor", "majorTickColor",
+                            "textPrimary", "textSecondary", "dropdownBg", "dropdownText", "dropdownSubtext", "dropdownBorder"]
 
     func colorField(_ i: Int) -> UInt32 {
         switch i {
         case 0: return dialFill; case 1: return dialRim; case 2: return hourColor
         case 3: return minuteColor; case 4: return secondColor; case 5: return capOuter
-        case 6: return capInner; case 7: return textPrimary; case 8: return textSecondary
+        case 6: return capInner; case 7: return numberColor; case 8: return tickColor
+        case 9: return majorTickColor; case 10: return textPrimary; case 11: return textSecondary
+        case 12: return dropdownBg; case 13: return dropdownText; case 14: return dropdownSubtext
+        case 15: return dropdownBorder
         default: return 0
         }
     }
@@ -33,9 +54,30 @@ struct WindowsCustomTheme {
         switch i {
         case 0: dialFill = v; case 1: dialRim = v; case 2: hourColor = v
         case 3: minuteColor = v; case 4: secondColor = v; case 5: capOuter = v
-        case 6: capInner = v; case 7: textPrimary = v; case 8: textSecondary = v
+        case 6: capInner = v; case 7: numberColor = v; case 8: tickColor = v
+        case 9: majorTickColor = v; case 10: textPrimary = v; case 11: textSecondary = v
+        case 12: dropdownBg = v; case 13: dropdownText = v; case 14: dropdownSubtext = v
+        case 15: dropdownBorder = v
         default: break
         }
+    }
+
+    init() {}
+
+    init(dictionary d: [String: Any]) {
+        self.init()
+        for (i, key) in Self.colorKeys.enumerated() {
+            if let s = d[key] as? String, let value = Self.parseHex(s) { setColorField(i, value) }
+        }
+        func number(_ key: String, _ fallback: Double) -> Double { (d[key] as? NSNumber)?.doubleValue ?? fallback }
+        rimWidth = number("rimWidth", rimWidth)
+        handStyle = Int(number("handStyle", Double(handStyle)))
+        hourWidth = number("hourWidth", hourWidth); minuteWidth = number("minuteWidth", minuteWidth); secondWidth = number("secondWidth", secondWidth)
+        hourLength = number("hourLength", hourLength); minuteLength = number("minuteLength", minuteLength); secondLength = number("secondLength", secondLength)
+        showNumbers = (d["showNumbers"] as? Bool) ?? showNumbers
+        showTicks = (d["showTicks"] as? Bool) ?? showTicks
+        hasDecoration = (d["hasDecoration"] as? Bool) ?? hasDecoration
+        numberStyle = Int(number("numberStyle", Double(numberStyle)))
     }
 
     static func load() -> WindowsCustomTheme {
@@ -51,21 +93,24 @@ struct WindowsCustomTheme {
         guard let raw = UserDefaults.standard.string(for: .customThemeConfig),
               let data = raw.data(using: .utf8),
               let d = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return t }
-        for (i, key) in colorKeys.enumerated() {
-            if let s = d[key] as? String, let v = parseHex(s) { t.setColorField(i, v) }
-        }
-        if let v = (d["rimWidth"] as? NSNumber)?.doubleValue ?? (d["rimWidth"] as? Double) { t.rimWidth = v }
-        if let v = (d["handStyle"] as? NSNumber)?.intValue ?? (d["handStyle"] as? Int) { t.handStyle = v }
-        return t
+        return WindowsCustomTheme(dictionary: d)
     }
 
-    func save() {
+    var dictionary: [String: Any] {
         var d: [String: String] = [:]
         for i in 0..<Self.colorKeys.count { d[Self.colorKeys[i]] = Self.hex(colorField(i)) }
         var full: [String: Any] = d
         full["rimWidth"] = rimWidth
         full["handStyle"] = handStyle
-        if let data = try? JSONSerialization.data(withJSONObject: full),
+        full["hourWidth"] = hourWidth; full["minuteWidth"] = minuteWidth; full["secondWidth"] = secondWidth
+        full["hourLength"] = hourLength; full["minuteLength"] = minuteLength; full["secondLength"] = secondLength
+        full["showNumbers"] = showNumbers; full["showTicks"] = showTicks; full["hasDecoration"] = hasDecoration
+        full["numberStyle"] = numberStyle
+        return full
+    }
+
+    func save() {
+        if let data = try? JSONSerialization.data(withJSONObject: dictionary),
            let json = String(data: data, encoding: .utf8) {
             UserDefaults.standard.setString(json, for: .customThemeConfig)
         }
@@ -76,14 +121,14 @@ struct WindowsCustomTheme {
         t.dial_fill = dialFill; t.dial_rim = dialRim; t.rim_width = rimWidth
         t.hand_style = Int32(handStyle)
         t.hour_color = hourColor; t.minute_color = minuteColor; t.second_color = secondColor
-        t.hour_len = 0.48; t.minute_len = 0.68; t.second_len = 0.78
-        t.hour_w = 4.5; t.minute_w = 3.0; t.second_w = 1.5
+        t.hour_len = hourLength; t.minute_len = minuteLength; t.second_len = secondLength
+        t.hour_w = hourWidth; t.minute_w = minuteWidth; t.second_w = secondWidth
         t.cap_outer = capOuter; t.cap_inner = capInner
-        t.show_ticks = 0; t.tick_color = 0; t.major_tick_color = 0
-        t.show_numbers = 0; t.number_color = 0
-        t.has_decoration = 0
+        t.show_ticks = showTicks ? 1 : 0; t.tick_color = tickColor; t.major_tick_color = majorTickColor
+        t.show_numbers = showNumbers ? Int32(numberStyle) : 0; t.number_color = numberColor
+        t.has_decoration = hasDecoration ? 1 : 0
         t.text_primary = textPrimary; t.text_secondary = textSecondary
-        t.dd_bg = dialFill; t.dd_text = textPrimary; t.dd_subtext = textSecondary; t.dd_border = dialRim
+        t.dd_bg = dropdownBg; t.dd_text = dropdownText; t.dd_subtext = dropdownSubtext; t.dd_border = dropdownBorder
         return t
     }
 
@@ -92,5 +137,29 @@ struct WindowsCustomTheme {
         var h = s; if h.hasPrefix("#") { h.removeFirst() }
         guard let v = UInt32(h, radix: 16) else { return nil }
         return 0xFF000000 | v
+    }
+}
+
+struct WindowsSavedCustomTheme {
+    let id: String
+    var name: String
+    var config: WindowsCustomTheme
+
+    static func loadAll() -> [WindowsSavedCustomTheme] {
+        guard let raw = UserDefaults.standard.string(for: .savedCustomThemes),
+              let data = raw.data(using: .utf8),
+              let array = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else { return [] }
+        return array.compactMap { item in
+            guard let id = item["id"] as? String, let name = item["name"] as? String,
+                  let config = item["config"] as? [String: Any] else { return nil }
+            return WindowsSavedCustomTheme(id: id, name: name, config: WindowsCustomTheme(dictionary: config))
+        }
+    }
+
+    static func saveAll(_ themes: [WindowsSavedCustomTheme]) {
+        let array: [[String: Any]] = themes.map { ["id": $0.id, "name": $0.name, "config": $0.config.dictionary] }
+        if let data = try? JSONSerialization.data(withJSONObject: array), let raw = String(data: data, encoding: .utf8) {
+            UserDefaults.standard.setString(raw, for: .savedCustomThemes)
+        }
     }
 }

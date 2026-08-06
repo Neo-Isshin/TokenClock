@@ -13,7 +13,8 @@ typedef struct {
     HANDLE            thread;
     SOCKET            listen_fd;
     volatile int      running;
-    unsigned short    port;
+    volatile int      enabled;
+    volatile unsigned short port;
     win_api_responder_t responder;
     void             *ctx;
 } api_state;
@@ -46,7 +47,7 @@ static void handle_client(SOCKET c, api_state *st) {
     if (eol) *eol = '\0';
     char method[16], target[1024];
     method[0] = target[0] = '\0';
-    sscanf(buf, "%15s %1023s", method, target);
+    sscanf_s(buf, "%15s %1023s", method, (unsigned)sizeof(method), target, (unsigned)sizeof(target));
     if (strcmp(method, "GET") != 0) { send_status(c, 405, "Method Not Allowed"); return; }
 
     /* split target into path?query */
@@ -56,9 +57,9 @@ static void handle_client(SOCKET c, api_state *st) {
         size_t pl = (size_t)(q - target);
         if (pl >= sizeof(path)) pl = sizeof(path) - 1;
         memcpy(path, target, pl); path[pl] = '\0';
-        strncpy(query, q + 1, sizeof(query) - 1); query[sizeof(query) - 1] = '\0';
+        strncpy_s(query, sizeof(query), q + 1, _TRUNCATE);
     } else {
-        strncpy(path, target, sizeof(path) - 1); path[sizeof(path) - 1] = '\0';
+        strncpy_s(path, sizeof(path), target, _TRUNCATE);
         query[0] = '\0';
     }
 
@@ -85,40 +86,54 @@ static DWORD WINAPI api_thread(LPVOID arg) {
         return 1;
     }
 
-    SOCKET s = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-    if (s == INVALID_SOCKET) { WSACleanup(); free(st); return 1; }
-
-    BOOL reuse = TRUE;
-    setsockopt(s, SOL_SOCKET, SO_REUSEADDR, (char *)&reuse, sizeof(reuse));
-
-    struct sockaddr_in addr;
-    memset(&addr, 0, sizeof(addr));
-    addr.sin_family = AF_INET;
-    addr.sin_port = htons(st->port);
-    addr.sin_addr.s_addr = inet_addr("127.0.0.1");
-
-    if (bind(s, (struct sockaddr *)&addr, (int)sizeof(addr)) == SOCKET_ERROR ||
-        listen(s, 16) == SOCKET_ERROR) {
-        printf("[API] Unable to bind 127.0.0.1:%d\n", st->port);
-        closesocket(s);
-        WSACleanup();
-        free(st);
-        return 1;
-    }
-    st->listen_fd = s;
-    printf("[API] Server ready on 127.0.0.1:%d\n", st->port);
-
     while (st->running) {
-        SOCKET c = accept(s, NULL, NULL);
-        if (c == INVALID_SOCKET) {
-            if (st->running) continue;
-            break;
+        if (!st->enabled) { Sleep(50); continue; }
+
+        unsigned short active_port = st->port;
+        SOCKET s = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+        if (s == INVALID_SOCKET) { Sleep(200); continue; }
+        BOOL reuse = TRUE;
+        setsockopt(s, SOL_SOCKET, SO_REUSEADDR, (char *)&reuse, sizeof(reuse));
+
+        struct sockaddr_in addr;
+        memset(&addr, 0, sizeof(addr));
+        addr.sin_family = AF_INET;
+        addr.sin_port = htons(active_port);
+        InetPtonA(AF_INET, "127.0.0.1", &addr.sin_addr);
+        if (bind(s, (struct sockaddr *)&addr, (int)sizeof(addr)) == SOCKET_ERROR ||
+            listen(s, 16) == SOCKET_ERROR) {
+            closesocket(s);
+            Sleep(200);
+            continue;
         }
-        handle_client(c, st);
-        closesocket(c);
+        st->listen_fd = s;
+        printf("[API] Server ready on 127.0.0.1:%d\n", active_port);
+
+        /* A short select timeout lets pause/reconfigure/stop take effect on this same worker.
+         * Reusing the worker matters on Windows: every native thread that has called back into
+         * Swift retains a large runtime handle pool even after the OS thread exits. */
+        while (st->running && st->enabled && st->port == active_port) {
+            fd_set listener_ready;
+            FD_ZERO(&listener_ready); FD_SET(s, &listener_ready);
+            struct timeval listener_timeout; listener_timeout.tv_sec = 0; listener_timeout.tv_usec = 100000;
+            if (select(0, &listener_ready, NULL, NULL, &listener_timeout) <= 0) continue;
+            SOCKET c = accept(s, NULL, NULL);
+            if (c == INVALID_SOCKET) continue;
+            DWORD client_timeout_ms = 1500;
+            setsockopt(c, SOL_SOCKET, SO_RCVTIMEO, (char *)&client_timeout_ms, sizeof(client_timeout_ms));
+            setsockopt(c, SOL_SOCKET, SO_SNDTIMEO, (char *)&client_timeout_ms, sizeof(client_timeout_ms));
+            /* HTTP stacks may speculatively open an idle connection before the one carrying the
+             * request. Never let that idle socket monopolize our intentionally single worker. */
+            fd_set client_ready;
+            FD_ZERO(&client_ready); FD_SET(c, &client_ready);
+            struct timeval client_wait; client_wait.tv_sec = 0; client_wait.tv_usec = 250000;
+            if (select(0, &client_ready, NULL, NULL, &client_wait) > 0) handle_client(c, st);
+            closesocket(c);
+        }
+        st->listen_fd = INVALID_SOCKET;
+        closesocket(s);
     }
 
-    closesocket(s);
     WSACleanup();
     free(st);
     return 0;
@@ -132,6 +147,7 @@ void *win_start_api_server(unsigned short port, win_api_responder_t responder, v
     st->responder = responder;
     st->ctx = ctx;
     st->running = 1;
+    st->enabled = 1;
     st->listen_fd = INVALID_SOCKET;
 
     HANDLE t = CreateThread(NULL, 0, api_thread, st, 0, NULL);
@@ -140,15 +156,23 @@ void *win_start_api_server(unsigned short port, win_api_responder_t responder, v
     return st;
 }
 
+void win_pause_api_server(void *handle) {
+    if (!handle) return;
+    ((api_state *)handle)->enabled = 0;
+}
+
+void win_reconfigure_api_server(void *handle, unsigned short port) {
+    if (!handle) return;
+    api_state *st = (api_state *)handle;
+    st->port = port;
+    st->enabled = 1;
+}
+
 void win_stop_api_server(void *handle) {
     if (!handle) return;
     api_state *st = (api_state *)handle;
     HANDLE t = st->thread;          /* capture before the worker can free `st` */
     st->running = 0;
-    if (st->listen_fd != INVALID_SOCKET) {
-        /* closesocket reliably unblocks a worker blocked in accept() on Windows */
-        closesocket(st->listen_fd);
-    }
     if (t) {
         WaitForSingleObject(t, 2000);
         CloseHandle(t);

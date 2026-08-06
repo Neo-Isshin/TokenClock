@@ -12,10 +12,18 @@ final class WindowsAPIServer {
         self.model = model
     }
 
-    func start() {
-        guard handle == nil else { return }
+    func start(port: UInt16 = AppConfig.LocalServer.defaultPort) {
+        if let handle {
+            win_reconfigure_api_server(handle, port)
+            return
+        }
         let ctx = Unmanaged.passUnretained(self).toOpaque()
-        handle = win_start_api_server(UInt16(AppConfig.LocalServer.defaultPort), winApiResponder, ctx)
+        handle = win_start_api_server(port, winApiResponder, ctx)
+    }
+
+    /// Disable the listener without destroying the one native worker that may call Swift.
+    func pause() {
+        if let handle { win_pause_api_server(handle) }
     }
 
     func stop() {
@@ -39,11 +47,75 @@ final class WindowsAPIServer {
         }
     }
 
-    private func json(_ object: [String: Any]) -> String? {
-        guard let data = try? JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted]) else {
+    /// Serialize the small, known API object graph without Foundation's dynamic
+    /// JSONSerialization bridge. On swift-corelibs-foundation for Windows that bridge retains
+    /// native wait handles on every invocation; a local dashboard polling once per second would
+    /// therefore grow the process forever. This serializer accepts precisely the JSON-safe types
+    /// produced by WindowsUsageModel and is locale-independent.
+    private func json(_ object: [String: Any]) -> String? { Self.jsonValue(object) }
+
+    private static func jsonValue(_ value: Any) -> String? {
+        switch value {
+        case let string as String:
+            return "\"\(jsonEscaped(string))\""
+        case let bool as Bool:
+            return bool ? "true" : "false"
+        case let integer as Int:
+            return String(integer)
+        case let integer as Int64:
+            return String(integer)
+        case let integer as UInt:
+            return String(integer)
+        case let integer as UInt64:
+            return String(integer)
+        case let number as Double:
+            return number.isFinite ? String(number) : "null"
+        case let number as Float:
+            return number.isFinite ? String(number) : "null"
+        case let dictionary as [String: Any]:
+            var members: [String] = []
+            members.reserveCapacity(dictionary.count)
+            for key in dictionary.keys.sorted() {
+                guard let encoded = dictionary[key].flatMap(jsonValue) else { return nil }
+                members.append("\"\(jsonEscaped(key))\":\(encoded)")
+            }
+            return "{\(members.joined(separator: ","))}"
+        case let array as [Any]:
+            var elements: [String] = []
+            elements.reserveCapacity(array.count)
+            for item in array {
+                guard let encoded = jsonValue(item) else { return nil }
+                elements.append(encoded)
+            }
+            return "[\(elements.joined(separator: ","))]"
+        case _ as NSNull:
+            return "null"
+        default:
             return nil
         }
-        return String(data: data, encoding: .utf8)
+    }
+
+    private static func jsonEscaped(_ value: String) -> String {
+        let hex = Array("0123456789abcdef".unicodeScalars)
+        var result = String.UnicodeScalarView()
+        for scalar in value.unicodeScalars {
+            switch scalar.value {
+            case 0x22: result.append(contentsOf: "\\\"".unicodeScalars)
+            case 0x5c: result.append(contentsOf: "\\\\".unicodeScalars)
+            case 0x08: result.append(contentsOf: "\\b".unicodeScalars)
+            case 0x0c: result.append(contentsOf: "\\f".unicodeScalars)
+            case 0x0a: result.append(contentsOf: "\\n".unicodeScalars)
+            case 0x0d: result.append(contentsOf: "\\r".unicodeScalars)
+            case 0x09: result.append(contentsOf: "\\t".unicodeScalars)
+            case 0..<0x20:
+                result.append(contentsOf: "\\u00".unicodeScalars)
+                result.append(hex[Int((scalar.value >> 4) & 0xf)])
+                result.append(hex[Int(scalar.value & 0xf)])
+            default:
+                result.append(scalar)
+            }
+        }
+        return String(result)
     }
 
     private static func parseDays(_ query: String) -> Int? {

@@ -245,14 +245,14 @@ enum PathDetector {
         let custom = UserDefaults.standard.string(for: .aiderPath)
         let candidates = buildCandidates(
             custom: custom, envName: PathConfig.aiderCandidates(),
-            defaults: [PathConfig.defaultAiderHome()], alternates: [])
+            defaults: [PathConfig.defaultAiderAnalyticsPath()], alternates: [])
         let match = findFirstValid(candidates: candidates, validator: { path in
             let fm = FileManager.default
             var isDir: ObjCBool = false
-            return fm.fileExists(atPath: path, isDirectory: &isDir) && isDir.boolValue
-                && findJSONLFiles(in: path)
+            let resolved = path.lowercased().hasSuffix(".jsonl") ? path : path + "/analytics.jsonl"
+            return fm.fileExists(atPath: resolved, isDirectory: &isDir) && !isDir.boolValue
         })
-        return buildResult(service: "aider", emoji: "🤝", match: match, custom: custom, defaultPath: PathConfig.defaultAiderHome())
+        return buildResult(service: "aider", emoji: "🤝", match: match, custom: custom, defaultPath: PathConfig.defaultAiderAnalyticsPath())
     }
 
     private static func detectAntigravity() -> DetectionResult {
@@ -301,13 +301,10 @@ enum PathDetector {
             custom: custom, envName: PathConfig.cursorAgentCandidates(),
             defaults: [PathConfig.defaultCursorAgentHome()], alternates: [])
         let match = findFirstValid(candidates: candidates, validator: { path in
-            // 检测条件：hook 脚本存在 OR token-usage.jsonl 已存在
             let fm = FileManager.default
             var isDir: ObjCBool = false
-            let hookExists = fm.fileExists(atPath: path + "/hooks/log-token-usage.sh")
-            let logExists = fm.fileExists(atPath: path + "/token-usage.jsonl")
-            let cliConfigExists = fm.fileExists(atPath: path + "/cli-config.json", isDirectory: &isDir) && !isDir.boolValue
-            return hookExists || logExists || cliConfigExists
+            let db = path.lowercased().hasSuffix(".vscdb") ? path : path + "/state.vscdb"
+            return fm.fileExists(atPath: db, isDirectory: &isDir) && !isDir.boolValue
         })
         return buildResult(service: "cursorAgent", emoji: "🖱️", match: match, custom: custom, defaultPath: PathConfig.defaultCursorAgentHome())
     }
@@ -329,8 +326,11 @@ enum PathDetector {
         var candidates: [Candidate] = []
         var seen = Set<String>()
 
+        let normalizedDefaults = Set(defaults.map { PathConfig.expandedPath($0) })
+        let normalizedAlternates = Set(alternates.map { PathConfig.expandedPath($0) })
+
         func append(_ path: String, _ source: DetectionResult.PathSource) {
-            let resolved = (path as NSString).standardizingPath
+            let resolved = PathConfig.expandedPath(path)
             guard !seen.contains(resolved) else { return }
             seen.insert(resolved)
             candidates.append(Candidate(path: resolved, source: source))
@@ -340,7 +340,12 @@ enum PathDetector {
             append(custom, .userDefaults)
         }
         for path in envName where !path.isEmpty {
-            append(path, .envVariable)
+            let resolved = PathConfig.expandedPath(path)
+            let source: DetectionResult.PathSource
+            if normalizedDefaults.contains(resolved) { source = .officialDefault }
+            else if normalizedAlternates.contains(resolved) { source = .alternate }
+            else { source = .envVariable }
+            append(path, source)
         }
         for path in defaults where !path.isEmpty {
             append(path, .officialDefault)
