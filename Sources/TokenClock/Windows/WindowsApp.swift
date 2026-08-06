@@ -375,17 +375,23 @@ final class WindowsApp: @unchecked Sendable {
         let names = ["OpenClaw", "Claude Code", "Gemini CLI", "Codex", "Hermes", "OpenCode",
                      "Qwen Code", "Copilot", "Grok", "Aider", "Antigravity", "Cline", "Continue", "Cursor Agent"]
         let enabled = Set(UserDefaults.standard.stringArray(for: .enabledTools) ?? names)
-        guard let dlg = dlg_create(L.language == .en ? "TokenClock Settings" : "TokenClock 设置", 600, 560) else { return }
-        dlg_add_static(dlg, L.language == .en ? "Data sources  (enable + path)" : "数据源（启用 + 路径）", 14, 12, 400, 20)
-        let rowH: Int32 = 28
+        guard let dlg = dlg_create(L.language == .en ? "TokenClock Settings" : "TokenClock 设置", 640, 660) else { return }
+        dlg_add_title(dlg, L.language == .en ? "⚙️ TokenClock Settings" : "⚙️ TokenClock 设置", 20, 16, 600, 30)
+        dlg_add_static(dlg, L.language == .en ? "Enable each tool and point it at its log directory." : "启用要统计的工具，并指定其日志目录。", 22, 50, 580, 20)
+        dlg_add_sep(dlg, 20, 78, 600)
+        dlg_add_static(dlg, L.language == .en ? "Tool" : "工具", 24, 86, 120, 18)
+        dlg_add_static(dlg, L.language == .en ? "Data source path" : "数据源路径", 168, 86, 440, 18)
+        let rowH: Int32 = 30
+        let topY: Int32 = 110
         for (i, name) in names.enumerated() {
-            let y = Int32(40 + i * Int(rowH))
-            dlg_add_check(dlg, 300 + Int32(i), name, 14, y, 130, rowH, enabled.contains(name) ? 1 : 0)
-            dlg_add_edit(dlg, 200 + Int32(i), pathFor(name), 150, y, 430, rowH)
+            let y = topY + Int32(i * Int(rowH))
+            dlg_add_check(dlg, 300 + Int32(i), name, 20, y, 140, rowH, enabled.contains(name) ? 1 : 0)
+            dlg_add_edit(dlg, 200 + Int32(i), pathFor(name), 168, y, 446, rowH)
         }
-        let by = Int32(40 + names.count * Int(rowH) + 12)
-        dlg_add_push(dlg, 1, "OK", 340, by, 110, 28)
-        dlg_add_push(dlg, 2, L.tr("about.close"), 460, by, 110, 28)
+        let by = topY + Int32(names.count * Int(rowH)) + 12
+        dlg_add_sep(dlg, 20, by, 600)
+        dlg_add_push(dlg, 1, "OK", 410, by + 14, 100, 30)
+        dlg_add_push(dlg, 2, L.tr("about.close"), 520, by + 14, 100, 30)
         if dlg_modal(dlg) == 1 {
             var onNames: [String] = []
             let buf = UnsafeMutablePointer<CChar>.allocate(capacity: 1024)

@@ -311,6 +311,19 @@ void dlg_add_static(void *dlg, const char *text_utf8, int x, int y, int w, int h
     dlg_child((HWND)dlg, L"STATIC", SS_LEFT, 0, t, x, y, w, h);
 }
 
+void dlg_add_title(void *dlg, const char *text_utf8, int x, int y, int w, int h) {
+    wchar_t t[256]; if (to_wide(text_utf8, t, 256) == 0) t[0] = 0;
+    HWND c = dlg_child((HWND)dlg, L"STATIC", SS_LEFT, 0, t, x, y, w, h);
+    HFONT f = CreateFontW(20, 0, 0, 0, FW_SEMIBOLD, 0, 0, 0, DEFAULT_CHARSET,
+                          OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
+                          DEFAULT_PITCH | FF_SWISS, L"Segoe UI Semibold");
+    SendMessageW(c, WM_SETFONT, (WPARAM)f, TRUE);
+}
+
+void dlg_add_sep(void *dlg, int x, int y, int w) {
+    dlg_child((HWND)dlg, L"STATIC", SS_ETCHEDHORZ, 0, L"", x, y, w, 2);
+}
+
 void dlg_add_push(void *dlg, int id, const char *text_utf8, int x, int y, int w, int h) {
     wchar_t t[256]; if (to_wide(text_utf8, t, 256) == 0) t[0] = 0;
     dlg_child((HWND)dlg, L"BUTTON", BS_PUSHBUTTON, id, t, x, y, w, h);
