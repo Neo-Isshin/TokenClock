@@ -1,5 +1,4 @@
 import Foundation
-import CoreLocation
 
 /// 逐小时预报（3小时间隔）
 struct HourlyForecast: Sendable {
@@ -9,13 +8,11 @@ struct HourlyForecast: Sendable {
     let description: String
 }
 
-/// 天气服务：支持自动定位 + wttr.in 免费天气 API
+/// 天气服务：自动定位统一使用公网 IP，不请求系统位置权限
 /// 使用 JSON 格式解析，支持 weatherCode 精确映射 + 逐小时预报
 @MainActor
-final class WeatherService: NSObject, CLLocationManagerDelegate {
+final class WeatherService {
     static let shared = WeatherService()
-
-    private let locationManager = CLLocationManager()
 
     /// 天气请求代次：每次发起网络抓取自增；post 前比对，旧请求被新请求超越时不 post，
     /// 杜绝慢请求用旧数据覆盖快请求刚拿到的新数据。
@@ -32,49 +29,13 @@ final class WeatherService: NSObject, CLLocationManagerDelegate {
         "New York":     (40.7128, -74.0060),
     ]
 
-    override private init() {
-        super.init()
-        locationManager.delegate = self
-        locationManager.desiredAccuracy = kCLLocationAccuracyThreeKilometers
-    }
+    private init() {}
 
-    // MARK: - 定位
+    // MARK: - IP 定位
 
     func fetchLocalWeather() {
-        let status = locationManager.authorizationStatus
-        switch status {
-        case .authorizedAlways, .authorizedWhenInUse:
-            locationManager.requestLocation()
-        case .notDetermined:
-            locationManager.requestWhenInUseAuthorization()
-            // 同时用 IP 定位作为备用，避免用户未授权时无数据
-            Task { @MainActor in
-                await self.fetchWeatherByIP()
-            }
-        default:
-            Task { @MainActor in
-                await self.fetchWeatherByIP()
-            }
-        }
-    }
-
-    nonisolated func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
-        guard let location = locations.last else { return }
-        let lat = location.coordinate.latitude
-        let lon = location.coordinate.longitude
         Task { @MainActor in
-            let city = await self.reverseGeocode(lat: lat, lon: lon)
-            await self.fetchWeatherFromAPI(lat: lat, lon: lon, cityName: city)
-        }
-    }
-
-    nonisolated func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
-        print("Location error: \(error)")
-    }
-
-    nonisolated func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
-        if manager.authorizationStatus == .authorized {
-            manager.requestLocation()
+            await self.fetchWeatherByIP()
         }
     }
 
@@ -236,7 +197,7 @@ final class WeatherService: NSObject, CLLocationManagerDelegate {
         }
     }
 
-    // MARK: - IP 定位 Fallback
+    // MARK: - IP 定位实现
 
     /// 通过 IP 定位获取天气（IPIP.net 国内服务为主，失败时用 wttr.in 自动定位）
     private func fetchWeatherByIP() async {
@@ -305,24 +266,6 @@ final class WeatherService: NSObject, CLLocationManagerDelegate {
         }
     }
 
-    // MARK: - 反向地理编码
-
-    private func reverseGeocode(lat: Double, lon: Double) async -> String {
-        let location = CLLocation(latitude: lat, longitude: lon)
-        // normal 分支部署目标 .macOS(.v15),MKReverseGeocodingRequest 是 macOS 26+ API。
-        // 保留 CLGeocoder(在 macOS 15 上仍工作),@available(*, deprecated: 26.0) 让编译器知道
-        // 这段是"明知弃用仍保留",不报 deprecation warning。等 normal 升到 v26 再切。
-        let geocoder = CLGeocoder()
-        do {
-            let placemarks = try await geocoder.reverseGeocodeLocation(location, preferredLocale: Locale(identifier: "zh_CN"))
-            if let placemark = placemarks.first {
-                return placemark.locality ?? placemark.administrativeArea ?? "未知位置"
-            }
-        } catch {
-            print("Reverse geocode error: \(error)")
-        }
-        return "未知位置"
-    }
 }
 
 extension Notification.Name {
