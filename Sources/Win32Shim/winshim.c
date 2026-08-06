@@ -6,6 +6,7 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <shellapi.h>
+#include <commdlg.h>   /* ChooseColor */
 #include <stdio.h>
 #include "winshim.h"
 
@@ -244,12 +245,15 @@ int win_user_locale(char *buf, int n) {
 static HWND g_dlg = NULL;
 static int  g_dlg_result = 0;
 static int  g_dlg_done = 0;
+static dlg_on_cmd_t g_dlg_oncmd = NULL;
+static void *g_dlg_cmdctx = NULL;
 
 static LRESULT CALLBACK dlg_proc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
     switch (msg) {
     case WM_COMMAND:
         if (LOWORD(wp) == 1) { g_dlg_result = 1; g_dlg_done = 1; DestroyWindow(h); return 0; }  /* OK */
         if (LOWORD(wp) == 2) { g_dlg_result = 0; g_dlg_done = 1; DestroyWindow(h); return 0; }  /* Cancel */
+        if (g_dlg_oncmd) g_dlg_oncmd(g_dlg_cmdctx, (int)LOWORD(wp));   /* 其余按钮 → 回调 */
         return 0;
     case WM_CLOSE:
         g_dlg_result = 0; g_dlg_done = 1; DestroyWindow(h); return 0;
@@ -350,6 +354,36 @@ int dlg_modal(void *dlg) {
         if (g_dlg_done) break;
     }
     return g_dlg_result;
+}
+
+void dlg_set_text(void *dlg, int id, const char *text_utf8) {
+    wchar_t w[256];
+    if (to_wide(text_utf8, w, 256) == 0) w[0] = 0;
+    SetDlgItemTextW((HWND)dlg, id, w);
+}
+
+int dlg_modal_cb(void *dlg, dlg_on_cmd_t on_cmd, void *ctx) {
+    g_dlg_oncmd = on_cmd;
+    g_dlg_cmdctx = ctx;
+    int r = dlg_modal(dlg);
+    g_dlg_oncmd = NULL;
+    g_dlg_cmdctx = NULL;
+    return r;
+}
+
+int win_pick_color(unsigned int initial_argb, unsigned int *out_argb) {
+    static COLORREF cust[16] = { 0 };
+    COLORREF ini = RGB((initial_argb >> 16) & 0xff, (initial_argb >> 8) & 0xff, initial_argb & 0xff);
+    CHOOSECOLORW cc;
+    memset(&cc, 0, sizeof(cc));
+    cc.lStructSize = sizeof(cc);
+    cc.Flags = CC_FULLOPEN | CC_RGBINIT;
+    cc.rgbResult = ini;
+    cc.lpCustColors = cust;
+    if (!ChooseColorW(&cc)) return 0;
+    /* COLORREF 0x00BBGGRR → ARGB 0xFFRRGGBB */
+    *out_argb = 0xFF000000u | ((cc.rgbResult & 0xFF) << 16) | (cc.rgbResult & 0xFF00) | ((cc.rgbResult >> 16) & 0xFF);
+    return 1;
 }
 
 /* --- GDI helpers --- */

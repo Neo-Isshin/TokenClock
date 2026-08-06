@@ -92,6 +92,7 @@ let package = Package(
                 .linkedLibrary("gdiplus"),
                 .linkedLibrary("Advapi32"),
                 .linkedLibrary("Ws2_32"),
+                .linkedLibrary("Comdlg32"),   // ChooseColor（自定义主题取色器）
             ]
         ),
         .executableTarget(

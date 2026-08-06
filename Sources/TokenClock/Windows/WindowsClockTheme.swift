@@ -5,11 +5,12 @@ import Win32Shim
 /// （颜色转 ARGB 以表达 .clear/opacity；指针/刻度/数字/装饰标志由 winrender.cpp 据此渲染）。
 /// custom 主题暂映射到 classic（自定义编辑器属后续设置面板范畴）。
 enum WindowsClockTheme: String, CaseIterable {
-    case classic, midnight, luxe, gufeng, railgun, sky, glass, glacier
+    case classic, midnight, luxe, gufeng, railgun, sky, glass, glacier, custom
 
     var displayName: String { L10n.shared.tr("themeName.\(rawValue)") }
 
     var winTheme: win_theme {
+        if self == .custom { return WindowsCustomTheme.load().asWinTheme }   // 自定义：读编辑器存盘
         var t = win_theme()
         t.hour_len = 0.48; t.minute_len = 0.68; t.second_len = 0.78
         switch self {
@@ -100,6 +101,7 @@ enum WindowsClockTheme: String, CaseIterable {
             t.show_numbers = 1; t.number_color = rgb(0.10, 0.20, 0.42)
             t.has_decoration = 0
             t.text_primary = rgb(0.10, 0.20, 0.42); t.text_secondary = rgb(0.10, 0.20, 0.42, 0.7)
+        default: break   // .custom 在函数顶部已 early-return
         }
         // 下拉卡片配色（移植自 ClockFaceTheme.dropdownBgColor/Text/Subtext/Border）
         switch self {
@@ -111,6 +113,7 @@ enum WindowsClockTheme: String, CaseIterable {
         case .sky:      t.dd_bg = rgb(0.600, 0.780, 0.920); t.dd_text = rgb(0.180, 0.340, 0.520); t.dd_subtext = rgb(0.380, 0.520, 0.660); t.dd_border = rgb(0.500, 0.680, 0.840)
         case .glass:    t.dd_bg = rgb(0.93, 0.95, 0.97); t.dd_text = rgb(0.18, 0.18, 0.20); t.dd_subtext = rgb(0.45, 0.45, 0.48); t.dd_border = gray(0.82)
         case .glacier:  t.dd_bg = rgb(0.94, 0.97, 1.00); t.dd_text = rgb(0.10, 0.20, 0.42); t.dd_subtext = rgb(0.10, 0.20, 0.42, 0.7); t.dd_border = rgb(0.10, 0.20, 0.42, 0.22)
+        default: break
         }
         return t
     }

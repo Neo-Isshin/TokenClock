@@ -73,7 +73,13 @@ void  dlg_add_sep(void *dlg, int x, int y, int w);                              
 void  dlg_add_push(void *dlg, int id, const char *text_utf8, int x, int y, int w, int h);
 int   dlg_check_get(void *dlg, int id);                 /* 1 if checked */
 void  dlg_edit_get(void *dlg, int id, char *buf_utf8, int n);   /* read edit text → UTF-8 */
+void  dlg_set_text(void *dlg, int id, const char *text_utf8);   /* set a control's label/text */
 int   dlg_modal(void *dlg);                             /* blocks; returns 1=OK 0=cancel */
+typedef void (*dlg_on_cmd_t)(void *ctx, int id);
+int   dlg_modal_cb(void *dlg, dlg_on_cmd_t on_cmd, void *ctx);  /* 同 dlg_modal，非 OK/Cancel 的按钮点击回调 on_cmd */
+
+/* --- 颜色选择（系统 ChooseColor 对话框）→ ARGB；返回 1=选定 --- */
+int win_pick_color(unsigned int initial_argb, unsigned int *out_argb);
 
 /* --- GDI helpers (called from Swift on_paint with the hdc it received) --- */
 void gdi_clear(void *hdc, int w, int h, unsigned int rgb);

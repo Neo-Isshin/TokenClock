@@ -25,6 +25,7 @@ final class WindowsApp: @unchecked Sendable {
     private let cmdShowPercent: Int32 = 110
     private let cmdSettings: Int32 = 120
     private let cmdGroupByModel: Int32 = 130
+    private let cmdEditCustom: Int32 = 140
 
     /// 当前浮窗边长（pt）。表盘半径 = size/2 - 24；classic 主题按 radius 116（medium）校准，
     /// 其余尺寸由 winrender 按 r/116 等比缩放。切换尺寸时此值同步更新并 resize 窗口。
@@ -38,6 +39,8 @@ final class WindowsApp: @unchecked Sendable {
     private var detailsVisible = false       // 左键托盘切换：展开后窗口变高，盘面下方列工具明细
     private var currentHeight: Int32 = 280   // 当前窗口高（收起 = currentSize；展开 = +明细区）
     private var lastTrayToggle = Date.distantPast   // 左键去抖（双击连发两次）
+    fileprivate var customCfg = WindowsCustomTheme()   // 自定义主题编辑器在用的配置
+    fileprivate var editorDlg: UnsafeMutableRawPointer?
 
     func run() {
         win_set_dpi_aware()
@@ -84,6 +87,7 @@ final class WindowsApp: @unchecked Sendable {
         // 调试/截图钩子（正常流程不经此）：TC_DETAIL 启动即展开；TC_SETTINGS 启动即开设置对话框。
         if ProcessInfo.processInfo.environment["TC_DETAIL"] != nil { detailsVisible = true }
         if ProcessInfo.processInfo.environment["TC_SETTINGS"] != nil { openSettings() }
+        if ProcessInfo.processInfo.environment["TC_CUSTOM"] != nil { openCustomThemeEditor() }
 
         _ = win_run(&cb)
     }
@@ -257,6 +261,7 @@ final class WindowsApp: @unchecked Sendable {
             }
             addSubmenu(menu, L.tr("menu.clockFace"), tm)
         }
+        addMenuItem(menu, cmdEditCustom, L.language == .en ? "✏️ Edit Custom Theme…" : "✏️ 编辑自定义主题…", false)
         // 尺寸子菜单
         if let sm = menu_create() {
             addMenuItem(sm, cmdSizeSmall,  L.tr("size.small"),      clockSizeRaw == "small")
@@ -323,6 +328,7 @@ final class WindowsApp: @unchecked Sendable {
         case cmdLaunch:     setLaunchAtLogin(!launchAtLogin)
         case cmdAbout:      showAbout()
         case cmdSettings:   openSettings()
+        case cmdEditCustom: openCustomThemeEditor()
         case cmdTempC:      setUseFahrenheit(false)
         case cmdTempF:      setUseFahrenheit(true)
         case cmdApi:        apiEnabled.toggle()
@@ -462,6 +468,67 @@ final class WindowsApp: @unchecked Sendable {
         UserDefaults.standard.set(Int(x), forKey: Self.posXKey)
         UserDefaults.standard.set(Int(y), forKey: Self.posYKey)
         api?.stop()
+    }
+
+    /// 自定义主题编辑器：9 个颜色（点按钮弹系统取色器）+ 指针样式（循环）+ 外环宽度。OK 落盘。
+    private func openCustomThemeEditor() {
+        customCfg = WindowsCustomTheme.load()
+        let L = L10n.shared, en = L.language == .en
+        guard let dlg = dlg_create(en ? "Custom Theme" : "自定义主题", 520, 540) else { return }
+        editorDlg = dlg
+        dlg_add_title(dlg, en ? "🎨 Custom Theme" : "🎨 自定义主题", 20, 14, 480, 30)
+        dlg_add_sep(dlg, 20, 50, 480)
+        let labels = en ? ["Dial", "Rim", "Hour hand", "Minute hand", "Second hand", "Center cap outer", "Center cap inner", "Text", "Text (sub)"]
+                        : ["表盘", "外环", "时针", "分针", "秒针", "中心帽外", "中心帽内", "文字", "文字(次)"]
+        let rowH: Int32 = 30, topY: Int32 = 60
+        for i in 0..<WindowsCustomTheme.colorKeys.count {
+            let y = topY + Int32(i) * rowH
+            dlg_add_static(dlg, labels[i], 24, y + 5, 150, 22)
+            dlg_add_push(dlg, 500 + Int32(i), WindowsCustomTheme.hex(customCfg.colorField(i)), 190, y, 150, 28)
+        }
+        let hy = topY + Int32(WindowsCustomTheme.colorKeys.count) * rowH + 4
+        dlg_add_static(dlg, en ? "Hand style" : "指针样式", 24, hy + 5, 150, 22)
+        dlg_add_push(dlg, 520, handStyleLabel(customCfg.handStyle), 190, hy, 150, 28)
+        let wy = hy + rowH
+        dlg_add_static(dlg, en ? "Rim width" : "外环宽度", 24, wy + 5, 150, 22)
+        dlg_add_edit(dlg, 530, "\(customCfg.rimWidth)", 190, wy, 80, 28)
+        let by = wy + rowH + 14
+        dlg_add_push(dlg, 1, "OK", 250, by, 100, 30)
+        dlg_add_push(dlg, 2, L.tr("about.close"), 370, by, 100, 30)
+        if dlg_modal_cb(dlg, customCmdCb, nil) == 1 {
+            let buf = UnsafeMutablePointer<CChar>.allocate(capacity: 64)
+            defer { buf.deallocate() }
+            dlg_edit_get(dlg, 530, buf, 64)
+            if let w = Double(String(cString: buf)), w >= 0 { customCfg.rimWidth = w }
+            customCfg.save()
+            render()
+        }
+        editorDlg = nil
+    }
+
+    private func handStyleLabel(_ s: Int) -> String {
+        let en = L10n.shared.language == .en
+        switch s {
+        case 1: return en ? "Tapered ▾" : "锥形 ▾"
+        case 2: return en ? "Lance ▾" : "菱形 ▾"
+        case 3: return en ? "Sword ▾" : "剑形 ▾"
+        default: return en ? "Round ▾" : "圆头 ▾"
+        }
+    }
+
+    /// 编辑器内按钮点击（由 dlg_modal_cb 回调）：颜色按钮弹取色器、指针样式循环。
+    fileprivate func handleCustomCmd(_ id: Int32) {
+        if id >= 500 && id < 500 + Int32(WindowsCustomTheme.colorKeys.count) {
+            let i = Int(id - 500)
+            var out: UInt32 = 0
+            if win_pick_color(customCfg.colorField(i), &out) == 1 {
+                customCfg.setColorField(i, out)
+                if let dlg = editorDlg { dlg_set_text(dlg, id, WindowsCustomTheme.hex(out)) }
+            }
+        } else if id == 520 {
+            customCfg.handStyle = (customCfg.handStyle + 1) % 4
+            if let dlg = editorDlg { dlg_set_text(dlg, 520, handStyleLabel(customCfg.handStyle)) }
+        }
     }
 
     // MARK: - 状态读取
@@ -618,4 +685,7 @@ private let appMenuCmd: @convention(c) (UnsafeMutableRawPointer?, Int32) -> Void
 }
 private let appDestroy: @convention(c) (UnsafeMutableRawPointer?) -> Void = { _ in
     WindowsApp.shared.shutdown()    // 落盘窗口位置 + 关闭本地 API 服务
+}
+private let customCmdCb: @convention(c) (UnsafeMutableRawPointer?, Int32) -> Void = { _, id in
+    WindowsApp.shared.handleCustomCmd(id)   // 自定义主题编辑器内按钮点击
 }
