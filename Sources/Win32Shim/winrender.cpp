@@ -279,27 +279,63 @@ void win_render_clock(int w, int h, int hh, int mm, int ss, const win_theme *t, 
         }
     }
 
-    // 展开态：盘面下方工具明细（多行 '\n' 分隔）
+    // 展开态：盘面下方一张主题色「卡片」——圆角背景 + 表头 + 数据行（label 左 / value 右，缩进表子项）。
+    // 行格式：表头无 \t；数据行 "label\tvalue"，前导空格为缩进。
     if (expanded) {
         wchar_t wb[2048];
         if (to_wide(ov->detail_text, wb, 2048) > 0) {
-            Gdiplus::Font f(&fam, (float)(12.0 * S), Gdiplus::FontStyleRegular, Gdiplus::UnitPixel);
-            Gdiplus::SolidBrush b(cr(t->text_primary));
-            Gdiplus::StringFormat sf; sf.SetAlignment(Gdiplus::StringAlignmentNear); sf.SetLineAlignment(Gdiplus::StringAlignmentCenter);
-            const double lh = 19.0 * S, lx = cxd - r * 0.86;
-            double y = w + 16.0 * S;
+            int n = 1;
+            for (wchar_t *p = wb; *p; p++) if (*p == L'\n') n++;
+            const double gap = 14.0 * S, pad = 12.0 * S, rowH = 20.0 * S, radius = 12.0 * S;
+            const double cardLeft = cxd - r, cardW = 2.0 * r, cardRight = cxd + r;
+            const double cardTop = w + gap, cardH = 2.0 * pad + n * rowH;
+
+            // 圆角卡片：填充 + 描边
+            Gdiplus::GraphicsPath card;
+            Gdiplus::REAL rr = (Gdiplus::REAL)radius;
+            card.AddArc((Gdiplus::REAL)cardLeft, (Gdiplus::REAL)cardTop, 2 * rr, 2 * rr, 180, 90);
+            card.AddArc((Gdiplus::REAL)(cardRight - 2 * radius), (Gdiplus::REAL)cardTop, 2 * rr, 2 * rr, 270, 90);
+            card.AddArc((Gdiplus::REAL)(cardRight - 2 * radius), (Gdiplus::REAL)(cardTop + cardH - 2 * radius), 2 * rr, 2 * rr, 0, 90);
+            card.AddArc((Gdiplus::REAL)cardLeft, (Gdiplus::REAL)(cardTop + cardH - 2 * radius), 2 * rr, 2 * rr, 90, 90);
+            card.CloseFigure();
+            Gdiplus::SolidBrush bg(cr(t->dd_bg));
+            gfx.FillPath(&bg, &card);
+            if ((t->dd_border >> 24) > 0) {
+                Gdiplus::Pen bp(cr(t->dd_border), 1.4f);
+                gfx.DrawPath(&bp, &card);
+            }
+
+            Gdiplus::FontFamily famD(L"Segoe UI");
+            Gdiplus::Font fHdr(&famD, (float)(11.0 * S), Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
+            Gdiplus::Font fRow(&famD, (float)(12.5 * S), Gdiplus::FontStyleRegular, Gdiplus::UnitPixel);
+            Gdiplus::StringFormat sfL; sfL.SetAlignment(Gdiplus::StringAlignmentNear);  sfL.SetLineAlignment(Gdiplus::StringAlignmentCenter);
+            Gdiplus::StringFormat sfR; sfR.SetAlignment(Gdiplus::StringAlignmentFar);   sfR.SetLineAlignment(Gdiplus::StringAlignmentCenter);
+            Gdiplus::RectF valRect((Gdiplus::REAL)(cardLeft + pad), 0.0f, (Gdiplus::REAL)(cardW - 2 * pad), (Gdiplus::REAL)rowH);
+
+            double y = cardTop + pad + rowH / 2.0;
             wchar_t *line = wb;
+            bool first = true;
             while (*line) {
                 wchar_t *nl = wcschr(line, L'\n');
                 if (nl) *nl = 0;
-                int len = (int)wcslen(line);
-                if (len > 0) {
-                    Gdiplus::RectF rect((Gdiplus::REAL)lx, (Gdiplus::REAL)(y - 12.0 * S), 400.0f, (Gdiplus::REAL)(24.0 * S));
-                    gfx.DrawString(line, len, &f, rect, &sf, &b);
+                wchar_t *tab = wcschr(line, L'\t');
+                if (tab) *tab = 0;                  // 拆出 label / value
+                int indent = 0; while (line[indent] == L' ') indent++;
+                wchar_t *label = line + indent;
+                unsigned int labelCol = first ? t->dd_subtext : (indent > 0 ? t->dd_subtext : t->dd_text);
+                Gdiplus::SolidBrush lb(cr(labelCol));
+                Gdiplus::RectF lr((Gdiplus::REAL)(cardLeft + pad + indent * 4.0 * S),
+                                  (Gdiplus::REAL)(y - rowH / 2.0), (Gdiplus::REAL)(cardW * 0.72), (Gdiplus::REAL)rowH);
+                gfx.DrawString(label, -1, first ? &fHdr : &fRow, lr, &sfL, &lb);
+                if (tab) {
+                    Gdiplus::SolidBrush vb(cr(t->dd_text));
+                    valRect.Y = (Gdiplus::REAL)(y - rowH / 2.0);
+                    gfx.DrawString(tab + 1, -1, first ? &fHdr : &fRow, valRect, &sfR, &vb);
                 }
                 if (!nl) break;
                 line = nl + 1;
-                y += lh;
+                y += rowH;
+                first = false;
             }
         }
     }

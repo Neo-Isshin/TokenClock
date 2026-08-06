@@ -111,6 +111,7 @@ typedef struct {
     unsigned int number_color;
     int          has_decoration;  /* sky theme */
     unsigned int text_primary, text_secondary;
+    unsigned int dd_bg, dd_text, dd_subtext, dd_border;   /* 下拉详情卡片配色 */
 } win_theme;
 
 typedef struct {

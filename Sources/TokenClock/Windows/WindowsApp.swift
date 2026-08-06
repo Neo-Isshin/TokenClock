@@ -24,6 +24,7 @@ final class WindowsApp: @unchecked Sendable {
     private let cmdApi: Int32 = 100
     private let cmdShowPercent: Int32 = 110
     private let cmdSettings: Int32 = 120
+    private let cmdGroupByModel: Int32 = 130
 
     /// 当前浮窗边长（pt）。表盘半径 = size/2 - 24；classic 主题按 radius 116（medium）校准，
     /// 其余尺寸由 winrender 按 r/116 等比缩放。切换尺寸时此值同步更新并 resize 窗口。
@@ -129,10 +130,10 @@ final class WindowsApp: @unchecked Sendable {
         let detailLines = detailsVisible ? buildDetailLines(tools) : []
         let detailText = detailLines.joined(separator: "\n")
 
-        // 窗口高度：收起 = currentSize；展开 = currentSize + 明细区（与 winrender 的 16*S 起始 + 19*S 行高 对齐）
+        // 窗口高度：收起 = currentSize；展开 = currentSize + 卡片区（gap14 + pad24 + 行×20 + 底8，与 winrender 对齐）
         let S = Double(currentSize / 2 - 24) / 116.0
         let newHeight: Int32 = detailsVisible
-            ? currentSize + Int32((26.0 + 19.0 * Double(detailLines.count)) * S)
+            ? currentSize + Int32((46.0 + 20.0 * Double(detailLines.count)) * S)
             : currentSize
         if newHeight != currentHeight {
             currentHeight = newHeight
@@ -161,8 +162,14 @@ final class WindowsApp: @unchecked Sendable {
     }
 
     /// 展开态明细：表头(工具数+总计) + 每个活跃工具(名+用量/百分比) + 该工具 top 会话(缩进)。
-    /// 对齐 macOS DetailDropdownView 的 session 视图（百分比开关、会话明细）；无用量时一句占位。
+    /// 对齐 macOS DetailDropdownView：两种分组视图（by-session / by-model）+ 百分比开关。
+    /// 行格式：表头行无 \t；数据行 = "label\tvalue"（前导空格为缩进）。winrender 据此画卡片。
     private func buildDetailLines(_ tools: [ToolUsage]) -> [String] {
+        if let m = ProcessInfo.processInfo.environment["TC_MOCK"] {   // 调试：无真实用量时预览卡片
+            return m == "model"
+                ? ["按模型 3 个  ·  总计 1.3M", "🤖 gpt-5\t820K", "     🤖 Codex\t600K", "     ✳️ Claude Code\t220K", "✳️ claude-sonnet\t290K", "     ✳️ Claude Code\t180K", "     🤖 Codex\t110K", "⚡ grok-4\t42K"]
+                : ["今日 3 个工具  ·  总计 1.2M", "🤖 Codex\t1.0M", "     主项目重构\t620K", "     文档翻译\t380K", "✳️ Claude Code\t150K", "     session-7a\t90K", "⚡ Grok\t42K"]
+        }
         let L = L10n.shared
         let pct = showPercentage
         let active = tools.filter { $0.todayTokens > 0 }
@@ -172,12 +179,23 @@ final class WindowsApp: @unchecked Sendable {
         let grand = active.reduce(0) { $0 + $1.todayTokens }
         let total = pct ? "100%" : TokenFormat.compact(grand)
         var lines: [String] = []
-        lines.append(L.language == .en ? "Today \(active.count) tools  ·  \(total)" : "今日 \(active.count) 个工具  ·  总计 \(total)")
-        for tool in active.prefix(6) {
-            lines.append("\(tool.emoji) \(tool.name)  \(rowValue(tool.todayTokens, formatted: tool.formattedTokens, grand: grand, pct: pct))")
-            let sessions = tool.sessions.filter { $0.todayTokens > 0 }.sorted { $0.todayTokens > $1.todayTokens }.prefix(3)
-            for s in sessions {
-                lines.append("     \(s.displayName)  \(rowValue(s.todayTokens, formatted: s.formattedTokens, grand: grand, pct: pct))")
+        if groupingMode == .model {
+            let groups = UsageAggregator.groupedByModel(tools, unknownLabel: L.tr("detail.unknownModel"))
+            lines.append(L.language == .en ? "By model  ·  \(groups.count)  ·  \(total)" : "按模型 \(groups.count) 个  ·  总计 \(total)")
+            for g in groups.prefix(8) {
+                lines.append("\(g.emoji) \(g.name)\t\(rowValue(g.totalTokens, formatted: g.formattedTokens, grand: grand, pct: pct))")
+                for c in g.contributions.prefix(3) {
+                    lines.append("     \(c.emoji) \(c.tool)\t\(rowValue(c.tokens, formatted: TokenFormat.compact(c.tokens), grand: grand, pct: pct))")
+                }
+            }
+        } else {
+            lines.append(L.language == .en ? "Today \(active.count) tools  ·  \(total)" : "今日 \(active.count) 个工具  ·  总计 \(total)")
+            for tool in active.prefix(6) {
+                lines.append("\(tool.emoji) \(tool.name)\t\(rowValue(tool.todayTokens, formatted: tool.formattedTokens, grand: grand, pct: pct))")
+                let sessions = tool.sessions.filter { $0.todayTokens > 0 }.sorted { $0.todayTokens > $1.todayTokens }.prefix(3)
+                for s in sessions {
+                    lines.append("     \(s.displayName)\t\(rowValue(s.todayTokens, formatted: s.formattedTokens, grand: grand, pct: pct))")
+                }
             }
         }
         return lines
@@ -191,6 +209,13 @@ final class WindowsApp: @unchecked Sendable {
     }
 
     private var showPercentage: Bool { UserDefaults.standard.bool(for: .dropdownShowPercentage) }
+
+    private enum GroupingMode { case session, model }
+    private var groupingMode: GroupingMode {
+        if ProcessInfo.processInfo.environment["TC_GROUPING"] == "model" { return .model }
+        if ProcessInfo.processInfo.environment["TC_GROUPING"] == "session" { return .session }
+        return UserDefaults.standard.int(for: .dropdownGrouping) == 1 ? .model : .session
+    }
 
     /// 首帧前应用持久化的外观：非置顶时取消 TOPMOST（窗口默认创建为置顶）。
     private func applyStartupAppearance() {
@@ -274,6 +299,7 @@ final class WindowsApp: @unchecked Sendable {
         }
         addMenuItem(menu, cmdApi, L.language == .en ? "🔌 API Server" : "🔌 API 服务", apiEnabled)
         addMenuItem(menu, cmdShowPercent, L.language == .en ? "Detail %" : "详情显示百分比", showPercentage)
+        addMenuItem(menu, cmdGroupByModel, L.language == .en ? "Group by Model" : "按模型分组", groupingMode == .model)
         addMenuItem(menu, cmdLaunch, L.tr("menu.launchAtLogin"), launchAtLogin)
         addSeparator(menu)
         addMenuItem(menu, cmdSettings, L.tr("menu.settings"), false)
@@ -302,6 +328,9 @@ final class WindowsApp: @unchecked Sendable {
         case cmdApi:        apiEnabled.toggle()
         case cmdShowPercent:
             UserDefaults.standard.setBool(!showPercentage, for: .dropdownShowPercentage)
+            render()
+        case cmdGroupByModel:
+            UserDefaults.standard.setInt(groupingMode == .model ? 0 : 1, for: .dropdownGrouping)
             render()
         case let c where c >= cmdCityBase && c < cmdCityBase + Int32(Self.cities.count):
             setCity(Self.cities[Int(c - cmdCityBase)])

@@ -101,6 +101,17 @@ enum WindowsClockTheme: String, CaseIterable {
             t.has_decoration = 0
             t.text_primary = rgb(0.10, 0.20, 0.42); t.text_secondary = rgb(0.10, 0.20, 0.42, 0.7)
         }
+        // 下拉卡片配色（移植自 ClockFaceTheme.dropdownBgColor/Text/Subtext/Border）
+        switch self {
+        case .classic:  t.dd_bg = rgb(0.94, 0.94, 0.95); t.dd_text = rgb(0.18, 0.18, 0.20); t.dd_subtext = rgb(0.45, 0.45, 0.48); t.dd_border = gray(0.82)
+        case .midnight: t.dd_bg = rgb(0.133, 0.184, 0.247); t.dd_text = rgb(0.878, 0.878, 0.878); t.dd_subtext = rgb(0.533, 0.600, 0.667); t.dd_border = rgb(0.200, 0.290, 0.400)
+        case .luxe:     t.dd_bg = rgb(0.125, 0.125, 0.200); t.dd_text = rgb(0.910, 0.835, 0.639); t.dd_subtext = rgb(0.600, 0.533, 0.400); t.dd_border = rgb(0.250, 0.220, 0.150)
+        case .gufeng:   t.dd_bg = rgb(0.910, 0.878, 0.812); t.dd_text = rgb(0.280, 0.200, 0.150); t.dd_subtext = rgb(0.520, 0.400, 0.300); t.dd_border = rgb(0.650, 0.480, 0.320)
+        case .railgun:  t.dd_bg = rgb(0.925, 0.906, 0.875); t.dd_text = rgb(0.500, 0.350, 0.300); t.dd_subtext = rgb(0.680, 0.560, 0.480); t.dd_border = rgb(0.780, 0.680, 0.600)
+        case .sky:      t.dd_bg = rgb(0.600, 0.780, 0.920); t.dd_text = rgb(0.180, 0.340, 0.520); t.dd_subtext = rgb(0.380, 0.520, 0.660); t.dd_border = rgb(0.500, 0.680, 0.840)
+        case .glass:    t.dd_bg = rgb(0.93, 0.95, 0.97); t.dd_text = rgb(0.18, 0.18, 0.20); t.dd_subtext = rgb(0.45, 0.45, 0.48); t.dd_border = gray(0.82)
+        case .glacier:  t.dd_bg = rgb(0.94, 0.97, 1.00); t.dd_text = rgb(0.10, 0.20, 0.42); t.dd_subtext = rgb(0.10, 0.20, 0.42, 0.7); t.dd_border = rgb(0.10, 0.20, 0.42, 0.22)
+        }
         return t
     }
 
