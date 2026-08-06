@@ -11,6 +11,8 @@ final class ClaudeCodeUsageService: @unchecked Sendable {
     private var fileHourlyContrib: [String: [String: HourlyUsage]] = [:]
     private var fileCacheContrib: [String: [String: Int]] = [:]
     private var fileRecentContrib: [String: [RecentEntry]] = [:]
+    /// 扫描文件时同步缓存「日期 → 最后使用模型」，详情页直接复用，避免每 30 秒重读 JSONL。
+    private var fileLastModel: [String: [String: String]] = [:]
     private var recentEntries: [RecentEntry] = []
 
     private let fm = FileManager.default
@@ -29,6 +31,7 @@ final class ClaudeCodeUsageService: @unchecked Sendable {
         fileHourlyContrib.removeAll()
         fileCacheContrib.removeAll()
         fileRecentContrib.removeAll()
+        fileLastModel.removeAll()
         recentEntries = []
         scanProjectsDir()
     }
@@ -141,6 +144,7 @@ final class ClaudeCodeUsageService: @unchecked Sendable {
         var newHourly: [String: HourlyUsage] = [:]
         var newCache: [String: Int] = [:]
         var newRecent: [RecentEntry] = []
+        var newLastModels: [String: String] = [:]
 
         while stream.hasBytesAvailable {
             let n = stream.read(buf, maxLength: bufSize)
@@ -152,20 +156,27 @@ final class ClaudeCodeUsageService: @unchecked Sendable {
                 guard !lineData.isEmpty else { continue }
                 let line = String(data: lineData, encoding: .utf8) ?? ""
                 if line.contains("\"assistant\""), let r = parseLine(line) {
-                    accumulate(r, today: today, daily: &newDaily, hourly: &newHourly, cache: &newCache, recent: &newRecent)
+                    accumulate(
+                        r, today: today, daily: &newDaily, hourly: &newHourly,
+                        cache: &newCache, recent: &newRecent, lastModels: &newLastModels
+                    )
                 }
             }
         }
         if !lineBuf.isEmpty,
            let line = String(data: lineBuf, encoding: .utf8),
            line.contains("\"assistant\""), let r = parseLine(line) {
-            accumulate(r, today: today, daily: &newDaily, hourly: &newHourly, cache: &newCache, recent: &newRecent)
+            accumulate(
+                r, today: today, daily: &newDaily, hourly: &newHourly,
+                cache: &newCache, recent: &newRecent, lastModels: &newLastModels
+            )
         }
 
         fileDailyContrib[path] = newDaily
         fileHourlyContrib[path] = newHourly
         fileCacheContrib[path] = newCache
         fileRecentContrib[path] = newRecent
+        fileLastModel[path] = newLastModels
     }
 
     private struct R { let dateKey: String; let hourKey: String; let tokens: Int; let cacheTokens: Int; let ts: Date?; let model: String? }
@@ -193,7 +204,7 @@ final class ClaudeCodeUsageService: @unchecked Sendable {
 
     private func accumulate(_ r: R, today: String, daily: inout [String: DayUsage],
                             hourly: inout [String: HourlyUsage], cache: inout [String: Int],
-                            recent: inout [RecentEntry]) {
+                            recent: inout [RecentEntry], lastModels: inout [String: String]) {
         if var e = dailyData[r.dateKey] { e.tokens += r.tokens; e.messages += 1; dailyData[r.dateKey] = e }
         else { dailyData[r.dateKey] = DayUsage(tokens: r.tokens, messages: 1) }
         if var e = daily[r.dateKey] { e.tokens += r.tokens; e.messages += 1; daily[r.dateKey] = e }
@@ -208,6 +219,9 @@ final class ClaudeCodeUsageService: @unchecked Sendable {
         // recent
         if r.dateKey == today, let ts = r.ts {
             recent.append(RecentEntry(timestamp: ts, tokens: r.tokens))
+        }
+        if let model = r.model, !model.isEmpty {
+            lastModels[r.dateKey] = model
         }
     }
 
@@ -233,6 +247,7 @@ final class ClaudeCodeUsageService: @unchecked Sendable {
         guard let sessionFiles = try? fm.contentsOfDirectory(atPath: sessionsDir) else { return [] }
 
         let today = DateHelper.todayKey()
+        let cachedUsage = cachedSessionUsage(for: today)
         var seen = Set<String>()
         var results: [SessionInfo] = []
 
@@ -244,7 +259,10 @@ final class ClaudeCodeUsageService: @unchecked Sendable {
 
             guard seen.insert(sessionId).inserted else { continue }
 
-            let (tokens, messages, model) = findSessionTokens(sessionId: sessionId, today: today)
+            let usage = cachedUsage[sessionId]
+            let tokens = usage?.tokens ?? 0
+            let messages = usage?.messages ?? 0
+            let model = usage?.model
             guard tokens > 0 || messages > 0 else { continue }
 
             let displayId = SessionIdDisplay.format(sessionId)
@@ -265,93 +283,27 @@ final class ClaudeCodeUsageService: @unchecked Sendable {
         return results.sorted { $0.todayTokens > $1.todayTokens }
     }
 
-    /// 在 projects 目录中递归查找指定 sessionId 的 .jsonl 文件，并计算今日 token
-    private func findSessionTokens(sessionId: String, today: String) -> (tokens: Int, messages: Int, model: String?) {
-        let projectsDir = claudeHome + "/projects"
-        var isDir: ObjCBool = false
-        guard fm.fileExists(atPath: projectsDir, isDirectory: &isDir), isDir.boolValue else { return (0, 0, nil) }
-
-        // session 文件名就是 sessionId + ".jsonl"
-        let targetFile = sessionId + ".jsonl"
-
-        // 递归查找
-        guard let projects = try? fm.contentsOfDirectory(atPath: projectsDir) else { return (0, 0, nil) }
-        for project in projects {
-            let projectPath = projectsDir + "/" + project
-            var pIsDir: ObjCBool = false
-            guard fm.fileExists(atPath: projectPath, isDirectory: &pIsDir), pIsDir.boolValue else { continue }
-
-            // 检查当前目录
-            let filePath = projectPath + "/" + targetFile
-            var fIsDir: ObjCBool = false
-            if fm.fileExists(atPath: filePath, isDirectory: &fIsDir), !fIsDir.boolValue {
-                return parseSessionFileToday(path: filePath, today: today)
-            }
-
-            // 深度递归（Claude projects 可能有子目录）
-            if let found = findSessionFileRecursive(dir: projectPath, targetFile: targetFile, today: today) {
-                return found
-            }
-        }
-        return (0, 0, nil)
-    }
-
-    private func findSessionFileRecursive(dir: String, targetFile: String, today: String) -> (tokens: Int, messages: Int, model: String?)? {
-        guard let contents = try? fm.contentsOfDirectory(atPath: dir) else { return nil }
-        for item in contents {
-            let fullPath = dir + "/" + item
-            var isDir: ObjCBool = false
-            guard fm.fileExists(atPath: fullPath, isDirectory: &isDir) else { continue }
-            if isDir.boolValue {
-                if let found = findSessionFileRecursive(dir: fullPath, targetFile: targetFile, today: today) {
-                    return found
-                }
-            } else if item == targetFile {
-                return parseSessionFileToday(path: fullPath, today: today)
-            }
-        }
-        return nil
-    }
-
-    /// 解析单个 session 文件的今日数据（复用现有解析逻辑）
-    private func parseSessionFileToday(path: String, today: String) -> (tokens: Int, messages: Int, model: String?) {
-        guard let stream = InputStream(fileAtPath: path) else { return (0, 0, nil) }
-        stream.open()
-        defer { stream.close() }
-
-        let bufSize = AppConfig.Scan.jsonlBufferSize
-        let buf = UnsafeMutablePointer<UInt8>.allocate(capacity: bufSize)
-        defer { buf.deallocate() }
-        var lineBuf = Data()
-        var tokens = 0, messages = 0
-        // 取该 session 出现过的模型（最后一条 assistant turn 的 message.model）
+    private struct CachedSessionUsage {
+        var tokens = 0
+        var messages = 0
         var model: String?
+    }
 
-        while stream.hasBytesAvailable {
-            let n = stream.read(buf, maxLength: bufSize)
-            if n <= 0 { break }
-            lineBuf.append(buf, count: n)
-            while let nlRange = lineBuf.range(of: Data([0x0A])) {
-                let lineData = lineBuf[lineBuf.startIndex..<nlRange.lowerBound]
-                lineBuf = lineBuf[nlRange.upperBound...]
-                guard !lineData.isEmpty else { continue }
-                let line = String(data: lineData, encoding: .utf8) ?? ""
-                if line.contains("\"assistant\""), let r = parseLine(line), r.dateKey == today {
-                    tokens += r.tokens
-                    messages += 1
-                    if let m = r.model { model = m }
-                }
-            }
+    /// `parseFile` 已经读取过所有 project JSONL；按文件名（sessionId）归并即可。
+    /// 原实现为每个 metadata session 再递归查找并完整解析一次日志，形成周期性 CPU 峰值。
+    private func cachedSessionUsage(for dateKey: String) -> [String: CachedSessionUsage] {
+        var result: [String: CachedSessionUsage] = [:]
+        for (path, dates) in fileDailyContrib {
+            guard let usage = dates[dateKey] else { continue }
+            let filename = (path as NSString).lastPathComponent
+            guard filename.hasSuffix(".jsonl") else { continue }
+            let sessionId = String(filename.dropLast(".jsonl".count))
+            var summary = result[sessionId] ?? CachedSessionUsage()
+            summary.tokens += usage.tokens
+            summary.messages += usage.messages
+            if let model = fileLastModel[path]?[dateKey] { summary.model = model }
+            result[sessionId] = summary
         }
-
-        if !lineBuf.isEmpty,
-           let line = String(data: lineBuf, encoding: .utf8),
-           line.contains("\"assistant\""), let r = parseLine(line), r.dateKey == today {
-            tokens += r.tokens
-            messages += 1
-            if let m = r.model { model = m }
-        }
-
-        return (tokens, messages, model)
+        return result
     }
 }
