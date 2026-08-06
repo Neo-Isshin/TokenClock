@@ -51,6 +51,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             },
             onResizeEnded: { [weak self] in
                 self?.dropdownPanel?.endResize()
+            },
+            onCodexQuotaShown: { [weak self] in
+                guard let self else { return }
+                let comfortableHeight: CGFloat = self.viewModel.weather.cityName.isEmpty ? 280 : 356
+                self.dropdownPanel.ensureHeight(comfortableHeight)
             }
         )
         let detailContentView = NSHostingView(rootView: detailView)
@@ -729,6 +734,7 @@ private struct DropdownPanelView: View {
     let onResizeStart: () -> Void
     let onResizeChanged: (CGFloat) -> Void
     let onResizeEnded: () -> Void
+    let onCodexQuotaShown: () -> Void
 
     var body: some View {
         VStack(spacing: 0) {
@@ -741,7 +747,14 @@ private struct DropdownPanelView: View {
                 groupingMode: viewModel.groupingMode,
                 onGroupingChange: { viewModel.groupingMode = $0 },
                 showPercentage: viewModel.showPercentage,
-                onShowPercentageChange: { viewModel.showPercentage = $0 }
+                onShowPercentageChange: { viewModel.showPercentage = $0 },
+                showsCodexQuota: viewModel.showsCodexQuota,
+                codexQuota: viewModel.codexQuota,
+                onCodexQuotaToggle: {
+                    viewModel.toggleCodexQuota()
+                    if viewModel.showsCodexQuota { onCodexQuotaShown() }
+                },
+                onCodexQuotaRefresh: { viewModel.refreshCodexQuota() }
             )
             .frame(maxHeight: .infinity, alignment: .top)
 

@@ -164,6 +164,24 @@ final class DropdownPanel: NSPanel {
 
     func endResize() {}
 
+    /// 额度卡片通常比单个工具列表更高；首次打开时只向下扩展到舒适高度，
+    /// 不覆盖用户已经调得更大的尺寸，也始终受当前屏幕可用空间限制。
+    func ensureHeight(_ requestedHeight: CGFloat) {
+        guard isVisible else { return }
+        let targetHeight = min(max(frame.height, requestedHeight), maxPanelHeight)
+        guard targetHeight > frame.height else { return }
+        preferredPanelHeight = targetHeight
+        setFrame(
+            NSRect(
+                x: frame.minX,
+                y: frame.maxY - targetHeight,
+                width: FloatingPanel.panelWidth,
+                height: targetHeight
+            ),
+            display: true
+        )
+    }
+
     private func updateLimits(
         below clockFrame: NSRect,
         activeToolCount: Int? = nil,

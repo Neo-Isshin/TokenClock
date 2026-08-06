@@ -60,70 +60,80 @@ struct HourlyUsage: Sendable {
 
 /// 日期工具
 enum DateHelper: Sendable {
+    private static let utcCalendar: Calendar = {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        return calendar
+    }()
+
     static func todayKey() -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd"
-        formatter.timeZone = TimeZone.current
-        return formatter.string(from: Date())
+        dateKey(from: Date())
     }
 
     /// 解析 ISO8601 UTC 时间戳，返回绝对 Date
     static func parseISO8601(_ s: String) -> Date? {
-        let chars = Array(s)
-        guard chars.count >= 19 else { return nil }
-        let y = Int(String(chars[0...3])) ?? 0
-        let m = Int(String(chars[5...6])) ?? 1
-        let d = Int(String(chars[8...9])) ?? 1
-        let hr = Int(String(chars[11...12])) ?? 0
-        let mn = Int(String(chars[14...15])) ?? 0
-        let sc = Int(String(chars[17...18])) ?? 0
-        var cal = Calendar(identifier: .gregorian)
-        cal.timeZone = TimeZone(abbreviation: "UTC")!
-        var components = DateComponents()
-        components.year = y; components.month = m; components.day = d
-        components.hour = hr; components.minute = mn; components.second = sc
-        return cal.date(from: components)
+        let bytes = Array(s.utf8.prefix(19))
+        guard bytes.count == 19,
+              bytes[4] == 0x2D, bytes[7] == 0x2D,
+              (bytes[10] == 0x54 || bytes[10] == 0x20),
+              bytes[13] == 0x3A, bytes[16] == 0x3A else { return nil }
+
+        func number(_ start: Int, _ count: Int) -> Int? {
+            var value = 0
+            for byte in bytes[start..<(start + count)] {
+                guard byte >= 0x30, byte <= 0x39 else { return nil }
+                value = value * 10 + Int(byte - 0x30)
+            }
+            return value
+        }
+
+        guard let year = number(0, 4), let month = number(5, 2), let day = number(8, 2),
+              let hour = number(11, 2), let minute = number(14, 2), let second = number(17, 2) else {
+            return nil
+        }
+        return utcCalendar.date(from: DateComponents(
+            year: year, month: month, day: day,
+            hour: hour, minute: minute, second: second
+        ))
     }
 
     /// 从 ISO8601 UTC 时间戳提取本地日期 key
     static func localDateKey(from isoString: String) -> String {
         guard let date = parseISO8601(isoString) else { return "" }
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd"
-        formatter.timeZone = TimeZone.current
-        return formatter.string(from: date)
+        return dateKey(from: date)
     }
 
     /// 从 ISO8601 UTC 时间戳提取本地小时 key（如 "2026-04-23-22"）
     static func localHourKey(from isoString: String) -> String {
         guard let date = parseISO8601(isoString) else { return "" }
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd-HH"
-        formatter.timeZone = TimeZone.current
-        return formatter.string(from: date)
+        return hourKey(from: date)
     }
 
     /// 从 Date 提取本地日期 key
     static func dateKey(from date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd"
-        formatter.timeZone = TimeZone.current
-        return formatter.string(from: date)
+        let components = Calendar.current.dateComponents([.year, .month, .day], from: date)
+        return key(components.year, components.month, components.day)
     }
 
     /// 从 Date 提取本地小时 key
     static func hourKey(from date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd-HH"
-        formatter.timeZone = TimeZone.current
-        return formatter.string(from: date)
+        let components = Calendar.current.dateComponents([.year, .month, .day, .hour], from: date)
+        return key(components.year, components.month, components.day, components.hour)
     }
 
     /// 当前本地小时 key
     static func currentHourKey() -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd-HH"
-        formatter.timeZone = TimeZone.current
-        return formatter.string(from: Date())
+        hourKey(from: Date())
+    }
+
+    private static func key(_ year: Int?, _ month: Int?, _ day: Int?, _ hour: Int? = nil) -> String {
+        guard let year, let month, let day else { return "" }
+        let date = "\(year)-\(padded(month))-\(padded(day))"
+        guard let hour else { return date }
+        return date + "-\(padded(hour))"
+    }
+
+    private static func padded(_ value: Int) -> String {
+        value < 10 ? "0\(value)" : String(value)
     }
 }

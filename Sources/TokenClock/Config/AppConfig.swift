@@ -46,6 +46,18 @@ enum AppConfig {
         static let cursorPageSize = 200
         /// JSONL 流式读取缓冲（64KB，平衡内存和 IO 效率）
         static let jsonlBufferSize = 65_536
+        /// Codex 的用量面板只需要当日/最近数据。按修改时间保留今天+昨天的
+        /// rollout，仍能覆盖跨日长会话，同时避免启动时反复扫描整个 ~/.codex 历史。
+        static let codexSessionLookbackDays = 2
+        /// Codex JSONL 分块读取大小。每块只做一次剩余数据搬移，不再每行复制缓冲。
+        static let codexJSONLChunkSize = 1_048_576
+        /// Codex 额度仅在用户打开额度面板时请求；短缓存避免反复开 app-server。
+        static let codexQuotaCacheSeconds: TimeInterval = 60
+        /// app-server 异常时必须及时回收子进程，不能让详情页点击产生常驻后台任务。
+        static let codexQuotaTimeoutSeconds: TimeInterval = 8
+        /// 本地 rollout 兜底只读取最新文件尾部，不为额度查询重扫完整历史。
+        static let codexQuotaFallbackTailBytes = 2_097_152
+        static let codexQuotaFallbackFileLimit = 32
         /// "活跃工具" 判定窗口（10 分钟内有调用算活跃）
         static let activeThresholdSeconds: TimeInterval = 600
         /// "最近 token" 默认窗口（分钟）

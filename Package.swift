@@ -13,6 +13,7 @@ let linuxSources = [
     "Services/ClaudeCodeUsageService.swift",
     "Services/ClineUsageService.swift",
     "Services/CodexUsageService.swift",
+    "Services/CodexQuotaService.swift",
     "Services/ContinueUsageService.swift",
     "Services/CopilotUsageService.swift",
     "Services/CursorAgentUsageService.swift",

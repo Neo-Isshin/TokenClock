@@ -3,6 +3,12 @@ import SwiftUI
 /// 主内容视图：表盘 + 叠加信息
 struct ClockContentView: View {
     @ObservedObject var viewModel: ViewModel
+    @ObservedObject private var clockTicker: ClockTicker
+
+    init(viewModel: ViewModel) {
+        self.viewModel = viewModel
+        self._clockTicker = ObservedObject(wrappedValue: viewModel.clockTicker)
+    }
 
     var body: some View {
         // 表盘大小随用户设置缩放：d = 直径，s = 相对中档(240)的缩放比。
