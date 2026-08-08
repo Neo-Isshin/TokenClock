@@ -3,6 +3,7 @@ import Foundation
 /// 从 OpenClaw 本地 JSONL 日志读取 token 使用数据
 /// 日志位置: ~/.openclaw/agents/*/sessions/
 final class OpenClawUsageService: @unchecked Sendable {
+    private static let assistantLineNeedle = [Data("\"assistant\"".utf8)]
     private(set) var dailyData: [String: DayUsage] = [:]
     private(set) var hourlyData: [String: HourlyUsage] = [:]
     private(set) var dailyCache: [String: Int] = [:]
@@ -18,11 +19,13 @@ final class OpenClawUsageService: @unchecked Sendable {
     private let fm = FileManager.default
     private let openclawHome: String
 
-    init() {
-        if let xdg = ProcessInfo.processInfo.environment["OPENCLAW_HOME"] {
-            openclawHome = xdg
+    init(openclawHome: String? = nil) {
+        if let openclawHome {
+            self.openclawHome = openclawHome
+        } else if let xdg = ProcessInfo.processInfo.environment["OPENCLAW_HOME"] {
+            self.openclawHome = xdg
         } else {
-            openclawHome = PathConfig.openclawHome()
+            self.openclawHome = PathConfig.openclawHome()
         }
     }
 
@@ -82,7 +85,13 @@ final class OpenClawUsageService: @unchecked Sendable {
 
     private func scanAgentDirectories() {
         let agentsDir = openclawHome + "/agents"
-        guard let agentNames = try? fm.contentsOfDirectory(atPath: agentsDir) else { return }
+        guard let agentNames = try? fm.contentsOfDirectory(atPath: agentsDir) else {
+            evictFiles(notIn: [])
+            rebuildRecentEntries()
+            return
+        }
+
+        var livePaths = Set<String>()
 
         for name in agentNames {
             let sessionsDir = agentsDir + "/" + name + "/sessions"
@@ -95,6 +104,7 @@ final class OpenClawUsageService: @unchecked Sendable {
                 guard file.hasSuffix(".jsonl") else { continue }
 
                 let fullPath = sessionsDir + "/" + file
+                livePaths.insert(fullPath)
                 fileAgentNames[fullPath] = name
                 guard let attrs = try? fm.attributesOfItem(atPath: fullPath),
                       let modDate = attrs[.modificationDate] as? Date else { continue }
@@ -124,11 +134,28 @@ final class OpenClawUsageService: @unchecked Sendable {
                     continue
                 }
 
-                parseFile(path: fullPath, isIncremental: fileDailyContrib[fullPath] != nil)
+                parseFile(path: fullPath)
                 fileCache[fullPath] = FileMeta(path: fullPath, modDate: modDate)
             }
         }
+        evictFiles(notIn: livePaths)
         rebuildRecentEntries()
+    }
+
+    private func evictFiles(notIn livePaths: Set<String>) {
+        let removed = Set(fileCache.keys).subtracting(livePaths)
+        for path in removed {
+            if let old = fileDailyContrib[path] { subtractDailyContributions(old) }
+            if let old = fileHourlyContrib[path] { subtractHourlyContributions(old) }
+            if let old = fileCacheContrib[path] { subtractCacheContributions(old) }
+            fileCache.removeValue(forKey: path)
+            fileDailyContrib.removeValue(forKey: path)
+            fileHourlyContrib.removeValue(forKey: path)
+            fileCacheContrib.removeValue(forKey: path)
+            fileRecentContrib.removeValue(forKey: path)
+            fileModelContrib.removeValue(forKey: path)
+            fileAgentNames.removeValue(forKey: path)
+        }
     }
 
     private func subtractCacheContributions(_ contrib: [String: Int]) {
@@ -172,49 +199,25 @@ final class OpenClawUsageService: @unchecked Sendable {
         }
     }
 
-    private func parseFile(path: String, isIncremental: Bool = false) {
-        guard let stream = InputStream(fileAtPath: path) else { return }
-        stream.open()
-        defer { stream.close() }
-
+    private func parseFile(path: String) {
         let today = DateHelper.todayKey()
-        let bufSize = AppConfig.Scan.jsonlBufferSize
-        let buf = UnsafeMutablePointer<UInt8>.allocate(capacity: bufSize)
-        defer { buf.deallocate() }
-        var lineBuf = Data()
-
         var newDailyContrib: [String: DayUsage] = [:]
         var newHourlyContrib: [String: HourlyUsage] = [:]
         var newCacheContrib: [String: Int] = [:]
         var newRecent: [RecentEntry] = []
         var newModels: [String: [String: Int]] = [:]
 
-        while stream.hasBytesAvailable {
-            let n = stream.read(buf, maxLength: bufSize)
-            if n <= 0 { break }
-            lineBuf.append(buf, count: n)
-
-            while let nlRange = lineBuf.range(of: Data([0x0A])) {
-                let lineData = lineBuf[lineBuf.startIndex..<nlRange.lowerBound]
-                lineBuf = lineBuf[nlRange.upperBound...]
-                guard !lineData.isEmpty else { continue }
-                let line = String(data: lineData, encoding: .utf8) ?? ""
-                if line.contains("\"assistant\"") {
-                    if let result = parseAssistantLine(line) {
-                        accumulate(result, today: today,
-                                   dailyContrib: &newDailyContrib,
-                                   hourlyContrib: &newHourlyContrib,
-                                   cacheContrib: &newCacheContrib, recent: &newRecent,
-                                   models: &newModels)
-                    }
-                }
+        guard let readResult = JSONLLineReader.read(path: path, matchingAny: Self.assistantLineNeedle, onLine: { line in
+            if line.contains("\"assistant\""), let result = parseAssistantLine(line) {
+                accumulate(result, today: today,
+                           dailyContrib: &newDailyContrib,
+                           hourlyContrib: &newHourlyContrib,
+                           cacheContrib: &newCacheContrib, recent: &newRecent,
+                           models: &newModels)
             }
-        }
-
-        if !lineBuf.isEmpty,
-           let line = String(data: lineBuf, encoding: .utf8),
-           line.contains("\"assistant\"") {
-            if let result = parseAssistantLine(line) {
+        }) else { return }
+        _ = JSONLLineReader.consumeCompleteTrailingLine(readResult.trailingData) { line in
+            if line.contains("\"assistant\""), let result = parseAssistantLine(line) {
                 accumulate(result, today: today,
                            dailyContrib: &newDailyContrib,
                            hourlyContrib: &newHourlyContrib,

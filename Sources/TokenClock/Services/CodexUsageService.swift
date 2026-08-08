@@ -13,6 +13,10 @@ import SQLite3
 /// 缓存率从 last_token_usage.cached_input_tokens 计算
 /// Session 列表从 SQLite threads 表读取
 final class CodexUsageService: @unchecked Sendable {
+    private static let relevantLineNeedles = [
+        Data("\"type\":\"token_count\"".utf8),
+        Data("\"type\":\"turn_context\"".utf8),
+    ]
     private(set) var dailyData: [String: DayUsage] = [:]
     private(set) var hourlyData: [String: HourlyUsage] = [:]
     private var dailyCache: [String: Int] = [:]
@@ -23,38 +27,30 @@ final class CodexUsageService: @unchecked Sendable {
     /// Codex rollout 里模型由 turn_context 事件声明，同一 session 切换模型时取用量最大的。
     private var sessionModels: [String: String] = [:]
 
-    /// 单个 rollout 的可替换统计快照。文件增长时只从上次 EOF 继续读；截断时才重扫该文件。
-    private struct JSONLFileSnapshot: Sendable {
-        var fileSize = 0
+    /// 每个 rollout 的解析状态。增长中的文件只读取上次 EOF 之后的字节；截断、
+    /// 原地替换或同尺寸改写时才重读单个文件。
+    private struct JSONLFileState {
+        var fileSize: UInt64 = 0
         var modificationDate = Date.distantPast
-        var trailingBytes = Data()
+        var fileNumber: UInt64?
+        var trailingData = Data()
         var currentModel: String?
         var dailyTokens: [String: Int] = [:]
         var dailyMessages: [String: Int] = [:]
-        var dailyCachedTokens: [String: Int] = [:]
+        var dailyCached: [String: Int] = [:]
         var hourlyTokens: [String: Int] = [:]
         var hourlyMessages: [String: Int] = [:]
-        var modelTokens: [String: Int] = [:]
         var recentEntries: [RecentEntry] = []
-        var sessionId: String?
+        var modelTokens: [String: Int] = [:]
     }
 
-    private struct JSONLDescriptor {
-        let path: String
-        let fileSize: Int
-        let modificationDate: Date
-    }
-
-    private var jsonlCache: [String: JSONLFileSnapshot] = [:]
-
-    private static let tokenCountMarker = Data("\"type\":\"token_count\"".utf8)
-    private static let turnContextMarker = Data("\"type\":\"turn_context\"".utf8)
+    private var jsonlCache: [String: JSONLFileState] = [:]
 
     private let fm = FileManager.default
     private let codexHome: String
 
-    init(codexHome: String = PathConfig.codexHome()) {
-        self.codexHome = codexHome
+    init(codexHome: String? = nil) {
+        self.codexHome = codexHome ?? PathConfig.codexHome()
     }
 
     func fullScan() {
@@ -97,31 +93,13 @@ final class CodexUsageService: @unchecked Sendable {
     private func scanJSONL() {
         let sessionsDir = codexHome + "/sessions"
         var isDir: ObjCBool = false
-        guard fm.fileExists(atPath: sessionsDir, isDirectory: &isDir), isDir.boolValue else { return }
-        let descriptors = discoverRelevantJSONLFiles(in: sessionsDir)
-        let discoveredPaths = Set(descriptors.map(\.path))
-        jsonlCache = jsonlCache.filter { discoveredPaths.contains($0.key) }
-
-        for descriptor in descriptors {
-            if let cached = jsonlCache[descriptor.path],
-               cached.fileSize == descriptor.fileSize,
-               cached.modificationDate == descriptor.modificationDate {
-                continue
-            }
-            parseJSONLFile(descriptor)
+        guard fm.fileExists(atPath: sessionsDir, isDirectory: &isDir), isDir.boolValue else {
+            jsonlCache.removeAll()
+            rebuildAggregates()
+            return
         }
-        rebuildAggregates()
-    }
 
-    private func discoverRelevantJSONLFiles(in sessionsDir: String) -> [JSONLDescriptor] {
-        let root = URL(fileURLWithPath: sessionsDir, isDirectory: true)
-        let keys: [URLResourceKey] = [.isRegularFileKey, .fileSizeKey, .contentModificationDateKey]
-        guard let enumerator = fm.enumerator(
-            at: root,
-            includingPropertiesForKeys: keys,
-            options: [.skipsHiddenFiles, .skipsPackageDescendants]
-        ) else { return [] }
-
+        let rootURL = URL(fileURLWithPath: sessionsDir, isDirectory: true)
         let calendar = Calendar.current
         let startOfToday = calendar.startOfDay(for: Date())
         let cutoff = calendar.date(
@@ -129,99 +107,110 @@ final class CodexUsageService: @unchecked Sendable {
             value: -(AppConfig.Scan.codexSessionLookbackDays - 1),
             to: startOfToday
         ) ?? startOfToday
+        guard let enumerator = fm.enumerator(
+            at: rootURL,
+            includingPropertiesForKeys: [.isRegularFileKey],
+            options: [.skipsHiddenFiles]
+        ) else { return }
 
-        var descriptors: [JSONLDescriptor] = []
+        var livePaths = Set<String>()
         for case let url as URL in enumerator {
             let name = url.lastPathComponent
-            guard name.hasPrefix("rollout-"), name.hasSuffix(".jsonl"),
-                  let values = try? url.resourceValues(forKeys: Set(keys)),
-                  values.isRegularFile == true,
-                  let modificationDate = values.contentModificationDate,
-                  modificationDate >= cutoff else { continue }
-            descriptors.append(JSONLDescriptor(
-                path: url.path,
-                fileSize: values.fileSize ?? 0,
-                modificationDate: modificationDate
-            ))
-        }
-        return descriptors.sorted { $0.modificationDate < $1.modificationDate }
-    }
-
-    private func parseJSONLFile(_ descriptor: JSONLDescriptor) {
-        let cached = jsonlCache[descriptor.path]
-        // 同尺寸但 mtime 改变意味着可能发生原地改写，必须重扫；只有严格增长才可安全续读。
-        let canAppend = cached.map { descriptor.fileSize > $0.fileSize } ?? false
-        var snapshot = canAppend ? cached! : JSONLFileSnapshot()
-        let offset = canAppend ? snapshot.fileSize : 0
-        if !canAppend {
-            snapshot.sessionId = sessionId(fromJSONLPath: descriptor.path)
-        }
-
-        guard let handle = FileHandle(forReadingAtPath: descriptor.path) else { return }
-        defer { try? handle.close() }
-        do {
-            try handle.seek(toOffset: UInt64(offset))
-        } catch {
-            return
-        }
-
-        var buffer = snapshot.trailingBytes
-        snapshot.trailingBytes.removeAll(keepingCapacity: false)
-
-        while true {
-            guard let chunk = try? handle.read(upToCount: AppConfig.Scan.codexJSONLChunkSize),
-                  !chunk.isEmpty else { break }
-            buffer.append(chunk)
-
-            var cursor = buffer.startIndex
-            while let newline = buffer[cursor...].firstIndex(of: 0x0A) {
-                if cursor < newline {
-                    processJSONLLine(buffer[cursor..<newline], into: &snapshot)
+            guard name.hasPrefix("rollout-"), name.hasSuffix(".jsonl") else { continue }
+            let path = url.path
+            guard let metadata = fileMetadata(at: path),
+                  metadata.modificationDate >= cutoff else { continue }
+            livePaths.insert(path)
+            if var state = jsonlCache[path] {
+                let sameFile = state.fileNumber == nil || metadata.fileNumber == nil || state.fileNumber == metadata.fileNumber
+                if sameFile, metadata.size > state.fileSize {
+                    appendJSONLFile(path: path, metadata: metadata, state: &state)
+                    jsonlCache[path] = state
+                } else if sameFile,
+                          metadata.size == state.fileSize,
+                          metadata.modificationDate == state.modificationDate {
+                    continue
+                } else {
+                    jsonlCache[path] = parseJSONLFile(path: path, metadata: metadata)
                 }
-                cursor = buffer.index(after: newline)
-            }
-            // 关键修复：每个 1 MiB 分块只搬一次剩余字节。旧实现每读一行都
-            // `lineBuf = lineBuf[... ]`，对大型 rollout 造成大量重复拷贝与内存峰值。
-            if cursor > buffer.startIndex {
-                buffer.removeSubrange(buffer.startIndex..<cursor)
+            } else {
+                jsonlCache[path] = parseJSONLFile(path: path, metadata: metadata)
             }
         }
 
-        snapshot.trailingBytes = buffer
-        // 文件可能在扫描期间继续增长，记录实际已读到的 EOF。下次只读新增部分。
-        snapshot.fileSize = fileSize(at: descriptor.path)
-        snapshot.modificationDate = descriptor.modificationDate
-        let recentCutoff = Date().addingTimeInterval(-AppConfig.Scan.oneDaySeconds)
-        snapshot.recentEntries.removeAll { $0.timestamp < recentCutoff }
-        jsonlCache[descriptor.path] = snapshot
+        jsonlCache = jsonlCache.filter { livePaths.contains($0.key) }
+        rebuildAggregates()
     }
 
-    private func processJSONLLine(_ lineData: Data.SubSequence, into snapshot: inout JSONLFileSnapshot) {
-        if lineData.range(of: Self.tokenCountMarker) != nil {
-            let line = String(decoding: lineData, as: UTF8.self)
-            guard let usageRange = line.range(of: "\"last_token_usage\":{") else { return }
-            let usageSegment = String(line[usageRange.lowerBound...].prefix(500))
-            let tokens = extractInt(from: usageSegment, key: "\"total_tokens\"")
-            guard tokens > 0,
-                  let timestamp = extractString(from: line, key: "\"timestamp\":\""),
-                  let date = DateHelper.parseISO8601(timestamp) else { return }
+    private func parseJSONLFile(path: String, metadata: FileMetadata) -> JSONLFileState {
+        var state = JSONLFileState(
+            modificationDate: metadata.modificationDate,
+            fileNumber: metadata.fileNumber
+        )
+        appendJSONLFile(path: path, metadata: metadata, state: &state)
+        return state
+    }
 
+    private func appendJSONLFile(path: String, metadata: FileMetadata, state: inout JSONLFileState) {
+        let oldOffset = state.fileSize
+        let recentCutoff = Date().addingTimeInterval(-AppConfig.Scan.oneDaySeconds)
+        guard let result = JSONLLineReader.read(
+            path: path,
+            from: oldOffset,
+            prefix: state.trailingData,
+            matchingAny: Self.relevantLineNeedles,
+            onLine: { line in processJSONLLine(line, recentCutoff: recentCutoff, state: &state) }
+        ) else { return }
+
+        state.fileSize = result.offset
+        state.trailingData = JSONLLineReader.consumeCompleteTrailingLine(
+            result.trailingData,
+            onLine: { line in processJSONLLine(line, recentCutoff: recentCutoff, state: &state) }
+        )
+        state.recentEntries.removeAll { $0.timestamp < recentCutoff }
+        state.modificationDate = metadata.modificationDate
+        state.fileNumber = metadata.fileNumber
+    }
+
+    private func processJSONLLine(
+        _ line: String,
+        recentCutoff: Date,
+        state: inout JSONLFileState
+    ) {
+        if line.contains("\"type\":\"token_count\"") {
+            guard let ltuRange = line.range(of: "\"last_token_usage\":{") else { return }
+            let segment = String(line[ltuRange.lowerBound...].prefix(500))
+            let tokens = extractInt(from: segment, key: "\"total_tokens\"")
+            let cached = extractInt(from: segment, key: "\"cached_input_tokens\"")
+            let contextWindow = extractInt(from: line, key: "\"model_context_window\"")
+            let modelForTurn = state.currentModel ?? (contextWindow == 258400 ? "gpt-5.5" : nil)
+
+            guard let tsRange = line.range(of: "\"timestamp\":\"") else { return }
+            let start = tsRange.upperBound
+            guard let end = line[start...].firstIndex(of: "\"") else { return }
+            let timestamp = String(line[start..<end])
+            guard let date = DateHelper.parseISO8601(timestamp) else { return }
             let dateKey = DateHelper.dateKey(from: date)
             let hourKey = DateHelper.hourKey(from: date)
-            let cached = extractInt(from: usageSegment, key: "\"cached_input_tokens\"")
-            let contextWindow = extractInt(from: line, key: "\"model_context_window\"")
-            let model = snapshot.currentModel ?? (contextWindow == 258400 ? "gpt-5.5" : nil)
+            guard !dateKey.isEmpty, !hourKey.isEmpty else { return }
 
-            snapshot.dailyTokens[dateKey, default: 0] += tokens
-            snapshot.dailyMessages[dateKey, default: 0] += 1
-            snapshot.dailyCachedTokens[dateKey, default: 0] += cached
-            snapshot.hourlyTokens[hourKey, default: 0] += tokens
-            snapshot.hourlyMessages[hourKey, default: 0] += 1
-            snapshot.recentEntries.append(RecentEntry(timestamp: date, tokens: tokens))
-            if let model { snapshot.modelTokens[model, default: 0] += tokens }
-        } else if lineData.range(of: Self.turnContextMarker) != nil {
-            let line = String(decoding: lineData, as: UTF8.self)
-            if let model = codexModel(fromLine: line) { snapshot.currentModel = model }
+            if tokens > 0 {
+                state.dailyTokens[dateKey, default: 0] += tokens
+                state.dailyMessages[dateKey, default: 0] += 1
+                state.dailyCached[dateKey, default: 0] += cached
+                state.hourlyTokens[hourKey, default: 0] += tokens
+                state.hourlyMessages[hourKey, default: 0] += 1
+                if date >= recentCutoff {
+                    state.recentEntries.append(RecentEntry(timestamp: date, tokens: tokens))
+                }
+                if let modelForTurn {
+                    state.modelTokens[modelForTurn, default: 0] += tokens
+                }
+            }
+        } else if line.contains("\"type\":\"turn_context\"") {
+            if let model = codexModel(fromLine: line) {
+                state.currentModel = model
+            }
         }
     }
 
@@ -234,35 +223,46 @@ final class CodexUsageService: @unchecked Sendable {
         sessionTokensByDate.removeAll(keepingCapacity: true)
         sessionModels.removeAll(keepingCapacity: true)
 
-        var sessionModelTokens: [String: [String: Int]] = [:]
-        let recentCutoff = Date().addingTimeInterval(-AppConfig.Scan.oneDaySeconds)
+        for (path, state) in jsonlCache {
+            for (dateKey, tokens) in state.dailyTokens {
+                dailyData[dateKey, default: DayUsage(tokens: 0, messages: 0)].tokens += tokens
+                dailyData[dateKey]!.messages += state.dailyMessages[dateKey] ?? 0
+                dailyCache[dateKey, default: 0] += state.dailyCached[dateKey] ?? 0
+            }
+            for (hourKey, tokens) in state.hourlyTokens {
+                hourlyData[hourKey, default: HourlyUsage(tokens: 0, messages: 0)].tokens += tokens
+                hourlyData[hourKey]!.messages += state.hourlyMessages[hourKey] ?? 0
+            }
+            recentEntries.append(contentsOf: state.recentEntries)
 
-        for snapshot in jsonlCache.values {
-            for (key, tokens) in snapshot.dailyTokens {
-                dailyData[key, default: DayUsage(tokens: 0, messages: 0)].tokens += tokens
-                dailyData[key]!.messages += snapshot.dailyMessages[key] ?? 0
-                dailyCache[key, default: 0] += snapshot.dailyCachedTokens[key] ?? 0
+            guard let sessionId = sessionId(fromJSONLPath: path), !sessionId.isEmpty else { continue }
+            for (dateKey, tokens) in state.dailyTokens {
+                sessionMessagesByDate[dateKey, default: [:]][sessionId, default: 0] += state.dailyMessages[dateKey] ?? 0
+                sessionTokensByDate[dateKey, default: [:]][sessionId, default: 0] += tokens
             }
-            for (key, tokens) in snapshot.hourlyTokens {
-                hourlyData[key, default: HourlyUsage(tokens: 0, messages: 0)].tokens += tokens
-                hourlyData[key]!.messages += snapshot.hourlyMessages[key] ?? 0
-            }
-            recentEntries.append(contentsOf: snapshot.recentEntries.filter { $0.timestamp >= recentCutoff })
-
-            guard let sessionId = snapshot.sessionId, !sessionId.isEmpty else { continue }
-            for (key, tokens) in snapshot.dailyTokens {
-                sessionTokensByDate[key, default: [:]][sessionId, default: 0] += tokens
-                sessionMessagesByDate[key, default: [:]][sessionId, default: 0] += snapshot.dailyMessages[key] ?? 0
-            }
-            for (model, tokens) in snapshot.modelTokens {
-                sessionModelTokens[sessionId, default: [:]][model, default: 0] += tokens
+            if let dominant = state.modelTokens.max(by: { $0.value < $1.value })?.key {
+                sessionModels[sessionId] = dominant
             }
         }
 
-        for (sessionId, models) in sessionModelTokens {
-            sessionModels[sessionId] = models.max(by: { $0.value < $1.value })?.key
-        }
         recentEntries.sort { $0.timestamp < $1.timestamp }
+    }
+
+    private struct FileMetadata {
+        let size: UInt64
+        let modificationDate: Date
+        let fileNumber: UInt64?
+    }
+
+    private func fileMetadata(at path: String) -> FileMetadata? {
+        guard let attrs = try? fm.attributesOfItem(atPath: path),
+              let size = (attrs[.size] as? NSNumber)?.uint64Value,
+              let modificationDate = attrs[.modificationDate] as? Date else { return nil }
+        return FileMetadata(
+            size: size,
+            modificationDate: modificationDate,
+            fileNumber: (attrs[.systemFileNumber] as? NSNumber)?.uint64Value
+        )
     }
 
     private func sessionId(fromJSONLPath path: String) -> String? {
@@ -308,13 +308,6 @@ final class CodexUsageService: @unchecked Sendable {
         let digits = after.drop(while: { $0 == ":" || $0 == " " })
         let numStr = digits.prefix(while: { $0.isNumber })
         return Int(numStr) ?? 0
-    }
-
-    private func extractString(from str: String, key: String) -> String? {
-        guard let range = str.range(of: key) else { return nil }
-        let start = range.upperBound
-        guard let end = str[start...].firstIndex(of: "\"") else { return nil }
-        return String(str[start..<end])
     }
 
     // MARK: - 今日活跃 Session 列表（从 SQLite）
@@ -417,7 +410,4 @@ final class CodexUsageService: @unchecked Sendable {
         return nil
     }
 
-    private func fileSize(at path: String) -> Int {
-        (try? fm.attributesOfItem(atPath: path)[FileAttributeKey.size] as? Int) ?? 0
-    }
 }

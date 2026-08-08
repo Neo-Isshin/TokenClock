@@ -361,8 +361,16 @@ final class ViewModel: ObservableObject {
     private func loadSavedCustomThemes() {
         savedCustomThemes = SavedCustomTheme.loadAll()
         if let savedIdString = UserDefaults.standard.string(for: .activeCustomThemeId),
-           let savedId = UUID(uuidString: savedIdString) {
+           let savedId = UUID(uuidString: savedIdString),
+           savedCustomThemes.contains(where: { $0.id == savedId }) {
             activeCustomThemeId = savedId
+        } else {
+            activeCustomThemeId = nil
+            UserDefaults.standard.remove(.activeCustomThemeId)
+            if selectedTheme == .custom {
+                selectedTheme = .classic
+                saveTheme()
+            }
         }
     }
 
@@ -378,6 +386,8 @@ final class ViewModel: ObservableObject {
         if activeCustomThemeId == id {
             activeCustomThemeId = nil
             UserDefaults.standard.remove(.activeCustomThemeId)
+            selectedTheme = .classic
+            saveTheme()
         }
     }
 

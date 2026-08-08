@@ -76,6 +76,22 @@ struct CodexQuotaSnapshot: Equatable, Sendable {
 /// on demand from the detail panel; it never installs a timer or leaves app-server
 /// running after the response/timeout.
 final class CodexQuotaService: @unchecked Sendable {
+    enum HostPlatform: Equatable {
+        case macOS
+        case windows
+        case unix
+
+        static var current: Self {
+            #if os(macOS)
+            return .macOS
+            #elseif os(Windows)
+            return .windows
+            #else
+            return .unix
+            #endif
+        }
+    }
+
     private final class ResponseBuffer: @unchecked Sendable {
         private let lock = NSLock()
         private var pending = Data()
@@ -128,28 +144,11 @@ final class CodexQuotaService: @unchecked Sendable {
     }
 
     private func codexExecutable() -> URL? {
-        var candidates: [String] = []
-        if let override = ProcessInfo.processInfo.environment["CODEX_BINARY"], !override.isEmpty {
-            candidates.append((override as NSString).expandingTildeInPath)
-        }
-        #if os(macOS)
-        // Prefer the native binary bundled with ChatGPT. GUI apps commonly do not
-        // inherit Homebrew's PATH, while npm wrappers also depend on finding node.
-        candidates += [
-            "/Applications/ChatGPT.app/Contents/Resources/codex",
-            "/opt/homebrew/bin/codex",
-            "/usr/local/bin/codex",
-        ]
-        #else
-        candidates += [
-            "~/.local/bin/codex",
-            "/usr/local/bin/codex",
-            "/usr/bin/codex",
-        ]
-        #endif
-        if let path = ProcessInfo.processInfo.environment["PATH"] {
-            candidates += path.split(separator: ":").map { "\($0)/codex" }
-        }
+        let candidates = Self.executableCandidatePaths(
+            environment: ProcessInfo.processInfo.environment,
+            platform: .current,
+            homeDirectory: NSHomeDirectory()
+        )
 
         var seen = Set<String>()
         for rawPath in candidates {
@@ -159,6 +158,64 @@ final class CodexQuotaService: @unchecked Sendable {
             return URL(fileURLWithPath: path)
         }
         return nil
+    }
+
+    /// Builds host-specific executable candidates without probing the filesystem.
+    /// Kept deterministic so Windows/Linux packaging can regression-test path rules
+    /// while sharing the quota parser and service implementation.
+    static func executableCandidatePaths(
+        environment: [String: String],
+        platform: HostPlatform,
+        homeDirectory: String
+    ) -> [String] {
+        var candidates: [String] = []
+        if let override = environment["CODEX_BINARY"], !override.isEmpty {
+            candidates.append((override as NSString).expandingTildeInPath)
+        }
+
+        switch platform {
+        case .macOS:
+            // Prefer the native binary bundled with ChatGPT. GUI apps commonly do
+            // not inherit Homebrew's PATH, while npm wrappers depend on finding node.
+            candidates += [
+                "/Applications/ChatGPT.app/Contents/Resources/codex",
+                "/opt/homebrew/bin/codex",
+                "/usr/local/bin/codex",
+            ]
+        case .windows:
+            if let localAppData = environment["LOCALAPPDATA"], !localAppData.isEmpty {
+                candidates += [
+                    localAppData + "\\Programs\\OpenAI\\Codex\\bin\\codex.exe",
+                    localAppData + "\\OpenAI\\Codex\\bin\\codex.exe",
+                ]
+            }
+            if let appData = environment["APPDATA"], !appData.isEmpty {
+                let npmRoot = appData + "\\npm\\node_modules\\@openai\\codex\\node_modules"
+                candidates += [
+                    npmRoot + "\\@openai\\codex-win32-x64\\vendor\\x86_64-pc-windows-msvc\\codex\\codex.exe",
+                    npmRoot + "\\@openai\\codex-win32-arm64\\vendor\\aarch64-pc-windows-msvc\\codex\\codex.exe",
+                ]
+            }
+        case .unix:
+            candidates += [
+                homeDirectory + "/.local/bin/codex",
+                "/usr/local/bin/codex",
+                "/usr/bin/codex",
+            ]
+        }
+
+        let path = platform == .windows
+            ? (environment["Path"] ?? environment["PATH"])
+            : environment["PATH"]
+        if let path, !path.isEmpty {
+            let separator: Character = platform == .windows ? ";" : ":"
+            let executable = platform == .windows ? "codex.exe" : "codex"
+            let slash = platform == .windows ? "\\" : "/"
+            candidates += path.split(separator: separator).map {
+                String($0).trimmingCharacters(in: .whitespacesAndNewlines) + slash + executable
+            }
+        }
+        return candidates
     }
 
     private func fetchFromAppServer(executable: URL) -> Data? {

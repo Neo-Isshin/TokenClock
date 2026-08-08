@@ -72,8 +72,8 @@ enum DateHelper: Sendable {
 
     /// 解析 ISO8601 UTC 时间戳，返回绝对 Date
     static func parseISO8601(_ s: String) -> Date? {
-        let bytes = Array(s.utf8.prefix(19))
-        guard bytes.count == 19,
+        let bytes = Array(s.utf8)
+        guard bytes.count >= 19,
               bytes[4] == 0x2D, bytes[7] == 0x2D,
               (bytes[10] == 0x54 || bytes[10] == 0x20),
               bytes[13] == 0x3A, bytes[16] == 0x3A else { return nil }
@@ -91,10 +91,47 @@ enum DateHelper: Sendable {
               let hour = number(11, 2), let minute = number(14, 2), let second = number(17, 2) else {
             return nil
         }
-        return utcCalendar.date(from: DateComponents(
+        guard let base = utcCalendar.date(from: DateComponents(
             year: year, month: month, day: day,
             hour: hour, minute: minute, second: second
-        ))
+        )) else { return nil }
+
+        var index = 19
+        var fractionalSeconds = 0.0
+        if index < bytes.count, bytes[index] == 0x2E {
+            index += 1
+            var scale = 0.1
+            let fractionStart = index
+            while index < bytes.count, bytes[index] >= 0x30, bytes[index] <= 0x39 {
+                fractionalSeconds += Double(bytes[index] - 0x30) * scale
+                scale *= 0.1
+                index += 1
+            }
+            guard index > fractionStart else { return nil }
+        }
+
+        var offsetSeconds = 0
+        if index < bytes.count {
+            if bytes[index] == 0x5A || bytes[index] == 0x7A { // Z / z
+                index += 1
+            } else if bytes[index] == 0x2B || bytes[index] == 0x2D { // + / -
+                let sign = bytes[index] == 0x2B ? 1 : -1
+                index += 1
+                guard index + 1 < bytes.count,
+                      let offsetHour = number(index, 2) else { return nil }
+                index += 2
+                if index < bytes.count, bytes[index] == 0x3A { index += 1 }
+                guard index + 1 < bytes.count,
+                      let offsetMinute = number(index, 2),
+                      offsetHour <= 23, offsetMinute <= 59 else { return nil }
+                index += 2
+                offsetSeconds = sign * (offsetHour * 3_600 + offsetMinute * 60)
+            } else {
+                return nil
+            }
+        }
+        guard index == bytes.count else { return nil }
+        return base.addingTimeInterval(fractionalSeconds - Double(offsetSeconds))
     }
 
     /// 从 ISO8601 UTC 时间戳提取本地日期 key

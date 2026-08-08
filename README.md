@@ -4,16 +4,14 @@
 
 # 🕰️ TokenClock
 
-**A native Liquid Glass token clock · every agent's consumption on a single dial**
+**A beautiful desktop clock for seeing your AI coding usage at a glance.**
 
-[![macOS 12+](https://img.shields.io/badge/macOS-12%2B-000000?style=for-the-badge&logo=apple&logoColor=white)](https://www.apple.com/macos/)
-[![macOS 26+](https://img.shields.io/badge/macOS%2026-Liquid%20Glass-00B0F0?style=for-the-badge)](https://developer.apple.com/macos/)
-[![Linux normal](https://img.shields.io/badge/Linux-normal-FCC624?style=for-the-badge&logo=linux&logoColor=black)](#linux-normal-build)
+[![macOS 12+](https://img.shields.io/badge/macOS-12%2B-000000?style=for-the-badge&logo=apple&logoColor=white)](#macos-and-linux)
+[![macOS 26+](https://img.shields.io/badge/macOS%2026-Liquid%20Glass-00B0F0?style=for-the-badge)](#macos-and-linux)
+[![Windows normal](https://img.shields.io/badge/Windows-normal-0078D4?style=for-the-badge&logo=windows&logoColor=white)](#windows)
+[![Linux normal](https://img.shields.io/badge/Linux-normal-FCC624?style=for-the-badge&logo=linux&logoColor=black)](#macos-and-linux)
 
 [![Swift 6](https://img.shields.io/static/v1?label=Swift&message=6&color=F05138&logo=swift&logoColor=white)](https://www.swift.org/)
-[![SwiftUI](https://img.shields.io/static/v1?label=UI&message=SwiftUI%20%2B%20AppKit&color=blueviolet)](https://developer.apple.com/xcode/swiftui/)
-[![SwiftPM](https://img.shields.io/static/v1?label=Build&message=SwiftPM&color=FA7343)](https://www.swift.org/package-manager/)
-[![Privacy](https://img.shields.io/static/v1?label=Privacy&message=local%20only&color=success)](#-privacy)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
 [![Releases](https://img.shields.io/badge/releases-GitHub-181717?logo=github&logoColor=white)](https://github.com/Neo-Isshin/TokenClock/releases)
 
@@ -23,362 +21,171 @@
 
 <table>
   <tr>
-    <td width="50%" align="center"><img src="docs/screenshots/glass_en.png" alt="Liquid Glass build" width="300"><br><sub><b>Liquid Glass build</b> · macOS 26+</sub></td>
-    <td width="30%" align="center"><img src="docs/screenshots/normal_en.png" alt="Normal build" width="300"><br><sub><b>Normal build</b> · macOS 12+</sub></td>
+    <td align="center"><img src="docs/screenshots/glass_en.png" alt="TokenClock Liquid Glass" width="300"><br><sub><b>Liquid Glass</b> · macOS 26+</sub></td>
+    <td align="center"><img src="docs/screenshots/normal_en.png" alt="TokenClock normal" width="300"><br><sub><b>Normal</b> · macOS, Windows, Linux</sub></td>
   </tr>
 </table>
 
 </div>
 
----
+TokenClock is a small, always-on-top clock for your desktop. It combines the time with today's token usage, message count, active AI tools, weather, and usage pace—without making you open several dashboards.
 
-TokenClock is an **always-on-top floating clock** for your desktop (draggable · remembers its position). The dial overlays live data: **today's total token consumption, message counts, the AI tools currently active, a rate indicator, and the weather**. Click the clock to expand a dropdown panel that breaks usage down by **each tool → each session / agent**.
+Click the clock for session and model details. Right-click it to change the face, size, city, timezone, language, transparency, and other preferences.
 
-It's built with the macOS 26 **Liquid Glass** material for a crystal clock disc, ships with 7 carefully designed built-in faces plus a fully custom theme editor, and reads **everything locally** — nothing is ever uploaded.
+## What you get
 
-> [!NOTE]
-> Liquid Glass build has supported macOS 27 beta 3, but may break with beta version updates.
+- **14 AI coding tools in one place.** TokenClock finds their local usage data automatically and lets you correct a path in Settings when needed.
+- **8 carefully designed clock faces.** Glass, Classic, Glacier, Midnight, Luxe, Antique, Railgun, and Sky, plus saved custom faces.
+- **Useful details without leaving the desktop.** Group usage by session or model, expand individual rows, and sort by percentage.
+- **Codex remaining quota.** Open the Codex Quota view to see available windows and reset times. It only checks when you open it.
+- **Weather without a location permission popup.** Automatic weather uses an approximate city from your public IP, or you can choose a city yourself.
+- **A native experience on each platform.** macOS uses SwiftUI/AppKit, Windows uses Win32, and Linux uses GTK3. The workflow is shared while controls keep their native appearance.
 
----
+## Platform support
 
-## 📑 Contents
+| Platform | Edition | Notes |
+|---|---|---|
+| macOS 26+ | Liquid Glass + Normal | Universal Apple Silicon/Intel build |
+| macOS 12–25 | Normal | Classic opaque desktop widget |
+| Windows 11 x86_64 | Normal | Per-user install; no administrator rights required |
+| Linux x86_64 | Normal | Prebuilt GTK3 AppImage; glibc 2.35+ |
 
-- [🌟 Core advantages](#-core-advantages)
-- [✨ Features](#-features)
-- [📸 Screenshots](#-screenshots)
-- [🤖 Supported AI tools](#-supported-ai-tools)
-- [🚀 Quick start](#-quick-start) — [One-line install](#one-line-install-easiest) · [`tokenclock` CLI](#use-the-tokenclock-cli)
-- [🎨 Themes](#-themes)
-- [🧊 Liquid Glass](#-liquid-glass)
-- [🔌 Local API server](#-local-api-server)
-- [🔒 Privacy](#-privacy)
-- [🛣 Roadmap](#-roadmap)
-- [📦 Tech stack](#-tech-stack)
-- [📄 License](#-license)
-- [🙏 Acknowledgments](#-acknowledgments)
+## Install
 
----
+### macOS and Linux
 
-## 🌟 Core advantages
-
-<table>
-  <tr>
-    <td width="50%" valign="top"><b>🤖 All your tools, one dial</b><br><sub>Token / message usage from <b>14 AI coding tools</b> flows into a single clock face — no more hopping between terminals and web dashboards.</sub></td>
-    <td width="50%" valign="top"><b>🔍 Drill down per session / agent</b><br><sub>From a per-tool overview all the way down to every session / agent — see exactly where the tokens went and which conversation burned them.</sub></td>
-  </tr>
-  <tr>
-    <td valign="top"><b>🌤️ Always on the desktop, zero friction</b><br><sub>A floating, always-on-top, translucent Liquid Glass disc; a glance gives you the live consumption and rate (🔥 burst / 🌊 calm).</sub></td>
-    <td valign="top"><b>📈 Multi-dimensional live insight</b><br><sub>Today's totals, cache rate, future-trend forecast, and active tools in one picture.</sub></td>
-  </tr>
-  <tr>
-    <td valign="top"><b>🎨 Rich customization</b><br><sub>6 built-in faces + a fully custom theme: frosted backing opacity, glass tint, text color, hands, ticks, numerals, fonts, dial size, window opacity.</sub></td>
-    <td valign="top"><b>📜 Usage history you can revisit</b><br><sub>Each day's usage is auto-settled into a local SQLite store (30 days) and exposed via the local API — feed your own charts.</sub></td>
-  </tr>
-  <tr>
-    <td valign="top"><b>⚡ Tiny footprint</b><br><sub>Native Swift + efficient polling (clock 1s / usage 30s / weather 5min) + streaming JSONL; sits in the background almost unnoticed.</sub></td>
-    <td valign="top"><b>🔒 Purely local, zero upload</b><br><sub>Reads only local logs each tool writes; nothing leaves your machine, and the API listens on <code>127.0.0.1</code> only.</sub></td>
-  </tr>
-  <tr>
-    <td colspan="2" valign="top"><b>🔌 Zero config, ready out of the box</b><br><sub>Auto-detects 14 AI coding tools' log paths on first launch. New tools without history are auto-discovered by background workers on their first session, requiring no manual setup.</sub></td>
-  </tr>
-</table>
-
----
-
-## ✨ Features
-
-### 🤖 Unified multi-AI-tool detection
-- Auto-detects and reads the local token / message usage logs written by **14 AI coding tools** and aggregates them.
-- The dial overlays **today's totals, active-tool labels, and a rate emoji** (🔥 burst / 🌊 calm thresholds).
-- Click to expand the **dropdown panel** for the breakdown (tool → session / agent; see [Core advantages](#-core-advantages)).
-
-### 🧊 Liquid Glass
-- On macOS 26 the disc renders with the native **Liquid Glass** material — it adapts to your wallpaper and carries a subtle theme tint.
-- **Adaptive high-contrast ink**: lighter-tinted themes automatically switch to near-black ticks / numerals for legibility.
-- Ships in **two variants** — `main` (macOS 26) and `normal` (macOS 12) — and the `tokenclock` CLI picks the right one for your OS automatically.
-
-### 📦 One-line install & CLI
-- The normal build runs on **macOS 12+ and Linux**, while the Liquid Glass build remains macOS 26+ only. The lightweight `tokenclock` CLI handles start / stop / diagnose on both platforms.
-
-### 🎨 Multiple faces & thoughtful design
-- 6 built-in faces (Classic / Midnight / Luxe / Gu Feng / Railgun / Sky), each with its own personality.
-- 4 hand styles (round / tapered / lance / sword); numerals in Arabic or Chinese.
-- **Fully custom themes**: dial color, glass tint, all three hands, ticks, numerals, borders, and fonts are all adjustable.
-
-### ⚙️ More
-- Live clock (1s), usage refresh (30s), weather (5min).
-- Weather + 12-hour forecast (auto-located by IP or pick a city); 8 time zones.
-- Internationalization: **Simplified Chinese / Traditional Chinese / English**.
-- Always-on-top · draggable · position remembered across relaunch; launch-at-login via `SMAppService`.
-- Local API server (`:9988`) for integration / scripting.
-- Privacy-first: **all data read locally, zero upload**.
-
----
-
-## 📸 Screenshots
-
-### 🧊 Liquid Glass build preview (macOS 26+)
-
-<table>
-  <tr>
-    <td width="50%" align="center"><b>Floating Liquid Glass clock</b><br><sub>disc refracts the wallpaper · tokens / messages / rate / weather on the dial</sub></td>
-    <td width="50%" align="center"><b>Overview</b><br><sub>glass clock + expanded panel together</sub></td>
-  </tr>
-  <tr>
-    <td width="50%" align="center"><img src="docs/screenshots/glass_en.png" alt="liquid glass clock" width="75%"></td>
-    <td width="50%" align="center"><img src="docs/screenshots/glass_full_en.png" alt="liquid glass overview" width="75%"></td>
-  </tr>
-</table>
-
-### ⬜ Normal build preview (macOS 12+)
-
-<table>
-  <tr>
-    <td width="50%" align="center"><b>Floating clock</b><br><sub>classic opaque dial · tokens / messages / rate / weather on the dial</sub></td>
-    <td width="50%" align="center"><b>Overview</b><br><sub>opaque clock + expanded panel together</sub></td>
-  </tr>
-  <tr>
-    <td width="50%" align="center"><img src="docs/screenshots/normal_en.png" alt="normal clock" width="75%"></td>
-    <td width="50%" align="center"><img src="docs/screenshots/normal_full_en.png" alt="normal overview" width="75%"></td>
-  </tr>
-</table>
-
-### ⚙️ Settings preview
-
-<table>
-  <tr>
-    <td width="44%" align="center"><b>Settings panel</b><br><sub>Auto-detected tool paths & parameters configuration</sub></td>
-    <td width="34%" align="center"><b>Theme picker</b><br><sub>6 built-in faces & fully custom theme editing</sub></td>
-    <td width="22%" align="center"><b>Context menu</b><br><sub>Quick access to dial themes, sizes & preferences</sub></td>
-  </tr>
-  <tr>
-    <td align="center"><img src="docs/screenshots/settings_en.png" alt="settings panel upper" width="83%"></td>
-    <td align="center" rowspan="2" valign="middle"><img src="docs/screenshots/themes_en.png" alt="theme picker" width="300"></td>
-    <td align="center" rowspan="2" valign="middle"><img src="docs/screenshots/menu_en.png" alt="context menu" width="220"></td>
-  </tr>
-  <tr>
-    <td align="center"><img src="docs/screenshots/settings_en_bottom.png" alt="settings panel lower" width="83%"></td>
-  </tr>
-</table>
-
----
-
-## 🤖 Supported AI tools
-
-TokenClock reads the **JSONL / SQLite usage files** that each tool writes locally (path priority: custom path > env var > default path; auto-detected on first launch). Defaults and env vars below.
-
-| Tool | Default data source | Env var |
-|------|---------------------|--------|
-| **OpenClaw** | `~/.openclaw/` | `OPENCLAW_HOME` |
-| **Claude Code** | `~/.claude/` | `CLAUDE_CONFIG_DIR` |
-| **Gemini CLI** | `~/.gemini/` | `GEMINI_HOME` |
-| **Codex** | `~/.codex/` | `CODEX_HOME` |
-| **Hermes** | `~/.hermes/` | `HERMES_HOME` |
-| **OpenCode** | `~/.local/share/opencode/` | `OPENCODE_HOME` |
-| **Qwen Code** | `~/.qwen/` | `QWEN_HOME` |
-| **GitHub Copilot CLI** | `~/.copilot/` | `COPILOT_HOME` |
-| **Grok CLI** | `~/.grok/` | `GROK_HOME` |
-| **Aider** | `~/.aider/analytics.jsonl` | `AIDER_HOME` |
-| **Antigravity** | `~/.gemini/antigravity-cli/` | `ANTIGRAVITY_HOME` |
-| **Cline** (VSCode extension) | `~/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/` | `CLINE_HOME` |
-| **Continue** (VSCode extension) | `~/.continue/` | `CONTINUE_HOME` |
-| **Cursor Agent** | `~/.cursor/` | `CURSOR_AGENT_HOME` |
-
-> Token-counting formulas differ slightly per service: **Codex** and **Gemini/Qwen** have `input` (`promptTokenCount`) already including cached tokens, so cached must not be added again (it would double-count) — they use `input + output + (thought)`; other services (Claude/OpenClaw, etc.) sum input/output/cache fields that are mutually exclusive. See `docs/TOOL_SCHEMA_ANALYSIS.md`.
-
----
-
-## 🚀 Quick start
-
-### One-line install (easiest)
-
-Auto-detects your platform and version (**Linux / macOS 12+ / macOS 26+**) → installs the matching variant: on macOS it **downloads the precompiled** universal binary (SHA256-checked + de-quarantined) — Liquid Glass + normal on 26+, normal only on 12–25; on Linux it **builds the normal GTK3 build from source**. Then installs to `~/.tokenclock` → puts `tokenclock` on your PATH → launches and scans each AI tool's local paths. On macOS it falls back to a local build only on download failure or with `--build-from-source`.
-
-> 💡 **Download & run** — no Xcode, no $99/yr notarization: it fetches precompiled universal binaries (SHA256-checked + de-quarantined) and just works.
+Paste this into Terminal:
 
 ```bash
-# one-line install (recommended):
-curl -fsSL https://raw.githubusercontent.com/Neo-Isshin/TokenClock/main/cli/install.sh | bash
-
-# or, if you've cloned this repo:
-./cli/install.sh
-```
-
-### Linux normal build
-
-Linux ships the **normal dial experience** in GTK3/Cairo: a transparent circular widget with the same on-dial information layout, all 8 built-in normal faces (Glass, Classic, Glacier, Midnight, Luxe, Antique, Railgun, and Sky), their hand shapes, numerals, ticks, and decorations. Left-click opens the themed session/model detail panel with percentages and weather forecast; right-click opens the visual face picker plus size, opacity, always-on-top, temperature, city, timezone, language, settings, XDG autostart, API copy, and About controls. The GTK settings window covers auto-detection, all 14 tool switches and data paths, live API configuration, usage thresholds, and saved custom faces. Automatic Linux weather uses wttr.in's IP-based location fallback; manually selected cities behave like macOS normal.
-
-**x86_64 — prebuilt AppImage (default):** the universal one-liner downloads a self-contained AppImage (GTK3 bundled, needs only glibc ≥ 2.35) — no Swift, no compilation, no dev headers:
-
-```bash
-# the same universal one-liner — on x86_64 Linux it fetches the prebuilt AppImage
 curl -fsSL https://raw.githubusercontent.com/Neo-Isshin/TokenClock/main/cli/install.sh | bash
 ```
 
-The AppImage needs `libfuse2` at runtime (present on most desktop distros; if missing: `sudo apt install libfuse2`, or `libfuse2t64` on Ubuntu 24.04+).
+The installer chooses the right edition, verifies downloaded builds, starts TokenClock, and installs the small `tokenclock` helper command.
 
-**Other arches / `--build-from-source`** — build from source (needs Swift 6 + GTK3/SQLite3 dev headers):
-
-```bash
-sudo apt install git pkg-config libcurl4 libgtk-3-dev libsqlite3-dev   # Ubuntu/Debian build deps
-curl -fsSL https://raw.githubusercontent.com/Neo-Isshin/TokenClock/main/cli/install.sh | bash -s -- --build-from-source
-```
-
-Or use the reproducible container build:
+Useful commands after installation:
 
 ```bash
-docker build -f Dockerfile.linux -t tokenclock-linux .
+tokenclock doctor
+tokenclock restart
+tokenclock update
+tokenclock uninstall
 ```
 
-Options: `--normal` / `--glass` (pick the variant) / `--no-start` (don't auto-launch) / `--build-from-source` (force a local source build) / `--check` (check only, don't install) / `--debug` (debug build).
+On Linux, install `libfuse2` if your desktop cannot open the AppImage (`libfuse2t64` on Ubuntu 24.04+).
 
-> Note: on newer-glibc distros the AppImage may print a harmless `libgvfs … undefined symbol / Failed to load module` line to the terminal — TokenClock doesn't use gvfs; ignore it (it's invisible when launched from the desktop menu).
+### Windows
 
-### Prerequisites
-- **macOS 12+** (normal build); **macOS 26+** (Liquid Glass build)
-- The precompiled install needs **no toolchain at all**; Swift 6 (Xcode 16+ / Command Line Tools) is only required for `--build-from-source` local builds
-- **Linux normal:** x86_64 uses the prebuilt AppImage (needs only `libfuse2` + glibc ≥ 2.35, both standard on desktop distros); other arches / `--build-from-source` need Swift 6, GTK3/SQLite3 dev headers, `libcurl4`, and `pkg-config`
+Paste this into PowerShell:
 
-### Build & run from source
-
-```bash
-git clone https://github.com/Neo-Isshin/TokenClock.git TokenClock
-cd TokenClock
-
-# debug build and run directly
-swift run
-
-# or build first, then run
-swift build            # debug
-swift build -c release # release
-.build/debug/TokenClock      # or .build/release/TokenClock
+```powershell
+irm https://raw.githubusercontent.com/Neo-Isshin/TokenClock/windows-port/cli/install.ps1 | iex
 ```
 
-> The `main` branch's `Package.swift` declares `.macOS(.v26)`, so `swift run` produces the Liquid Glass build; the classic (opaque) macOS 12-compatible build lives on the `normal` branch.
+TokenClock installs for the current user under `%LOCALAPPDATA%\Programs\TokenClock`. It verifies the release checksum and does not enable autostart or create shortcuts unless you ask it to.
 
-> On Linux, clone or select the `normal` branch before running `swift build`; SwiftPM automatically selects the GTK3 target.
+Windows may show a reputation warning for an unsigned first release. Check that the publisher source is this repository before continuing.
 
-> Gotcha: on **macOS 27 with only Command Line Tools** installed (no full Xcode), a bare `swift build` on the `main` branch fails because the 27 SDK macro-expands `@State`; pass `SDKROOT=/Library/Developer/CommandLineTools/SDKs/MacOSX26.sdk swift build` to fix it (in the 26 SDK `@State` is still a plain property wrapper). The `normal` branch is unaffected.
+<details>
+<summary>Optional Windows installer choices</summary>
 
-### Use the `tokenclock` CLI
+```powershell
+# Install without starting, and add a Start Menu shortcut
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/Neo-Isshin/TokenClock/windows-port/cli/install.ps1))) -NoStart -StartMenuShortcut
 
-Install the lightweight shell script onto your PATH:
+# Check the current installation
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/Neo-Isshin/TokenClock/windows-port/cli/install.ps1))) -Action Check
 
-```bash
-sudo install -m755 cli/tokenclock /usr/local/bin/tokenclock
+# Uninstall while keeping your settings
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/Neo-Isshin/TokenClock/windows-port/cli/install.ps1))) -Action Uninstall
 ```
 
-| Command | Description |
-|---------|-------------|
-| `tokenclock start [--glass\|--normal] [--force]` | Start the clock; auto-picks by OS (macOS 26+ → glass, macOS 12–25/Linux → normal); `--force` opens another instance |
-| `tokenclock stop` | Stop all running TokenClock instances |
-| `tokenclock restart [--glass\|--normal]` | Restart |
-| `tokenclock doctor` | Diagnose: OS version, installed variant paths, running processes, env vars |
-| `tokenclock update [--check] [--force]` | Update to the latest release: pulls the latest install.sh → SHA256-checks → installs new binaries → restarts (no-op if unchanged); `--check` checks only, `--force` forces |
-| `tokenclock help` | Show help |
+</details>
 
-**Variant discovery order**: `$TOKENCLOCK_GLASS` / `$TOKENCLOCK_NORMAL` env vars → `~/.tokenclock/` → `/Applications/` → repo `.build/debug/`.
+## Everyday use
 
----
+- **Left-click the clock:** show or hide usage details.
+- **Codex Quota:** show remaining Codex limits and reset times.
+- **By Session / By Model:** change how details are grouped.
+- **By Percent:** compare which tools consumed the most.
+- **Click a detail row:** expand its sessions or models.
+- **Right-click the clock:** open faces, sizes, display preferences, refresh, Settings, About, and Quit.
+- **Drag the clock:** place it anywhere on your desktop; its position is remembered.
 
-## 🎨 Themes
+Settings includes automatic detection, tool switches, custom data paths, rate thresholds, the local API, and custom clock faces. Available rows may differ slightly by platform.
 
-7 built-in faces, plus full custom:
+## Supported tools
 
-| Theme | Name | Personality |
-|-------|------|-------------|
-| `classic`  | Classic    | Clear glass disc · charcoal hands + amber second hand · 3/6/9/12 only |
-| `glacier`  | Glacier    | Crystal ice-blue glass · ink sword hands + cherry-blossom pink second hand · ice-blue numerals & ticks |
-| `midnight` | Midnight   | Cyan glass · cyan tapered hands |
-| `luxe`     | Luxe       | Gold glass · gold lance hands |
-| `gufeng`   | Gu Feng    | Warm-brown glass · ink sword hands · **Chinese numerals** |
-| `railgun`  | Railgun    | Pink-orange glass · electric-blue second hand · monospaced |
-| `sky`      | Sky        | Blue glass · sun & clouds · gold hands |
-| `custom`   | Custom     | Glass tint / hands / ticks / numerals / fonts… fully customizable |
+| | | |
+|---|---|---|
+| OpenClaw | Claude Code | Gemini CLI |
+| Codex | Hermes | OpenCode |
+| Qwen Code | GitHub Copilot CLI | Grok CLI |
+| Aider | Antigravity | Cline |
+| Continue | Cursor Agent | |
 
-**Right-click** the clock → theme picker, or open the theme editor in the settings window to switch or customize.
+Most tools need no setup. If a tool stores data somewhere unusual, open **Settings → Data Source Paths** and choose its folder or file.
 
----
-
-## 🧊 Liquid Glass
-
-TokenClock ships in two builds:
-
-| Branch | Target | Rendering |
-|--------|--------|-----------|
-| `main`   | **macOS 26+** | Native Liquid Glass material; the disc adapts to the wallpaper and carries a subtle tint |
-| `normal` | macOS 12+     | Classic opaque themed dial, for backward compatibility |
-
-- The glass disc uses an **ambient tint (glass tint)** instead of the old opaque dial fill: a clean glass base plus a theme hint color, preserving each face's character without hiding your wallpaper.
-- **Adjustable frosted backing** — a public frosted-glass plate sits beneath the clear refractive glass, with opacity adjustable across 5 steps (0 = clean see-through glass, 100 = solid plate), letting you dial translucency to taste (macOS 26 Liquid Glass build only).
-- Lighter-tinted themes (Luxe / Railgun / Sky) automatically use **high-contrast near-black ink** for text, ticks, and numerals; darker/mid tints (Classic / Midnight / Gu Feng) use pure white.
-- The `tokenclock` CLI selects the matching variant from the `sw_vers` major version — no manual guessing.
-
----
-
-## 🔌 Local API server
-
-TokenClock starts a local `NWListener` HTTP server:
-
-```
-GET http://127.0.0.1:9988/api/usage          # live aggregated usage (today's totals / per-tool / session detail)
-GET http://127.0.0.1:9988/api/history?days=30 # daily snapshots for the last N days (max 30, for trend charts)
-```
-
-It returns JSON usage data, handy for external scripts / dashboards. It listens on loopback only and is **never exposed externally**.
-
----
-
-## 🔒 Privacy
-
-- All usage data is **read locally** from the log files each AI tool writes itself — TokenClock **uploads no token / session data**.
-- The local API server listens only on `127.0.0.1` and is opt-in.
-- Weather uses approximate IP geolocation or a city you pick, solely to show current conditions and a forecast.
-
----
-
-## 🛣 Roadmap
-
-- [ ] Support more AI coding tools (keep extending the detector)
-- [ ] Signed / notarized release builds (`.app`) — currently shipping unsigned via GitHub; this needs an Apple Developer account ($99/yr) and isn't currently planned — open to sponsorship / volunteers
-- [ ] Richer history stats and charts
-
----
-
-## 📦 Tech stack
-
-| | |
-|---|---|
-| **Language** | Swift 6 (`-parse-as-library`) |
-| **UI** | macOS: SwiftUI + AppKit; Linux normal: GTK3 + Cairo |
-| **Build** | Swift Package Manager (no `.xcodeproj`) |
-| **Platforms** | macOS 26 SDK (`main`) / macOS 12 and Linux GTK3 (`normal`) |
-| **i18n** | Custom `L10n` engine (zh-Hans / zh-Hant / en, no `.xcstrings`) |
-| **Size** | ~12,400 lines of Swift |
-
----
-
-## 📄 License
-
-TokenClock is open-sourced under the **[GPL v3 License](LICENSE)** — © 2026 Neo-Isshin. You are free to use, distribute, and modify it, but any distributed or modified derivative works must also be open-sourced under the GPL v3 License.
-
----
-
-## 🙏 Acknowledgments
-
-- TokenClock exists thanks to the many excellent AI coding tools and their communities. Thanks to these tools for writing token usage to local logs, making unified visualization possible..
-
-- The Liquid Glass refraction effect (macOS 26+) is powered by reverse-engineered macOS private API `NSGlassEffectView`. Special thanks to the pioneering open-source project **[electron-liquid-glass](https://github.com/Meridius-Labs/electron-liquid-glass)** (maintained by Meridius-Labs).
-
-- The dial designs draw inspiration from traditional mechanical watches and pop culture (the Gu Feng / Railgun themes).
----
+## Screenshots
 
 <div align="center">
 
-<h3>⭐ Finding TokenClock useful?</h3>
-
-**A Star means a lot — it's what keeps the project going 🚀**
-
-[![Star](https://img.shields.io/badge/⭐-Star%20on%20GitHub-181717?style=for-the-badge&logo=github&logoColor=white)](https://github.com/Neo-Isshin/TokenClock)
+<table>
+  <tr>
+    <td align="center"><img src="docs/screenshots/dropdown_en.png" alt="Usage details" width="300"><br><sub>Usage details</sub></td>
+    <td align="center"><img src="docs/screenshots/themes_en.png" alt="Clock face picker" width="300"><br><sub>Clock face picker</sub></td>
+    <td align="center"><img src="docs/screenshots/normal_full_en.png" alt="TokenClock normal edition" width="300"><br><sub>Normal edition</sub></td>
+  </tr>
+</table>
 
 </div>
+
+## Privacy
+
+- Token and session totals are read from files already stored by your AI tools. TokenClock does not upload those logs or totals.
+- The optional local API listens only on `127.0.0.1`.
+- Automatic weather contacts the configured weather/IP services to estimate a city. It does not request macOS Location Services permission.
+- Codex Quota runs only when you open its panel. It asks the installed Codex app-server for rate-limit information and does not read or modify Codex authentication files.
+- Cursor cloud usage is optional. When enabled, it contacts Cursor's service using the credentials already stored by Cursor; leave it off if you only want local data.
+
+## Local API (optional)
+
+TokenClock can expose read-only JSON for personal scripts and dashboards:
+
+```text
+http://127.0.0.1:9988/api/usage
+http://127.0.0.1:9988/api/history?days=30
+```
+
+The server is loopback-only, so other computers cannot connect to it directly.
+
+## Troubleshooting
+
+- **A tool shows zero:** use Re-detect in Settings, then check its Data Source Path. The tool must have created at least one local session first.
+- **Codex Quota is unavailable:** make sure Codex is installed and signed in, then retry from the quota panel.
+- **Weather is unavailable:** choose a city manually or check whether `wttr.in` is reachable from your network.
+- **Linux AppImage does not start:** install `libfuse2`/`libfuse2t64`, then try again.
+- **Something is using too much CPU:** update and restart TokenClock. Recent builds avoid repeatedly scanning old Codex and Gemini histories.
+- **Still stuck:** run `tokenclock doctor` on macOS/Linux, or open a [GitHub issue](https://github.com/Neo-Isshin/TokenClock/issues) with your platform and TokenClock version.
+
+## Build from source
+
+Most people should use the installers above. For contributors:
+
+```bash
+git clone https://github.com/Neo-Isshin/TokenClock.git
+cd TokenClock
+swift build -c release
+```
+
+The product channels are maintained separately: `main` for Liquid Glass macOS, `normal` for the classic macOS/Linux channel, and `windows-port` for Windows. Platform-specific paths and UI code stay in their own channels.
+
+## License
+
+TokenClock is open-sourced under the **[GPL v3 License](LICENSE)** — © 2026 Neo-Isshin.
+
+## Acknowledgments
+
+- [Swift](https://www.swift.org/) and SwiftUI/AppKit
+- GTK and Cairo for the Linux normal edition
+- The AI coding tools whose local data formats make this overview possible
+- Everyone who reports issues, tests new platforms, and improves TokenClock

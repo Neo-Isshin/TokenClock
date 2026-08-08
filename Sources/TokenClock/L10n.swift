@@ -115,7 +115,7 @@ final class L10n: @unchecked Sendable {
         "menu.about":            [.zhHans: "关于 TokenClock",       .zhHant: "關於 TokenClock",       .en: "About TokenClock"],
 
         // MARK: About
-        "about.license":         [.zhHans: "许可证：MIT",           .zhHant: "許可證：MIT",            .en: "License: MIT"],
+        "about.license":         [.zhHans: "许可证：GPLv3",         .zhHant: "許可證：GPLv3",          .en: "License: GPLv3"],
         "about.contact":         [.zhHans: "联系方式",              .zhHant: "聯絡方式",              .en: "Contact"],
         "about.close":           [.zhHans: "关闭",                  .zhHant: "關閉",                  .en: "Close"],
 
@@ -259,6 +259,7 @@ final class L10n: @unchecked Sendable {
         "editor.handWidthHour": [.zhHans: "时针宽度",    .zhHant: "時針寬度",    .en: "Hour Width"],
         "editor.handWidthMin":  [.zhHans: "分针宽度",    .zhHant: "分針寬度",    .en: "Minute Width"],
         "editor.handWidthSec":  [.zhHans: "秒针宽度",    .zhHant: "秒針寬度",    .en: "Second Width"],
+        "editor.handStyle":     [.zhHans: "指针样式",    .zhHant: "指針樣式",    .en: "Hand Style"],
         "editor.centerOuter":   [.zhHans: "中心外圈",    .zhHant: "中心外圈",    .en: "Center Outer"],
         "editor.centerInner":   [.zhHans: "中心内圈",    .zhHant: "中心內圈",    .en: "Center Inner"],
         "editor.showTicks":     [.zhHans: "显示刻度",    .zhHant: "顯示刻度",    .en: "Show Tick Marks"],
@@ -267,6 +268,8 @@ final class L10n: @unchecked Sendable {
         "editor.tickColor":     [.zhHans: "刻度颜色",    .zhHant: "刻度顏色",    .en: "Tick Color"],
         "editor.majorTickColor":[.zhHans: "主刻度颜色",   .zhHant: "主刻度顏色",   .en: "Major Tick Color"],
         "editor.numberColor":   [.zhHans: "数字颜色",    .zhHant: "數字顏色",    .en: "Number Color"],
+        "editor.numberStyle":   [.zhHans: "数字样式",    .zhHant: "數字樣式",    .en: "Number Style"],
+        "editor.numberFont":    [.zhHans: "数字字体",    .zhHant: "數字字體",    .en: "Number Font"],
         "editor.numArabic":     [.zhHans: "阿拉伯数字",   .zhHant: "阿拉伯數字",   .en: "Arabic"],
         "editor.numChinese":    [.zhHans: "中文数字",     .zhHant: "中文數字",     .en: "Chinese"],
         "editor.fontDefault":   [.zhHans: "默认",        .zhHant: "預設",         .en: "Default"],

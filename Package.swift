@@ -13,7 +13,6 @@ let linuxSources = [
     "Services/ClaudeCodeUsageService.swift",
     "Services/ClineUsageService.swift",
     "Services/CodexUsageService.swift",
-    "Services/CodexQuotaService.swift",
     "Services/ContinueUsageService.swift",
     "Services/CopilotUsageService.swift",
     "Services/CursorAgentUsageService.swift",
@@ -92,7 +91,12 @@ let package = Package(
             exclude: ["Linux"],
             resources: [.copy("Resources/glass_disc.png")],
             swiftSettings: [.unsafeFlags(["-parse-as-library"])]
-        )
+        ),
+        .testTarget(
+            name: "TokenClockTests",
+            dependencies: ["TokenClock"],
+            path: "Tests/TokenClockTests"
+        ),
     ]
 )
 #endif
