@@ -115,7 +115,7 @@ final class L10n: @unchecked Sendable {
         "menu.about":            [.zhHans: "关于 TokenClock",       .zhHant: "關於 TokenClock",       .en: "About TokenClock"],
 
         // MARK: About
-        "about.license":         [.zhHans: "许可证：MIT",           .zhHant: "許可證：MIT",            .en: "License: MIT"],
+        "about.license":         [.zhHans: "许可证：GPLv3",         .zhHant: "許可證：GPLv3",          .en: "License: GPLv3"],
         "about.contact":         [.zhHans: "联系方式",              .zhHant: "聯絡方式",              .en: "Contact"],
         "about.close":           [.zhHans: "关闭",                  .zhHant: "關閉",                  .en: "Close"],
 
@@ -156,6 +156,23 @@ final class L10n: @unchecked Sendable {
         "detail.model":          [.zhHans: "模型",   .zhHant: "模型",    .en: "Model"],
         "detail.percent":        [.zhHans: "按百分比", .zhHant: "按百分比", .en: "By Percent"],
         "detail.share":          [.zhHans: "占比",   .zhHant: "佔比",    .en: "Share"],
+        "detail.codexQuota":     [.zhHans: "Codex 额度", .zhHant: "Codex 額度", .en: "Codex Quota"],
+        "quota.loading":         [.zhHans: "正在读取 Codex 额度…", .zhHant: "正在讀取 Codex 額度…", .en: "Loading Codex quota…"],
+        "quota.unavailable":     [.zhHans: "暂时无法读取额度", .zhHant: "暫時無法讀取額度", .en: "Quota is temporarily unavailable"],
+        "quota.retry":           [.zhHans: "重试", .zhHant: "重試", .en: "Retry"],
+        "quota.remaining":       [.zhHans: "%.0f%% 剩余", .zhHant: "%.0f%% 剩餘", .en: "%.0f%% remaining"],
+        "quota.weekly":          [.zhHans: "每周额度", .zhHant: "每週額度", .en: "Weekly quota"],
+        "quota.days":            [.zhHans: "%d 天额度", .zhHant: "%d 天額度", .en: "%d-day quota"],
+        "quota.hours":           [.zhHans: "%d 小时额度", .zhHant: "%d 小時額度", .en: "%d-hour quota"],
+        "quota.minutes":         [.zhHans: "%d 分钟额度", .zhHant: "%d 分鐘額度", .en: "%d-minute quota"],
+        "quota.resets":          [.zhHans: "%@重置 · %@", .zhHant: "%@重置 · %@", .en: "Resets %@ · %@"],
+        "quota.plan":            [.zhHans: "方案 %@", .zhHant: "方案 %@", .en: "%@ plan"],
+        "quota.resetCredits":    [.zhHans: "%d 次完整重置", .zhHant: "%d 次完整重置", .en: "%d full reset(s)"],
+        "quota.creditBalance":   [.zhHans: "余额 %@", .zhHant: "餘額 %@", .en: "%@ credits"],
+        "quota.unlimited":       [.zhHans: "无限额", .zhHant: "無限額", .en: "Unlimited"],
+        "quota.liveSource":      [.zhHans: "实时", .zhHant: "即時", .en: "Live"],
+        "quota.logSource":       [.zhHans: "本地记录", .zhHant: "本機記錄", .en: "Local log"],
+        "quota.updated":         [.zhHans: "更新于 %@", .zhHant: "更新於 %@", .en: "Updated %@"],
 
         // MARK: Theme picker
         "themePicker.title": [.zhHans: "选择表盘", .zhHant: "選擇錶盤", .en: "Select Clock Face"],

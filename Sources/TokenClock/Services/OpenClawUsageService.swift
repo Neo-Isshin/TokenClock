@@ -3,6 +3,7 @@ import Foundation
 /// 从 OpenClaw 本地 JSONL 日志读取 token 使用数据
 /// 日志位置: ~/.openclaw/agents/*/sessions/
 final class OpenClawUsageService: @unchecked Sendable {
+    private static let assistantLineNeedle = [Data("\"assistant\"".utf8)]
     private(set) var dailyData: [String: DayUsage] = [:]
     private(set) var hourlyData: [String: HourlyUsage] = [:]
     private(set) var dailyCache: [String: Int] = [:]
@@ -11,17 +12,27 @@ final class OpenClawUsageService: @unchecked Sendable {
     private var fileHourlyContrib: [String: [String: HourlyUsage]] = [:]
     private var fileCacheContrib: [String: [String: Int]] = [:]
     private var fileRecentContrib: [String: [RecentEntry]] = [:]
+    private var fileModelContrib: [String: [String: [String: Int]]] = [:]
+    private var fileAgentNames: [String: String] = [:]
     private var recentEntries: [RecentEntry] = []
 
     private let fm = FileManager.default
     private let openclawHome: String
 
-    init() {
-        if let xdg = ProcessInfo.processInfo.environment["OPENCLAW_HOME"] {
-            openclawHome = xdg
-        } else {
-            openclawHome = PathConfig.openclawHome()
+    init(openclawHome: String? = nil) {
+        if let openclawHome {
+            self.openclawHome = openclawHome
+            return
         }
+#if os(Linux)
+        self.openclawHome = PathConfig.openclawHome()
+#else
+        if let xdg = ProcessInfo.processInfo.environment["OPENCLAW_HOME"] {
+            self.openclawHome = xdg
+        } else {
+            self.openclawHome = PathConfig.openclawHome()
+        }
+#endif
     }
 
     // MARK: - 公开接口
@@ -35,6 +46,8 @@ final class OpenClawUsageService: @unchecked Sendable {
         fileHourlyContrib.removeAll()
         fileCacheContrib.removeAll()
         fileRecentContrib.removeAll()
+        fileModelContrib.removeAll()
+        fileAgentNames.removeAll()
         recentEntries = []
         scanAgentDirectories()
     }
@@ -78,7 +91,13 @@ final class OpenClawUsageService: @unchecked Sendable {
 
     private func scanAgentDirectories() {
         let agentsDir = openclawHome + "/agents"
-        guard let agentNames = try? fm.contentsOfDirectory(atPath: agentsDir) else { return }
+        guard let agentNames = try? fm.contentsOfDirectory(atPath: agentsDir) else {
+            evictFiles(notIn: [])
+            rebuildRecentEntries()
+            return
+        }
+
+        var livePaths = Set<String>()
 
         for name in agentNames {
             let sessionsDir = agentsDir + "/" + name + "/sessions"
@@ -91,6 +110,8 @@ final class OpenClawUsageService: @unchecked Sendable {
                 guard file.hasSuffix(".jsonl") else { continue }
 
                 let fullPath = sessionsDir + "/" + file
+                livePaths.insert(fullPath)
+                fileAgentNames[fullPath] = name
                 guard let attrs = try? fm.attributesOfItem(atPath: fullPath),
                       let modDate = attrs[.modificationDate] as? Date else { continue }
 
@@ -113,15 +134,34 @@ final class OpenClawUsageService: @unchecked Sendable {
                     fileDailyContrib.removeValue(forKey: fullPath)
                     fileHourlyContrib.removeValue(forKey: fullPath)
                     fileCacheContrib.removeValue(forKey: fullPath)
+                    fileRecentContrib.removeValue(forKey: fullPath)
+                    fileModelContrib.removeValue(forKey: fullPath)
                     fileCache[fullPath] = FileMeta(path: fullPath, modDate: modDate)
                     continue
                 }
 
-                parseFile(path: fullPath, isIncremental: fileDailyContrib[fullPath] != nil)
+                parseFile(path: fullPath)
                 fileCache[fullPath] = FileMeta(path: fullPath, modDate: modDate)
             }
         }
+        evictFiles(notIn: livePaths)
         rebuildRecentEntries()
+    }
+
+    private func evictFiles(notIn livePaths: Set<String>) {
+        let removed = Set(fileCache.keys).subtracting(livePaths)
+        for path in removed {
+            if let old = fileDailyContrib[path] { subtractDailyContributions(old) }
+            if let old = fileHourlyContrib[path] { subtractHourlyContributions(old) }
+            if let old = fileCacheContrib[path] { subtractCacheContributions(old) }
+            fileCache.removeValue(forKey: path)
+            fileDailyContrib.removeValue(forKey: path)
+            fileHourlyContrib.removeValue(forKey: path)
+            fileCacheContrib.removeValue(forKey: path)
+            fileRecentContrib.removeValue(forKey: path)
+            fileModelContrib.removeValue(forKey: path)
+            fileAgentNames.removeValue(forKey: path)
+        }
     }
 
     private func subtractCacheContributions(_ contrib: [String: Int]) {
@@ -165,51 +205,30 @@ final class OpenClawUsageService: @unchecked Sendable {
         }
     }
 
-    private func parseFile(path: String, isIncremental: Bool = false) {
-        guard let stream = InputStream(fileAtPath: path) else { return }
-        stream.open()
-        defer { stream.close() }
-
+    private func parseFile(path: String) {
         let today = DateHelper.todayKey()
-        let bufSize = AppConfig.Scan.jsonlBufferSize
-        let buf = UnsafeMutablePointer<UInt8>.allocate(capacity: bufSize)
-        defer { buf.deallocate() }
-        var lineBuf = Data()
-
         var newDailyContrib: [String: DayUsage] = [:]
         var newHourlyContrib: [String: HourlyUsage] = [:]
         var newCacheContrib: [String: Int] = [:]
         var newRecent: [RecentEntry] = []
+        var newModels: [String: [String: Int]] = [:]
 
-        while stream.hasBytesAvailable {
-            let n = stream.read(buf, maxLength: bufSize)
-            if n <= 0 { break }
-            lineBuf.append(buf, count: n)
-
-            while let nlRange = lineBuf.range(of: Data([0x0A])) {
-                let lineData = lineBuf[lineBuf.startIndex..<nlRange.lowerBound]
-                lineBuf = lineBuf[nlRange.upperBound...]
-                guard !lineData.isEmpty else { continue }
-                let line = String(data: lineData, encoding: .utf8) ?? ""
-                if line.contains("\"assistant\"") {
-                    if let result = parseAssistantLine(line) {
-                        accumulate(result, today: today,
-                                   dailyContrib: &newDailyContrib,
-                                   hourlyContrib: &newHourlyContrib,
-                                   cacheContrib: &newCacheContrib, recent: &newRecent)
-                    }
-                }
-            }
-        }
-
-        if !lineBuf.isEmpty,
-           let line = String(data: lineBuf, encoding: .utf8),
-           line.contains("\"assistant\"") {
-            if let result = parseAssistantLine(line) {
+        guard let readResult = JSONLLineReader.read(path: path, matchingAny: Self.assistantLineNeedle, onLine: { line in
+            if line.contains("\"assistant\""), let result = parseAssistantLine(line) {
                 accumulate(result, today: today,
                            dailyContrib: &newDailyContrib,
                            hourlyContrib: &newHourlyContrib,
-                           cacheContrib: &newCacheContrib, recent: &newRecent)
+                           cacheContrib: &newCacheContrib, recent: &newRecent,
+                           models: &newModels)
+            }
+        }) else { return }
+        _ = JSONLLineReader.consumeCompleteTrailingLine(readResult.trailingData) { line in
+            if line.contains("\"assistant\""), let result = parseAssistantLine(line) {
+                accumulate(result, today: today,
+                           dailyContrib: &newDailyContrib,
+                           hourlyContrib: &newHourlyContrib,
+                           cacheContrib: &newCacheContrib, recent: &newRecent,
+                           models: &newModels)
             }
         }
 
@@ -217,6 +236,7 @@ final class OpenClawUsageService: @unchecked Sendable {
         fileHourlyContrib[path] = newHourlyContrib
         fileCacheContrib[path] = newCacheContrib
         fileRecentContrib[path] = newRecent
+        fileModelContrib[path] = newModels
     }
 
     private struct ParseResult {
@@ -258,7 +278,8 @@ final class OpenClawUsageService: @unchecked Sendable {
                             dailyContrib: inout [String: DayUsage],
                             hourlyContrib: inout [String: HourlyUsage],
                             cacheContrib: inout [String: Int],
-                            recent: inout [RecentEntry]) {
+                            recent: inout [RecentEntry],
+                            models: inout [String: [String: Int]]) {
         // daily
         if var existing = dailyData[result.dateKey] {
             existing.tokens += result.tokens
@@ -296,6 +317,9 @@ final class OpenClawUsageService: @unchecked Sendable {
         if result.dateKey == today, let ts = result.timestamp {
             recent.append(RecentEntry(timestamp: ts, tokens: result.tokens))
         }
+        if let model = result.model, !model.isEmpty {
+            models[result.dateKey, default: [:]][model, default: 0] += result.tokens
+        }
     }
 
     /// recentEntries 是各文件 recent 贡献的派生聚合：每轮扫描从 fileRecentContrib 重建，
@@ -312,58 +336,30 @@ final class OpenClawUsageService: @unchecked Sendable {
 
     /// 返回今日每个活跃 agent 的数据（用于展开展示）
     func todaySessions() -> [SessionInfo] {
-        let agentsDir = openclawHome + "/agents"
-        let fm = FileManager.default
-        var isDir: ObjCBool = false
-        guard fm.fileExists(atPath: agentsDir, isDirectory: &isDir), isDir.boolValue else { return [] }
-        guard let agentNames = try? fm.contentsOfDirectory(atPath: agentsDir) else { return [] }
-
         let today = DateHelper.todayKey()
-        var results: [SessionInfo] = []
-
-        for agentName in agentNames {
-            let sessionsDir = agentsDir + "/" + agentName + "/sessions"
-            var sIsDir: ObjCBool = false
-            guard fm.fileExists(atPath: sessionsDir, isDirectory: &sIsDir), sIsDir.boolValue else { continue }
-            guard let files = try? fm.contentsOfDirectory(atPath: sessionsDir) else { continue }
-
-            var agentTokens = 0
-            var agentMessages = 0
-            // 该 agent 下各模型 → token 用量，用于取代表模型（一个 agent 可能跨多个 session 文件用不同模型）
-            var agentModelTokens: [String: Int] = [:]
-
-            for file in files {
-                // 过滤掉 trajectory 和 checkpoint 文件，只保留主 session 日志
-                guard file.hasSuffix(".jsonl"),
-                      !file.contains(".checkpoint."),
-                      !file.contains(".trajectory.") else { continue }
-                let fullPath = sessionsDir + "/" + file
-
-                // 跳过 cron 触发的 session
-                if isCronSession(path: fullPath) { continue }
-
-                // 解析该文件今日数据（以实际内容为准，不以文件修改时间为准）
-                let (tokens, messages, modelTokens) = parseSessionFileToday(path: fullPath, today: today)
-                agentTokens += tokens
-                agentMessages += messages
-                for (m, t) in modelTokens { agentModelTokens[m, default: 0] += t }
+        var agents: [String: (tokens: Int, messages: Int, models: [String: Int])] = [:]
+        for (path, dates) in fileDailyContrib {
+            guard let usage = dates[today], let agentName = fileAgentNames[path] else { continue }
+            var summary = agents[agentName] ?? (0, 0, [:])
+            summary.tokens += usage.tokens
+            summary.messages += usage.messages
+            for (model, tokens) in fileModelContrib[path]?[today] ?? [:] {
+                summary.models[model, default: 0] += tokens
             }
-
-            if agentTokens > 0 {
-                let dominantModel = agentModelTokens.max(by: { $0.value < $1.value })?.key
-                results.append(SessionInfo(
-                    rawId: agentName,
-                    displayName: agentName,
-                    detail: nil,
-                    todayTokens: agentTokens,
-                    todayMessages: agentMessages,
-                    isActive: true,
-                    model: dominantModel
-                ))
-            }
+            agents[agentName] = summary
         }
-
-        return results.sorted { $0.todayTokens > $1.todayTokens }
+        return agents.compactMap { agentName, summary in
+            guard summary.tokens > 0 else { return nil }
+            return SessionInfo(
+                rawId: agentName,
+                displayName: agentName,
+                detail: nil,
+                todayTokens: summary.tokens,
+                todayMessages: summary.messages,
+                isActive: true,
+                model: summary.models.max(by: { $0.value < $1.value })?.key
+            )
+        }.sorted { $0.todayTokens > $1.todayTokens }
     }
 
     /// 检测 session 是否由 cron 触发
@@ -415,49 +411,4 @@ final class OpenClawUsageService: @unchecked Sendable {
         return false
     }
 
-    /// 解析单个 session 文件的今日数据
-    /// 返回 (tokens, messages, modelTokens: 各模型 → token 用量)，供上层按 agent 归并时取代表模型
-    private func parseSessionFileToday(path: String, today: String) -> (tokens: Int, messages: Int, modelTokens: [String: Int]) {
-        guard let stream = InputStream(fileAtPath: path) else { return (0, 0, [:]) }
-        stream.open()
-        defer { stream.close() }
-
-        let bufSize = AppConfig.Scan.jsonlBufferSize
-        let buf = UnsafeMutablePointer<UInt8>.allocate(capacity: bufSize)
-        defer { buf.deallocate() }
-        var lineBuf = Data()
-        var tokens = 0, messages = 0
-        var modelTokens: [String: Int] = [:]
-
-        while stream.hasBytesAvailable {
-            let n = stream.read(buf, maxLength: bufSize)
-            if n <= 0 { break }
-            lineBuf.append(buf, count: n)
-
-            while let nlRange = lineBuf.range(of: Data([0x0A])) {
-                let lineData = lineBuf[lineBuf.startIndex..<nlRange.lowerBound]
-                lineBuf = lineBuf[nlRange.upperBound...]
-                guard !lineData.isEmpty else { continue }
-                let line = String(data: lineData, encoding: .utf8) ?? ""
-                if line.contains("\"assistant\""), let result = parseAssistantLine(line) {
-                    if result.dateKey == today {
-                        tokens += result.tokens
-                        messages += 1
-                        if let m = result.model { modelTokens[m, default: 0] += result.tokens }
-                    }
-                }
-            }
-        }
-
-        if !lineBuf.isEmpty,
-           let line = String(data: lineBuf, encoding: .utf8),
-           line.contains("\"assistant\""),
-           let result = parseAssistantLine(line), result.dateKey == today {
-            tokens += result.tokens
-            messages += 1
-            if let m = result.model { modelTokens[m, default: 0] += result.tokens }
-        }
-
-        return (tokens, messages, modelTokens)
-    }
 }

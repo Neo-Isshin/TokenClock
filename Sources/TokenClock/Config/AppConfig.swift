@@ -46,10 +46,18 @@ enum AppConfig {
         static let cursorPageSize = 200
         /// JSONL 流式读取缓冲（64KB，平衡内存和 IO 效率）
         static let jsonlBufferSize = 65_536
+        /// 仅扫描今天与昨天的 Codex rollout，覆盖跨日长会话同时限制冷启动成本。
+        static let codexSessionLookbackDays = 2
+        /// Gemini 面板同样只展示当日/最近用量；保留今天+昨天以覆盖跨日会话。
+        static let geminiSessionLookbackDays = 2
         /// "活跃工具" 判定窗口（10 分钟内有调用算活跃）
         static let activeThresholdSeconds: TimeInterval = 600
         /// "最近 token" 默认窗口（分钟）
         static let defaultRecentWindowMinutes = 10
+        static let codexQuotaCacheSeconds: TimeInterval = 60
+        static let codexQuotaTimeoutSeconds: TimeInterval = 8
+        static let codexQuotaFallbackTailBytes = 2_097_152
+        static let codexQuotaFallbackFileLimit = 32
         static let oneDaySeconds: TimeInterval = 86_400
     }
 

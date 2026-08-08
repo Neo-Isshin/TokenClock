@@ -208,6 +208,40 @@ curl -fsSL https://raw.githubusercontent.com/Neo-Isshin/TokenClock/main/cli/inst
 
 Linux ships the **normal dial experience** in GTK3/Cairo: a transparent circular widget with the same on-dial information layout, all 8 built-in normal faces (Glass, Classic, Glacier, Midnight, Luxe, Antique, Railgun, and Sky), their hand shapes, numerals, ticks, and decorations. Left-click opens the themed session/model detail panel with percentages and weather forecast; right-click opens the visual face picker plus size, opacity, always-on-top, temperature, city, timezone, language, settings, XDG autostart, API copy, and About controls. The GTK settings window covers auto-detection, all 14 tool switches and data paths, live API configuration, usage thresholds, and saved custom faces. Automatic Linux weather uses wttr.in's IP-based location fallback; manually selected cities behave like macOS normal.
 
+The Linux detail panel also includes **Codex Quota** immediately to the left of **By Percent**, showing available weekly/short-window allowance, reset time, plan, balance, and reset credits when present. Quota is fetched only when that view is opened (with a short cache and bounded fallback); it does not keep an `app-server` process or quota polling loop resident. Normal-alignment work also provides a compact 3×3 base-face picker with saved custom faces below it, persistent custom save/apply/delete/reset behavior, a 520×548 overview-and-disclosure settings window, and a Linux-specific About dialog. These are GTK/Cairo adaptations targeting the same normal workflow and visual character, not a claim of pixel-for-pixel AppKit rendering equivalence.
+
+#### Linux provider catalog
+
+Linux uses its own path catalog; it never imports macOS `~/Library/Application Support` or Windows `%APPDATA%`/`%LOCALAPPDATA%` locations. Resolution order is a saved custom path, the environment candidates shown below, the Linux default, then Linux-only alternates. XDG variables are used only where the provider or host application uses the XDG base-directory layout; an unset (or invalid relative) XDG directory falls back to the path after `:-`.
+
+| Tool | Linux default / parser input | Environment candidates (in priority order) |
+|------|------------------------------|--------------------------------------------|
+| **OpenClaw** | `~/.openclaw/agents/*/sessions/*.jsonl` | `OPENCLAW_STATE_DIR`; `${OPENCLAW_HOME}/.openclaw` |
+| **Claude Code** | `~/.claude/projects/**/*.jsonl` | `CLAUDE_CONFIG_DIR` |
+| **Gemini CLI** | `~/.gemini/tmp/*/chats/session-*.(jsonl\|json)` | `${GEMINI_CLI_HOME}/.gemini`; `GEMINI_HOME`† |
+| **Codex** | `~/.codex/sessions/**/rollout-*.jsonl` | `CODEX_HOME` |
+| **Hermes** | `~/.hermes/state.db` (`sessions` table) | `HERMES_HOME` |
+| **OpenCode** | `${XDG_DATA_HOME:-~/.local/share}/opencode/opencode.db` | `OPENCODE_DB` (file); `OPENCODE_HOME`†; `XDG_DATA_HOME` |
+| **Qwen Code** | `~/.qwen/projects/*/chats/*.jsonl` | `QWEN_RUNTIME_DIR`; `QWEN_HOME` |
+| **GitHub Copilot CLI** | `~/.copilot/session-state/*/events.jsonl` and optional OTel JSONL | `COPILOT_HOME`; `COPILOT_OTEL_FILE_EXPORTER_PATH` (file) |
+| **Grok CLI** | `~/.grok/sessions/*/*/updates.jsonl` | `GROK_HOME`† |
+| **Aider** | `${XDG_STATE_HOME:-~/.local/state}/aider/analytics.jsonl` (TokenClock convention) | `AIDER_ANALYTICS_LOG` (file); `AIDER_HOME`†; `XDG_STATE_HOME` |
+| **Antigravity** | `~/.gemini/{antigravity-cli,antigravity-ide,antigravity}/conversations/*.db` | `ANTIGRAVITY_HOME`† |
+| **Cline** | `${XDG_CONFIG_HOME:-~/.config}/Code/User/globalStorage/saoudrizwan.claude-dev/tasks/*/api_conversation.json` | `CLINE_HOME`†; `XDG_CONFIG_HOME` |
+| **Continue** | `~/.continue/{dev_data,sessions}/*.jsonl` | `CONTINUE_HOME`† |
+| **Cursor Agent** | `${XDG_CONFIG_HOME:-~/.config}/Cursor/User/globalStorage/state.vscdb`, then the authenticated Cursor usage API | `CURSOR_AGENT_HOME`†; `XDG_CONFIG_HOME` |
+
+† TokenClock compatibility override, not a provider-documented environment contract. Custom and environment paths expand `~`, `$VAR`, and `${VAR}`. Cline also probes VSCodium, Code OSS, Cursor, VS Code Remote, and Cursor Remote global storage under their Linux user-data roots.
+
+Detection reports three separate states internally: catalog entry declared, candidate path exists, and parser-readable source found. A path is counted as detected only after TokenClock can read a valid JSON/JSONL source or open the required SQLite table and columns.
+
+Known limitations:
+
+- Current OpenClaw releases can migrate transcripts to per-agent SQLite; TokenClock's OpenClaw parser still requires legacy JSONL transcripts.
+- Aider does not create an analytics log by default. Start it with `--analytics-log <file>` or set `AIDER_ANALYTICS_LOG`; the XDG state path above is only TokenClock's Linux convention.
+- Copilot session events may contain limited token detail. Full detail requires Copilot OTel file export; `COPILOT_OTEL_FILE_EXPORTER_PATH` is consumed directly.
+- Cursor usage is not read from local token logs: TokenClock reads the local Cursor credential database and, when cloud fetching is enabled, calls Cursor's authenticated usage API.
+
 **x86_64 — prebuilt AppImage (default):** the universal one-liner downloads a self-contained AppImage (GTK3 bundled, needs only glibc ≥ 2.35) — no Swift, no compilation, no dev headers:
 
 ```bash

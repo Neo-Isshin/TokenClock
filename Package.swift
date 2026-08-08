@@ -11,6 +11,7 @@ let linuxSources = [
     "Services/AntigravityUsageService.swift",
     "Services/AppPaths.swift",
     "Services/ClaudeCodeUsageService.swift",
+    "Services/CodexQuotaService.swift",
     "Services/ClineUsageService.swift",
     "Services/CodexUsageService.swift",
     "Services/ContinueUsageService.swift",
@@ -19,14 +20,13 @@ let linuxSources = [
     "Services/GeminiUsageService.swift",
     "Services/GrokUsageService.swift",
     "Services/HermesUsageService.swift",
+    "Services/JSONLLineReader.swift",
     "Services/HistoryStore.swift",
     "Services/MockUsageService.swift",
     "Services/ModelEmoji.swift",
     "Services/ModelNormalizer.swift",
     "Services/OpenClawUsageService.swift",
     "Services/OpenCodeUsageService.swift",
-    "Services/PathConfig.swift",
-    "Services/PathDetector.swift",
     "Services/QwenCodeUsageService.swift",
     "Services/UsageAggregator.swift",
     "Services/UsageServiceProtocol.swift",
@@ -41,6 +41,9 @@ let linuxSources = [
     "Linux/LinuxThemePicker.swift",
     "Linux/LinuxWeatherService.swift",
     "Linux/LinuxMain.swift",
+    "Linux/LinuxPathConfig.swift",
+    "Linux/LinuxPathDetector.swift",
+    "Linux/LinuxProviderCatalog.swift",
     "Linux/LinuxUsageModel.swift",
 ]
 
@@ -68,6 +71,8 @@ let package = Package(
                 "Models/ClockSize.swift",
                 "Models/CustomThemeConfig.swift",
                 "Services/LaunchAgentHelper.swift",
+                "Services/PathConfig.swift",
+                "Services/PathDetector.swift",
                 "Services/UsageAPIServer.swift",
                 "Services/WeatherService.swift",
                 "ViewModel.swift",
@@ -77,6 +82,11 @@ let package = Package(
             sources: linuxSources,
             resources: [.copy("Resources/glass_disc.png")],
             swiftSettings: [.unsafeFlags(["-parse-as-library"])]
+        ),
+        .testTarget(
+            name: "TokenClockTests",
+            dependencies: ["TokenClock"],
+            path: "Tests/TokenClockTests"
         ),
     ]
 )

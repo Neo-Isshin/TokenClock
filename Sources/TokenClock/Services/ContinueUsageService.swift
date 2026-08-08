@@ -17,8 +17,8 @@ final class ContinueUsageService: @unchecked Sendable {
     private let fm = FileManager.default
     private let continueHome: String
 
-    init() {
-        continueHome = PathConfig.continueHome()
+    init(continueHome: String? = nil) {
+        self.continueHome = continueHome ?? PathConfig.continueHome()
     }
 
     func fullScan() {
@@ -58,16 +58,32 @@ final class ContinueUsageService: @unchecked Sendable {
 
     private func scanAllDirs() {
         // dev_data 和 sessions 两个目录都扫
+        var livePaths = Set<String>()
         for sub in ["dev_data", "sessions"] {
             let dir = continueHome + "/" + sub
             var isDir: ObjCBool = false
             guard fm.fileExists(atPath: dir, isDirectory: &isDir), isDir.boolValue else { continue }
             guard let files = try? fm.contentsOfDirectory(atPath: dir) else { continue }
             for file in files where file.hasSuffix(".jsonl") {
-                processJSONL(dir + "/" + file)
+                let path = dir + "/" + file
+                livePaths.insert(path)
+                processJSONL(path)
             }
         }
+        evictFiles(notIn: livePaths)
         rebuildRecentEntries()
+    }
+
+    private func evictFiles(notIn livePaths: Set<String>) {
+        let removed = Set(fileCache.keys).subtracting(livePaths)
+        for path in removed {
+            if let old = fileDailyContrib[path] { subtractDay(old, from: &dailyData) }
+            if let old = fileHourlyContrib[path] { subtractHour(old, from: &hourlyData) }
+            fileCache.removeValue(forKey: path)
+            fileDailyContrib.removeValue(forKey: path)
+            fileHourlyContrib.removeValue(forKey: path)
+            fileRecentContrib.removeValue(forKey: path)
+        }
     }
 
     private func processJSONL(_ path: String) {
@@ -80,34 +96,18 @@ final class ContinueUsageService: @unchecked Sendable {
         if let old = fileDailyContrib[path] { subtractDay(old, from: &dailyData) }
         if let old = fileHourlyContrib[path] { subtractHour(old, from: &hourlyData) }
 
-        guard let stream = InputStream(fileAtPath: path) else { return }
-        stream.open()
-        defer { stream.close() }
-
         let today = DateHelper.todayKey()
-        let bufSize = AppConfig.Scan.jsonlBufferSize
-        let buf = UnsafeMutablePointer<UInt8>.allocate(capacity: bufSize)
-        defer { buf.deallocate() }
-        var lineBuf = Data()
         var newDaily: [String: DayUsage] = [:]
         var newHourly: [String: HourlyUsage] = [:]
         var newRecent: [RecentEntry] = []
 
-        while stream.hasBytesAvailable {
-            let n = stream.read(buf, maxLength: bufSize)
-            if n <= 0 { break }
-            lineBuf.append(buf, count: n)
-            while let nlRange = lineBuf.range(of: Data([0x0A])) {
-                let lineData = lineBuf[lineBuf.startIndex..<nlRange.lowerBound]
-                lineBuf = lineBuf[nlRange.upperBound...]
-                guard !lineData.isEmpty else { continue }
-                guard let line = String(data: lineData, encoding: .utf8),
-                      let obj = try? JSONSerialization.jsonObject(with: line.data(using: .utf8) ?? Data()) as? [String: Any] else { continue }
-
-                guard let r = parseEvent(obj) else { continue }
-                accumulate(r, today: today, daily: &newDaily, hourly: &newHourly, recent: &newRecent)
-            }
+        func process(_ line: String) {
+            guard let data = line.data(using: .utf8),
+                  let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let result = parseEvent(obj) else { return }
+            accumulate(result, today: today, daily: &newDaily, hourly: &newHourly, recent: &newRecent)
         }
+        guard JSONLLineReader.read(path: path, onLine: process) != nil else { return }
 
         fileDailyContrib[path] = newDaily
         fileHourlyContrib[path] = newHourly
@@ -231,30 +231,9 @@ final class ContinueUsageService: @unchecked Sendable {
                   let modDate = attrs[.modificationDate] as? Date,
                   DateHelper.dateKey(from: modDate) == today else { continue }
 
-            var totalTokens = 0, msgCount = 0
-            guard let stream = InputStream(fileAtPath: fullPath) else { continue }
-            stream.open()
-            defer { stream.close() }
-
-            let bufSize = AppConfig.Scan.jsonlBufferSize
-            let buf = UnsafeMutablePointer<UInt8>.allocate(capacity: bufSize)
-            defer { buf.deallocate() }
-            var lineBuf = Data()
-
-            while stream.hasBytesAvailable {
-                let n = stream.read(buf, maxLength: bufSize)
-                if n <= 0 { break }
-                lineBuf.append(buf, count: n)
-                while let nlRange = lineBuf.range(of: Data([0x0A])) {
-                    let lineData = lineBuf[lineBuf.startIndex..<nlRange.lowerBound]
-                    lineBuf = lineBuf[nlRange.upperBound...]
-                    guard !lineData.isEmpty else { continue }
-                    guard let line = String(data: lineData, encoding: .utf8),
-                          let obj = try? JSONSerialization.jsonObject(with: line.data(using: .utf8) ?? Data()) as? [String: Any],
-                          let r = parseEvent(obj), r.dateKey == today else { continue }
-                    totalTokens += r.tokens; msgCount += 1
-                }
-            }
+            let usage = fileDailyContrib[fullPath]?[today]
+            let totalTokens = usage?.tokens ?? 0
+            let msgCount = usage?.messages ?? 0
             guard totalTokens > 0 else { continue }
             results.append(SessionInfo(
                 rawId: file, displayName: SessionIdDisplay.format(String(file.dropLast(".jsonl".count))), detail: nil,

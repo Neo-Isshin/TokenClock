@@ -207,6 +207,40 @@ curl -fsSL https://raw.githubusercontent.com/Neo-Isshin/TokenClock/main/cli/inst
 
 Linux 使用 GTK3/Cairo 还原 **normal 表盘体验**：主窗口是透明的圆形小组件，盘面信息布局与 macOS normal 一致，并完整提供玻璃、经典、冰川、深夜、暗金、古风、超电磁炮、天空 8 套内置表盘及其指针形状、数字、刻度和装饰。左键展开与主题配套的详情面板，可按会话/模型分组、显示占比、展开来源并查看天气趋势；右键提供图形化表盘选择器、尺寸、透明度、置顶、温标、城市、时区、语言、设置、XDG 开机自启、复制 API 和关于。GTK 设置窗口包含自动探测、14 种工具开关与数据路径、API 即时配置、速率阈值和可保存的自定义表盘。Linux 自动天气使用 wttr.in 的 IP 定位回退，手选城市行为与 macOS normal 一致。
 
+Linux 详情面板还在 **By Percent 左侧**加入 **Codex Quota**：在有数据时展示周额度/短周期额度的剩余量、重置时间、套餐、余额和 reset credits。额度只在用户打开该视图时按需获取，并使用短缓存和有界回退；不会常驻 `app-server` 子进程，也没有额度轮询循环。normal 对齐还包括紧凑的 3×3 基础表盘选择器（已保存自定义表盘排列在其后）、自定义表盘保存/应用/删除/重置与持久化、520×548 的概览式折叠设置窗口，以及 Linux 专属 About 信息。这些是对 normal 工作流与视觉气质的 GTK/Cairo 适配，不代表与 AppKit 像素级完全相同。
+
+#### Linux provider catalog
+
+Linux 使用独立的路径 catalog，不会导入 macOS 的 `~/Library/Application Support`，也不会导入 Windows 的 `%APPDATA%`/`%LOCALAPPDATA%`。解析顺序为：已保存的自定义路径、下表所列环境变量候选、Linux 默认路径、Linux 专属备选路径。只有 provider 或宿主应用遵循 XDG Base Directory 时才使用 XDG；XDG 变量未设置（或错误地设置成相对路径）时使用 `:-` 后的回退路径。
+
+| 工具 | Linux 默认路径 / 解析器输入 | 环境变量候选（按优先级） |
+|------|-----------------------------|--------------------------|
+| **OpenClaw** | `~/.openclaw/agents/*/sessions/*.jsonl` | `OPENCLAW_STATE_DIR`；`${OPENCLAW_HOME}/.openclaw` |
+| **Claude Code** | `~/.claude/projects/**/*.jsonl` | `CLAUDE_CONFIG_DIR` |
+| **Gemini CLI** | `~/.gemini/tmp/*/chats/session-*.(jsonl\|json)` | `${GEMINI_CLI_HOME}/.gemini`；`GEMINI_HOME`† |
+| **Codex** | `~/.codex/sessions/**/rollout-*.jsonl` | `CODEX_HOME` |
+| **Hermes** | `~/.hermes/state.db`（`sessions` 表） | `HERMES_HOME` |
+| **OpenCode** | `${XDG_DATA_HOME:-~/.local/share}/opencode/opencode.db` | `OPENCODE_DB`（文件）；`OPENCODE_HOME`†；`XDG_DATA_HOME` |
+| **Qwen Code** | `~/.qwen/projects/*/chats/*.jsonl` | `QWEN_RUNTIME_DIR`；`QWEN_HOME` |
+| **GitHub Copilot CLI** | `~/.copilot/session-state/*/events.jsonl` 与可选的 OTel JSONL | `COPILOT_HOME`；`COPILOT_OTEL_FILE_EXPORTER_PATH`（文件） |
+| **Grok CLI** | `~/.grok/sessions/*/*/updates.jsonl` | `GROK_HOME`† |
+| **Aider** | `${XDG_STATE_HOME:-~/.local/state}/aider/analytics.jsonl`（TokenClock 约定） | `AIDER_ANALYTICS_LOG`（文件）；`AIDER_HOME`†；`XDG_STATE_HOME` |
+| **Antigravity** | `~/.gemini/{antigravity-cli,antigravity-ide,antigravity}/conversations/*.db` | `ANTIGRAVITY_HOME`† |
+| **Cline** | `${XDG_CONFIG_HOME:-~/.config}/Code/User/globalStorage/saoudrizwan.claude-dev/tasks/*/api_conversation.json` | `CLINE_HOME`†；`XDG_CONFIG_HOME` |
+| **Continue** | `~/.continue/{dev_data,sessions}/*.jsonl` | `CONTINUE_HOME`† |
+| **Cursor Agent** | `${XDG_CONFIG_HOME:-~/.config}/Cursor/User/globalStorage/state.vscdb`，随后请求已认证的 Cursor usage API | `CURSOR_AGENT_HOME`†；`XDG_CONFIG_HOME` |
+
+† TokenClock 兼容覆盖变量，不是 provider 官方公布的环境变量契约。自定义路径和环境变量路径支持展开 `~`、`$VAR`、`${VAR}`。Cline 还会探测 Linux 用户数据目录下的 VSCodium、Code OSS、Cursor、VS Code Remote 和 Cursor Remote global storage。
+
+自动探测在内部区分三个状态：catalog 已声明、候选路径存在、解析器可读取。只有 TokenClock 能读取有效 JSON/JSONL，或能打开所需 SQLite 表及字段时，才计为探测成功。
+
+已知限制：
+
+- 当前 OpenClaw 可以把 transcript 迁移到每个 agent 的 SQLite 数据库；TokenClock 的 OpenClaw 解析器目前仍要求旧版 JSONL transcript。
+- Aider 默认不会创建 analytics 日志，必须通过 `--analytics-log <file>` 或 `AIDER_ANALYTICS_LOG` 开启；上面的 XDG state 路径只是 TokenClock 的 Linux 约定。
+- Copilot 的 session event 可能只包含有限的 token 明细；完整明细需要 Copilot OTel 文件，`COPILOT_OTEL_FILE_EXPORTER_PATH` 会被直接读取。
+- Cursor 用量并非来自本地 token 日志：TokenClock 读取本地 Cursor 凭据数据库，并在启用云端获取时调用 Cursor 的已认证 usage API。
+
 **x86_64 —— 预编译 AppImage（默认）：** 通用一键命令会下载一个自带 GTK3 的 AppImage（仅要求 glibc ≥ 2.35），无需 Swift、无需编译、无需开发头文件：
 
 ```bash

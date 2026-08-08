@@ -16,20 +16,23 @@ final class LinuxUsageModel: @unchecked Sendable {
     private var storedRateWindowMinutes: Int
     private var scanning = false
 
-    private let openclawService = OpenClawUsageService()
-    private let claudeCodeService = ClaudeCodeUsageService()
-    private let geminiService = GeminiUsageService()
-    private let codexService = CodexUsageService()
-    private let hermesService = HermesUsageService()
-    private let opencodeService = OpenCodeUsageService()
-    private let qwenService = QwenCodeUsageService()
-    private let copilotService = CopilotUsageService()
-    private let grokService = GrokUsageService()
-    private let aiderService = AiderUsageService()
-    private let antigravityService = AntigravityUsageService()
-    private let clineService = ClineUsageService()
-    private let continueService = ContinueUsageService()
-    private let cursorAgentService = CursorAgentUsageService()
+    // Construct parsers only after init-time Linux catalog detection has saved
+    // any alternate path. Otherwise an alternate would take effect only after
+    // restarting TokenClock because parser homes are captured in init().
+    private lazy var openclawService = OpenClawUsageService()
+    private lazy var claudeCodeService = ClaudeCodeUsageService()
+    private lazy var geminiService = GeminiUsageService()
+    private lazy var codexService = CodexUsageService()
+    private lazy var hermesService = HermesUsageService()
+    private lazy var opencodeService = OpenCodeUsageService()
+    private lazy var qwenService = QwenCodeUsageService()
+    private lazy var copilotService = CopilotUsageService()
+    private lazy var grokService = GrokUsageService()
+    private lazy var aiderService = AiderUsageService()
+    private lazy var antigravityService = AntigravityUsageService()
+    private lazy var clineService = ClineUsageService()
+    private lazy var continueService = ContinueUsageService()
+    private lazy var cursorAgentService = CursorAgentUsageService()
 
     static let allToolNames = Set([
         "OpenClaw", "Claude Code", "Gemini CLI", "Codex", "Hermes", "OpenCode",

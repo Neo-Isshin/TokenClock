@@ -150,6 +150,7 @@ final class LinuxApp: @unchecked Sendable {
             )
         )
         gtk_container_add(tc_gtk_container(createdWindow), createdDial)
+        tc_gtk_set_fixed_window_size(createdWindow, diameter)
 
         _ = tc_gtk_on_destroy(createdWindow, linuxDestroy, opaque)
         _ = tc_gtk_on_button_press(createdDial, linuxButtonPress, opaque)
@@ -475,7 +476,13 @@ final class LinuxApp: @unchecked Sendable {
         case "settings": showSettings()
         case "launch-at-login": toggleAutostart()
         case "about":
-            if let window { tc_gtk_show_about(window, "normal · Linux") }
+            if let window {
+                if let path = Bundle.module.path(forResource: "glass_disc", ofType: "png") {
+                    path.withCString { tc_gtk_show_about(window, "v1.3.8", $0) }
+                } else {
+                    tc_gtk_show_about(window, "v1.3.8", nil)
+                }
+            }
         case "quit":
             shutdown()
             gtk_main_quit()
@@ -498,7 +505,11 @@ final class LinuxApp: @unchecked Sendable {
     }
 
     func chooseThemeFromPicker(_ theme: LinuxClockTheme) {
-        selectTheme(theme)
+        if theme == .custom {
+            applyCustomTheme(id: nil)
+        } else {
+            selectTheme(theme)
+        }
     }
 
     func applyCustomTheme(id: UUID?) {
@@ -512,11 +523,19 @@ final class LinuxApp: @unchecked Sendable {
     }
 
     func customThemeListChanged() {
-        if selectedTheme == .custom,
-           let active = UserDefaults.standard.string(for: .activeCustomThemeId),
-           !LinuxCustomThemeStore.shared.themes.contains(where: { $0.id.uuidString == active }) {
-            selectTheme(.classic)
+        if selectedTheme == .custom {
+            let active = UserDefaults.standard.string(for: .activeCustomThemeId)
+            if active == nil || !LinuxCustomThemeStore.shared.themes.contains(where: { $0.id.uuidString == active }) {
+                UserDefaults.standard.remove(.activeCustomThemeId)
+                selectTheme(.classic)
+            }
         }
+        rebuildContextMenu()
+    }
+
+    func resetCustomThemeToClassic() {
+        UserDefaults.standard.remove(.activeCustomThemeId)
+        selectTheme(.classic)
         rebuildContextMenu()
     }
 
@@ -533,7 +552,7 @@ final class LinuxApp: @unchecked Sendable {
         guard let window, let dial else { return }
         let diameter = gint(size.diameter)
         gtk_widget_set_size_request(dial, diameter, diameter)
-        gtk_window_resize(tc_gtk_window(window), diameter, diameter)
+        tc_gtk_set_fixed_window_size(window, diameter)
         detailsPanel?.hide()
         updateDetailsPanel()
         _ = tc_gtk_idle_add(linuxShapeFinished, opaque)

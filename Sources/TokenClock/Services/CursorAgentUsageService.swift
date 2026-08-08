@@ -118,7 +118,22 @@ final class CursorAgentUsageService: @unchecked Sendable {
 
     /// Cursor IDE 的 state.vscdb 路径（macOS: Library，Linux: XDG config）
     private func cursorStateDbPath() -> String {
+#if os(Linux)
+        let configured = PathConfig.cursorAgentHome()
+        let candidates: [String]
+        if configured.hasSuffix(".vscdb") {
+            candidates = [configured]
+        } else {
+            candidates = [
+                configured + "/state.vscdb",
+                configured + "/User/globalStorage/state.vscdb",
+            ]
+        }
+        return candidates.first(where: { FileManager.default.isReadableFile(atPath: $0) })
+            ?? candidates[0]
+#else
         AppPaths.appSupport("Cursor", "User", "globalStorage", "state.vscdb")
+#endif
     }
 
     /// 从 token 提取 userId

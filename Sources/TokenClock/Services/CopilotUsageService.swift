@@ -18,8 +18,8 @@ final class CopilotUsageService: @unchecked Sendable {
     private let fm = FileManager.default
     private let copilotHome: String
 
-    init() {
-        copilotHome = PathConfig.copilotHome()
+    init(copilotHome: String? = nil) {
+        self.copilotHome = copilotHome ?? PathConfig.copilotHome()
     }
 
     func fullScan() {
@@ -28,13 +28,11 @@ final class CopilotUsageService: @unchecked Sendable {
         fileHourlyContrib.removeAll(); fileCacheContrib.removeAll()
         fileRecentContrib.removeAll()
         recentEntries = []
-        scanOtelDir()
-        scanSessionStateDir()
+        scanAllFiles()
     }
 
     func incrementalScan() {
-        scanOtelDir()
-        scanSessionStateDir()
+        scanAllFiles()
     }
 
     func todayUsage() -> (tokens: Int, messages: Int, cacheRate: Double) {
@@ -63,34 +61,53 @@ final class CopilotUsageService: @unchecked Sendable {
         return recentEntries.contains { $0.timestamp >= cutoff }
     }
 
-    // MARK: - OTel JSONL 扫描
-
-    private func scanOtelDir() {
-        let otelDir = copilotHome + "/otel"
+    private func scanAllFiles() {
+        var livePaths = Set<String>()
         var isDir: ObjCBool = false
-        guard fm.fileExists(atPath: otelDir, isDirectory: &isDir), isDir.boolValue else { return }
-        guard let files = try? fm.contentsOfDirectory(atPath: otelDir) else { return }
-
-        for file in files where file.hasSuffix(".jsonl") {
-            let fullPath = otelDir + "/" + file
-            processJSONLFile(fullPath, parser: parseOtelEvent)
+#if os(Linux)
+        if let directFile = PathConfig.copilotOtelFile(),
+           fm.fileExists(atPath: directFile, isDirectory: &isDir), !isDir.boolValue {
+            livePaths.insert(directFile)
+            processJSONLFile(directFile, parser: parseOtelEvent)
         }
+#endif
+        let otelDir = copilotHome + "/otel"
+        if fm.fileExists(atPath: otelDir, isDirectory: &isDir), isDir.boolValue,
+           let files = try? fm.contentsOfDirectory(atPath: otelDir) {
+            for file in files where file.hasSuffix(".jsonl") {
+                let path = otelDir + "/" + file
+                livePaths.insert(path)
+                processJSONLFile(path, parser: parseOtelEvent)
+            }
+        }
+
+        let stateDir = copilotHome + "/session-state"
+        if fm.fileExists(atPath: stateDir, isDirectory: &isDir), isDir.boolValue,
+           let sessionDirs = try? fm.contentsOfDirectory(atPath: stateDir) {
+            for session in sessionDirs {
+                let path = stateDir + "/" + session + "/events.jsonl"
+                var isFile: ObjCBool = false
+                guard fm.fileExists(atPath: path, isDirectory: &isFile), !isFile.boolValue else { continue }
+                livePaths.insert(path)
+                processJSONLFile(path, parser: parseSessionEvent)
+            }
+        }
+        evictFiles(notIn: livePaths)
         rebuildRecentEntries()
     }
 
-    // MARK: - Session events 扫描
-
-    private func scanSessionStateDir() {
-        let stateDir = copilotHome + "/session-state"
-        var isDir: ObjCBool = false
-        guard fm.fileExists(atPath: stateDir, isDirectory: &isDir), isDir.boolValue else { return }
-        guard let sessionDirs = try? fm.contentsOfDirectory(atPath: stateDir) else { return }
-
-        for session in sessionDirs {
-            let eventsPath = stateDir + "/" + session + "/events.jsonl"
-            processJSONLFile(eventsPath, parser: parseSessionEvent)
+    private func evictFiles(notIn livePaths: Set<String>) {
+        let removed = Set(fileCache.keys).subtracting(livePaths)
+        for path in removed {
+            if let old = fileDailyContrib[path] { subtractDay(old, from: &dailyData) }
+            if let old = fileHourlyContrib[path] { subtractHour(old, from: &hourlyData) }
+            if let old = fileCacheContrib[path] { subtractCache(old) }
+            fileCache.removeValue(forKey: path)
+            fileDailyContrib.removeValue(forKey: path)
+            fileHourlyContrib.removeValue(forKey: path)
+            fileCacheContrib.removeValue(forKey: path)
+            fileRecentContrib.removeValue(forKey: path)
         }
-        rebuildRecentEntries()
     }
 
     // MARK: - 通用 JSONL 文件处理
@@ -111,30 +128,15 @@ final class CopilotUsageService: @unchecked Sendable {
         var newCache: [String: Int] = [:]
         var newRecent: [RecentEntry] = []
 
-        guard let stream = InputStream(fileAtPath: path) else { return }
-        stream.open()
-        defer { stream.close() }
-
-        let bufSize = AppConfig.Scan.jsonlBufferSize
-        let buf = UnsafeMutablePointer<UInt8>.allocate(capacity: bufSize)
-        defer { buf.deallocate() }
-        var lineBuf = Data()
         let today = DateHelper.todayKey()
 
-        while stream.hasBytesAvailable {
-            let n = stream.read(buf, maxLength: bufSize)
-            if n <= 0 { break }
-            lineBuf.append(buf, count: n)
-            while let nlRange = lineBuf.range(of: Data([0x0A])) {
-                let lineData = lineBuf[lineBuf.startIndex..<nlRange.lowerBound]
-                lineBuf = lineBuf[nlRange.upperBound...]
-                guard !lineData.isEmpty else { continue }
-                guard let line = String(data: lineData, encoding: .utf8),
-                      let obj = try? JSONSerialization.jsonObject(with: line.data(using: .utf8) ?? Data()) as? [String: Any],
-                      let r = parser(obj) else { continue }
-                accumulate(r, today: today, daily: &newDaily, hourly: &newHourly, cache: &newCache, recent: &newRecent)
-            }
+        func process(_ line: String) {
+            guard let data = line.data(using: .utf8),
+                  let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let result = parser(obj) else { return }
+            accumulate(result, today: today, daily: &newDaily, hourly: &newHourly, cache: &newCache, recent: &newRecent)
         }
+        guard JSONLLineReader.read(path: path, onLine: process) != nil else { return }
 
         fileDailyContrib[path] = newDaily
         fileHourlyContrib[path] = newHourly
@@ -270,30 +272,9 @@ final class CopilotUsageService: @unchecked Sendable {
                   let modDate = attrs[.modificationDate] as? Date,
                   DateHelper.dateKey(from: modDate) == today else { continue }
 
-            var totalTokens = 0, msgCount = 0
-            guard let stream = InputStream(fileAtPath: eventsPath) else { continue }
-            stream.open()
-            defer { stream.close() }
-
-            let bufSize = AppConfig.Scan.jsonlBufferSize
-            let buf = UnsafeMutablePointer<UInt8>.allocate(capacity: bufSize)
-            defer { buf.deallocate() }
-            var lineBuf = Data()
-
-            while stream.hasBytesAvailable {
-                let n = stream.read(buf, maxLength: bufSize)
-                if n <= 0 { break }
-                lineBuf.append(buf, count: n)
-                while let nlRange = lineBuf.range(of: Data([0x0A])) {
-                    let lineData = lineBuf[lineBuf.startIndex..<nlRange.lowerBound]
-                    lineBuf = lineBuf[nlRange.upperBound...]
-                    guard !lineData.isEmpty else { continue }
-                    guard let line = String(data: lineData, encoding: .utf8),
-                          let obj = try? JSONSerialization.jsonObject(with: line.data(using: .utf8) ?? Data()) as? [String: Any],
-                          let r = parseSessionEvent(obj), r.dateKey == today else { continue }
-                    totalTokens += r.tokens; msgCount += 1
-                }
-            }
+            let usage = fileDailyContrib[eventsPath]?[today]
+            let totalTokens = usage?.tokens ?? 0
+            let msgCount = usage?.messages ?? 0
 
             guard totalTokens > 0 else { continue }
             results.append(SessionInfo(

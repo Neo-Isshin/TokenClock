@@ -78,6 +78,18 @@ final class LinuxClockRenderer: @unchecked Sendable {
         drawCenterDot(context, centerX, centerY, theme)
     }
 
+    func drawPreview(
+        _ context: OpaquePointer,
+        width: Double,
+        height: Double,
+        customConfig: LinuxCustomThemeConfig,
+        date: Date = Date()
+    ) {
+        LinuxCustomThemeStore.shared.withPreviewConfig(customConfig) {
+            drawPreview(context, width: width, height: height, theme: .custom, date: date)
+        }
+    }
+
     private func drawDial(
         _ context: OpaquePointer,
         _ centerX: Double,
