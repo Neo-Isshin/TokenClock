@@ -14,11 +14,19 @@ final class OpenCodeUsageService: @unchecked Sendable {
     private(set) var dailyCache: [String: Int] = [:]
     private var recentEntries: [RecentEntry] = []
 
+    #if os(Windows)
+    private let databasePath: String
+    #else
     private let opencodeHome: String
+    #endif
     private var lastScanTime: Date = .distantPast
 
     init() {
+        #if os(Windows)
+        databasePath = PathConfig.opencodeDatabasePath()
+        #else
         opencodeHome = PathConfig.opencodeHome()
+        #endif
     }
 
     func fullScan() {
@@ -61,7 +69,11 @@ final class OpenCodeUsageService: @unchecked Sendable {
     // MARK: - 内部
 
     private var dbPath: String {
+        #if os(Windows)
+        databasePath
+        #else
         opencodeHome + "/opencode.db"
+        #endif
     }
 
     private func scanDatabase() {

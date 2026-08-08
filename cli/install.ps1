@@ -1,43 +1,276 @@
-# cli/install.ps1 —— TokenClock Windows 一键安装。
-# 下载最新 release 的便携 zip（exe + Swift/VC++ 运行时），解压到 %LOCALAPPDATA%\Programs\TokenClock，
-# 建开始菜单快捷方式并启动。开机自启用应用右键菜单里的「Launch at Login」即可（写 HKCU\…\Run）。
+# TokenClock Windows per-user installer.
 #
-# 一键用法（PowerShell）：
-#   irm https://raw.githubusercontent.com/Neo-Isshin/tokenclock/main/cli/install.ps1 | iex
-#（Windows 源码合并到 main 之前，把上面 main 换成 windows-port）
+# One-liner:
+#   irm https://raw.githubusercontent.com/Neo-Isshin/TokenClock/windows-port/cli/install.ps1 | iex
+#
+# Passing options through a one-liner:
+#   & ([scriptblock]::Create((irm https://raw.githubusercontent.com/Neo-Isshin/TokenClock/windows-port/cli/install.ps1))) -NoStart -StartMenuShortcut
+
+[CmdletBinding(SupportsShouldProcess = $true)]
+param(
+    [ValidateSet('Install', 'Update', 'Check', 'Uninstall')]
+    [string] $Action = 'Install',
+    [string] $Version = 'latest',
+    [string] $InstallDir = (Join-Path $env:LOCALAPPDATA 'Programs\TokenClock'),
+    [string] $PackagePath,
+    [string] $ChecksumPath,
+    [switch] $AllowUnsigned,
+    [switch] $NoStart,
+    [switch] $StartMenuShortcut,
+    [switch] $DesktopShortcut,
+    [switch] $EnableAutostart,
+    [switch] $RemoveUserData,
+    [switch] $Force
+)
+
 $ErrorActionPreference = 'Stop'
+$ProgressPreference = 'SilentlyContinue'
+$repo = 'Neo-Isshin/TokenClock'
+$assetName = 'TokenClock-windows-x86_64.zip'
+$checksumAssetName = "$assetName.sha256"
+$runKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
+$startMenuLink = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\TokenClock.lnk'
+$desktopLink = Join-Path ([Environment]::GetFolderPath('Desktop')) 'TokenClock.lnk'
+$userDataDir = Join-Path $env:LOCALAPPDATA 'TokenClock'
 
-$repo       = 'Neo-Isshin/tokenclock'
-$asset      = 'TokenClock-windows-x86_64.zip'
-$installDir = Join-Path $env:LOCALAPPDATA 'Programs\TokenClock'
+function Get-FullPath([string] $Path) {
+    if ([string]::IsNullOrWhiteSpace($Path)) { throw 'Path must not be empty.' }
+    return [IO.Path]::GetFullPath($Path).TrimEnd([IO.Path]::DirectorySeparatorChar, [IO.Path]::AltDirectorySeparatorChar)
+}
 
-Write-Host 'Fetching latest release…'
-$rel = Invoke-RestMethod "https://api.github.com/repos/$repo/releases/latest" -Headers @{ 'User-Agent' = 'tokenclock-installer' }
-$dl  = ($rel.assets | Where-Object name -eq $asset).browser_download_url
-if (-not $dl) { throw "Asset '$asset' not found on the latest release. Publish the Windows zip to a release first." }
+function Assert-SafeOwnedDirectory([string] $Path) {
+    $candidate = Get-FullPath $Path
+    $protected = @(
+        [IO.Path]::GetPathRoot($candidate),
+        (Get-FullPath $env:USERPROFILE),
+        (Get-FullPath $env:LOCALAPPDATA),
+        (Get-FullPath $env:APPDATA),
+        (Get-FullPath (Join-Path $env:LOCALAPPDATA 'Programs'))
+    )
+    if ($protected -contains $candidate) { throw "Refusing broad install/uninstall target: $candidate" }
+    return $candidate
+}
 
-# 若已在运行，先关掉（否则 exe 被占用、无法覆盖）
-Get-Process TokenClock -ErrorAction SilentlyContinue | Stop-Process -Force
-Start-Sleep -Milliseconds 400
+function Test-TokenClockInstallation([string] $Directory) {
+    if (-not (Test-Path -LiteralPath $Directory -PathType Container)) { return $false }
+    $metadataPath = Join-Path $Directory 'install.json'
+    if (Test-Path -LiteralPath $metadataPath -PathType Leaf) {
+        try {
+            $metadata = Get-Content -LiteralPath $metadataPath -Raw | ConvertFrom-Json
+            if ($metadata.repository -eq $repo) { return $true }
+        } catch { }
+    }
+    # Compatibility with Windows builds installed before install.json was introduced.
+    return (Test-Path -LiteralPath (Join-Path $Directory 'TokenClock.exe') -PathType Leaf) -and
+           (Test-Path -LiteralPath (Join-Path $Directory 'swiftCore.dll') -PathType Leaf)
+}
 
-$tmp = (New-TemporaryFile).FullName + '.zip'
-Write-Host "Downloading $asset…"
-Invoke-WebRequest $dl -OutFile $tmp
+function Stop-TokenClock([string] $ExpectedExe) {
+    $expected = Get-FullPath $ExpectedExe
+    $targets = @(Get-Process TokenClock -ErrorAction SilentlyContinue | Where-Object {
+        try { (Get-FullPath $_.Path) -eq $expected } catch { $false }
+    })
+    foreach ($process in $targets) {
+        if ($process.CloseMainWindow()) {
+            if ($process.WaitForExit(3000)) { continue }
+        }
+        if (-not $Force) {
+            throw "TokenClock is still running from $expected. Quit it first, or rerun with -Force."
+        }
+        Stop-Process -Id $process.Id -Force
+        $process.WaitForExit(3000)
+    }
+}
 
-if (Test-Path $installDir) { Remove-Item -Recurse -Force $installDir }
-Expand-Archive $tmp -DestinationPath $installDir -Force
-Remove-Item $tmp
+function Remove-ShortcutIfOwned([string] $LinkPath, [string] $ExpectedExe) {
+    if (-not (Test-Path -LiteralPath $LinkPath -PathType Leaf)) { return }
+    try {
+        $shell = New-Object -ComObject WScript.Shell
+        $shortcut = $shell.CreateShortcut($LinkPath)
+        if ((Get-FullPath $shortcut.TargetPath) -eq (Get-FullPath $ExpectedExe)) {
+            Remove-Item -LiteralPath $LinkPath -Force
+        }
+    } catch {
+        Write-Warning "Could not inspect shortcut $LinkPath; leaving it untouched."
+    }
+}
 
-# 开始菜单快捷方式
-$exe = Join-Path $installDir 'TokenClock.exe'
-$sc  = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\TokenClock.lnk'
-$ws  = New-Object -ComObject WScript.Shell
-$s   = $ws.CreateShortcut($sc)
-$s.TargetPath       = $exe
-$s.WorkingDirectory = $installDir
-$s.WindowStyle      = 7   # 最小化（浮窗本身无影响，托盘照常）
-$s.Save()
+function New-Shortcut([string] $LinkPath, [string] $ExePath, [string] $WorkingDirectory) {
+    $parent = Split-Path $LinkPath -Parent
+    if (-not (Test-Path -LiteralPath $parent)) { New-Item -ItemType Directory -Path $parent -Force | Out-Null }
+    $shell = New-Object -ComObject WScript.Shell
+    $shortcut = $shell.CreateShortcut($LinkPath)
+    $shortcut.TargetPath = $ExePath
+    $shortcut.WorkingDirectory = $WorkingDirectory
+    $shortcut.Description = 'TokenClock normal for Windows'
+    $shortcut.WindowStyle = 7
+    $shortcut.Save()
+}
 
-Start-Process $exe -WorkingDirectory $installDir
-Write-Host "✅ TokenClock installed to $installDir and started."
-Write-Host '右键托盘图标查看菜单（尺寸/置顶/语言/开机自启/关于/退出）。'
+function Test-ReleaseHasWindowsAssets($Release) {
+    $names = @($Release.assets | ForEach-Object name)
+    return ($assetName -in $names) -and ($checksumAssetName -in $names)
+}
+
+function Get-Release {
+    $headers = @{ 'User-Agent' = 'TokenClock-Windows-Installer'; 'Accept' = 'application/vnd.github+json' }
+    if ($Version -eq 'latest') {
+        # The repository's newest macOS/Linux release may precede its Windows asset upload.
+        # Pick the newest stable release that already contains both the ZIP and its checksum.
+        for ($page = 1; $page -le 10; $page++) {
+            $releases = @(Invoke-RestMethod "https://api.github.com/repos/$repo/releases?per_page=100&page=$page" -Headers $headers)
+            foreach ($release in $releases) {
+                if (-not $release.draft -and -not $release.prerelease -and (Test-ReleaseHasWindowsAssets $release)) {
+                    return $release
+                }
+            }
+            if ($releases.Count -lt 100) { break }
+        }
+        throw "No stable TokenClock release contains both $assetName and $checksumAssetName."
+    }
+    $encoded = [Uri]::EscapeDataString($Version)
+    return Invoke-RestMethod "https://api.github.com/repos/$repo/releases/tags/$encoded" -Headers $headers
+}
+
+function Read-ExpectedHash([string] $Path) {
+    $line = (Get-Content -LiteralPath $Path -Raw).Trim()
+    if ($line -notmatch '(?i)\b([a-f0-9]{64})\b') { throw "No SHA-256 digest found in $Path" }
+    return $Matches[1].ToLowerInvariant()
+}
+
+function Test-ZipEntries([string] $ZipPath) {
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    $archive = [IO.Compression.ZipFile]::OpenRead($ZipPath)
+    try {
+        foreach ($entry in $archive.Entries) {
+            $name = $entry.FullName.Replace('/', '\')
+            if ([IO.Path]::IsPathRooted($name) -or $name -match '(^|\\)\.\.(\\|$)') {
+                throw "Unsafe archive entry: $($entry.FullName)"
+            }
+        }
+    } finally {
+        $archive.Dispose()
+    }
+}
+
+$InstallDir = Assert-SafeOwnedDirectory $InstallDir
+$exe = Join-Path $InstallDir 'TokenClock.exe'
+
+if ($Action -eq 'Check') {
+    $metadataPath = Join-Path $InstallDir 'install.json'
+    $result = [ordered]@{
+        installed = (Test-Path -LiteralPath $exe -PathType Leaf)
+        installDir = $InstallDir
+        executable = $exe
+        metadata = if (Test-Path -LiteralPath $metadataPath) { Get-Content -LiteralPath $metadataPath -Raw | ConvertFrom-Json } else { $null }
+        autostart = (Get-ItemProperty -Path $runKey -Name TokenClock -ErrorAction SilentlyContinue).TokenClock
+    }
+    $result | ConvertTo-Json -Depth 6
+    return
+}
+
+if ($Action -eq 'Uninstall') {
+    if ((Test-Path -LiteralPath $InstallDir) -and -not (Test-TokenClockInstallation $InstallDir)) {
+        throw "Refusing to uninstall an unrecognized directory: $InstallDir"
+    }
+    if (-not $PSCmdlet.ShouldProcess($InstallDir, 'Uninstall TokenClock')) { return }
+    Stop-TokenClock $exe
+    Remove-ShortcutIfOwned $startMenuLink $exe
+    Remove-ShortcutIfOwned $desktopLink $exe
+    $runValue = (Get-ItemProperty -Path $runKey -Name TokenClock -ErrorAction SilentlyContinue).TokenClock
+    if ($runValue -and $runValue.Trim('"') -eq $exe) {
+        Remove-ItemProperty -Path $runKey -Name TokenClock -ErrorAction SilentlyContinue
+    }
+    if (Test-Path -LiteralPath $InstallDir) { Remove-Item -LiteralPath $InstallDir -Recurse -Force }
+    if ($RemoveUserData -and (Test-Path -LiteralPath $userDataDir)) {
+        Remove-Item -LiteralPath $userDataDir -Recurse -Force
+    }
+    Write-Host "TokenClock was removed from $InstallDir"
+    if (-not $RemoveUserData) { Write-Host "Settings were preserved in $userDataDir (use -RemoveUserData to delete them)." }
+    return
+}
+
+if ((Test-Path -LiteralPath $InstallDir) -and -not (Test-TokenClockInstallation $InstallDir)) {
+    throw "Refusing to replace an unrecognized directory: $InstallDir"
+}
+if (-not $PSCmdlet.ShouldProcess($InstallDir, "$Action TokenClock")) { return }
+
+$temporaryRoot = Join-Path ([IO.Path]::GetTempPath()) ("TokenClockInstaller-" + [guid]::NewGuid().ToString('N'))
+New-Item -ItemType Directory -Path $temporaryRoot | Out-Null
+try {
+    $zip = Join-Path $temporaryRoot $assetName
+    $sha = Join-Path $temporaryRoot $checksumAssetName
+    $releaseTag = 'local-package'
+
+    if ($PackagePath) {
+        Copy-Item -LiteralPath (Get-FullPath $PackagePath) -Destination $zip
+        if ($ChecksumPath) { Copy-Item -LiteralPath (Get-FullPath $ChecksumPath) -Destination $sha }
+    } else {
+        Write-Host "Fetching TokenClock release metadata ($Version)..."
+        $release = Get-Release
+        $releaseTag = $release.tag_name
+        $zipUrl = ($release.assets | Where-Object name -eq $assetName | Select-Object -First 1).browser_download_url
+        $shaUrl = ($release.assets | Where-Object name -eq $checksumAssetName | Select-Object -First 1).browser_download_url
+        if (-not $zipUrl) { throw "Release '$releaseTag' has no $assetName asset." }
+        Invoke-WebRequest $zipUrl -OutFile $zip -Headers @{ 'User-Agent' = 'TokenClock-Windows-Installer' }
+        if ($shaUrl) { Invoke-WebRequest $shaUrl -OutFile $sha -Headers @{ 'User-Agent' = 'TokenClock-Windows-Installer' } }
+    }
+
+    if (Test-Path -LiteralPath $sha -PathType Leaf) {
+        $expected = Read-ExpectedHash $sha
+        $actual = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+        if ($actual -ne $expected) { throw "SHA-256 mismatch: expected $expected, got $actual" }
+        Write-Host "SHA-256 verified: $actual"
+    } elseif (-not $AllowUnsigned) {
+        throw "No checksum was published for $assetName. Refusing installation; use -AllowUnsigned only if you trust the source."
+    } else {
+        Write-Warning 'Installing without checksum verification because -AllowUnsigned was explicitly supplied.'
+    }
+
+    Test-ZipEntries $zip
+    $staging = Join-Path $temporaryRoot 'staging'
+    Expand-Archive -LiteralPath $zip -DestinationPath $staging
+    $stagedExe = Join-Path $staging 'TokenClock.exe'
+    if (-not (Test-Path -LiteralPath $stagedExe -PathType Leaf)) { throw 'Archive does not contain TokenClock.exe at its root.' }
+    if (-not (Get-ChildItem -LiteralPath $staging -Filter 'swiftCore.dll' -File -ErrorAction SilentlyContinue)) {
+        throw 'Archive does not contain the Swift runtime (swiftCore.dll).'
+    }
+
+    Stop-TokenClock $exe
+    $parent = Split-Path $InstallDir -Parent
+    if (-not (Test-Path -LiteralPath $parent)) { New-Item -ItemType Directory -Path $parent -Force | Out-Null }
+    $backup = "$InstallDir.backup-$([guid]::NewGuid().ToString('N'))"
+    $hadPrevious = Test-Path -LiteralPath $InstallDir
+    try {
+        if ($hadPrevious) { Move-Item -LiteralPath $InstallDir -Destination $backup }
+        Move-Item -LiteralPath $staging -Destination $InstallDir
+        [ordered]@{
+            repository = $repo
+            release = $releaseTag
+            asset = $assetName
+            installedAt = [DateTimeOffset]::Now.ToString('o')
+            sha256 = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+        } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $InstallDir 'install.json') -Encoding UTF8
+        if ($hadPrevious) { Remove-Item -LiteralPath $backup -Recurse -Force }
+    } catch {
+        if (Test-Path -LiteralPath $InstallDir) { Remove-Item -LiteralPath $InstallDir -Recurse -Force }
+        if ($hadPrevious -and (Test-Path -LiteralPath $backup)) { Move-Item -LiteralPath $backup -Destination $InstallDir }
+        throw
+    }
+
+    if ($StartMenuShortcut) { New-Shortcut $startMenuLink $exe $InstallDir }
+    if ($DesktopShortcut) { New-Shortcut $desktopLink $exe $InstallDir }
+    if ($EnableAutostart) {
+        if (-not (Test-Path -LiteralPath $runKey)) { New-Item -Path $runKey -Force | Out-Null }
+        New-ItemProperty -Path $runKey -Name TokenClock -PropertyType String -Value ('"' + $exe + '"') -Force | Out-Null
+    }
+    if (-not $NoStart) { Start-Process -FilePath $exe -WorkingDirectory $InstallDir }
+
+    Write-Host "TokenClock $releaseTag installed to $InstallDir"
+    if (-not $StartMenuShortcut -and -not $DesktopShortcut) {
+        Write-Host 'No shortcut was created. Add -StartMenuShortcut or -DesktopShortcut explicitly if desired.'
+    }
+    if (-not $EnableAutostart) { Write-Host 'Autostart was not changed. Add -EnableAutostart explicitly if desired.' }
+} finally {
+    if (Test-Path -LiteralPath $temporaryRoot) { Remove-Item -LiteralPath $temporaryRoot -Recurse -Force }
+}

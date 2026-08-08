@@ -5,6 +5,7 @@ import Foundation
 /// 数据位置: 用户指定路径，默认检测 ~/.aider/analytics.jsonl
 /// 格式: JSONL，每行含 event 和 properties.prompt_tokens / properties.completion_tokens / properties.cost
 final class AiderUsageService: @unchecked Sendable {
+    private static let messageLineNeedle = [Data("\"message_send\"".utf8)]
     private(set) var dailyData: [String: DayUsage] = [:]
     private(set) var hourlyData: [String: HourlyUsage] = [:]
     private var recentEntries: [RecentEntry] = []
@@ -13,8 +14,18 @@ final class AiderUsageService: @unchecked Sendable {
     private let fm = FileManager.default
     private let analyticsPath: String
 
-    init() {
-        analyticsPath = PathConfig.aiderAnalyticsPath()
+    init(aiderHome: String? = nil) {
+        if let aiderHome {
+            analyticsPath = aiderHome.lowercased().hasSuffix(".jsonl")
+                ? aiderHome
+                : aiderHome + "/analytics.jsonl"
+        } else {
+            #if os(Windows)
+            analyticsPath = PathConfig.aiderAnalyticsPath()
+            #else
+            analyticsPath = PathConfig.aiderHome() + "/analytics.jsonl"
+            #endif
+        }
     }
 
     func fullScan() {
@@ -53,7 +64,11 @@ final class AiderUsageService: @unchecked Sendable {
     private func scanAnalyticsFile() {
         let path = analyticsPath
         var isFile: ObjCBool = false
-        guard fm.fileExists(atPath: path, isDirectory: &isFile), !isFile.boolValue else { return }
+        guard fm.fileExists(atPath: path, isDirectory: &isFile), !isFile.boolValue else {
+            dailyData.removeAll(); hourlyData.removeAll(); recentEntries = []
+            lastScanTime = .distantPast
+            return
+        }
 
         guard let attrs = try? fm.attributesOfItem(atPath: path),
               let modDate = attrs[.modificationDate] as? Date,
@@ -62,35 +77,22 @@ final class AiderUsageService: @unchecked Sendable {
         // 文件有修改，重读
         dailyData.removeAll(); hourlyData.removeAll(); recentEntries = []
 
-        guard let stream = InputStream(fileAtPath: path) else { return }
-        stream.open()
-        defer { stream.close() }
-
         let today = DateHelper.todayKey()
-        let bufSize = AppConfig.Scan.jsonlBufferSize
-        let buf = UnsafeMutablePointer<UInt8>.allocate(capacity: bufSize)
-        defer { buf.deallocate() }
-        var lineBuf = Data()
-
-        while stream.hasBytesAvailable {
-            let n = stream.read(buf, maxLength: bufSize)
-            if n <= 0 { break }
-            lineBuf.append(buf, count: n)
-            while let nlRange = lineBuf.range(of: Data([0x0A])) {
-                let lineData = lineBuf[lineBuf.startIndex..<nlRange.lowerBound]
-                lineBuf = lineBuf[nlRange.upperBound...]
-                guard !lineData.isEmpty else { continue }
-                guard let line = String(data: lineData, encoding: .utf8),
-                      let obj = try? JSONSerialization.jsonObject(with: line.data(using: .utf8) ?? Data()) as? [String: Any] else { continue }
+        guard JSONLLineReader.read(
+            path: path,
+            matchingAny: Self.messageLineNeedle,
+            onLine: { line in
+                guard let data = line.data(using: .utf8),
+                      let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
 
                 // 只处理 message_send 事件
-                guard obj["event"] as? String == "message_send" else { continue }
-                guard let props = obj["properties"] as? [String: Any] else { continue }
+                guard obj["event"] as? String == "message_send",
+                      let props = obj["properties"] as? [String: Any] else { return }
 
                 let promptTokens = props["prompt_tokens"] as? Int ?? 0
                 let completionTokens = props["completion_tokens"] as? Int ?? 0
                 let total = promptTokens + completionTokens
-                guard total > 0 else { continue }
+                guard total > 0 else { return }
 
                 // Aider 用 Unix timestamp（秒）
                 let time = obj["time"] as? Double ?? 0
@@ -106,15 +108,16 @@ final class AiderUsageService: @unchecked Sendable {
 
                 if dateKey == today {
                     recentEntries.append(RecentEntry(timestamp: date, tokens: total))
-                    // L4: 限制 recentEntries 增长，只保留 active 窗口 3 倍内的条目
-                    if recentEntries.count > 64 {
-                        let cutoff = Date().addingTimeInterval(-AppConfig.Scan.activeThresholdSeconds * 3)
-                        recentEntries = recentEntries.filter { $0.timestamp >= cutoff }
-                    }
                 }
             }
-        }
+        ) != nil else { return }
 
+        // Prune once per file scan. Filtering after every line becomes quadratic when a busy
+        // analytics log contains thousands of recent events.
+        if recentEntries.count > 64 {
+            let cutoff = Date().addingTimeInterval(-AppConfig.Scan.activeThresholdSeconds * 3)
+            recentEntries = recentEntries.filter { $0.timestamp >= cutoff }
+        }
         lastScanTime = Date()
     }
 

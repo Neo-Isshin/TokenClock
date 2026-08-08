@@ -15,7 +15,16 @@ $root = Split-Path $PSScriptRoot -Parent
 Write-Host '== swift build -c release (dynamic stdlib) =='
 Push-Location $root
 try {
-    swift build -c release
+    # SwiftPM does not automatically compile Win32 .rc files. Compile the version resource with
+    # the LLVM tools bundled by Swift and pass it directly to lld-link so Explorer/installer APIs
+    # expose FileVersion/ProductVersion/ProductName instead of empty metadata.
+    $llvmRc = (Get-Command llvm-rc.exe -ErrorAction Stop).Source
+    $resourceDir = Join-Path $root '.build\windows-resources'
+    New-Item -ItemType Directory -Path $resourceDir -Force | Out-Null
+    $resource = Join-Path $resourceDir 'TokenClock.res'
+    & $llvmRc /FO $resource (Join-Path $root 'Sources\Win32Shim\TokenClock.rc')
+    if ($LASTEXITCODE -ne 0 -or -not (Test-Path $resource)) { throw 'failed to compile TokenClock.rc' }
+    swift build -c release -Xlinker $resource
 } finally { Pop-Location }
 
 $exe = Join-Path $root '.build\release\TokenClock.exe'

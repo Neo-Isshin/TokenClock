@@ -20,6 +20,7 @@ let linuxSources = [
     "Services/GrokUsageService.swift",
     "Services/HermesUsageService.swift",
     "Services/HistoryStore.swift",
+    "Services/JSONLLineReader.swift",
     "Services/MockUsageService.swift",
     "Services/ModelEmoji.swift",
     "Services/ModelNormalizer.swift",
@@ -121,6 +122,11 @@ let package = Package(
                 "-Xlinker", "/SUBSYSTEM:WINDOWS",
                 "-Xlinker", "/ENTRY:mainCRTStartup",
             ])]
+        ),
+        .testTarget(
+            name: "TokenClockTests",
+            dependencies: ["TokenClock"],
+            path: "Tests/TokenClockTests"
         ),
     ]
 )

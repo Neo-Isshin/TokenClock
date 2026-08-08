@@ -20,6 +20,7 @@ typedef void (*win_on_build_menu_t) (void *ctx, void *hmenu);
 typedef void (*win_on_menu_cmd_t)   (void *ctx, int cmd_id);
 typedef void (*win_on_destroy_t)    (void *ctx);
 typedef void (*win_on_click_t)      (void *ctx, int x, int y);
+typedef void (*win_on_scroll_t)     (void *ctx, int delta); /* wheel delta over the detail card */
 
 typedef struct {
   void *ctx;
@@ -31,6 +32,7 @@ typedef struct {
   win_on_menu_cmd_t    on_menu_cmd;
   win_on_destroy_t     on_destroy;
   win_on_click_t       on_click;
+  win_on_scroll_t      on_scroll;
   int    scan_interval_ms;   /* 0 => no scan timer */
   int    width;
   int    height;
@@ -63,6 +65,7 @@ int    win_autostart_get(void);          /* 1 if the Run\TokenClock value exists
 int    win_autostart_set(int enable);    /* write/delete Run\TokenClock = this exe path; 1 on success */
 void   win_message_box(const char *title_utf8, const char *body_utf8);
 int    win_confirm(const char *title_utf8, const char *body_utf8); /* owner-modal Yes/No */
+void   win_open_url(const char *url_utf8);                  /* ShellExecute with the default browser */
 int    win_user_locale(char *buf, int n); /* GetUserDefaultLocaleName → UTF-8 (e.g. "zh-CN"); returns wchars incl. NUL, 0 on failure */
 
 /* --- modal settings dialog (programmatic child controls) ---
@@ -75,11 +78,13 @@ void  dlg_add_static(void *dlg, const char *text_utf8, int x, int y, int w, int 
 void  dlg_add_title(void *dlg, const char *text_utf8, int x, int y, int w, int h);   /* 大号粗体标题 */
 void  dlg_add_sep(void *dlg, int x, int y, int w);                                   /* 凹陷横线 */
 void  dlg_add_push(void *dlg, int id, const char *text_utf8, int x, int y, int w, int h);
+void  dlg_add_brand_logo(void *dlg, int x, int y, int w, int h); /* TokenClock clock mark */
 int   dlg_check_get(void *dlg, int id);                 /* 1 if checked */
 void  dlg_set_check(void *dlg, int id, int checked);
 void  dlg_edit_get(void *dlg, int id, char *buf_utf8, int n);   /* read edit text → UTF-8 */
 void  dlg_set_text(void *dlg, int id, const char *text_utf8);   /* set a control's label/text */
 int   dlg_modal(void *dlg);                             /* blocks; returns 1=OK 0=cancel */
+void  dlg_end(void *dlg, int result);                   /* programmatically finish current modal */
 void  dlg_destroy(void *dlg);                           /* caller destroys after reading child controls */
 typedef void (*dlg_on_cmd_t)(void *ctx, int id);
 int   dlg_modal_cb(void *dlg, dlg_on_cmd_t on_cmd, void *ctx);  /* 同 dlg_modal，非 OK/Cancel 的按钮点击回调 on_cmd */
@@ -106,13 +111,19 @@ void  menu_add_submenu(void *hmenu, const char *label_utf8, void *submenu);
 void  menu_track(void *hmenu, void *hwnd);
 void  menu_show_at(void *menu, void *hwnd, int x, int y);   /* TrackPopupMenu at fixed point (capture) */
 
+/* Modal visual clock-face picker. Draws a real 3x3 grid of dial previews and returns
+ * the selected zero-based index, or -1 when dismissed. */
+typedef struct win_theme win_theme;
+int win_theme_picker(const win_theme *themes, const char **names_utf8, int count,
+                     int selected, const char *title_utf8);
+
 /* --- GDI+ render (implemented in winrender.cpp) ---
  * Draws one antialiased clock frame into a per-pixel-alpha bitmap and presents it via
  * UpdateLayeredWindow — the window is fully transparent outside the dial (no rectangle).
  * Theme-driven: Swift builds a win_theme ( colours ARGB 0xAARRGGBB so .clear/opacity carry ),
  * winrender renders dial/rim/ticks/numbers/4 hand-styles/centre-cap/sky-decoration from it.
  * Each overlay string may be NULL/empty ⇒ that field is skipped. */
-typedef struct {
+struct win_theme {
     unsigned int dial_fill;      /* 0xAARRGGBB */
     unsigned int dial_rim;
     double       rim_width;      /* px @ radius 116 (macOS 用分数 1.5/2.5) */
@@ -128,7 +139,7 @@ typedef struct {
     int          has_decoration;  /* sky theme */
     unsigned int text_primary, text_secondary;
     unsigned int dd_bg, dd_text, dd_subtext, dd_border;   /* 下拉详情卡片配色 */
-} win_theme;
+};
 
 typedef struct {
     const char *date;        /* top centre, secondary 11px */
@@ -145,8 +156,14 @@ typedef struct {
     const char *detail_header;   /* label \t usage \t messages \t cache */
     const char *forecast_summary; /* emoji/city/temp \t-ish encoded as summary|label */
     const char *forecast_slots;   /* time|emoji|temp, four slots separated by \t */
+    const char *quota_label;      /* left chip label beside percent */
+    const char *quota_text;       /* quota panel: typed tab-separated rows */
     int detail_grouping;         /* 0 session / 1 model */
     int detail_percentage;       /* 0 absolute / 1 percent */
+    int detail_visible;          /* explicit; never infer visibility from row text */
+    int detail_quota_visible;    /* 1 shows quota panel in place of the usage rows */
+    int clock_diameter;          /* face diameter; independent from expanded host width */
+    int detail_card_width;       /* fixed 320 for macOS-normal equivalent detail card */
 } win_overlay;
 
 void gdip_init(void);

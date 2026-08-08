@@ -1,18 +1,19 @@
-# 在 tag 推送时为 Windows x86_64 构建便携 zip 并附加到对应 release。
+# 从独立维护的 windows-port 构建 Windows x86_64 便携 zip，并附加到已存在的共享 release。
 #
 # 产物：TokenClock-windows-x86_64.zip = TokenClock.exe + Swift 运行时 DLL（动态链接，工具链无静态库）
 # + VC++ 运行时，自包含（Windows 加载器优先搜 exe 目录）。下载即用；cli/install.ps1 提供一键安装。
 #
 # 注意：
-# - Windows 源码在 windows-port 分支；release tag 必须从「含 Windows 源码的提交」打出（合并到 main 后），
-#   否则 checkout 出来的源码没有 Sources/Win32Shim 与 Sources/TokenClock/Windows。
+# - 只推送指向 windows-port 提交的 windows-v* tag；workflow 定义和构建源码都来自该不可变 tag。
+# - windows-v1.3.8 映射到已存在的共享 release v1.3.8。流程只附加 Windows 资产，不创建 Windows-only release，
+#   避免改变 macOS/Linux 安装器看到的 latest release。
+# - Windows 源码不需要、也不应反向合并到 main/macOS/Linux 分支。
 # - Swift on Windows 的 GHA setup 偶有版本/SDK 抖动；若 setup-swift 步骤失败，按报错调 swift-version。
 name: windows
 
 on:
   push:
-    tags: ['v*']
-  workflow_dispatch:       # 允许手动触发，便于不打 tag 验证
+    tags: ['windows-v*']
 
 permissions:
   contents: write          # 附加资产到 release 需要
@@ -23,7 +24,32 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        # 默认 checkout 触发 tag 的提交；确保该提交含 Windows 源码（见文件头说明）。
+
+      - name: Map Windows tag to shared release tag
+        id: release
+        shell: pwsh
+        run: |
+          $windowsTag = '${{ github.ref_name }}'
+          if ($windowsTag -notmatch '^windows-(v[0-9].*)$') {
+            throw "Unexpected Windows tag: $windowsTag"
+          }
+          "tag=$($Matches[1])" >> $env:GITHUB_OUTPUT
+
+      - name: Require an existing shared release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          $found = $false
+          foreach ($attempt in 1..20) {
+            gh release view "$env:RELEASE_TAG" --repo "$env:GITHUB_REPOSITORY" --json tagName 2>$null | Out-Null
+            if ($LASTEXITCODE -eq 0) { $found = $true; break }
+            Start-Sleep -Seconds 15
+          }
+          if (-not $found) {
+            throw "Shared release $env:RELEASE_TAG does not exist; refusing to create a Windows-only release."
+          }
 
       - name: Setup Swift
         uses: swiftpackage/setup-swift@v2
@@ -40,7 +66,8 @@ jobs:
       - name: Attach zip + SHA256 to the release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref_name }}
+          tag_name: ${{ steps.release.outputs.tag }}
+          fail_on_unmatched_files: true
           files: |
             TokenClock-windows-x86_64.zip
             TokenClock-windows-x86_64.zip.sha256

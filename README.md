@@ -9,6 +9,7 @@
 [![macOS 12+](https://img.shields.io/badge/macOS-12%2B-000000?style=for-the-badge&logo=apple&logoColor=white)](https://www.apple.com/macos/)
 [![macOS 26+](https://img.shields.io/badge/macOS%2026-Liquid%20Glass-00B0F0?style=for-the-badge)](https://developer.apple.com/macos/)
 [![Linux normal](https://img.shields.io/badge/Linux-normal-FCC624?style=for-the-badge&logo=linux&logoColor=black)](#linux-normal-build)
+[![Windows normal](https://img.shields.io/badge/Windows-normal-0078D4?style=for-the-badge&logo=windows&logoColor=white)](#windows-normal-windows-port)
 
 [![Swift 6](https://img.shields.io/static/v1?label=Swift&message=6&color=F05138&logo=swift&logoColor=white)](https://www.swift.org/)
 [![SwiftUI](https://img.shields.io/static/v1?label=UI&message=SwiftUI%20%2B%20AppKit&color=blueviolet)](https://developer.apple.com/xcode/swiftui/)
@@ -186,6 +187,31 @@ TokenClock reads the **JSONL / SQLite usage files** that each tool writes locall
 
 > Token-counting formulas differ slightly per service: **Codex** and **Gemini/Qwen** have `input` (`promptTokenCount`) already including cached tokens, so cached must not be added again (it would double-count) — they use `input + output + (thought)`; other services (Claude/OpenClaw, etc.) sum input/output/cache fields that are mutually exclusive. See `docs/TOOL_SCHEMA_ANALYSIS.md`.
 
+### Windows provider catalog (`windows-port`)
+
+Windows discovery is maintained separately from macOS and Linux. It expands `%NAME%`, `$env:NAME`, `${NAME}`, `$NAME`, and `~`, then probes in this order: **custom setting → environment variables → Windows default → compatibility alternate**.
+
+| Tool | Windows default data source | Environment override(s) |
+|------|-----------------------------|-------------------------|
+| **OpenClaw** | `%USERPROFILE%\.openclaw\` | `OPENCLAW_STATE_DIR` (direct); `OPENCLAW_HOME` (home parent) |
+| **Claude Code** | `%USERPROFILE%\.claude\` | `CLAUDE_CONFIG_DIR` |
+| **Gemini CLI** | `%USERPROFILE%\.gemini\` | `GEMINI_CLI_HOME` (parent); `GEMINI_HOME` (TokenClock compatibility) |
+| **Codex** | `%USERPROFILE%\.codex\` | `CODEX_HOME` |
+| **Hermes** | `%LOCALAPPDATA%\hermes\state.db` | `HERMES_HOME` |
+| **OpenCode** | `%USERPROFILE%\.local\share\opencode\opencode.db` | `OPENCODE_DB` (direct database); `XDG_DATA_HOME` (parent); `OPENCODE_HOME` (TokenClock compatibility) |
+| **Qwen Code** | `%USERPROFILE%\.qwen\` | `QWEN_RUNTIME_DIR`, `QWEN_HOME` |
+| **GitHub Copilot CLI** | `%USERPROFILE%\.copilot\` session state | `COPILOT_OTEL_FILE_EXPORTER_PATH` (direct JSONL file); `COPILOT_HOME` |
+| **Grok CLI** | `%USERPROFILE%\.grok\` | `GROK_HOME` (TokenClock compatibility) |
+| **Aider** | `%USERPROFILE%\.aider\analytics.jsonl` | `AIDER_ANALYTICS_LOG`; `AIDER_HOME` (TokenClock compatibility) |
+| **Antigravity** | `%USERPROFILE%\.gemini\antigravity-cli\` | `ANTIGRAVITY_HOME` (TokenClock compatibility) |
+| **Cline** | `%APPDATA%\Code\User\globalStorage\saoudrizwan.claude-dev\` | `CLINE_HOME` (TokenClock compatibility) |
+| **Continue** | `%USERPROFILE%\.continue\` | `CONTINUE_HOME` (TokenClock compatibility) |
+| **Cursor Agent** | `%APPDATA%\Cursor\User\globalStorage\state.vscdb` | `CURSOR_AGENT_HOME` (TokenClock compatibility) |
+
+Detection reports three separate facts: the catalog declaration, whether the selected path exists, and whether the expected JSONL/JSON/SQLite input is actually parser-readable. An empty provider directory is therefore not reported as working. Hermes also probes the legacy `%USERPROFILE%\.hermes`; OpenCode additionally probes `%LOCALAPPDATA%\opencode` and `%USERPROFILE%\.opencode`; Cline also probes Cursor's extension storage.
+
+“Official” above means the variable/path contract is documented by the provider (for example, OpenClaw's `OPENCLAW_STATE_DIR`, Qwen's runtime directory, or the platform-standard `XDG_DATA_HOME`). “TokenClock compatibility” means TokenClock accepts that name as a convenient override, but no stable upstream provider contract was found; it must not be interpreted as an official provider setting.
+
 ---
 
 ## 🚀 Quick start
@@ -204,9 +230,44 @@ curl -fsSL https://raw.githubusercontent.com/Neo-Isshin/TokenClock/main/cli/inst
 ./cli/install.sh
 ```
 
+### Windows normal (`windows-port`)
+
+The Windows normal build is currently maintained on the long-lived `windows-port` branch and is not merged back into the macOS/Linux product branches. The per-user installer needs no administrator privileges, verifies the release ZIP against its published SHA-256 file, and installs to `%LOCALAPPDATA%\Programs\TokenClock`.
+
+This channel follows the macOS normal workflow: all 8 built-in faces (Glass, Classic, Glacier, Midnight, Luxe, Antique, Railgun, and Sky), the compact 3×3 face picker and saved custom faces, four sizes, a fixed 320×547 details card with session/model grouping, percentages and expandable rows, weather/forecast, and **Codex Quota** immediately left of **By Percent**. Its right-click menu, overview-and-disclosure Settings window, custom-face save/apply/delete flow, and branded About dialog are Windows-native adaptations of the same normal feature set. Provider paths remain Windows-specific; no macOS or Linux catalog paths are imported.
+
+```powershell
+# Install the latest x86_64 Windows release and start it.
+irm https://raw.githubusercontent.com/Neo-Isshin/TokenClock/windows-port/cli/install.ps1 | iex
+
+# Pass options explicitly (example: do not start; add a Start Menu shortcut).
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/Neo-Isshin/TokenClock/windows-port/cli/install.ps1))) -NoStart -StartMenuShortcut
+```
+
+The default install does **not** create shortcuts or change login autostart. Available actions and flags:
+
+- `-Action Install|Update|Check|Uninstall` and optional `-Version <tag>`.
+- `-NoStart`, `-StartMenuShortcut`, `-DesktopShortcut`, and `-EnableAutostart` are explicit opt-ins.
+- `-InstallDir <path>` changes the per-user target; unsafe broad targets are rejected.
+- `-Force` is required if an in-use TokenClock process cannot close normally.
+- Uninstall preserves `%LOCALAPPDATA%\TokenClock` settings unless `-RemoveUserData` is explicitly supplied.
+- A missing checksum aborts installation. `-AllowUnsigned` is an explicit escape hatch for a package you already trust.
+
+Windows release archives are built with `pwsh scripts/build-windows.ps1 -Zip`; the ZIP contains `TokenClock.exe`, its Swift/VC++ runtime DLLs, and resources. Publishing uses an independent tag on `windows-port`: after the shared release `v1.3.8` exists, tag the corresponding Windows commit as `windows-v1.3.8` and push that tag. The workflow definition and source are then both present in the immutable Windows tag; it maps `windows-v1.3.8` back to the existing `v1.3.8` release and only attaches the ZIP plus checksum. It never creates a Windows-only release or requires Windows source to be merged into main.
+
+```bash
+gh release view v1.3.8 --repo Neo-Isshin/TokenClock
+git switch windows-port
+git pull --ff-only origin windows-port
+git tag -a windows-v1.3.8 -m "Windows assets for v1.3.8"
+git push origin windows-v1.3.8
+```
+
+With `-Version latest`, the installer selects the newest stable release that already has both Windows assets, so a newer macOS/Linux release still waiting for its Windows upload is skipped; an explicit `-Version` resolves that exact shared tag (for example `v1.3.8`, not `windows-v1.3.8`). Current distribution is x86_64 only. The executable is not Microsoft Store/MSIX packaged, so Windows reputation warnings may appear until releases are code-signed. Portable ZIP use remains supported, but shortcuts, updates, and uninstall tracking are then the user's responsibility.
+
 ### Linux normal build
 
-Linux intentionally ships the **normal classic dial only** (GTK3). It keeps the existing 14 local usage parsers, stores history under XDG data directories, registers XDG autostart, and exposes the same loopback API on `127.0.0.1:9988`. Liquid Glass, the macOS theme editor, and weather/location UI are not part of the Linux build.
+Linux is maintained independently on the [`normal` branch](https://github.com/Neo-Isshin/TokenClock/tree/normal) and implements the **normal dial experience** with GTK3/Cairo. It provides the same 8 built-in normal faces, a 3×3 face picker, saved custom faces, session/model details, percentages, weather/forecast through IP-based location or a selected city, Codex Quota, grouped settings, XDG autostart, and the loopback API on `127.0.0.1:9988`. Its 14-provider catalog and path resolution are Linux/XDG-specific; the UI targets the same workflow and visual character as macOS normal without claiming pixel-for-pixel AppKit rendering.
 
 **x86_64 — prebuilt AppImage (default):** the universal one-liner downloads a self-contained AppImage (GTK3 bundled, needs only glibc ≥ 2.35) — no Swift, no compilation, no dev headers:
 
@@ -350,9 +411,9 @@ It returns JSON usage data, handy for external scripts / dashboards. It listens 
 | | |
 |---|---|
 | **Language** | Swift 6 (`-parse-as-library`) |
-| **UI** | macOS: SwiftUI + AppKit; Linux normal: GTK3 + Cairo |
-| **Build** | Swift Package Manager (no `.xcodeproj`) |
-| **Platforms** | macOS 26 SDK (`main`) / macOS 12 and Linux GTK3 (`normal`) |
+| **UI** | macOS: SwiftUI + AppKit; Linux normal: GTK3 + Cairo; Windows normal: Win32 + GDI+ layered rendering |
+| **Build** | Swift Package Manager (no `.xcodeproj`); Windows adds the Win32 C/C++ shim and PE resources |
+| **Platforms** | macOS 26 SDK (`main`) / macOS 12 and Linux GTK3 (`normal`) / Windows 11 x86_64 (`windows-port`) |
 | **i18n** | Custom `L10n` engine (zh-Hans / zh-Hant / en, no `.xcstrings`) |
 | **Size** | ~12,400 lines of Swift |
 

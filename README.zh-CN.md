@@ -9,6 +9,7 @@
 [![macOS 12+](https://img.shields.io/badge/macOS-12%2B-000000?style=for-the-badge&logo=apple&logoColor=white)](https://www.apple.com/macos/)
 [![macOS 26+](https://img.shields.io/badge/macOS%2026-Liquid%20Glass-00B0F0?style=for-the-badge)](https://developer.apple.com/macos/)
 [![Linux normal](https://img.shields.io/badge/Linux-normal-FCC624?style=for-the-badge&logo=linux&logoColor=black)](#linux-normal-版)
+[![Windows normal](https://img.shields.io/badge/Windows-normal-0078D4?style=for-the-badge&logo=windows&logoColor=white)](#windows-normalwindows-port)
 
 [![Swift 6](https://img.shields.io/static/v1?label=Swift&message=6&color=F05138&logo=swift&logoColor=white)](https://www.swift.org/)
 [![SwiftUI](https://img.shields.io/static/v1?label=UI&message=SwiftUI%20%2B%20AppKit&color=blueviolet)](https://developer.apple.com/xcode/swiftui/)
@@ -185,6 +186,31 @@ TokenClock 通过读取各工具在本地写入的 **JSONL / SQLite 用量文件
 
 > 各服务的 token 计算公式略有差异：**Codex、Gemini/Qwen** 的 `input`（`promptTokenCount`）已含 cached，不能再加 cached（否则双计），用 `input + output + (thought)`；其余服务（Claude/OpenClaw 等）的输入/输出/缓存字段互斥相加。详见 `docs/TOOL_SCHEMA_ANALYSIS.md`。
 
+### Windows provider catalog（`windows-port`）
+
+Windows 的路径探测与 macOS、Linux 分开维护。支持展开 `%NAME%`、`$env:NAME`、`${NAME}`、`$NAME` 和 `~`，探测优先级为：**设置中的自定义路径 → 环境变量 → Windows 默认路径 → 兼容备选路径**。
+
+| 工具 | Windows 默认数据源 | 环境变量 |
+|------|--------------------|---------|
+| **OpenClaw** | `%USERPROFILE%\.openclaw\` | `OPENCLAW_STATE_DIR`（直接目录）；`OPENCLAW_HOME`（用户主目录） |
+| **Claude Code** | `%USERPROFILE%\.claude\` | `CLAUDE_CONFIG_DIR` |
+| **Gemini CLI** | `%USERPROFILE%\.gemini\` | `GEMINI_CLI_HOME`（父目录）；`GEMINI_HOME`（TokenClock 兼容覆盖） |
+| **Codex** | `%USERPROFILE%\.codex\` | `CODEX_HOME` |
+| **Hermes** | `%LOCALAPPDATA%\hermes\state.db` | `HERMES_HOME` |
+| **OpenCode** | `%USERPROFILE%\.local\share\opencode\opencode.db` | `OPENCODE_DB`（直接数据库）；`XDG_DATA_HOME`（父目录）；`OPENCODE_HOME`（TokenClock 兼容覆盖） |
+| **Qwen Code** | `%USERPROFILE%\.qwen\` | `QWEN_RUNTIME_DIR`、`QWEN_HOME` |
+| **GitHub Copilot CLI** | `%USERPROFILE%\.copilot\` 会话状态 | `COPILOT_OTEL_FILE_EXPORTER_PATH`（直接 JSONL 文件）；`COPILOT_HOME` |
+| **Grok CLI** | `%USERPROFILE%\.grok\` | `GROK_HOME`（TokenClock 兼容覆盖） |
+| **Aider** | `%USERPROFILE%\.aider\analytics.jsonl` | `AIDER_ANALYTICS_LOG`；`AIDER_HOME`（TokenClock 兼容覆盖） |
+| **Antigravity** | `%USERPROFILE%\.gemini\antigravity-cli\` | `ANTIGRAVITY_HOME`（TokenClock 兼容覆盖） |
+| **Cline** | `%APPDATA%\Code\User\globalStorage\saoudrizwan.claude-dev\` | `CLINE_HOME`（TokenClock 兼容覆盖） |
+| **Continue** | `%USERPROFILE%\.continue\` | `CONTINUE_HOME`（TokenClock 兼容覆盖） |
+| **Cursor Agent** | `%APPDATA%\Cursor\User\globalStorage\state.vscdb` | `CURSOR_AGENT_HOME`（TokenClock 兼容覆盖） |
+
+探测报告会分别记录三件事：catalog 中是否有声明、选中的路径是否存在、对应 JSONL/JSON/SQLite 输入是否真的可由解析器读取。因此，仅有空目录不会被误报为“可用”。Hermes 也会兼容探测旧路径 `%USERPROFILE%\.hermes`；OpenCode 另行兼容探测 `%LOCALAPPDATA%\opencode` 和 `%USERPROFILE%\.opencode`；Cline 也会探测 Cursor 的扩展数据目录。
+
+上表中的“官方”表示该变量或路径契约有 provider 官方文档/源码依据（例如 OpenClaw 的 `OPENCLAW_STATE_DIR`、Qwen 运行目录或平台标准 `XDG_DATA_HOME`）。“TokenClock 兼容覆盖”仅表示 TokenClock 为方便配置而接受该变量名；目前未找到稳定的上游官方契约，不能把它当作 provider 官方设置。
+
 ---
 
 ## 🚀 快速开始
@@ -203,9 +229,44 @@ curl -fsSL https://raw.githubusercontent.com/Neo-Isshin/TokenClock/main/cli/inst
 ./cli/install.sh
 ```
 
+### Windows normal（`windows-port`）
+
+Windows normal 当前由长期分支 `windows-port` 独立维护，不反向合并进 macOS/Linux 产品分支。安装器仅写入当前用户目录，无需管理员权限；下载 release ZIP 后会校验配套 SHA-256，默认安装到 `%LOCALAPPDATA%\Programs\TokenClock`。
+
+该渠道按 macOS normal 的工作流对齐：完整提供玻璃、经典、冰川、深夜、暗金、古风、超电磁炮、天空 8 套内置表盘，紧凑 3×3 表盘选择器与已保存自定义表盘、四档尺寸，以及固定 320×547 的详情卡（会话/模型分组、百分比、可展开行、天气趋势）；**Codex Quota** 位于 **By Percent** 左侧。右键菜单、概览式分组设置、自定义表盘保存/应用/删除流程和品牌 About 均采用 Windows 原生实现对齐同一套 normal 功能。provider 路径仍保持 Windows 专属，不引入 macOS 或 Linux catalog 路径。
+
+```powershell
+# 安装最新 x86_64 Windows 版并启动。
+irm https://raw.githubusercontent.com/Neo-Isshin/TokenClock/windows-port/cli/install.ps1 | iex
+
+# 显式传参示例：安装后不启动，并创建开始菜单快捷方式。
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/Neo-Isshin/TokenClock/windows-port/cli/install.ps1))) -NoStart -StartMenuShortcut
+```
+
+默认安装**不会**创建快捷方式，也不会修改登录自启动。主要操作与参数：
+
+- `-Action Install|Update|Check|Uninstall`，可配合 `-Version <tag>` 安装指定版本。
+- `-NoStart`、`-StartMenuShortcut`、`-DesktopShortcut`、`-EnableAutostart` 均为显式选项。
+- `-InstallDir <路径>` 可更改当前用户安装目录；安装器会拒绝用户目录、AppData 根目录等过宽目标。
+- 若正在运行的 TokenClock 无法正常关闭，必须显式使用 `-Force`。
+- 卸载默认保留 `%LOCALAPPDATA%\TokenClock` 设置；仅 `-RemoveUserData` 会一并删除。
+- release 缺少校验文件时默认中止；`-AllowUnsigned` 仅用于用户明确确认可信的本地/自定义包。
+
+Windows release 包通过 `pwsh scripts/build-windows.ps1 -Zip` 生成，包含 `TokenClock.exe`、Swift/VC++ 运行时 DLL 和资源。发布时使用指向 `windows-port` 的独立 tag：共享 release `v1.3.8` 已存在后，把对应 Windows 提交标记为 `windows-v1.3.8` 并推送。这样 workflow 定义和源码都存在于不可变的 Windows tag 中；workflow 会把 `windows-v1.3.8` 映射回已存在的 `v1.3.8` release，只附加 ZIP 和校验文件。它不会创建 Windows-only release，也不需要把 Windows 源码合并进 main。
+
+```bash
+gh release view v1.3.8 --repo Neo-Isshin/TokenClock
+git switch windows-port
+git pull --ff-only origin windows-port
+git tag -a windows-v1.3.8 -m "Windows assets for v1.3.8"
+git push origin windows-v1.3.8
+```
+
+使用 `-Version latest` 时，安装器会选择最新且已同时包含 Windows ZIP 和 SHA-256 的稳定 release；若更新的 macOS/Linux release 仍在等待 Windows 资产，会先跳过它。显式 `-Version` 则严格解析共享 tag（例如 `v1.3.8`，而不是 `windows-v1.3.8`）。当前发行包仅提供 x86_64。由于尚非 Microsoft Store/MSIX 包且可能未签名，Windows 信誉保护可能弹出提示。也可直接使用便携 ZIP，但快捷方式、更新与卸载需自行管理。
+
 ### Linux normal 版
 
-Linux 仅适配 **normal 经典不透明表盘**：使用 GTK3，复用现有 14 个本地用量解析器，历史数据按 XDG 目录保存，支持 XDG 登录自启动，并在 `127.0.0.1:9988` 提供同构 API。Linux 版不包含 Liquid Glass、macOS 主题编辑器和天气/定位界面。
+Linux 在 [`normal` 分支](https://github.com/Neo-Isshin/TokenClock/tree/normal)独立维护，使用 GTK3/Cairo 还原 **normal 表盘体验**。当前完整提供 8 套 normal 内置表盘、3×3 表盘选择器、可保存的自定义表盘、会话/模型详情、百分比、基于 IP 定位或手选城市的天气趋势、Codex Quota、分组设置、XDG 开机自启，以及 `127.0.0.1:9988` 回环 API。其 14-provider catalog 与路径解析保持 Linux/XDG 专属；目标是对齐 macOS normal 的工作流和视觉气质，而不是宣称与 AppKit 像素级一致。
 
 **x86_64 —— 预编译 AppImage（默认）：** 通用一键命令会下载一个自带 GTK3 的 AppImage（仅要求 glibc ≥ 2.35），无需 Swift、无需编译、无需开发头文件：
 
@@ -349,9 +410,9 @@ GET http://127.0.0.1:9988/api/history?days=30 # 过去 N 天的日结快照（�
 | | |
 |---|---|
 | **语言** | Swift 6（`-parse-as-library`） |
-| **UI** | macOS：SwiftUI + AppKit；Linux normal：GTK3 + Cairo |
-| **构建** | Swift Package Manager（无 `.xcodeproj`） |
-| **平台** | macOS 26 SDK（`main`）/ macOS 12 与 Linux GTK3（`normal`） |
+| **UI** | macOS：SwiftUI + AppKit；Linux normal：GTK3 + Cairo；Windows normal：Win32 + GDI+ 分层渲染 |
+| **构建** | Swift Package Manager（无 `.xcodeproj`）；Windows 另含 Win32 C/C++ shim 与 PE 资源 |
+| **平台** | macOS 26 SDK（`main`）/ macOS 12 与 Linux GTK3（`normal`）/ Windows 11 x86_64（`windows-port`） |
 | **定位** | 自研 `L10n` 引擎（zh-Hans / zh-Hant / en，无 `.xcstrings`） |
 | **规模** | 约 12,400 行 Swift |
 

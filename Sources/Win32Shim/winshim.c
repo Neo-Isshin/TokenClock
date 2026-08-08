@@ -153,6 +153,10 @@ static LRESULT CALLBACK wnd_proc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
         }
         return 0;
 
+    case WM_MOUSEWHEEL:
+        if (g_cb.on_scroll) g_cb.on_scroll(g_cb.ctx, GET_WHEEL_DELTA_WPARAM(wp));
+        return 0;
+
     case WM_NCHITTEST:
         return HTCLIENT;    /* manual drag preserves click interaction */
 
@@ -304,6 +308,12 @@ int win_confirm(const char *title_utf8, const char *body_utf8) {
     return MessageBoxW(g_hwnd, b, t, MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON2) == IDYES ? 1 : 0;
 }
 
+void win_open_url(const char *url_utf8) {
+    wchar_t url[1024];
+    if (to_wide(url_utf8, url, 1024) == 0) return;
+    ShellExecuteW(g_hwnd, L"open", url, NULL, NULL, SW_SHOWNORMAL);
+}
+
 int win_user_locale(char *buf, int n) {
     if (!buf || n <= 0) return 0;
     wchar_t w[LOCALE_NAME_MAX_LENGTH];
@@ -406,6 +416,48 @@ void dlg_add_push(void *dlg, int id, const char *text_utf8, int x, int y, int w,
     dlg_child((HWND)dlg, L"BUTTON", BS_PUSHBUTTON, id, t, x, y, w, h);
 }
 
+static LRESULT CALLBACK brand_logo_proc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
+    (void)lp;
+    if (msg == WM_PAINT) {
+        PAINTSTRUCT ps; HDC dc = BeginPaint(h, &ps);
+        RECT rc; GetClientRect(h, &rc);
+        int width = rc.right - rc.left, height = rc.bottom - rc.top;
+        int radius = (min(width, height) - 8) / 2;
+        int cx = width / 2, cy = height / 2;
+        HBRUSH bg = CreateSolidBrush(RGB(244, 244, 246));
+        FillRect(dc, &rc, bg); DeleteObject(bg);
+        HBRUSH face = CreateSolidBrush(RGB(247, 247, 250));
+        HPEN rim = CreatePen(PS_SOLID, 3, RGB(48, 48, 54));
+        HGDIOBJ oldBrush = SelectObject(dc, face), oldPen = SelectObject(dc, rim);
+        Ellipse(dc, cx - radius, cy - radius, cx + radius, cy + radius);
+        SelectObject(dc, GetStockObject(NULL_BRUSH));
+        HPEN hour = CreatePen(PS_SOLID, 5, RGB(48, 48, 54));
+        SelectObject(dc, hour); MoveToEx(dc, cx, cy, NULL); LineTo(dc, cx - radius / 3, cy - radius / 3);
+        HPEN minute = CreatePen(PS_SOLID, 3, RGB(48, 48, 54));
+        SelectObject(dc, minute); MoveToEx(dc, cx, cy, NULL); LineTo(dc, cx - radius / 8, cy + radius / 2);
+        HPEN second = CreatePen(PS_SOLID, 2, RGB(231, 74, 60));
+        SelectObject(dc, second); MoveToEx(dc, cx, cy, NULL); LineTo(dc, cx + radius / 2, cy - radius / 3);
+        HBRUSH cap = CreateSolidBrush(RGB(48, 48, 54)); SelectObject(dc, cap); SelectObject(dc, GetStockObject(NULL_PEN));
+        Ellipse(dc, cx - 4, cy - 4, cx + 4, cy + 4);
+        SelectObject(dc, oldBrush); SelectObject(dc, oldPen);
+        DeleteObject(face); DeleteObject(rim); DeleteObject(hour); DeleteObject(minute); DeleteObject(second); DeleteObject(cap);
+        EndPaint(h, &ps); return 0;
+    }
+    return DefWindowProcW(h, msg, wp, lp);
+}
+
+void dlg_add_brand_logo(void *dlg, int x, int y, int w, int h) {
+    static int registered = 0;
+    if (!registered) {
+        WNDCLASSEXW wc = {0}; wc.cbSize = sizeof(wc); wc.lpfnWndProc = brand_logo_proc;
+        wc.hInstance = GetModuleHandleW(NULL); wc.hCursor = LoadCursorW(NULL, IDC_ARROW);
+        wc.hbrBackground = (HBRUSH)(COLOR_BTNFACE + 1); wc.lpszClassName = L"TCBrandLogo";
+        RegisterClassExW(&wc); registered = 1;
+    }
+    CreateWindowExW(0, L"TCBrandLogo", L"", WS_CHILD | WS_VISIBLE,
+                    x, y, w, h, (HWND)dlg, NULL, GetModuleHandleW(NULL), NULL);
+}
+
 int dlg_check_get(void *dlg, int id) {
     return IsDlgButtonChecked((HWND)dlg, id) == BST_CHECKED ? 1 : 0;
 }
@@ -440,6 +492,14 @@ int dlg_modal(void *dlg) {
         SetForegroundWindow(owner);
     }
     return g_dlg_result;
+}
+
+void dlg_end(void *dlg, int result) {
+    HWND hwnd = (HWND)dlg;
+    if (!IsWindow(hwnd)) return;
+    g_dlg_result = result ? 1 : 0;
+    g_dlg_done = 1;
+    ShowWindow(hwnd, SW_HIDE);
 }
 
 void dlg_destroy(void *dlg) {

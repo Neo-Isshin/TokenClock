@@ -19,6 +19,15 @@ enum AppLanguage: String, CaseIterable, Identifiable {
     }
 }
 
+private let settingsEnvironmentHint: [AppLanguage: String] = {
+    #if os(Windows)
+    return [.zhHans: "Windows 官方路径变量：OPENCLAW_STATE_DIR、OPENCLAW_HOME（父目录）、CLAUDE_CONFIG_DIR、GEMINI_CLI_HOME（父目录）、CODEX_HOME、HERMES_HOME、OPENCODE_DB、XDG_DATA_HOME、QWEN_HOME、QWEN_RUNTIME_DIR、COPILOT_HOME、COPILOT_OTEL_FILE_EXPORTER_PATH、AIDER_ANALYTICS_LOG。Catalog 中标注的其他变量为 TokenClock 兼容覆盖，详见 README。", .zhHant: "Windows 官方路徑變量：OPENCLAW_STATE_DIR、OPENCLAW_HOME（父目錄）、CLAUDE_CONFIG_DIR、GEMINI_CLI_HOME（父目錄）、CODEX_HOME、HERMES_HOME、OPENCODE_DB、XDG_DATA_HOME、QWEN_HOME、QWEN_RUNTIME_DIR、COPILOT_HOME、COPILOT_OTEL_FILE_EXPORTER_PATH、AIDER_ANALYTICS_LOG。Catalog 中標記的其他變量為 TokenClock 相容覆蓋，詳見 README。", .en: "Official Windows path vars: OPENCLAW_STATE_DIR, OPENCLAW_HOME (parent), CLAUDE_CONFIG_DIR, GEMINI_CLI_HOME (parent), CODEX_HOME, HERMES_HOME, OPENCODE_DB, XDG_DATA_HOME, QWEN_HOME, QWEN_RUNTIME_DIR, COPILOT_HOME, COPILOT_OTEL_FILE_EXPORTER_PATH, AIDER_ANALYTICS_LOG. Other variables marked in the catalog are TokenClock compatibility overrides; see README."]
+    #else
+    // Keep the pre-Windows-port macOS/Linux wording and variable set byte-for-byte.
+    return [.zhHans: "支持环境变量覆盖：OPENCLAW_HOME、CLAUDE_CONFIG_DIR、GEMINI_HOME、CODEX_HOME、HERMES_HOME、OPENCODE_HOME、QWEN_HOME、COPILOT_HOME、GROK_HOME、AIDER_HOME、ANTIGRAVITY_HOME、CLINE_HOME、CONTINUE_HOME、CURSOR_AGENT_HOME", .zhHant: "支持環境變量覆蓋：OPENCLAW_HOME、CLAUDE_CONFIG_DIR、GEMINI_HOME、CODEX_HOME、HERMES_HOME、OPENCODE_HOME、QWEN_HOME、COPILOT_HOME、GROK_HOME、AIDER_HOME、ANTIGRAVITY_HOME、CLINE_HOME、CONTINUE_HOME、CURSOR_AGENT_HOME", .en: "Env vars: OPENCLAW_HOME, CLAUDE_CONFIG_DIR, GEMINI_HOME, CODEX_HOME, HERMES_HOME, OPENCODE_HOME, QWEN_HOME, COPILOT_HOME, GROK_HOME, AIDER_HOME, ANTIGRAVITY_HOME, CLINE_HOME, CONTINUE_HOME, CURSOR_AGENT_HOME"]
+    #endif
+}()
+
 final class L10n: @unchecked Sendable {
     static let shared = L10n()
 
@@ -124,7 +133,7 @@ final class L10n: @unchecked Sendable {
         "menu.about":            [.zhHans: "关于 TokenClock",       .zhHant: "關於 TokenClock",       .en: "About TokenClock"],
 
         // MARK: About
-        "about.license":         [.zhHans: "许可证：MIT",           .zhHant: "許可證：MIT",            .en: "License: MIT"],
+        "about.license":         [.zhHans: "许可证：GPLv3",         .zhHant: "許可證：GPLv3",          .en: "License: GPLv3"],
         "about.contact":         [.zhHans: "联系方式",              .zhHant: "聯絡方式",              .en: "Contact"],
         "about.close":           [.zhHans: "关闭",                  .zhHant: "關閉",                  .en: "Close"],
 
@@ -165,6 +174,23 @@ final class L10n: @unchecked Sendable {
         "detail.model":          [.zhHans: "模型",   .zhHant: "模型",    .en: "Model"],
         "detail.percent":        [.zhHans: "按百分比", .zhHant: "按百分比", .en: "By Percent"],
         "detail.share":          [.zhHans: "占比",   .zhHant: "佔比",    .en: "Share"],
+        "detail.codexQuota":     [.zhHans: "Codex 额度", .zhHant: "Codex 額度", .en: "Codex Quota"],
+        "quota.loading":         [.zhHans: "正在读取 Codex 额度…", .zhHant: "正在讀取 Codex 額度…", .en: "Loading Codex quota…"],
+        "quota.unavailable":     [.zhHans: "暂时无法读取额度", .zhHant: "暫時無法讀取額度", .en: "Quota is temporarily unavailable"],
+        "quota.retry":           [.zhHans: "刷新", .zhHant: "重新整理", .en: "Refresh"],
+        "quota.remaining":       [.zhHans: "%.0f%% 剩余", .zhHant: "%.0f%% 剩餘", .en: "%.0f%% remaining"],
+        "quota.weekly":          [.zhHans: "每周额度", .zhHant: "每週額度", .en: "Weekly quota"],
+        "quota.days":            [.zhHans: "%d 天额度", .zhHant: "%d 天額度", .en: "%d-day quota"],
+        "quota.hours":           [.zhHans: "%d 小时额度", .zhHant: "%d 小時額度", .en: "%d-hour quota"],
+        "quota.minutes":         [.zhHans: "%d 分钟额度", .zhHant: "%d 分鐘額度", .en: "%d-minute quota"],
+        "quota.resets":          [.zhHans: "%@重置 · %@", .zhHant: "%@重置 · %@", .en: "Resets %@ · %@"],
+        "quota.plan":            [.zhHans: "方案 %@", .zhHant: "方案 %@", .en: "%@ plan"],
+        "quota.resetCredits":    [.zhHans: "%d 次完整重置", .zhHant: "%d 次完整重置", .en: "%d full reset(s)"],
+        "quota.creditBalance":   [.zhHans: "余额 %@", .zhHant: "餘額 %@", .en: "%@ credits"],
+        "quota.unlimited":       [.zhHans: "无限额", .zhHant: "無限額", .en: "Unlimited"],
+        "quota.liveSource":      [.zhHans: "实时", .zhHant: "即時", .en: "Live"],
+        "quota.logSource":       [.zhHans: "本地记录", .zhHant: "本機記錄", .en: "Local log"],
+        "quota.updated":         [.zhHans: "更新于 %@", .zhHant: "更新於 %@", .en: "Updated %@"],
 
         // MARK: Theme picker
         "themePicker.title": [.zhHans: "选择表盘", .zhHant: "選擇錶盤", .en: "Select Clock Face"],
@@ -193,7 +219,7 @@ final class L10n: @unchecked Sendable {
         "settings.search":          [.zhHans: "检索",                      .zhHant: "檢索",                     .en: "Detect"],
         "settings.browse":          [.zhHans: "浏览",                      .zhHant: "瀏覽",                     .en: "Browse"],
         "settings.hint.emptyPath":  [.zhHans: "留空则使用默认路径。修改路径后需重启应用生效。", .zhHant: "留空則使用預設路徑。修改路徑後需重啟應用生效。", .en: "Leave empty for default path. Restart app after changing."],
-        "settings.hint.envVars":    [.zhHans: "支持环境变量覆盖：OPENCLAW_HOME、CLAUDE_CONFIG_DIR、GEMINI_CLI_HOME、CODEX_HOME、HERMES_HOME、OPENCODE_HOME、QWEN_HOME、QWEN_RUNTIME_DIR、COPILOT_HOME、GROK_HOME、AIDER_ANALYTICS_LOG、ANTIGRAVITY_HOME、CLINE_HOME、CONTINUE_HOME、CURSOR_AGENT_HOME", .zhHant: "支持環境變量覆蓋：OPENCLAW_HOME、CLAUDE_CONFIG_DIR、GEMINI_CLI_HOME、CODEX_HOME、HERMES_HOME、OPENCODE_HOME、QWEN_HOME、QWEN_RUNTIME_DIR、COPILOT_HOME、GROK_HOME、AIDER_ANALYTICS_LOG、ANTIGRAVITY_HOME、CLINE_HOME、CONTINUE_HOME、CURSOR_AGENT_HOME", .en: "Env vars: OPENCLAW_HOME, CLAUDE_CONFIG_DIR, GEMINI_CLI_HOME, CODEX_HOME, HERMES_HOME, OPENCODE_HOME, QWEN_HOME, QWEN_RUNTIME_DIR, COPILOT_HOME, GROK_HOME, AIDER_ANALYTICS_LOG, ANTIGRAVITY_HOME, CLINE_HOME, CONTINUE_HOME, CURSOR_AGENT_HOME"],
+        "settings.hint.envVars":    settingsEnvironmentHint,
         "settings.browseOpenClaw":  [.zhHans: "选择 OpenClaw 目录",        .zhHant: "選擇 OpenClaw 目錄",       .en: "Select OpenClaw Directory"],
         "settings.browseClaudeCode":[.zhHans: "选择 Claude Code 目录",      .zhHant: "選擇 Claude Code 目錄",    .en: "Select Claude Code Directory"],
         "settings.browseGemini":    [.zhHans: "选择 Gemini CLI 目录",       .zhHant: "選擇 Gemini CLI 目錄",     .en: "Select Gemini CLI Directory"],
@@ -311,6 +337,7 @@ final class L10n: @unchecked Sendable {
         "pathDetail.official":      [.zhHans: "使用官方默认路径",       .zhHant: "使用官方預設路徑",         .en: "Using official default path"],
         "pathDetail.alternate":     [.zhHans: "从备选路径探测到",       .zhHant: "從備選路徑探測到",         .en: "Detected from alternate path"],
         "pathDetail.notFound":      [.zhHans: "未找到",                 .zhHant: "未找到",                   .en: "Not found"],
+        "pathDetail.existsUnreadable":[.zhHans: "路径存在，但没有解析器可读取的用量数据", .zhHant: "路徑存在，但沒有解析器可讀取的用量資料", .en: "Path exists, but no parser-readable usage data was found"],
         "pathDetail.notFoundDefault":[.zhHans: "未找到有效日志文件，将使用默认路径", .zhHant: "未找到有效日誌文件，將使用預設路徑", .en: "No valid log files found, using default path"],
     ]
 }

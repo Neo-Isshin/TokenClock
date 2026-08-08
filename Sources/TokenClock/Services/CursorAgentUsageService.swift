@@ -40,12 +40,14 @@ final class CursorAgentUsageService: @unchecked Sendable {
         session = URLSession(configuration: config)
     }
 
+    #if os(Windows)
     deinit {
         // URLSession retains a large native handle pool on Windows until explicitly invalidated.
         // Settings can replace this service after a path change, so relying on process teardown
         // would leak the previous pool for the remainder of the app lifetime.
         session.invalidateAndCancel()
     }
+    #endif
 
     func fullScan() {
         // 不清空已有数据，等 API 返回后原子替换
@@ -126,9 +128,13 @@ final class CursorAgentUsageService: @unchecked Sendable {
     /// Cursor IDE 的 state.vscdb 路径。Settings 中可填写 globalStorage 目录，也可直接
     /// 填写 state.vscdb；Windows 默认映射到 %APPDATA%\Cursor\User\globalStorage。
     private func cursorStateDbPath() -> String {
+        #if os(Windows)
         let configured = PathConfig.cursorAgentHome()
         if configured.lowercased().hasSuffix(".vscdb") { return configured }
         return configured + "/state.vscdb"
+        #else
+        return AppPaths.appSupport("Cursor", "User", "globalStorage", "state.vscdb")
+        #endif
     }
 
     /// 从 token 提取 userId
