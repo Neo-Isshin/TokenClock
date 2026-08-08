@@ -177,7 +177,7 @@ cd TokenClock
 swift build -c release
 ```
 
-各渠道独立维护：`main` 对应 macOS Liquid Glass，`normal` 对应经典 macOS/Linux，`windows-port` 对应 Windows。平台专属路径和界面代码不会混入其他渠道。
+各渠道独立维护：`main` 对应 macOS Liquid Glass，`normal` 对应经典 macOS，Linux 和 `windows-port` 使用各自的平台分支。平台专属路径和界面代码不会混入其他渠道。
 
 ## 许可证
 

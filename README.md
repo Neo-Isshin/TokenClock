@@ -177,7 +177,7 @@ cd TokenClock
 swift build -c release
 ```
 
-The product channels are maintained separately: `main` for Liquid Glass macOS, `normal` for the classic macOS/Linux channel, and `windows-port` for Windows. Platform-specific paths and UI code stay in their own channels.
+The product channels are maintained separately: `main` for Liquid Glass macOS, `normal` for classic macOS, and dedicated Linux and `windows-port` branches for the other platforms. Platform-specific paths and UI code stay in their own channels.
 
 ## License
 
