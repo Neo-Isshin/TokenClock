@@ -253,17 +253,17 @@ The default install does **not** create shortcuts or change login autostart. Ava
 - Uninstall preserves `%LOCALAPPDATA%\TokenClock` settings unless `-RemoveUserData` is explicitly supplied.
 - A missing checksum aborts installation. `-AllowUnsigned` is an explicit escape hatch for a package you already trust.
 
-Windows release archives are built with `pwsh scripts/build-windows.ps1 -Zip`; the ZIP contains `TokenClock.exe`, its Swift/VC++ runtime DLLs, and resources. Publishing uses an independent tag on `windows-port`: after the shared release `v1.3.8` exists, tag the corresponding Windows commit as `windows-v1.3.8` and push that tag. The workflow definition and source are then both present in the immutable Windows tag; it maps `windows-v1.3.8` back to the existing `v1.3.8` release and only attaches the ZIP plus checksum. It never creates a Windows-only release or requires Windows source to be merged into main.
+Windows release archives are built with `pwsh scripts/build-windows.ps1 -Zip`; the ZIP contains `TokenClock.exe`, its Swift/VC++ runtime DLLs, and resources. Publishing uses an independent tag on `windows-port`: after the shared release `v1.4.0` exists, tag the corresponding Windows commit as `windows-v1.4.0` and push that tag. The workflow definition and source are then both present in the immutable Windows tag; it maps `windows-v1.4.0` back to the existing `v1.4.0` release and only attaches the ZIP plus checksum. It never creates a Windows-only release or requires Windows source to be merged into main.
 
 ```bash
-gh release view v1.3.8 --repo Neo-Isshin/TokenClock
+gh release view v1.4.0 --repo Neo-Isshin/TokenClock
 git switch windows-port
 git pull --ff-only origin windows-port
-git tag -a windows-v1.3.8 -m "Windows assets for v1.3.8"
-git push origin windows-v1.3.8
+git tag -a windows-v1.4.0 -m "Windows assets for v1.4.0"
+git push origin windows-v1.4.0
 ```
 
-With `-Version latest`, the installer selects the newest stable release that already has both Windows assets, so a newer macOS/Linux release still waiting for its Windows upload is skipped; an explicit `-Version` resolves that exact shared tag (for example `v1.3.8`, not `windows-v1.3.8`). Current distribution is x86_64 only. The executable is not Microsoft Store/MSIX packaged, so Windows reputation warnings may appear until releases are code-signed. Portable ZIP use remains supported, but shortcuts, updates, and uninstall tracking are then the user's responsibility.
+With `-Version latest`, the installer selects the newest stable release that already has both Windows assets, so a newer macOS/Linux release still waiting for its Windows upload is skipped; an explicit `-Version` resolves that exact shared tag (for example `v1.4.0`, not `windows-v1.4.0`). Current distribution is x86_64 only. The executable is not Microsoft Store/MSIX packaged, so Windows reputation warnings may appear until releases are code-signed. Portable ZIP use remains supported, but shortcuts, updates, and uninstall tracking are then the user's responsibility.
 
 ### Linux normal build
 
