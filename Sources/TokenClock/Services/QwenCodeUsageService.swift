@@ -4,6 +4,10 @@ import Foundation
 /// Qwen Code 是 Gemini CLI 的 fork，session 格式与 Gemini CLI 相同
 /// 数据位置: ~/.qwen/projects/{PROJECT_PATH}/chats/{CHAT_ID}.jsonl
 final class QwenCodeUsageService: @unchecked Sendable {
+    private static let usageLineNeedles = [
+        Data("\"gemini\"".utf8),
+        Data("\"usageMetadata\"".utf8),
+    ]
     private(set) var dailyData: [String: DayUsage] = [:]
     private(set) var hourlyData: [String: HourlyUsage] = [:]
     private(set) var dailyCache: [String: Int] = [:]
@@ -17,8 +21,8 @@ final class QwenCodeUsageService: @unchecked Sendable {
     private let fm = FileManager.default
     private let qwenHome: String
 
-    init() {
-        qwenHome = PathConfig.qwenHome()
+    init(qwenHome: String? = nil) {
+        self.qwenHome = qwenHome ?? PathConfig.qwenHome()
     }
 
     func fullScan() {
@@ -63,8 +67,14 @@ final class QwenCodeUsageService: @unchecked Sendable {
     private func scanSessionsDir() {
         let projectsDir = qwenHome + "/projects"
         var isDir: ObjCBool = false
-        guard fm.fileExists(atPath: projectsDir, isDirectory: &isDir), isDir.boolValue else { return }
-        guard let projectDirs = try? fm.contentsOfDirectory(atPath: projectsDir) else { return }
+        guard fm.fileExists(atPath: projectsDir, isDirectory: &isDir), isDir.boolValue,
+              let projectDirs = try? fm.contentsOfDirectory(atPath: projectsDir) else {
+            evictFiles(notIn: [])
+            rebuildRecentEntries()
+            return
+        }
+
+        var livePaths = Set<String>()
 
         for project in projectDirs {
             let chatsDir = projectsDir + "/" + project + "/chats"
@@ -74,6 +84,7 @@ final class QwenCodeUsageService: @unchecked Sendable {
 
             for file in files where file.hasSuffix(".jsonl") {
                 let fullPath = chatsDir + "/" + file
+                livePaths.insert(fullPath)
                 guard let attrs = try? fm.attributesOfItem(atPath: fullPath),
                       let modDate = attrs[.modificationDate] as? Date else { continue }
 
@@ -88,7 +99,22 @@ final class QwenCodeUsageService: @unchecked Sendable {
                 fileCache[fullPath] = FileMeta(path: fullPath, modDate: modDate)
             }
         }
+        evictFiles(notIn: livePaths)
         rebuildRecentEntries()
+    }
+
+    private func evictFiles(notIn livePaths: Set<String>) {
+        let removed = Set(fileCache.keys).subtracting(livePaths)
+        for path in removed {
+            if let old = fileDailyContrib[path] { subtractDay(old, from: &dailyData) }
+            if let old = fileHourlyContrib[path] { subtractHour(old, from: &hourlyData) }
+            if let old = fileCacheContrib[path] { subtractCache(old) }
+            fileCache.removeValue(forKey: path)
+            fileDailyContrib.removeValue(forKey: path)
+            fileHourlyContrib.removeValue(forKey: path)
+            fileCacheContrib.removeValue(forKey: path)
+            fileRecentContrib.removeValue(forKey: path)
+        }
     }
 
     private func subtractDay(_ contrib: [String: DayUsage], from data: inout [String: DayUsage]) {
@@ -122,43 +148,24 @@ final class QwenCodeUsageService: @unchecked Sendable {
     }
 
     private func parseJSONL(path: String) {
-        guard let stream = InputStream(fileAtPath: path) else { return }
-        stream.open()
-        defer { stream.close() }
-
         let today = DateHelper.todayKey()
-        let bufSize = AppConfig.Scan.jsonlBufferSize
-        let buf = UnsafeMutablePointer<UInt8>.allocate(capacity: bufSize)
-        defer { buf.deallocate() }
-        var lineBuf = Data()
         var newDaily: [String: DayUsage] = [:]
         var newHourly: [String: HourlyUsage] = [:]
         var newCache: [String: Int] = [:]
         var newRecent: [RecentEntry] = []
 
-        while stream.hasBytesAvailable {
-            let n = stream.read(buf, maxLength: bufSize)
-            if n <= 0 { break }
-            lineBuf.append(buf, count: n)
-            while let nlRange = lineBuf.range(of: Data([0x0A])) {
-                let lineData = lineBuf[lineBuf.startIndex..<nlRange.lowerBound]
-                lineBuf = lineBuf[nlRange.upperBound...]
-                guard !lineData.isEmpty else { continue }
-                guard let line = String(data: lineData, encoding: .utf8),
-                      let obj = try? JSONSerialization.jsonObject(with: line.data(using: .utf8) ?? Data()) as? [String: Any] else { continue }
-
-                if let r = parseEvent(obj) {
-                    accumulate(r, today: today, daily: &newDaily, hourly: &newHourly, cache: &newCache, recent: &newRecent)
-                }
-            }
+        func process(_ line: String) {
+            guard let data = line.data(using: .utf8),
+                  let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let result = parseEvent(obj) else { return }
+            accumulate(result, today: today, daily: &newDaily, hourly: &newHourly, cache: &newCache, recent: &newRecent)
         }
-        // 末尾无换行
-        if !lineBuf.isEmpty,
-           let line = String(data: lineBuf, encoding: .utf8),
-           let obj = try? JSONSerialization.jsonObject(with: line.data(using: .utf8) ?? Data()) as? [String: Any],
-           let r = parseEvent(obj) {
-            accumulate(r, today: today, daily: &newDaily, hourly: &newHourly, cache: &newCache, recent: &newRecent)
-        }
+        guard let result = JSONLLineReader.read(
+            path: path,
+            matchingAny: Self.usageLineNeedles,
+            onLine: process
+        ) else { return }
+        _ = JSONLLineReader.consumeCompleteTrailingLine(result.trailingData, onLine: process)
 
         fileDailyContrib[path] = newDaily
         fileHourlyContrib[path] = newHourly
@@ -271,7 +278,9 @@ final class QwenCodeUsageService: @unchecked Sendable {
                       let modDate = attrs[.modificationDate] as? Date else { continue }
                 guard DateHelper.dateKey(from: modDate) == today else { continue }
 
-                let (tokens, messages) = parseJSONLToday(path: fullPath, today: today)
+                let usage = fileDailyContrib[fullPath]?[today]
+                let tokens = usage?.tokens ?? 0
+                let messages = usage?.messages ?? 0
                 guard tokens > 0 else { continue }
 
                 let displayId = SessionIdDisplay.format(String(file.dropLast(".jsonl".count)))
@@ -285,31 +294,4 @@ final class QwenCodeUsageService: @unchecked Sendable {
         return results.sorted { $0.todayTokens > $1.todayTokens }
     }
 
-    private func parseJSONLToday(path: String, today: String) -> (tokens: Int, messages: Int) {
-        guard let stream = InputStream(fileAtPath: path) else { return (0, 0) }
-        stream.open()
-        defer { stream.close() }
-
-        let bufSize = AppConfig.Scan.jsonlBufferSize
-        let buf = UnsafeMutablePointer<UInt8>.allocate(capacity: bufSize)
-        defer { buf.deallocate() }
-        var lineBuf = Data()
-        var totalTokens = 0, msgCount = 0
-
-        while stream.hasBytesAvailable {
-            let n = stream.read(buf, maxLength: bufSize)
-            if n <= 0 { break }
-            lineBuf.append(buf, count: n)
-            while let nlRange = lineBuf.range(of: Data([0x0A])) {
-                let lineData = lineBuf[lineBuf.startIndex..<nlRange.lowerBound]
-                lineBuf = lineBuf[nlRange.upperBound...]
-                guard !lineData.isEmpty else { continue }
-                guard let line = String(data: lineData, encoding: .utf8),
-                      let obj = try? JSONSerialization.jsonObject(with: line.data(using: .utf8) ?? Data()) as? [String: Any],
-                      let r = parseEvent(obj), r.dateKey == today else { continue }
-                totalTokens += r.tokens; msgCount += 1
-            }
-        }
-        return (totalTokens, msgCount)
-    }
 }

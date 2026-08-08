@@ -4,6 +4,7 @@ import Foundation
 /// 数据位置: ~/.grok/sessions/*/*/updates.jsonl
 /// 格式: JSONL，含 totalTokens 字段（无 input/output 拆分）
 final class GrokUsageService: @unchecked Sendable {
+    private static let tokenLineNeedle = [Data("\"totalTokens\"".utf8)]
     private(set) var dailyData: [String: DayUsage] = [:]
     private(set) var hourlyData: [String: HourlyUsage] = [:]
     private var fileCache: [String: FileMeta] = [:]
@@ -15,8 +16,8 @@ final class GrokUsageService: @unchecked Sendable {
     private let fm = FileManager.default
     private let grokHome: String
 
-    init() {
-        grokHome = PathConfig.grokHome()
+    init(grokHome: String? = nil) {
+        self.grokHome = grokHome ?? PathConfig.grokHome()
     }
 
     func fullScan() {
@@ -58,8 +59,14 @@ final class GrokUsageService: @unchecked Sendable {
     private func scanSessionsDir() {
         let sessionsDir = grokHome + "/sessions"
         var isDir: ObjCBool = false
-        guard fm.fileExists(atPath: sessionsDir, isDirectory: &isDir), isDir.boolValue else { return }
-        guard let level1 = try? fm.contentsOfDirectory(atPath: sessionsDir) else { return }
+        guard fm.fileExists(atPath: sessionsDir, isDirectory: &isDir), isDir.boolValue,
+              let level1 = try? fm.contentsOfDirectory(atPath: sessionsDir) else {
+            evictFiles(notIn: [])
+            rebuildRecentEntries()
+            return
+        }
+
+        var livePaths = Set<String>()
 
         for dir1 in level1 {
             let path1 = sessionsDir + "/" + dir1
@@ -71,6 +78,7 @@ final class GrokUsageService: @unchecked Sendable {
                 let updatesPath = path1 + "/" + dir2 + "/updates.jsonl"
                 var isFile: ObjCBool = false
                 guard fm.fileExists(atPath: updatesPath, isDirectory: &isFile), !isFile.boolValue else { continue }
+                livePaths.insert(updatesPath)
 
                 guard let attrs = try? fm.attributesOfItem(atPath: updatesPath),
                       let modDate = attrs[.modificationDate] as? Date else { continue }
@@ -85,7 +93,20 @@ final class GrokUsageService: @unchecked Sendable {
                 fileCache[updatesPath] = FileMeta(path: updatesPath, modDate: modDate)
             }
         }
+        evictFiles(notIn: livePaths)
         rebuildRecentEntries()
+    }
+
+    private func evictFiles(notIn livePaths: Set<String>) {
+        let removed = Set(fileCache.keys).subtracting(livePaths)
+        for path in removed {
+            if let old = fileDailyContrib[path] { subtractDay(old, from: &dailyData) }
+            if let old = fileHourlyContrib[path] { subtractHour(old, from: &hourlyData) }
+            fileCache.removeValue(forKey: path)
+            fileDailyContrib.removeValue(forKey: path)
+            fileHourlyContrib.removeValue(forKey: path)
+            fileRecentContrib.removeValue(forKey: path)
+        }
     }
 
     private func subtractDay(_ contrib: [String: DayUsage], from data: inout [String: DayUsage]) {
@@ -109,54 +130,42 @@ final class GrokUsageService: @unchecked Sendable {
     }
 
     private func parseJSONL(path: String) {
-        guard let stream = InputStream(fileAtPath: path) else { return }
-        stream.open()
-        defer { stream.close() }
-
         let today = DateHelper.todayKey()
-        let bufSize = AppConfig.Scan.jsonlBufferSize
-        let buf = UnsafeMutablePointer<UInt8>.allocate(capacity: bufSize)
-        defer { buf.deallocate() }
-        var lineBuf = Data()
         var newDaily: [String: DayUsage] = [:]
         var newHourly: [String: HourlyUsage] = [:]
         var newRecent: [RecentEntry] = []
 
-        while stream.hasBytesAvailable {
-            let n = stream.read(buf, maxLength: bufSize)
-            if n <= 0 { break }
-            lineBuf.append(buf, count: n)
-            while let nlRange = lineBuf.range(of: Data([0x0A])) {
-                let lineData = lineBuf[lineBuf.startIndex..<nlRange.lowerBound]
-                lineBuf = lineBuf[nlRange.upperBound...]
-                guard !lineData.isEmpty else { continue }
-                guard let line = String(data: lineData, encoding: .utf8),
-                      let obj = try? JSONSerialization.jsonObject(with: line.data(using: .utf8) ?? Data()) as? [String: Any] else { continue }
+        func process(_ line: String) {
+            guard let data = line.data(using: .utf8),
+                  let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
+            let totalTokens = obj["totalTokens"] as? Int ?? 0
+            guard totalTokens > 0 else { return }
 
-                let totalTokens = obj["totalTokens"] as? Int ?? 0
-                guard totalTokens > 0 else { continue }
+            let ts = obj["timestamp"] as? String ?? obj["time"] as? String ?? ""
+            let dateKey = ts.isEmpty ? DateHelper.todayKey() : DateHelper.localDateKey(from: ts)
+            let hourKey = ts.isEmpty ? DateHelper.currentHourKey() : DateHelper.localHourKey(from: ts)
+            guard dateKey.count == 10 else { return }
 
-                let ts = obj["timestamp"] as? String ?? obj["time"] as? String ?? ""
-                let dateKey = ts.isEmpty ? DateHelper.todayKey() : DateHelper.localDateKey(from: ts)
-                let hourKey = ts.isEmpty ? DateHelper.currentHourKey() : DateHelper.localHourKey(from: ts)
-                guard dateKey.count == 10 else { continue }
+            if var e = dailyData[dateKey] { e.tokens += totalTokens; e.messages += 1; dailyData[dateKey] = e }
+            else { dailyData[dateKey] = DayUsage(tokens: totalTokens, messages: 1) }
+            if var e = newDaily[dateKey] { e.tokens += totalTokens; e.messages += 1; newDaily[dateKey] = e }
+            else { newDaily[dateKey] = DayUsage(tokens: totalTokens, messages: 1) }
 
-                if var e = dailyData[dateKey] { e.tokens += totalTokens; e.messages += 1; dailyData[dateKey] = e }
-                else { dailyData[dateKey] = DayUsage(tokens: totalTokens, messages: 1) }
-                if var e = newDaily[dateKey] { e.tokens += totalTokens; e.messages += 1; newDaily[dateKey] = e }
-                else { newDaily[dateKey] = DayUsage(tokens: totalTokens, messages: 1) }
+            if var e = hourlyData[hourKey] { e.tokens += totalTokens; e.messages += 1; hourlyData[hourKey] = e }
+            else { hourlyData[hourKey] = HourlyUsage(tokens: totalTokens, messages: 1) }
+            if var e = newHourly[hourKey] { e.tokens += totalTokens; e.messages += 1; newHourly[hourKey] = e }
+            else { newHourly[hourKey] = HourlyUsage(tokens: totalTokens, messages: 1) }
 
-                if var e = hourlyData[hourKey] { e.tokens += totalTokens; e.messages += 1; hourlyData[hourKey] = e }
-                else { hourlyData[hourKey] = HourlyUsage(tokens: totalTokens, messages: 1) }
-                if var e = newHourly[hourKey] { e.tokens += totalTokens; e.messages += 1; newHourly[hourKey] = e }
-                else { newHourly[hourKey] = HourlyUsage(tokens: totalTokens, messages: 1) }
-
-                if dateKey == today {
-                    let date = ts.isEmpty ? Date() : (DateHelper.parseISO8601(ts) ?? Date())
-                    newRecent.append(RecentEntry(timestamp: date, tokens: totalTokens))
-                }
+            if dateKey == today {
+                let date = ts.isEmpty ? Date() : (DateHelper.parseISO8601(ts) ?? Date())
+                newRecent.append(RecentEntry(timestamp: date, tokens: totalTokens))
             }
         }
+        guard JSONLLineReader.read(
+            path: path,
+            matchingAny: Self.tokenLineNeedle,
+            onLine: process
+        ) != nil else { return }
 
         fileDailyContrib[path] = newDaily
         fileHourlyContrib[path] = newHourly
@@ -196,19 +205,9 @@ final class GrokUsageService: @unchecked Sendable {
                       let modDate = attrs[.modificationDate] as? Date,
                       DateHelper.dateKey(from: modDate) == today else { continue }
 
-                var totalTokens = 0, msgCount = 0
-                guard let data = fm.contents(atPath: updatesPath),
-                      let content = String(data: data, encoding: .utf8) else { continue }
-                for line in content.components(separatedBy: .newlines) {
-                    guard !line.isEmpty,
-                          let obj = try? JSONSerialization.jsonObject(with: line.data(using: .utf8) ?? Data()) as? [String: Any] else { continue }
-                    let ts = obj["timestamp"] as? String ?? obj["time"] as? String ?? ""
-                    let dateKey = ts.isEmpty ? today : DateHelper.localDateKey(from: ts)
-                    guard dateKey == today else { continue }
-                    let tokens = obj["totalTokens"] as? Int ?? 0
-                    guard tokens > 0 else { continue }
-                    totalTokens += tokens; msgCount += 1
-                }
+                let usage = fileDailyContrib[updatesPath]?[today]
+                let totalTokens = usage?.tokens ?? 0
+                let msgCount = usage?.messages ?? 0
                 guard totalTokens > 0 else { continue }
 
                 results.append(SessionInfo(

@@ -35,10 +35,11 @@ final class DateHelperTests: XCTestCase {
         XCTAssertEqual(c.hour, 12); XCTAssertEqual(c.minute, 34); XCTAssertEqual(c.second, 56)
     }
 
-    func testParseISO8601_ignoresMillisecondSuffix() {
-        // Claude Code 时间戳带 .fff 毫秒后缀；parseISO8601 只读前 19 个字符
-        XCTAssertEqual(DateHelper.parseISO8601("2026-07-10T12:34:56.789Z"),
-                       DateHelper.parseISO8601("2026-07-10T12:34:56Z"))
+    func testParseISO8601_preservesMillisecondSuffix() throws {
+        // Claude Code 时间戳带 .fff 毫秒后缀；解析器应保留小数秒而非静默截断。
+        let fractional = try XCTUnwrap(DateHelper.parseISO8601("2026-07-10T12:34:56.789Z"))
+        let whole = try XCTUnwrap(DateHelper.parseISO8601("2026-07-10T12:34:56Z"))
+        XCTAssertEqual(fractional.timeIntervalSince(whole), 0.789, accuracy: 0.000_001)
     }
 
     func testParseISO8601_rejectsShortString() {
