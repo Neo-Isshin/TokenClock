@@ -47,24 +47,20 @@ jobs:
           echo "tag=$release_tag" >> "$GITHUB_OUTPUT"
 
       - name: Require an existing shared release
-        shell: bash
+        uses: actions/github-script@v7
         env:
-          GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ steps.release.outputs.tag }}
-        run: |
-          encoded_tag="${RELEASE_TAG//\//%2F}"
-          api="https://api.github.com/repos/$GITHUB_REPOSITORY/releases/tags/$encoded_tag"
-          for attempt in $(seq 1 20); do
-            if wget -q \
-              --header="Authorization: Bearer $GH_TOKEN" \
-              --header="Accept: application/vnd.github+json" \
-              -O /dev/null "$api"; then
-              exit 0
-            fi
-            sleep 15
-          done
-          echo "Shared release $RELEASE_TAG does not exist" >&2
-          exit 1
+        with:
+          script: |
+            try {
+              await github.rest.repos.getReleaseByTag({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                tag: process.env.RELEASE_TAG,
+              });
+            } catch (error) {
+              core.setFailed(`Shared release ${process.env.RELEASE_TAG} does not exist: ${error.message}`);
+            }
 
       - name: Build AppImage
         run: |
