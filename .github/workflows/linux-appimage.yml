@@ -7,6 +7,12 @@ name: linux-appimage
 on:
   push:
     tags: ['linux-v*']
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Existing shared release tag, for example v1.4.0'
+        required: true
+        type: string
 
 permissions:
   contents: write          # 附加资产到 release 需要
@@ -24,12 +30,21 @@ jobs:
         id: release
         shell: bash
         run: |
-          linux_tag='${{ github.ref_name }}'
-          if [[ ! "$linux_tag" =~ ^linux-(v[0-9].*)$ ]]; then
-            echo "Unexpected Linux tag: $linux_tag" >&2
-            exit 1
+          if [[ '${{ github.event_name }}' == 'workflow_dispatch' ]]; then
+            release_tag='${{ inputs.release_tag }}'
+            if [[ ! "$release_tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "Unexpected shared release tag: $release_tag" >&2
+              exit 1
+            fi
+          else
+            linux_tag='${{ github.ref_name }}'
+            if [[ ! "$linux_tag" =~ ^linux-(v[0-9].*)$ ]]; then
+              echo "Unexpected Linux tag: $linux_tag" >&2
+              exit 1
+            fi
+            release_tag="${BASH_REMATCH[1]}"
           fi
-          echo "tag=${BASH_REMATCH[1]}" >> "$GITHUB_OUTPUT"
+          echo "tag=$release_tag" >> "$GITHUB_OUTPUT"
 
       - name: Require an existing shared release
         shell: bash
@@ -40,10 +55,10 @@ jobs:
           encoded_tag="${RELEASE_TAG//\//%2F}"
           api="https://api.github.com/repos/$GITHUB_REPOSITORY/releases/tags/$encoded_tag"
           for attempt in $(seq 1 20); do
-            if curl -fsS \
-              -H "Authorization: Bearer $GH_TOKEN" \
-              -H "Accept: application/vnd.github+json" \
-              "$api" >/dev/null; then
+            if wget -q \
+              --header="Authorization: Bearer $GH_TOKEN" \
+              --header="Accept: application/vnd.github+json" \
+              -O /dev/null "$api"; then
               exit 0
             fi
             sleep 15
