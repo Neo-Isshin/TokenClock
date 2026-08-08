@@ -14,13 +14,19 @@ name: windows
 on:
   push:
     tags: ['windows-v*']
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Existing shared release tag, for example v1.4.0'
+        required: true
+        type: string
 
 permissions:
   contents: write          # 附加资产到 release 需要
 
 jobs:
   build:
-    runs-on: windows-latest
+    runs-on: windows-2022
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -29,11 +35,19 @@ jobs:
         id: release
         shell: pwsh
         run: |
-          $windowsTag = '${{ github.ref_name }}'
-          if ($windowsTag -notmatch '^windows-(v[0-9].*)$') {
-            throw "Unexpected Windows tag: $windowsTag"
+          if ('${{ github.event_name }}' -eq 'workflow_dispatch') {
+            $releaseTag = '${{ inputs.release_tag }}'
+            if ($releaseTag -notmatch '^v[0-9]+\.[0-9]+\.[0-9]+$') {
+              throw "Unexpected shared release tag: $releaseTag"
+            }
+          } else {
+            $windowsTag = '${{ github.ref_name }}'
+            if ($windowsTag -notmatch '^windows-(v[0-9].*)$') {
+              throw "Unexpected Windows tag: $windowsTag"
+            }
+            $releaseTag = $Matches[1]
           }
-          "tag=$($Matches[1])" >> $env:GITHUB_OUTPUT
+          "tag=$releaseTag" >> $env:GITHUB_OUTPUT
 
       - name: Require an existing shared release
         shell: pwsh
@@ -52,12 +66,11 @@ jobs:
           }
 
       - name: Setup Swift
-        uses: swiftpackage/setup-swift@v2
+        uses: compnerd/gha-setup-swift@eeda069c5bc95ac8a9ac5cea7d4f588ae5420ca5
         with:
-          swift-version: '6.0.3'
-
-      - name: Setup VS Developer Environment
-        uses: compnerd/gha-setup-vsenv@v1
+          swift-version: swift-6.3.3-release
+          swift-build: 6.3.3-RELEASE
+          cache: true
 
       - name: Build + bundle + zip
         shell: pwsh
