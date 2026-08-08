@@ -37,7 +37,7 @@ Click the clock for session and model details. Right-click it to change the face
 - **14 AI coding tools in one place.** TokenClock finds their local usage data automatically and lets you correct a path in Settings when needed.
 - **8 carefully designed clock faces.** Glass, Classic, Glacier, Midnight, Luxe, Antique, Railgun, and Sky, plus saved custom faces.
 - **Useful details without leaving the desktop.** Group usage by session or model, expand individual rows, and sort by percentage.
-- **Codex remaining quota in Normal.** Open Codex Quota to see available windows and reset times. It only checks when you open it.
+- **Codex remaining quota on every edition.** Open Codex Quota to see available windows and reset times. It only checks when you open it.
 - **Weather without a location permission popup.** Automatic weather uses an approximate city from your public IP, or you can choose a city yourself.
 - **A native experience on each platform.** macOS uses SwiftUI/AppKit, Windows uses Win32, and Linux uses GTK3. The workflow is shared while controls keep their native appearance.
 
@@ -104,7 +104,7 @@ Windows may show a reputation warning for an unsigned first release. Check that 
 ## Everyday use
 
 - **Left-click the clock:** show or hide usage details.
-- **Codex Quota (Normal):** show remaining Codex limits and reset times.
+- **Codex Quota:** show remaining Codex limits and reset times.
 - **By Session / By Model:** change how details are grouped.
 - **By Percent:** compare which tools consumed the most.
 - **Click a detail row:** expand its sessions or models.
@@ -144,7 +144,7 @@ Most tools need no setup. If a tool stores data somewhere unusual, open **Settin
 - Token and session totals are read from files already stored by your AI tools. TokenClock does not upload those logs or totals.
 - The optional local API listens only on `127.0.0.1`.
 - Automatic weather contacts the configured weather/IP services to estimate a city. It does not request macOS Location Services permission.
-- Codex Quota in Normal runs only when you open its panel. It asks the installed Codex app-server for rate-limit information and does not read or modify Codex authentication files.
+- Codex Quota runs only when you open its panel. It asks the installed Codex app-server for rate-limit information and does not read or modify Codex authentication files.
 - Cursor cloud usage is optional. When enabled, it contacts Cursor's service using the credentials already stored by Cursor; leave it off if you only want local data.
 
 ## Local API (optional)
@@ -161,7 +161,7 @@ The server is loopback-only, so other computers cannot connect to it directly.
 ## Troubleshooting
 
 - **A tool shows zero:** use Re-detect in Settings, then check its Data Source Path. The tool must have created at least one local session first.
-- **Codex Quota is unavailable:** make sure you are using Normal and Codex is installed and signed in, then retry from the quota panel.
+- **Codex Quota is unavailable:** make sure Codex is installed and signed in, then retry from the quota panel.
 - **Weather is unavailable:** choose a city manually or check whether `wttr.in` is reachable from your network.
 - **Linux AppImage does not start:** install `libfuse2`/`libfuse2t64`, then try again.
 - **Something is using too much CPU:** update and restart TokenClock. Recent builds avoid repeatedly scanning old Codex and Gemini histories.

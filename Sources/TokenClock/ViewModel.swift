@@ -16,6 +16,13 @@ enum GroupingMode: Int {
     case model = 1
 }
 
+/// 秒针刷新独立于业务 ViewModel，避免每秒 tick 让详情、设置和主题视图全部重算。
+/// 只有主表盘观察这个轻量对象。
+@MainActor
+final class ClockTicker: ObservableObject {
+    @Published fileprivate var currentTime = Date()
+}
+
 @MainActor
 final class ViewModel: ObservableObject {
     @Published var tools: [ToolUsage] {
@@ -33,7 +40,8 @@ final class ViewModel: ObservableObject {
         sortedTools.filter { enabledTools.contains($0.name) }
     }
 
-    @Published var currentTime = Date()
+    let clockTicker = ClockTicker()
+    var currentTime: Date { clockTicker.currentTime }
     @Published var language: AppLanguage = L10n.shared.language
     @Published var isExpanded = false {
         didSet {
@@ -58,6 +66,10 @@ final class ViewModel: ObservableObject {
     }() {
         didSet { UserDefaults.standard.setBool(showPercentage, for: .dropdownShowPercentage) }
     }
+
+    /// Codex 额度按需读取；不开面板时不启动 app-server，也没有额外轮询。
+    @Published var showsCodexQuota = false
+    @Published private(set) var codexQuota = CodexQuotaSnapshot.idle
 
     @Published var windowOpacity: Double = 1.0 { didSet { UserDefaults.standard.set(windowOpacity, forKey: SettingsKey.windowOpacity.rawValue) } }
     @Published var alwaysOnTop: Bool = {
@@ -187,6 +199,9 @@ final class ViewModel: ObservableObject {
     private var recentResetTimer: Timer?
     private var weatherTimer: Timer?
     private var historyTimer: Timer?
+    private var codexQuotaTask: Task<Void, Never>?
+    private var cachedDateFormatter: DateFormatter?
+    private var cachedDateFormatterKey = ""
 
     /// 后台扫描重入守卫：防止 dataTimer/全量扫描并发触发同一时刻多扫描
     private var isScanning = false
@@ -196,6 +211,7 @@ final class ViewModel: ObservableObject {
     private let claudeCodeService = ClaudeCodeUsageService()
     private let geminiService = GeminiUsageService()
     private let codexService = CodexUsageService()
+    private let codexQuotaService = CodexQuotaService()
     private let hermesService = HermesUsageService()
     private let opencodeService = OpenCodeUsageService()
     private let qwenService = QwenCodeUsageService()
@@ -263,6 +279,29 @@ final class ViewModel: ObservableObject {
 
     func shutdown() {
         stopTimers()
+        codexQuotaTask?.cancel()
+        codexQuotaTask = nil
+    }
+
+    func toggleCodexQuota() {
+        showsCodexQuota.toggle()
+        if showsCodexQuota && (codexQuota.status == .idle || codexQuota.isStale) {
+            refreshCodexQuota()
+        }
+    }
+
+    func refreshCodexQuota() {
+        guard codexQuota.status != .loading else { return }
+        codexQuotaTask?.cancel()
+        codexQuota = .loading(previous: codexQuota)
+        let service = codexQuotaService
+        codexQuotaTask = Task { [weak self] in
+            let result = await Task.detached(priority: .utility) {
+                service.fetch()
+            }.value
+            guard !Task.isCancelled else { return }
+            self?.codexQuota = result
+        }
     }
 
     // MARK: - 首次启动路径探测
@@ -491,20 +530,25 @@ final class ViewModel: ObservableObject {
     }
 
     var dateString: String {
-        let formatter = DateFormatter()
-        switch L10n.shared.language {
-        case .zhHans:
-            formatter.locale = Locale(identifier: "zh_CN")
-            formatter.dateFormat = "M月d日 EEEE"
-        case .zhHant:
-            formatter.locale = Locale(identifier: "zh_TW")
-            formatter.dateFormat = "M月d日 EEEE"
-        case .en:
-            formatter.locale = Locale(identifier: "en_US")
-            formatter.setLocalizedDateFormatFromTemplate("EEEEMMMd")
+        let key = "\(L10n.shared.language.rawValue)|\(effectiveTimezone.identifier)"
+        if cachedDateFormatter == nil || cachedDateFormatterKey != key {
+            let formatter = DateFormatter()
+            switch L10n.shared.language {
+            case .zhHans:
+                formatter.locale = Locale(identifier: "zh_CN")
+                formatter.dateFormat = "M月d日 EEEE"
+            case .zhHant:
+                formatter.locale = Locale(identifier: "zh_TW")
+                formatter.dateFormat = "M月d日 EEEE"
+            case .en:
+                formatter.locale = Locale(identifier: "en_US")
+                formatter.setLocalizedDateFormatFromTemplate("EEEEMMMd")
+            }
+            formatter.timeZone = effectiveTimezone
+            cachedDateFormatter = formatter
+            cachedDateFormatterKey = key
         }
-        formatter.timeZone = effectiveTimezone
-        return formatter.string(from: currentTime)
+        return cachedDateFormatter?.string(from: currentTime) ?? ""
     }
 
     var weatherString: String {
@@ -570,7 +614,7 @@ final class ViewModel: ObservableObject {
         // 时钟：每秒更新
         clockTimer = Timer.scheduledTimer(withTimeInterval: AppConfig.Timers.clock, repeats: true) { [weak self] _ in
             Task { @MainActor in
-                self?.currentTime = Date()
+                self?.clockTicker.currentTime = Date()
             }
         }
 

@@ -1,8 +1,15 @@
 import SwiftUI
+import AppKit
 
 /// 主内容视图：表盘 + 叠加信息
 struct ClockContentView: View {
     @ObservedObject var viewModel: ViewModel
+    @ObservedObject private var clockTicker: ClockTicker
+
+    init(viewModel: ViewModel) {
+        self.viewModel = viewModel
+        self._clockTicker = ObservedObject(wrappedValue: viewModel.clockTicker)
+    }
 
     var body: some View {
         // 表盘大小随用户设置缩放：d = 直径，s = 相对中档(240)的缩放比。
@@ -197,22 +204,6 @@ struct GlassAurora: View {
     /// glacier 主题开启：双层反向旋转 + 更强 sheen + radial glow，让"流动感"更明显。
     var enhanced: Bool = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var rotate = false
-    @State private var rotateReverse = false
-
-    private var sheen: [Color] {
-        let accent = theme.glassTint ?? Color(red: 0.62, green: 0.72, blue: 0.88)
-        // glacier 加强：白色高光从 0.42 → 0.58，accent 透明度从 0.30 → 0.42
-        let whiteHi = enhanced ? 0.58 : 0.42
-        let accentMid = enhanced ? 0.42 : 0.30
-        return [
-            accent.opacity(0.0),
-            Color.white.opacity(whiteHi),
-            accent.opacity(accentMid),
-            accent.opacity(0.0)
-        ]
-    }
-
     /// glacier 专属外圈径向 glow：玻璃盘外的柔光晕
     @ViewBuilder
     private var glowOverlay: some View {
@@ -229,42 +220,56 @@ struct GlassAurora: View {
     }
 
     var body: some View {
-        Group {
-            // 主流动层（向后旋转 65°）
-            LinearGradient(colors: sheen, startPoint: .top, endPoint: .bottom)
-                .rotationEffect(.degrees(rotate ? 65 : -65))
+        ZStack {
+            // Core Animation 在合成进程中执行旋转，不再逐帧触发 SwiftUI ViewGraph 重算。
+            AuroraGradientLayerView(
+                colors: primaryColors,
+                startPoint: CGPoint(x: 0.5, y: 0),
+                endPoint: CGPoint(x: 0.5, y: 1),
+                startAngle: -65,
+                endAngle: 65,
+                duration: 18,
+                animates: animates && !reduceMotion
+            )
                 .blur(radius: size * 0.075)
 
             // glacier 专属：第二层反向旋转（向前 -65°）→ 制造"交织"流动感
             if enhanced {
-                LinearGradient(
+                AuroraGradientLayerView(
                     colors: [
-                        Color.white.opacity(0.0),
-                        Color.white.opacity(0.42),
-                        accentColor.opacity(0.0),
-                        Color.white.opacity(0.28),
-                        Color.white.opacity(0.0)
+                        NSColor.white.withAlphaComponent(0.0),
+                        NSColor.white.withAlphaComponent(0.42),
+                        accentNSColor.withAlphaComponent(0.0),
+                        NSColor.white.withAlphaComponent(0.28),
+                        NSColor.white.withAlphaComponent(0.0)
                     ],
-                    startPoint: .leading,
-                    endPoint: .trailing
+                    startPoint: CGPoint(x: 0, y: 0.5),
+                    endPoint: CGPoint(x: 1, y: 0.5),
+                    startAngle: 65,
+                    endAngle: -65,
+                    duration: 22,
+                    animates: animates && !reduceMotion
                 )
-                .rotationEffect(.degrees(rotateReverse ? -65 : 65))
                 .blur(radius: size * 0.10)
             }
         }
         .overlay { glowOverlay }
         .clipShape(.circle)
-        .onAppear {
-            guard animates && !reduceMotion else { return }
-            withAnimation(.easeInOut(duration: 11).repeatForever(autoreverses: true)) {
-                rotate = true
-            }
-            if enhanced {
-                withAnimation(.easeInOut(duration: 13).repeatForever(autoreverses: true)) {
-                    rotateReverse = true
-                }
-            }
-        }
+    }
+
+    private var primaryColors: [NSColor] {
+        let whiteHi = enhanced ? 0.58 : 0.42
+        let accentMid = enhanced ? 0.42 : 0.30
+        return [
+            accentNSColor.withAlphaComponent(0.0),
+            NSColor.white.withAlphaComponent(whiteHi),
+            accentNSColor.withAlphaComponent(accentMid),
+            accentNSColor.withAlphaComponent(0.0)
+        ]
+    }
+
+    private var accentNSColor: NSColor {
+        NSColor(accentColor)
     }
 
     private var accentColor: Color {
