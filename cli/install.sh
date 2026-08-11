@@ -214,9 +214,9 @@ release_tag_for_variant() {
     return
   fi
   case "$1" in
-    glass)  echo "v1.4.2" ;;
-    normal) echo "v1.4.2" ;;
-    linux)  echo "v1.4.0" ;;
+    glass)  echo "v1.4.3" ;;
+    normal) echo "v1.4.3" ;;
+    linux)  echo "v1.4.3" ;;
   esac
 }
 release_base_for_tag() {
@@ -233,8 +233,8 @@ tarball_name() {
 }
 tarball_sha256() {
   case "$1" in
-    glass)  echo "02240d83d0d9297299964a5488aabb99cdbc1c6dabc1fc633d56794e93cf2f20" ;;
-    normal) echo "393c0e2e4bf1b4a3cb4e5b8c23062cc999204a0d800e11003dd5b4844b567c3f" ;;
+    glass)  echo "ae21c79ef62acbda02e153d8e0fb0b926152f2548f1b5e653aa434f0707696d2" ;;
+    normal) echo "2470b37919c5b88402eade8b212b282b030ecb7845c4fe0dc2fc62c5fd187ca5" ;;
   esac
 }
 
