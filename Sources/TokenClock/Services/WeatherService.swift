@@ -2,7 +2,7 @@ import Foundation
 #if os(macOS)
 import CoreLocation
 #endif
-#if canImport(FoundationNetworking)
+#if canImport(FoundationNetworking) && !os(Windows)
 import FoundationNetworking   // swift-corelibs 在 Windows 把 URLSession 拆到独立模块
 #endif
 
@@ -14,6 +14,15 @@ struct HourlyForecast: Sendable {
     let description: String
 }
 
+#if os(Windows)
+/// Windows only needs the shared parser. Network I/O lives in WindowsWeather and WinHTTP, so
+/// no URLSession symbol (and therefore no FoundationNetworking.dll) enters the executable.
+enum WeatherService {
+    static func parseJSON(data: Data?, fallbackCity: String) -> WeatherInfo {
+        parseWeatherJSON(data: data, fallbackCity: fallbackCity)
+    }
+}
+#else
 /// 天气服务：支持自动定位 + wttr.in 免费天气 API
 /// 使用 JSON 格式解析，支持 weatherCode 精确映射 + 逐小时预报
 @MainActor
@@ -148,110 +157,7 @@ final class WeatherService: NSObject {
 
     /// 解析 wttr.in JSON 响应
     nonisolated static func parseJSON(data: Data?, fallbackCity: String) -> WeatherInfo {
-        guard let data = data,
-              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            return WeatherInfo(emoji: "🌤️", temperature: 0, cityName: fallbackCity)
-        }
-
-        // 当前天气
-        let current = (json["current_condition"] as? [[String: Any]])?.first ?? [:]
-        let tempC = Int(current["temp_C"] as? String ?? "") ?? 0
-        let code = Int(current["weatherCode"] as? String ?? "") ?? 0
-        let emoji = mapWeatherCode(code)
-
-        // 城市名：优先用传入的 fallback，空时才用 wttr.in 返回的 nearest_area
-        var cityName = fallbackCity
-        if cityName.isEmpty,
-           let nearest = (json["nearest_area"] as? [[String: Any]])?.first,
-           let areaNames = nearest["areaName"] as? [[String: Any]],
-           let name = areaNames.first?["value"] as? String {
-            cityName = name
-        }
-
-        // 逐小时预报（合并所有可用天数，支持深夜显示次日数据）
-        var forecast: [HourlyForecast] = []
-        if let weatherDays = json["weather"] as? [[String: Any]] {
-            for day in weatherDays {
-                guard let hourly = day["hourly"] as? [[String: Any]] else { continue }
-                for h in hourly {
-                    let time = h["time"] as? String ?? ""
-                    let hTemp = Int(h["tempC"] as? String ?? "") ?? 0
-                    let hCode = Int(h["weatherCode"] as? String ?? "") ?? 0
-                    let hDesc = (h["weatherDesc"] as? [[String: Any]])?.first?["value"] as? String ?? ""
-                    forecast.append(HourlyForecast(
-                        time: time,
-                        tempC: hTemp,
-                        emoji: mapWeatherCode(hCode),
-                        description: hDesc
-                    ))
-                }
-            }
-        }
-
-        return WeatherInfo(
-            emoji: emoji,
-            temperature: tempC,
-            cityName: cityName,
-            forecast: forecast
-        )
-    }
-
-    // MARK: - weatherCode → emoji
-
-    /// WorldWeatherOnline weatherCode → emoji 映射（覆盖全部 48 种代码）
-    nonisolated private static func mapWeatherCode(_ code: Int) -> String {
-        switch code {
-        case 113: return "☀️"   // Clear, Sunny
-        case 116: return "⛅"   // Partly cloudy
-        case 119: return "☁️"   // Cloudy
-        case 122: return "☁️"   // Overcast
-        case 143: return "🌫️"   // Mist
-        case 176: return "🌦️"   // Patchy rain nearby
-        case 179: return "🌨️"   // Patchy snow nearby
-        case 182: return "🌨️"   // Patchy sleet nearby
-        case 185: return "🌨️"   // Patchy freezing drizzle nearby
-        case 200: return "⛈️"   // Thundery outbreaks in nearby
-        case 227: return "❄️"   // Blowing snow
-        case 230: return "❄️"   // Blizzard
-        case 248: return "🌫️"   // Fog
-        case 260: return "🌫️"   // Freezing fog
-        case 263: return "🌦️"   // Patchy light drizzle
-        case 266: return "🌦️"   // Light drizzle
-        case 269: return "🌦️"   // Freezing drizzle
-        case 281: return "🌦️"   // Heavy freezing drizzle
-        case 284: return "🌦️"   // Heavy freezing drizzle
-        case 293: return "🌦️"   // Patchy light rain
-        case 296: return "🌧️"   // Light rain
-        case 299: return "🌧️"   // Moderate rain at times
-        case 302: return "🌧️"   // Moderate rain
-        case 305: return "🌧️"   // Heavy rain at times
-        case 308: return "🌧️"   // Heavy rain
-        case 311: return "🌨️"   // Light freezing rain
-        case 314: return "🌨️"   // Moderate or heavy freezing rain
-        case 317: return "🌨️"   // Light sleet
-        case 320: return "🌨️"   // Moderate or heavy sleet
-        case 323: return "❄️"   // Patchy light snow
-        case 326: return "❄️"   // Light snow
-        case 329: return "❄️"   // Patchy moderate snow
-        case 332: return "❄️"   // Moderate snow
-        case 335: return "❄️"   // Patchy heavy snow
-        case 338: return "❄️"   // Heavy snow
-        case 350: return "🌨️"   // Ice pellets
-        case 353: return "🌦️"   // Light rain shower
-        case 356: return "🌧️"   // Moderate or heavy rain shower
-        case 359: return "🌧️"   // Torrential rain shower
-        case 362: return "🌨️"   // Light sleet showers
-        case 365: return "🌨️"   // Moderate or heavy sleet showers
-        case 368: return "❄️"   // Light snow showers
-        case 371: return "❄️"   // Moderate or heavy snow showers
-        case 374: return "🌨️"   // Light showers of ice pellets
-        case 377: return "🌨️"   // Moderate or heavy showers of ice pellets
-        case 386: return "⛈️"   // Patchy light rain with thunder
-        case 389: return "⛈️"   // Moderate or heavy rain with thunder
-        case 392: return "⛈️"   // Patchy light snow with thunder
-        case 395: return "⛈️"   // Moderate or heavy snow with thunder
-        default:  return "🌤️"   // Unknown
-        }
+        parseWeatherJSON(data: data, fallbackCity: fallbackCity)
     }
 
     // MARK: - IP 定位 Fallback
@@ -343,6 +249,70 @@ final class WeatherService: NSObject {
         return "未知位置"
     }
     #endif
+}
+#endif
+
+/// Platform-neutral wttr.in parser shared by macOS's WeatherService and WindowsWeather.
+private func parseWeatherJSON(data: Data?, fallbackCity: String) -> WeatherInfo {
+    guard let data,
+          let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+        return WeatherInfo(emoji: "🌤️", temperature: 0, cityName: fallbackCity)
+    }
+
+    let current = (json["current_condition"] as? [[String: Any]])?.first ?? [:]
+    let tempC = Int(current["temp_C"] as? String ?? "") ?? 0
+    let code = Int(current["weatherCode"] as? String ?? "") ?? 0
+    let emoji = mapWeatherCode(code)
+
+    var cityName = fallbackCity
+    if cityName.isEmpty,
+       let nearest = (json["nearest_area"] as? [[String: Any]])?.first,
+       let areaNames = nearest["areaName"] as? [[String: Any]],
+       let name = areaNames.first?["value"] as? String {
+        cityName = name
+    }
+
+    var forecast: [HourlyForecast] = []
+    if let weatherDays = json["weather"] as? [[String: Any]] {
+        for day in weatherDays {
+            guard let hourly = day["hourly"] as? [[String: Any]] else { continue }
+            for hour in hourly {
+                let time = hour["time"] as? String ?? ""
+                let temperature = Int(hour["tempC"] as? String ?? "") ?? 0
+                let weatherCode = Int(hour["weatherCode"] as? String ?? "") ?? 0
+                let description = (hour["weatherDesc"] as? [[String: Any]])?.first?["value"] as? String ?? ""
+                forecast.append(HourlyForecast(
+                    time: time,
+                    tempC: temperature,
+                    emoji: mapWeatherCode(weatherCode),
+                    description: description
+                ))
+            }
+        }
+    }
+
+    return WeatherInfo(
+        emoji: emoji,
+        temperature: tempC,
+        cityName: cityName,
+        forecast: forecast
+    )
+}
+
+/// WorldWeatherOnline weatherCode → emoji 映射（覆盖全部 48 种代码）
+private func mapWeatherCode(_ code: Int) -> String {
+    switch code {
+    case 113: return "☀️"
+    case 116: return "⛅"
+    case 119, 122: return "☁️"
+    case 143, 248, 260: return "🌫️"
+    case 176, 263, 266, 269, 281, 284, 293, 353: return "🌦️"
+    case 179, 182, 185, 311, 314, 317, 320, 350, 362, 365, 374, 377: return "🌨️"
+    case 200, 386, 389, 392, 395: return "⛈️"
+    case 227, 230, 323, 326, 329, 332, 335, 338, 368, 371: return "❄️"
+    case 296, 299, 302, 305, 308, 356, 359: return "🌧️"
+    default: return "🌤️"
+    }
 }
 
 extension Notification.Name {

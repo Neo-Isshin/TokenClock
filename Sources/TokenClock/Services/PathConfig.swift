@@ -29,6 +29,8 @@ enum PathConfig {
     private static let envCline = "CLINE_HOME"
     private static let envContinue = "CONTINUE_HOME"
     private static let envCursorAgent = "CURSOR_AGENT_HOME"
+    private static let envKiroHome = "KIRO_HOME"
+    private static let envCodeBuddyEndpoint = "CODEBUDDY_STATS_ENDPOINT"
 
     // MARK: - 读取路径（含探测缓存）
 
@@ -154,6 +156,33 @@ enum PathConfig {
         customPath(forKey: "cursorAgentPath") ?? envPath(envCursorAgent) ?? defaultCursorAgentHome()
     }
 
+    /// KIRO_HOME is the Kiro home itself; the official CLI session contract lives below it.
+    static func kiroSessionsHome() -> String {
+        #if os(Windows)
+        if let custom = customPath(forKey: "kiroSessionsPath") { return custom }
+        if let home = envPath(envKiroHome) { return childDirectory("sessions/cli", of: home) }
+        return WindowsProviderCatalog.entry(.kiro).defaultPath
+        #else
+        return NSHomeDirectory() + "/.kiro/sessions/cli"
+        #endif
+    }
+
+    /// TokenClock compatibility setting for CodeBuddy's documented local HTTP service.
+    /// Validation remains in CodeBuddyStatsService so an unsafe URL can never be requested.
+    static func codeBuddyEndpoint() -> String {
+        #if os(Windows)
+        if let custom = UserDefaults.standard.string(for: .codeBuddyEndpoint), !custom.isEmpty {
+            return custom.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        if let environment = ProcessInfo.processInfo.environment[envCodeBuddyEndpoint], !environment.isEmpty {
+            return environment.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        return WindowsProviderCatalog.entry(.codeBuddy).defaultPath
+        #else
+        return "http://127.0.0.1:8080"
+        #endif
+    }
+
     // MARK: - 默认路径
 
     static func defaultOpenclawHome() -> String {
@@ -273,6 +302,17 @@ enum PathConfig {
         return WindowsProviderCatalog.entry(.cursorAgent).defaultPath
         #else
         return NSHomeDirectory() + "/.cursor"
+        #endif
+    }
+
+    static func kiroCandidates() -> [String] {
+        #if os(Windows)
+        var candidates: [String] = []
+        if let home = envPath(envKiroHome) { candidates.append(childDirectory("sessions/cli", of: home)) }
+        candidates.append(WindowsProviderCatalog.entry(.kiro).defaultPath)
+        return candidates
+        #else
+        return [kiroSessionsHome()]
         #endif
     }
 
@@ -468,6 +508,15 @@ enum PathConfig {
     static func setClinePath(_ path: String) { setCustomPath(path, forKey: "clinePath") }
     static func setContinuePath(_ path: String) { setCustomPath(path, forKey: "continuePath") }
     static func setCursorAgentPath(_ path: String) { setCustomPath(path, forKey: "cursorAgentPath") }
+    static func setKiroSessionsPath(_ path: String) { setCustomPath(path, forKey: "kiroSessionsPath") }
+    static func setCodeBuddyEndpoint(_ endpoint: String) {
+        #if os(Windows)
+        let trimmed = endpoint.trimmingCharacters(in: .whitespacesAndNewlines)
+        UserDefaults.standard.setString(trimmed.isEmpty ? nil : trimmed, for: .codeBuddyEndpoint)
+        #else
+        setCustomPath(endpoint, forKey: "codeBuddyEndpoint")
+        #endif
+    }
 
     // MARK: - 首次启动标记
 

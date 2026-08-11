@@ -55,6 +55,8 @@ enum SettingsKey: String {
     case clinePath = "TC_clinePath"
     case continuePath = "TC_continuePath"
     case cursorAgentPath = "TC_cursorAgentPath"
+    case kiroSessionsPath = "TC_kiroSessionsPath"
+    case codeBuddyEndpoint = "TC_codeBuddyEndpoint"
 
     // MARK: - 窗口位置（历史命名，无 TC_ 前缀，保持兼容）
     case windowPosition = "TokenClockWindowPosition"

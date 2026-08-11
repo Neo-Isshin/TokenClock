@@ -49,7 +49,7 @@ final class GeminiUsageService: @unchecked Sendable {
         let d = dailyData[DateHelper.todayKey()]
         let total = d?.tokens ?? 0
         let cache = dailyCache[DateHelper.todayKey()] ?? 0
-        let rate = total > 0 ? Double(cache) / Double(total) : 0
+        let rate = TokenAccounting.cacheReadShare(freshTokens: total, cacheRead: cache)
         return (total, d?.messages ?? 0, rate)
     }
 
@@ -272,7 +272,9 @@ final class GeminiUsageService: @unchecked Sendable {
         // Gemini CLI 的 input(promptTokenCount) 已含 cached(cachedContentTokenCount)，
         // 同 Codex：cached 再加会双计。thought 为推理 token，单列计入（字段名兼容 thought/thoughts）。
         let thought = (tokens["thought"] as? Int) ?? (tokens["thoughts"] as? Int) ?? 0
-        let total = input + output + thought
+        let total = TokenAccounting.excludingCacheRead(
+            inclusiveInput: input, cacheRead: cached, output: output, additional: [thought]
+        )
         guard total > 0 else { return nil }
 
         let timestamp = msg["timestamp"] as? String ?? ""

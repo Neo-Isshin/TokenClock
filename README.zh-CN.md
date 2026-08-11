@@ -35,6 +35,8 @@
 
 TokenClock 是一个常驻桌面的 **悬浮时钟**（置顶 · 可拖拽 · 记忆位置）。表盘上实时叠加显示：**今日总 token 消耗、消息条数、当前活跃的 AI 工具、速率指示器与天气**。点击时钟即可展开下拉面板，查看 **每个工具 → 每个 session / agent** 的明细用量。
 
+重复读取的提示词缓存不会抬高主数字；新输入、缓存创建、输出和推理仍会正常计入。
+
 采用 macOS 26 的 **Liquid Glass** 材质打造玻璃质感表盘，并提供 7 款精心设计的内置表盘与完全自定义主题。所有数据都在 **本地** 读取——不上传任何信息。
 
 > [!NOTE]
@@ -206,8 +208,12 @@ Windows 的路径探测与 macOS、Linux 分开维护。支持展开 `%NAME%`、
 | **Cline** | `%APPDATA%\Code\User\globalStorage\saoudrizwan.claude-dev\` | `CLINE_HOME`（TokenClock 兼容覆盖） |
 | **Continue** | `%USERPROFILE%\.continue\` | `CONTINUE_HOME`（TokenClock 兼容覆盖） |
 | **Cursor Agent** | `%APPDATA%\Cursor\User\globalStorage\state.vscdb` | `CURSOR_AGENT_HOME`（TokenClock 兼容覆盖） |
+| **Kiro CLI** | `%USERPROFILE%\.kiro\sessions\cli\` | `KIRO_HOME`（主目录；TokenClock 自动追加 `sessions\cli`） |
+| **CodeBuddy CLI** | `http://127.0.0.1:8080` | `CODEBUDDY_STATS_ENDPOINT`（TokenClock 兼容覆盖；仅允许字面回环地址） |
 
-探测报告会分别记录三件事：catalog 中是否有声明、选中的路径是否存在、对应 JSONL/JSON/SQLite 输入是否真的可由解析器读取。因此，仅有空目录不会被误报为“可用”。Hermes 也会兼容探测旧路径 `%USERPROFILE%\.hermes`；OpenCode 另行兼容探测 `%LOCALAPPDATA%\opencode` 和 `%USERPROFILE%\.opencode`；Cline 也会探测 Cursor 的扩展数据目录。
+探测报告会分别记录 catalog 声明、数据源是否可用、官方契约是否可读，以及 TokenClock 能否安全解析统计数据。因此，仅有空目录不会被误报为“可用”。Hermes 也会兼容探测旧路径 `%USERPROFILE%\.hermes`；OpenCode 另行兼容探测 `%LOCALAPPDATA%\opencode` 和 `%USERPROFILE%\.opencode`；Cline 也会探测 Cursor 的扩展数据目录。
+
+[Kiro](https://kiro.dev/docs/cli/acp/) 目前仅提供数据源发现：Kiro 官方说明了会话文件位置，却没有发布稳定的 token 或请求计数字段，因此 TokenClock 不会凭空猜一个数字。[CodeBuddy](https://www.workbuddy.ai/docs/cli/http-api) 需要用户手动启用，只读取其本地 HTTP 服务公开的“当前会话”token 字段；当前会话数据不会混入“今日”总数或百分比。TokenClock 不发送密码、Cookie 或账户凭据，并拒绝访问 `127.0.0.1` 以外的地址。
 
 上表中的“官方”表示该变量或路径契约有 provider 官方文档/源码依据（例如 OpenClaw 的 `OPENCLAW_STATE_DIR`、Qwen 运行目录或平台标准 `XDG_DATA_HOME`）。“TokenClock 兼容覆盖”仅表示 TokenClock 为方便配置而接受该变量名；目前未找到稳定的上游官方契约，不能把它当作 provider 官方设置。
 
@@ -233,7 +239,9 @@ curl -fsSL https://raw.githubusercontent.com/Neo-Isshin/TokenClock/main/cli/inst
 
 Windows normal 当前由长期分支 `windows-port` 独立维护，不反向合并进 macOS/Linux 产品分支。安装器仅写入当前用户目录，无需管理员权限；下载 release ZIP 后会校验配套 SHA-256，默认安装到 `%LOCALAPPDATA%\Programs\TokenClock`。
 
-该渠道按 macOS normal 的工作流对齐：完整提供玻璃、经典、冰川、深夜、暗金、古风、超电磁炮、天空 8 套内置表盘，紧凑 3×3 表盘选择器与已保存自定义表盘、四档尺寸，以及固定 320×547 的详情卡（会话/模型分组、百分比、可展开行、天气趋势）；**Codex Quota** 位于 **By Percent** 左侧。右键菜单、概览式分组设置、自定义表盘保存/应用/删除流程和品牌 About 均采用 Windows 原生实现对齐同一套 normal 功能。provider 路径仍保持 Windows 专属，不引入 macOS 或 Linux catalog 路径。
+该渠道按 macOS normal 的工作流对齐：完整提供 8 套内置表盘、紧凑 3×3 表盘选择器与已保存自定义表盘、四档尺寸，以及固定 320×547 的详情卡（会话/模型分组、百分比、可展开行、天气趋势）；**Codex Quota** 位于 **By Percent** 左侧。其中三张熟悉的表盘为 Windows 专门打磨成清冷的 **冰霜玻璃**、温润的 **瓷白** 和深色的 **烟熏玻璃**。右键菜单、设置、自定义表盘保存/应用/删除和 About 均延续同一套 normal 使用体验，provider 路径仍保持 Windows 专属。
+
+Windows 11 上，详情面板和表盘选择器使用 Acrylic 毛玻璃，设置、自定义表盘与 About 使用 Mica。圆形表盘保留干净的透明外缘，玻璃纹理、陶瓷釉面、柔和反光、精细分钟刻度和立体指针直接绘制在表盘中，不会为了好看而增加忙碌的后台任务。如果关闭了系统透明效果、开启高对比度，或 Windows 版本不支持这些效果，TokenClock 会自动切换为清晰的纯色背景。
 
 ```powershell
 # 安装最新 x86_64 Windows 版并启动。
@@ -252,17 +260,17 @@ irm https://raw.githubusercontent.com/Neo-Isshin/TokenClock/windows-port/cli/ins
 - 卸载默认保留 `%LOCALAPPDATA%\TokenClock` 设置；仅 `-RemoveUserData` 会一并删除。
 - release 缺少校验文件时默认中止；`-AllowUnsigned` 仅用于用户明确确认可信的本地/自定义包。
 
-Windows release 包通过 `pwsh scripts/build-windows.ps1 -Zip` 生成，包含 `TokenClock.exe`、Swift/VC++ 运行时 DLL 和资源。发布时使用指向 `windows-port` 的独立 tag：共享 release `v1.4.0` 已存在后，把对应 Windows 提交标记为 `windows-v1.4.0` 并推送。这样 workflow 定义和源码都存在于不可变的 Windows tag 中；workflow 会把 `windows-v1.4.0` 映射回已存在的 `v1.4.0` release，只附加 ZIP 和校验文件。它不会创建 Windows-only release，也不需要把 Windows 源码合并进 main。
+Windows release 包通过 `pwsh scripts/build-windows.ps1 -Zip` 生成，包含 `TokenClock.exe`、Swift/VC++ 运行时 DLL 和资源。发布时使用指向 `windows-port` 的独立 tag：共享 release `v1.4.3` 已存在后，把对应 Windows 提交标记为 `windows-v1.4.3` 并推送。这样 workflow 定义和源码都存在于不可变的 Windows tag 中；workflow 会把 `windows-v1.4.3` 映射回已存在的 `v1.4.3` release，只附加 ZIP 和校验文件。它不会创建 Windows-only release，也不需要把 Windows 源码合并进 main。
 
 ```bash
-gh release view v1.4.0 --repo Neo-Isshin/TokenClock
+gh release view v1.4.3 --repo Neo-Isshin/TokenClock
 git switch windows-port
 git pull --ff-only origin windows-port
-git tag -a windows-v1.4.0 -m "Windows assets for v1.4.0"
-git push origin windows-v1.4.0
+git tag -a windows-v1.4.3 -m "Windows assets for v1.4.3"
+git push origin windows-v1.4.3
 ```
 
-使用 `-Version latest` 时，安装器会选择最新且已同时包含 Windows ZIP 和 SHA-256 的稳定 release；若更新的 macOS/Linux release 仍在等待 Windows 资产，会先跳过它。显式 `-Version` 则严格解析共享 tag（例如 `v1.4.0`，而不是 `windows-v1.4.0`）。当前发行包仅提供 x86_64。由于尚非 Microsoft Store/MSIX 包且可能未签名，Windows 信誉保护可能弹出提示。也可直接使用便携 ZIP，但快捷方式、更新与卸载需自行管理。
+使用 `-Version latest` 时，安装器会选择最新且已同时包含 Windows ZIP 和 SHA-256 的稳定 release；若更新的 macOS/Linux release 仍在等待 Windows 资产，会先跳过它。显式 `-Version` 则严格解析共享 tag（例如 `v1.4.3`，而不是 `windows-v1.4.3`）。当前发行包仅提供 x86_64。由于尚非 Microsoft Store/MSIX 包且可能未签名，Windows 信誉保护可能弹出提示。也可直接使用便携 ZIP，但快捷方式、更新与卸载需自行管理。
 
 ### Linux normal 版
 

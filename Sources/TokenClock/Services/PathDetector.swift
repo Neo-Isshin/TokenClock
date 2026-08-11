@@ -14,6 +14,12 @@ enum PathDetector {
         #if os(Windows)
         /// The selected catalog candidate itself exists on disk.
         let pathExists: Bool
+        /// A filesystem source exists or a loopback service responded. Kept separate because
+        /// `pathExists` is intentionally false for HTTP sources.
+        let sourceAvailable: Bool
+        /// The provider's documented storage/API envelope is readable, even when upstream has
+        /// not published numeric statistics fields.
+        let contractReadable: Bool
         /// The shared parser's required input (JSONL/JSON/SQLite) is present and readable.
         let parserReadable: Bool
         var exists: Bool { parserReadable }
@@ -46,8 +52,8 @@ enum PathDetector {
     // MARK: - 主入口：自动探测所有数据源
 
     /// 运行完整探测，返回摘要。首次启动时调用。
-    static func runFullDetection() -> DetectionSummary {
-        let results = [
+    static func runFullDetection(probeLoopbackServices: Bool = false) -> DetectionSummary {
+        var results = [
             detectOpenClaw(),
             detectClaudeCode(),
             detectGemini(),
@@ -63,6 +69,10 @@ enum PathDetector {
             detectContinue(),
             detectCursorAgent(),
         ]
+        #if os(Windows)
+        results.append(detectKiro())
+        results.append(detectCodeBuddy(probe: probeLoopbackServices))
+        #endif
         let found = results.filter(\.exists).count
         return DetectionSummary(results: results, foundCount: found, totalCount: results.count)
     }
@@ -196,6 +206,51 @@ enum PathDetector {
             defaultPath: PathConfig.defaultCodexHome()
         )
     }
+
+    #if os(Windows)
+    private static func detectKiro() -> DetectionResult {
+        let custom = UserDefaults.standard.string(for: .kiroSessionsPath)
+        let candidates = buildCandidates(
+            custom: custom,
+            envName: PathConfig.kiroCandidates(),
+            defaults: [WindowsProviderCatalog.entry(.kiro).defaultPath],
+            alternates: []
+        )
+        let match = findFirstValid(
+            candidates: candidates,
+            parserReadableWhenValid: false,
+            validator: KiroSessionContractProbe.isReadable
+        )
+        return buildResult(
+            service: WindowsProviderCatalog.ProviderID.kiro.rawValue,
+            emoji: WindowsProviderCatalog.entry(.kiro).emoji,
+            match: match,
+            custom: custom,
+            defaultPath: WindowsProviderCatalog.entry(.kiro).defaultPath
+        )
+    }
+
+    private static func detectCodeBuddy(probe: Bool) -> DetectionResult {
+        let endpoint = PathConfig.codeBuddyEndpoint()
+        let validEndpoint = CodeBuddyStatsService.validatedLoopbackBaseURL(endpoint) != nil
+        let readable = validEndpoint && probe && CodeBuddyStatsService(endpoint: endpoint).probe().contractReadable
+        let custom = UserDefaults.standard.string(for: .codeBuddyEndpoint)
+        return DetectionResult(
+            service: WindowsProviderCatalog.ProviderID.codeBuddy.rawValue,
+            emoji: WindowsProviderCatalog.entry(.codeBuddy).emoji,
+            detectedPath: endpoint,
+            isDefault: custom == nil,
+            pathExists: false,
+            sourceAvailable: readable,
+            contractReadable: readable,
+            parserReadable: readable,
+            source: custom == nil ? .officialDefault : .userDefaults,
+            detail: readable
+                ? L10n.shared.tr("pathDetail.contractOnly")
+                : L10n.shared.tr(validEndpoint ? "pathDetail.notFound" : "pathDetail.existsUnreadable")
+        )
+    }
+    #endif
 
     private static func detectHermes() -> DetectionResult {
         let custom = UserDefaults.standard.string(for: .hermesPath)
@@ -433,6 +488,7 @@ enum PathDetector {
         let source: DetectionResult.PathSource
         #if os(Windows)
         let pathExists: Bool
+        let contractReadable: Bool
         let parserReadable: Bool
         #endif
     }
@@ -491,6 +547,7 @@ enum PathDetector {
     /// 找到第一个通过验证的候选路径
     private static func findFirstValid(
         candidates: [Candidate],
+        parserReadableWhenValid: Bool = true,
         validator: (String) -> Bool
     ) -> CandidateMatch? {
         #if os(Windows)
@@ -503,11 +560,13 @@ enum PathDetector {
             let pathExists = FileManager.default.fileExists(atPath: candidate.path, isDirectory: &isDirectory)
             if readable {
                 return CandidateMatch(path: candidate.path, source: candidate.source,
-                                      pathExists: pathExists, parserReadable: true)
+                                      pathExists: pathExists, contractReadable: true,
+                                      parserReadable: parserReadableWhenValid)
             }
             if pathExists && firstExisting == nil {
                 firstExisting = CandidateMatch(path: candidate.path, source: candidate.source,
-                                               pathExists: true, parserReadable: false)
+                                               pathExists: true, contractReadable: false,
+                                               parserReadable: false)
             }
             #else
             if readable { return CandidateMatch(path: candidate.path, source: candidate.source) }
@@ -549,9 +608,13 @@ enum PathDetector {
                 detectedPath: match.path,
                 isDefault: isDefault,
                 pathExists: match.pathExists,
+                sourceAvailable: match.pathExists,
+                contractReadable: match.contractReadable,
                 parserReadable: match.parserReadable,
                 source: match.source,
-                detail: match.parserReadable ? detail : L10n.shared.tr("pathDetail.existsUnreadable")
+                detail: match.parserReadable
+                    ? detail
+                    : L10n.shared.tr(match.contractReadable ? "pathDetail.contractOnly" : "pathDetail.existsUnreadable")
             )
             #else
             return DetectionResult(
@@ -570,6 +633,8 @@ enum PathDetector {
                 detectedPath: defaultPath,
                 isDefault: true,
                 pathExists: false,
+                sourceAvailable: false,
+                contractReadable: false,
                 parserReadable: false,
                 source: .notFound,
                 detail: L10n.shared.tr("pathDetail.notFoundDefault")

@@ -1,5 +1,5 @@
 import Foundation
-#if canImport(FoundationNetworking)
+#if canImport(FoundationNetworking) && !os(Windows)
 import FoundationNetworking
 #endif
 #if os(macOS)
@@ -22,32 +22,31 @@ import CSQLite
 ///
 /// 同时覆盖 Cursor IDE 和 Cursor Agent CLI，因为两者共用同一套账户系统。
 final class CursorAgentUsageService: @unchecked Sendable {
+    static var cloudFetchEnabled: Bool {
+        UserDefaults.standard.bool(for: .cursorCloudFetchEnabled, default: true)
+    }
+
     private(set) var dailyData: [String: DayUsage] = [:]
     private(set) var hourlyData: [String: HourlyUsage] = [:]
     private(set) var dailyCache: [String: Int] = [:]
     private var recentEntries: [RecentEntry] = []
 
+#if !os(Windows)
     private let session: URLSession
+#endif
     private var sessionToken: String?
     private var userId: String?
     private var lastFetchTime: Date = .distantPast
 
     init() {
+#if !os(Windows)
         let config = URLSessionConfiguration.default
         config.timeoutIntervalForRequest = AppConfig.HTTP.requestTimeout
         config.timeoutIntervalForResource = AppConfig.HTTP.resourceTimeout
         config.httpCookieStorage = nil  // 不使用系统 cookie storage
         session = URLSession(configuration: config)
+#endif
     }
-
-    #if os(Windows)
-    deinit {
-        // URLSession retains a large native handle pool on Windows until explicitly invalidated.
-        // Settings can replace this service after a path change, so relying on process teardown
-        // would leak the previous pool for the remainder of the app lifetime.
-        session.invalidateAndCancel()
-    }
-    #endif
 
     func fullScan() {
         // 不清空已有数据，等 API 返回后原子替换
@@ -73,7 +72,7 @@ final class CursorAgentUsageService: @unchecked Sendable {
         let d = dailyData[DateHelper.todayKey()]
         let cache = dailyCache[DateHelper.todayKey()] ?? 0
         let total = d?.tokens ?? 0
-        let rate = total > 0 ? Double(cache) / Double(total) : 0
+        let rate = TokenAccounting.cacheReadShare(freshTokens: total, cacheRead: cache)
         return (total, d?.messages ?? 0, rate)
     }
 
@@ -171,14 +170,16 @@ final class CursorAgentUsageService: @unchecked Sendable {
 
     private func fetchUsageData(timeRangeDays: Int) async {
         // 用户可在设置中关闭 Cursor 云端获取，避免凭证外发 cursor.com
-        guard UserDefaults.standard.bool(for: .cursorCloudFetchEnabled, default: true) else { return }
+        guard Self.cloudFetchEnabled else { return }
         guard let token = sessionToken, let uid = userId else { return }
 
         let nowMs = Int(Date().timeIntervalSince1970 * 1000)
         let startMs = nowMs - timeRangeDays * 24 * 60 * 60 * 1000
 
-        guard let url = URL(string: "\(AppConfig.API.cursorBase)/dashboard/get-filtered-usage-events") else { return }
+        let endpoint = "\(AppConfig.API.cursorBase)/dashboard/get-filtered-usage-events"
 
+#if !os(Windows)
+        guard let url = URL(string: endpoint) else { return }
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -186,6 +187,7 @@ final class CursorAgentUsageService: @unchecked Sendable {
         request.setValue(AppConfig.API.cursorOrigin, forHTTPHeaderField: "Origin")
         request.setValue(AppConfig.API.cursorDashboard, forHTTPHeaderField: "Referer")
         request.setValue(AppConfig.HTTP.userAgent, forHTTPHeaderField: "User-Agent")
+#endif
 
         // Cookie 格式：WorkosCursorSessionToken=user_XXX%3A%3AJWT
         let cookieValue: String
@@ -194,7 +196,18 @@ final class CursorAgentUsageService: @unchecked Sendable {
         } else {
             cookieValue = "\(uid)%3A%3A\(token)"
         }
+#if os(Windows)
+        let requestHeaders = [
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "Origin": AppConfig.API.cursorOrigin,
+            "Referer": AppConfig.API.cursorDashboard,
+            "User-Agent": AppConfig.HTTP.userAgent,
+            "Cookie": "WorkosCursorSessionToken=\(cookieValue)",
+        ]
+#else
         request.setValue("WorkosCursorSessionToken=\(cookieValue)", forHTTPHeaderField: "Cookie")
+#endif
 
         // 分页拉满整个窗口：单页 pageSize=200，超过部分曾被静默丢弃。
         // 循环直到某页返回 < pageSize（最后一页）/ 空 / 非 200，安全上限 100 页（=20000 事件，30 天远超）。
@@ -212,18 +225,35 @@ final class CursorAgentUsageService: @unchecked Sendable {
                 "page": page,
                 "pageSize": AppConfig.Scan.cursorPageSize
             ]
-            request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+            guard let requestBody = try? JSONSerialization.data(withJSONObject: body) else { break }
 
             do {
+#if os(Windows)
+                let nativeResponse = try WindowsNativeHTTP.request(
+                    url: endpoint,
+                    method: "POST",
+                    headers: requestHeaders,
+                    body: requestBody,
+                    connectTimeout: AppConfig.HTTP.requestTimeout,
+                    sendTimeout: AppConfig.HTTP.requestTimeout,
+                    receiveTimeout: AppConfig.HTTP.resourceTimeout,
+                    maximumResponseBytes: 8 * 1024 * 1024
+                )
+                let data = nativeResponse.body
+                let statusCode = nativeResponse.statusCode
+#else
+                request.httpBody = requestBody
                 let (data, response) = try await session.data(for: request)
                 guard let http = response as? HTTPURLResponse else { break }
+                let statusCode = http.statusCode
+#endif
 
                 // 401/403：token 过期，清空凭据，下次扫描重新读；停止翻页
-                if http.statusCode == 401 || http.statusCode == 403 {
+                if statusCode == 401 || statusCode == 403 {
                     sawAuthError = true
                     break
                 }
-                guard http.statusCode == 200 else { break }   // 翻页中途非 200：停止，保留已拿到的事件
+                guard statusCode == 200 else { break }   // 翻页中途非 200：停止，保留已拿到的事件
 
                 guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                       let events = json["usageEventsDisplay"] as? [[String: Any]] else { break }
@@ -298,7 +328,9 @@ final class CursorAgentUsageService: @unchecked Sendable {
             let outputTokens = intValue(tokenUsage, "outputTokens")
             let cacheRead = intValue(tokenUsage, "cacheReadTokens")
             let cacheWrite = intValue(tokenUsage, "cacheWriteTokens")
-            let total = inputTokens + outputTokens + cacheRead + cacheWrite
+            let total = TokenAccounting.separateCacheFields(
+                input: inputTokens, cacheWrite: cacheWrite, output: outputTokens
+            )
             guard total > 0 else { continue }
 
             if var e = dailyData[dateKey] {
@@ -313,7 +345,7 @@ final class CursorAgentUsageService: @unchecked Sendable {
                 hourlyData[hourKey] = HourlyUsage(tokens: total, messages: 1)
             }
 
-            dailyCache[dateKey, default: 0] += cacheRead + cacheWrite
+            dailyCache[dateKey, default: 0] += cacheRead
 
             if dateKey == today {
                 recentEntries.append(RecentEntry(timestamp: date, tokens: total))

@@ -22,13 +22,10 @@ final class WindowsUsageModel: @unchecked Sendable {
     private var clineService = ClineUsageService()
     private var continueService = ContinueUsageService()
     private var cursorAgentService = CursorAgentUsageService()
+    private var codeBuddyService: CodeBuddyStatsService?
     private var reloadServicesBeforeNextScan = false
 
-    private static let allToolNames = Set([
-        "OpenClaw", "Claude Code", "Gemini CLI", "Codex", "Hermes", "OpenCode",
-        "Qwen Code", "Copilot", "Grok", "Aider", "Antigravity", "Cline",
-        "Continue", "Cursor Agent",
-    ])
+    private static let allToolNames = Set(WindowsProviderCatalog.orderedEntries.map(\.displayName))
 
     private var _enabledTools: Set<String>
     var enabledTools: Set<String> { _enabledTools }
@@ -40,7 +37,7 @@ final class WindowsUsageModel: @unchecked Sendable {
 
     init() {
         let saved = UserDefaults.standard.stringArray(for: .enabledTools)
-        _enabledTools = Set(saved ?? Array(Self.allToolNames))
+        _enabledTools = WindowsProviderCatalog.enabledDisplayNames(saved: saved)
         storedTools = MockUsageService.generateInitialData(enabledTools: _enabledTools)
 
         if !PathConfig.hasRunInitialDetection {
@@ -55,7 +52,7 @@ final class WindowsUsageModel: @unchecked Sendable {
     }
 
     /// 设置面板改了启用工具集后立即生效（tools 过滤 + 下次扫描范围都读此集合）。
-    func updateEnabledTools(_ tools: Set<String>) { _enabledTools = tools }
+    func updateEnabledTools(_ tools: Set<String>) { _enabledTools = tools.intersection(Self.allToolNames) }
 
     /// Settings paths are live: mark all readers for recreation before the next scan instead of
     /// requiring an app restart. The flag is consumed only by the single active scanner.
@@ -70,7 +67,12 @@ final class WindowsUsageModel: @unchecked Sendable {
         defer { lock.unlock() }
         return storedTools
             .filter { enabledTools.contains($0.name) }
-            .sorted { $0.todayTokens > $1.todayTokens }
+            .sorted {
+                if $0.measurementUnit != $1.measurementUnit {
+                    return $0.measurementUnit == .tokens
+                }
+                return $0.value > $1.value
+            }
     }
 
     @discardableResult
@@ -107,6 +109,11 @@ final class WindowsUsageModel: @unchecked Sendable {
         if enabledTools.contains("Cline") { incremental ? clineService.incrementalScan() : clineService.fullScan() }
         if enabledTools.contains("Continue") { incremental ? continueService.incrementalScan() : continueService.fullScan() }
         if enabledTools.contains("Cursor Agent") { incremental ? cursorAgentService.incrementalScan() : cursorAgentService.fullScan() }
+        var codeBuddyUsage: CodeBuddyStatsService.UsageSnapshot?
+        if enabledTools.contains("CodeBuddy CLI") {
+            if codeBuddyService == nil { codeBuddyService = CodeBuddyStatsService(endpoint: PathConfig.codeBuddyEndpoint()) }
+            codeBuddyUsage = codeBuddyService?.currentSessionUsage()
+        }
 
         var results: [String: ScanSnapshot] = [:]
         if enabledTools.contains("OpenClaw") {
@@ -165,6 +172,15 @@ final class WindowsUsageModel: @unchecked Sendable {
             let usage = cursorAgentService.todayUsage()
             results["Cursor Agent"] = snapshot(usage, cursorAgentService.recentUsage(minutes: rateWindowMinutes).tokens, cursorAgentService.currentHourTokens(), cursorAgentService.isActive(), cursorAgentService.todaySessions())
         }
+        if enabledTools.contains("CodeBuddy CLI") {
+            let value = codeBuddyUsage?.tokens ?? 0
+            results["CodeBuddy CLI"] = snapshot(
+                (tokens: 0, messages: 0, cacheRate: 0),
+                0, 0, value > 0, [],
+                measurementValue: codeBuddyUsage?.tokens,
+                measurementScope: .currentSession
+            )
+        }
 
         lock.lock()
         for (name, result) in results {
@@ -174,6 +190,9 @@ final class WindowsUsageModel: @unchecked Sendable {
                 name: old.name,
                 abbreviation: old.abbreviation,
                 emoji: old.emoji,
+                measurementUnit: old.measurementUnit,
+                measurementScope: result.measurementScope,
+                measurementValue: result.measurementValue,
                 todayTokens: result.tokens,
                 todayMessages: result.messages,
                 isActive: result.active,
@@ -191,9 +210,8 @@ final class WindowsUsageModel: @unchecked Sendable {
     }
 
     private func recreateServices() {
-        // Recreate only readers that can actually scan. In particular, constructing an unused
-        // Cursor URLSession allocates hundreds of native Windows handles. A provider newly
-        // enabled in Settings is already present in enabledTools before this method runs.
+        // Recreate only readers that can actually scan, avoiding resources for disabled tools.
+        // A provider newly enabled in Settings is already present in enabledTools here.
         if enabledTools.contains("OpenClaw") { openclawService = OpenClawUsageService() }
         if enabledTools.contains("Claude Code") { claudeCodeService = ClaudeCodeUsageService() }
         if enabledTools.contains("Gemini CLI") { geminiService = GeminiUsageService() }
@@ -208,6 +226,9 @@ final class WindowsUsageModel: @unchecked Sendable {
         if enabledTools.contains("Cline") { clineService = ClineUsageService() }
         if enabledTools.contains("Continue") { continueService = ContinueUsageService() }
         if enabledTools.contains("Cursor Agent") { cursorAgentService = CursorAgentUsageService() }
+        if enabledTools.contains("CodeBuddy CLI") {
+            codeBuddyService = CodeBuddyStatsService(endpoint: PathConfig.codeBuddyEndpoint())
+        }
     }
 
     func usageJSONObject() -> [String: Any] {
@@ -220,26 +241,52 @@ final class WindowsUsageModel: @unchecked Sendable {
             "windowMinutes": rateWindowMinutes,
             "variant": "normal",
             "platform": "windows",
-            "tools": current.map { tool -> [String: Any] in
+            "tools": current.map(Self.usageToolJSONObject),
+        ]
+    }
+
+    /// Kept internal for the Windows API contract test. Legacy token-named fields remain while
+    /// unit/value/scope carry honest semantics for non-today providers.
+    static func usageToolJSONObject(_ tool: ToolUsage) -> [String: Any] {
+        let declaration = WindowsProviderCatalog.entry(displayName: tool.name)
+        let runtimeAvailable: Bool
+        if tool.measurementScope == .contractOnly {
+            runtimeAvailable = false
+        } else if tool.measurementScope == .currentSession {
+            runtimeAvailable = tool.measurementValue != nil
+        } else {
+            runtimeAvailable = declaration?.statisticsSupport != .contractOnly
+        }
+        let status = runtimeAvailable
+            ? (declaration?.statisticsSupport.rawValue ?? "parsed")
+            : (tool.measurementScope == .contractOnly ? "contractOnly" : "unavailable")
+        return [
+            "name": tool.name,
+            "emoji": tool.emoji,
+            "unit": tool.measurementUnit.rawValue,
+            "value": tool.value,
+            "scope": tool.measurementScope.rawValue,
+            "recentValue": tool.recentValue,
+            "hourlyValue": tool.hourlyValue,
+            "statisticsAvailable": runtimeAvailable,
+            "statisticsStatus": status,
+            "todayTokens": tool.todayTokens,
+            "todayMessages": tool.todayMessages,
+            "isActive": tool.isActive,
+            "cacheRate": tool.cacheRate,
+            "recentTokens": tool.recentTokens,
+            "hourlyTokens": tool.hourlyTokens,
+            "sessions": tool.sessions.map {
                 [
-                    "name": tool.name,
-                    "emoji": tool.emoji,
-                    "todayTokens": tool.todayTokens,
-                    "todayMessages": tool.todayMessages,
-                    "isActive": tool.isActive,
-                    "cacheRate": tool.cacheRate,
-                    "recentTokens": tool.recentTokens,
-                    "hourlyTokens": tool.hourlyTokens,
-                    "sessions": tool.sessions.map {
-                        [
-                            "id": $0.rawId,
-                            "displayName": $0.displayName,
-                            "todayTokens": $0.todayTokens,
-                            "todayMessages": $0.todayMessages,
-                            "isActive": $0.isActive,
-                        ] as [String: Any]
-                    },
-                ]
+                    "id": $0.rawId,
+                    "displayName": $0.displayName,
+                    "unit": tool.measurementUnit.rawValue,
+                    "value": $0.todayTokens,
+                    "scope": tool.measurementScope.rawValue,
+                    "todayTokens": $0.todayTokens,
+                    "todayMessages": $0.todayMessages,
+                    "isActive": $0.isActive,
+                ] as [String: Any]
             },
         ]
     }
@@ -322,6 +369,8 @@ final class WindowsUsageModel: @unchecked Sendable {
         let active: Bool
         let cacheRate: Double
         let sessions: [SessionInfo]
+        let measurementValue: Int?
+        let measurementScope: UsageMeasurementScope
     }
 
     private func snapshot(
@@ -329,7 +378,9 @@ final class WindowsUsageModel: @unchecked Sendable {
         _ recent: Int,
         _ hourly: Int,
         _ active: Bool,
-        _ sessions: [SessionInfo]
+        _ sessions: [SessionInfo],
+        measurementValue: Int? = nil,
+        measurementScope: UsageMeasurementScope = .today
     ) -> ScanSnapshot {
         ScanSnapshot(
             tokens: usage.tokens,
@@ -338,12 +389,16 @@ final class WindowsUsageModel: @unchecked Sendable {
             hourly: hourly,
             active: active,
             cacheRate: usage.cacheRate,
-            sessions: sessions
+            sessions: sessions,
+            measurementValue: measurementValue,
+            measurementScope: measurementScope
         )
     }
 
     private func persistToday(_ tools: [ToolUsage]) {
-        let snapshots = tools.map { tool in
+        let snapshots = tools.filter {
+            $0.measurementUnit == .tokens && $0.measurementScope == .today
+        }.map { tool in
             ToolSnapshot(
                 name: tool.name,
                 tokens: tool.todayTokens,
@@ -366,23 +421,8 @@ final class WindowsUsageModel: @unchecked Sendable {
 
     private func saveDetectedPaths(_ results: [PathDetector.DetectionResult]) {
         for result in results where result.exists {
-            switch result.service {
-            case "openclaw": PathConfig.setOpenclawPath(result.detectedPath)
-            case "claudeCode": PathConfig.setClaudeCodePath(result.detectedPath)
-            case "gemini": PathConfig.setGeminiPath(result.detectedPath)
-            case "codex": PathConfig.setCodexPath(result.detectedPath)
-            case "hermes": PathConfig.setHermesPath(result.detectedPath)
-            case "opencode": PathConfig.setOpenCodePath(result.detectedPath)
-            case "qwen": PathConfig.setQwenPath(result.detectedPath)
-            case "copilot": PathConfig.setCopilotPath(result.detectedPath)
-            case "grok": PathConfig.setGrokPath(result.detectedPath)
-            case "aider": PathConfig.setAiderPath(result.detectedPath)
-            case "antigravity": PathConfig.setAntigravityPath(result.detectedPath)
-            case "cline": PathConfig.setClinePath(result.detectedPath)
-            case "continue": PathConfig.setContinuePath(result.detectedPath)
-            case "cursorAgent": PathConfig.setCursorAgentPath(result.detectedPath)
-            default: break
-            }
+            guard let entry = WindowsProviderCatalog.entry(serviceID: result.service) else { continue }
+            WindowsProviderCatalog.setConfiguredSource(result.detectedPath, for: entry.id)
         }
         let found = results.filter(\.exists).count
         print("[TokenClock] Windows path detection: \(found)/\(results.count) data sources found")

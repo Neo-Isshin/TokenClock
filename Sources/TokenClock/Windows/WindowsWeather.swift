@@ -1,17 +1,11 @@
 import Foundation
-#if canImport(FoundationNetworking)
-import FoundationNetworking   // swift-corelibs 把 URLSession 拆到独立模块
-#endif
 
 /// Windows 天气抓取：在后台线程用 IP 定位 + wttr.in 取天气，广播 `.weatherUpdated` 通知。
 ///
 /// 独立于 `@MainActor WeatherService`：Win32 主线程在 `GetMessage` 消息循环里，不泵 Swift main
-/// actor，因此 `WeatherService` 的 `@MainActor` async 方法在 Windows 上无法执行。此处用 dataTask +
-/// 信号量做同步抓取（回调在 URLSession 自有线程触发，无需 runloop），跑在后台 DispatchQueue。
+/// actor，因此 `WeatherService` 的 `@MainActor` async 方法在 Windows 上无法执行。此处在后台
+/// DispatchQueue 中使用同步 WinHTTP；Win32 消息线程不会被网络请求阻塞。
 /// 天气解析直接复用 `WeatherService.parseJSON`（emoji/weatherCode 映射与 macOS 同源）。
-
-/// 线程安全的 Data 容器：dataTask 回调在 URLSession 自有线程写，调用方在信号量唤醒后读。
-private final class DataBox: @unchecked Sendable { var value: Data? }
 private final class WeatherRequestState: @unchecked Sendable {
     private let lock = NSLock()
     private var generation = 0
@@ -89,23 +83,30 @@ enum WindowsWeather {
         return httpGet(url).map { WeatherService.parseJSON(data: $0, fallbackCity: "") }
     }
 
-    /// 同步 GET：dataTask 回调在 URLSession 自有线程触发 → 信号量唤醒，无需 runloop。
+    /// 同步 GET；调用点始终位于 refresh 的 utility worker 上。
     private static func httpGet(_ url: URL?) -> Data? {
         guard let url else { return nil }
-        var req = URLRequest(url: url)
-        req.timeoutInterval = 8
-        let sem = DispatchSemaphore(value: 0)
-        let box = DataBox()
-        URLSession.shared.dataTask(with: req) { data, response, error in
-            if let error { log("http error \(url.host() ?? "?"): \(error)") }
-            if let http = response as? HTTPURLResponse, http.statusCode != 200 {
-                log("http \(http.statusCode) for \(url.host() ?? "?")")
+        do {
+            let response = try WindowsNativeHTTP.request(
+                url: url.absoluteString,
+                headers: [
+                    "Accept": "application/json, text/plain;q=0.9",
+                    "User-Agent": AppConfig.HTTP.userAgent,
+                ],
+                connectTimeout: 8,
+                sendTimeout: 8,
+                receiveTimeout: 8,
+                maximumResponseBytes: 2 * 1024 * 1024
+            )
+            guard response.statusCode == 200 else {
+                log("http \(response.statusCode) for \(url.host() ?? "?")")
+                return nil
             }
-            box.value = data
-            sem.signal()
-        }.resume()
-        _ = sem.wait(timeout: .now() + 12)
-        return box.value
+            return response.body
+        } catch {
+            log("http error \(url.host() ?? "?"): \(error)")
+            return nil
+        }
     }
 
     /// 错误日志（GUI 子系统无控制台，print 无输出）→ 写到 %LOCALAPPDATA%\TokenClock\weather.log，便于排查。

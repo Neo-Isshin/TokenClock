@@ -66,7 +66,7 @@ final class CodexUsageService: @unchecked Sendable {
         let d = dailyData[DateHelper.todayKey()]
         let total = d?.tokens ?? 0
         let cache = dailyCache[DateHelper.todayKey()] ?? 0
-        let rate = total > 0 ? Double(cache) / Double(total) : 0
+        let rate = TokenAccounting.cacheReadShare(freshTokens: total, cacheRead: cache)
         return (total, d?.messages ?? 0, rate)
     }
 
@@ -180,8 +180,9 @@ final class CodexUsageService: @unchecked Sendable {
         if line.contains("\"type\":\"token_count\"") {
             guard let ltuRange = line.range(of: "\"last_token_usage\":{") else { return }
             let segment = String(line[ltuRange.lowerBound...].prefix(500))
-            let tokens = extractInt(from: segment, key: "\"total_tokens\"")
+            let rawTotal = extractInt(from: segment, key: "\"total_tokens\"")
             let cached = extractInt(from: segment, key: "\"cached_input_tokens\"")
+            let tokens = TokenAccounting.excludingCacheRead(inclusiveTotal: rawTotal, cacheRead: cached)
             let contextWindow = extractInt(from: line, key: "\"model_context_window\"")
             let modelForTurn = state.currentModel ?? (contextWindow == 258400 ? "gpt-5.5" : nil)
 

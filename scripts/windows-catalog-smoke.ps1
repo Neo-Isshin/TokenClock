@@ -84,6 +84,12 @@ $env:CURSOR_AGENT_HOME = Join-Path $outputDirectory 'cursor-global-storage'
 New-Item -ItemType Directory -Path $env:CURSOR_AGENT_HOME -Force | Out-Null
 $cursorDb = Join-Path $env:CURSOR_AGENT_HOME 'state.vscdb'
 
+$env:KIRO_HOME = Join-Path $outputDirectory 'kiro-home'
+$kiroSessions = Join-Path $env:KIRO_HOME 'sessions\cli'
+New-Item -ItemType Directory -Path $kiroSessions -Force | Out-Null
+Set-Content -LiteralPath (Join-Path $kiroSessions 'smoke.json') -Value '{"id":"smoke","cwd":"C:\\work"}' -Encoding ASCII
+Set-Content -LiteralPath (Join-Path $kiroSessions 'smoke.jsonl') -Value '{"event":"opaque-contract-event"}' -Encoding ASCII
+
 $python = Get-Command python -ErrorAction SilentlyContinue
 if (-not $python) { throw 'Python with sqlite3 is required for the isolated SQLite catalog fixtures.' }
 $pythonScript = Join-Path $outputDirectory 'create-catalog-fixtures.py'
@@ -114,19 +120,26 @@ function Invoke-CatalogReport([string] $Path) {
     $process = Start-Process -FilePath $Exe -ArgumentList @('--catalog-report', $Path) -Wait -PassThru
     if ($process.ExitCode -ne 0) { throw "Catalog reporter exited with $($process.ExitCode)." }
     if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { throw "Catalog reporter did not create $Path" }
-    return Get-Content -LiteralPath $Path -Raw | ConvertFrom-Json
+    return Get-Content -LiteralPath $Path -Raw -Encoding UTF8 | ConvertFrom-Json
 }
 
 $report = Invoke-CatalogReport $Out
 if ($report.platform -ne 'windows') { throw 'Catalog report has the wrong platform.' }
-if (@($report.providers).Count -ne 14) { throw "Expected 14 providers, got $(@($report.providers).Count)." }
+if (@($report.providers).Count -ne 16) { throw "Expected 16 providers, got $(@($report.providers).Count)." }
 $ids = @($report.providers | ForEach-Object id)
-if (@($ids | Sort-Object -Unique).Count -ne 14) { throw 'Provider IDs are not unique.' }
+if (@($ids | Sort-Object -Unique).Count -ne 16) { throw 'Provider IDs are not unique.' }
 foreach ($provider in $report.providers) {
     if ([string]::IsNullOrWhiteSpace($provider.defaultPath)) { throw "$($provider.id) has no declared default path." }
     if ($null -eq $provider.pathExists) { throw "$($provider.id) omitted pathExists." }
     if ($null -eq $provider.parserReadable) { throw "$($provider.id) omitted parserReadable." }
-    if ($provider.parserReadable -and -not $provider.pathExists) { throw "$($provider.id) is readable but its path does not exist." }
+    if ($null -eq $provider.sourceAvailable) { throw "$($provider.id) omitted sourceAvailable." }
+    if ($null -eq $provider.contractReadable) { throw "$($provider.id) omitted contractReadable." }
+    if ($provider.sourceKind -eq 'fileSystem' -and $provider.parserReadable -and -not $provider.pathExists) {
+        throw "$($provider.id) is readable but its path does not exist."
+    }
+    if ($provider.measurementUnit -notin @('tokens', 'credits', 'requests')) { throw "$($provider.id) has an invalid unit." }
+    if ($provider.measurementScope -notin @('today', 'currentSession', 'lifetime', 'contractOnly')) { throw "$($provider.id) has an invalid scope." }
+    if ($provider.statisticsSupport -notin @('parsed', 'experimental', 'contractOnly')) { throw "$($provider.id) has invalid statistics support." }
     foreach ($override in $provider.environmentOverrides) {
         if ($override.status -notin @('official', 'tokenClockCompatibility')) {
             throw "$($provider.id) has an unclassified environment override: $($override.name)"
@@ -144,6 +157,19 @@ foreach ($id in $validProviderIds) {
 $grok = $report.providers | Where-Object id -eq 'grok' | Select-Object -First 1
 if ($grok.selectedPath -ne $env:GROK_HOME -or -not $grok.pathExists -or $grok.parserReadable) {
     throw 'Schema-invalid Grok fixture must report pathExists=true and parserReadable=false.'
+}
+
+$kiro = $report.providers | Where-Object id -eq 'kiro' | Select-Object -First 1
+$expectedKiroSessions = Join-Path $env:KIRO_HOME 'sessions\cli'
+if ($kiro.selectedPath -ne $expectedKiroSessions -or -not $kiro.pathExists -or -not $kiro.contractReadable -or $kiro.parserReadable) {
+    throw 'Kiro must recognize the documented session pair without claiming numeric parser support.'
+}
+if ($kiro.measurementUnit -ne 'requests' -or $kiro.measurementScope -ne 'contractOnly' -or $kiro.statisticsSupport -ne 'contractOnly') {
+    throw 'Kiro must remain explicitly contract-only and outside token totals.'
+}
+$codeBuddy = $report.providers | Where-Object id -eq 'codeBuddy' | Select-Object -First 1
+if ($codeBuddy.measurementUnit -ne 'tokens' -or $codeBuddy.measurementScope -ne 'currentSession' -or $codeBuddy.statisticsSupport -ne 'experimental') {
+    throw 'CodeBuddy must remain an experimental current-session token provider.'
 }
 
 $openClaw = $report.providers | Where-Object id -eq 'openclaw' | Select-Object -First 1
@@ -189,7 +215,7 @@ if ($homeOpenClaw.selectedPath -ne $expectedHomeState -or -not $homeOpenClaw.par
 }
 
 $compatibilityNames = @($report.providers.environmentOverrides | Where-Object status -eq 'tokenClockCompatibility' | ForEach-Object name)
-foreach ($required in @('GROK_HOME', 'CLINE_HOME', 'CONTINUE_HOME', 'ANTIGRAVITY_HOME', 'OPENCODE_HOME')) {
+foreach ($required in @('GROK_HOME', 'CLINE_HOME', 'CONTINUE_HOME', 'ANTIGRAVITY_HOME', 'OPENCODE_HOME', 'CODEBUDDY_STATS_ENDPOINT')) {
     if ($required -notin $compatibilityNames) { throw "$required must be marked TokenClock compatibility." }
 }
 
@@ -205,6 +231,7 @@ if ($expansion.'$TC_EXPAND_LONGER\child' -ne 'longer-value\child') { throw 'Over
     pathsExisting = @($report.providers | Where-Object pathExists).Count
     parsersReadable = @($report.providers | Where-Object parserReadable).Count
     validFixturesRecognized = $validProviderIds.Count
+    contractOnlyFixturesRecognized = 1
     invalidExistingFixtureRejected = $true
     officialOverrides = @($report.providers.environmentOverrides | Where-Object status -eq 'official').Count
     compatibilityOverrides = $compatibilityNames.Count

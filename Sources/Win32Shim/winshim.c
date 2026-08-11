@@ -22,6 +22,16 @@ static UINT  g_taskbar_created = 0;   /* registered msg: explorer restarted */
 static int   g_mouse_down = 0, g_mouse_dragged = 0, g_mouse_can_drag = 0;
 static POINT g_mouse_down_screen;
 static RECT  g_mouse_down_window;
+static HWND  g_detail_hwnd = NULL;
+static int   g_detail_wanted = 0;
+static int   g_detail_dial_height = 0;
+static int   g_detail_main_width = 0;
+static int   g_detail_width = 320;
+static int   g_detail_height = 547;
+static BYTE  g_detail_alpha = 255;
+static int   g_detail_applied_alpha = -1;
+static int   g_topmost = 1;
+static int   g_main_visible = 1;
 
 static COLORREF to_cr(unsigned int rgb) {
     return RGB((rgb >> 16) & 0xff, (rgb >> 8) & 0xff, rgb & 0xff);
@@ -65,6 +75,185 @@ static void show_context_menu(HWND h, int x, int y) {
     SetForegroundWindow(h);
     TrackPopupMenu(hmenu, TPM_RIGHTBUTTON, pt.x, pt.y, 0, h, NULL);
     DestroyMenu(hmenu);
+}
+
+static void detail_reposition(void) {
+    if (!IsWindow(g_hwnd) || !IsWindow(g_detail_hwnd)) return;
+    RECT main_rect;
+    GetWindowRect(g_hwnd, &main_rect);
+    int x = main_rect.left + (g_detail_main_width - g_detail_width) / 2;
+    int y = main_rect.top + g_detail_dial_height + 14;
+    SetWindowPos(g_detail_hwnd, g_topmost ? HWND_TOPMOST : HWND_NOTOPMOST,
+                 x, y, g_detail_width, g_detail_height,
+                 SWP_NOACTIVATE);
+}
+
+static void detail_apply_region(HWND hwnd) {
+    RECT rect; GetClientRect(hwnd, &rect);
+    HRGN region = CreateRoundRectRgn(0, 0, rect.right + 1, rect.bottom + 1, 24, 24);
+    if (region && !SetWindowRgn(hwnd, region, TRUE)) DeleteObject(region);
+}
+
+/* DWM backdrops cannot be uniformly faded with ordinary Win32 painting.  Keep the native
+ * Acrylic surface at full opacity; for lower user-selected opacity, switch only the detail
+ * sibling to a rounded, solid layered surface so the entire card (background and content)
+ * fades together.  Returning to 100% restores real Acrylic immediately. */
+static void detail_apply_opacity(HWND hwnd) {
+    if (!IsWindow(hwnd)) return;
+    if (g_detail_applied_alpha == (int)g_detail_alpha) return;
+    LONG_PTR ex_style = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
+    if (g_detail_alpha < 255) {
+        if ((ex_style & WS_EX_LAYERED) == 0) {
+            win_fluent_apply(hwnd, WIN_FLUENT_FALLBACK);
+            SetWindowLongPtrW(hwnd, GWL_EXSTYLE, ex_style | WS_EX_LAYERED);
+            SetWindowPos(hwnd, NULL, 0, 0, 0, 0,
+                         SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
+        }
+        SetLayeredWindowAttributes(hwnd, 0, g_detail_alpha, LWA_ALPHA);
+    } else {
+        if ((ex_style & WS_EX_LAYERED) != 0) {
+            SetWindowLongPtrW(hwnd, GWL_EXSTYLE, ex_style & ~((LONG_PTR)WS_EX_LAYERED));
+            SetWindowPos(hwnd, NULL, 0, 0, 0, 0,
+                         SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
+        }
+        win_fluent_apply(hwnd, WIN_FLUENT_ACRYLIC);
+    }
+    g_detail_applied_alpha = (int)g_detail_alpha;
+    InvalidateRect(hwnd, NULL, TRUE);
+}
+
+static LRESULT CALLBACK detail_proc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
+    switch (msg) {
+    case WM_CREATE:
+        win_fluent_apply(h, WIN_FLUENT_ACRYLIC);
+        detail_apply_opacity(h);
+        return 0;
+    case WM_ERASEBKGND: {
+        RECT rect; GetClientRect(h, &rect);
+        win_fluent_paint_fallback(h, (void *)wp, &rect);
+        return 1;
+    }
+    case WM_PAINT: {
+        PAINTSTRUCT ps; HDC dc = BeginPaint(h, &ps);
+        RECT rect; GetClientRect(h, &rect);
+        win_fluent_diagnostics fluent;
+        ZeroMemory(&fluent, sizeof(fluent));
+        fluent.struct_size = sizeof(fluent);
+        if (g_detail_alpha == 255 &&
+            win_fluent_get_diagnostics(h, &fluent) &&
+            fluent.applied_material == WIN_FLUENT_ACRYLIC) {
+            /* A full-client DWM backdrop must be reset before alpha-compositing the next
+             * frame. Without this black glass canvas, translucent text/background pixels
+             * accumulate on the previous frame and leave ghosts after Model/Percent
+             * switches. Black is the documented glass composition surface; DWM replaces
+             * it with Acrylic before presenting the window. */
+            PatBlt(dc, rect.left, rect.top,
+                   rect.right - rect.left, rect.bottom - rect.top, BLACKNESS);
+        } else {
+            /* Old Windows, High Contrast, disabled transparency, and user opacity below
+             * 100% all use the solid fallback. Repaint it fully for the same no-ghost
+             * guarantee without turning those configurations black. */
+            win_fluent_paint_fallback(h, dc, &rect);
+        }
+        win_render_detail_paint(dc, rect.right - rect.left, rect.bottom - rect.top);
+        EndPaint(h, &ps);
+        return 0;
+    }
+    case WM_SIZE:
+        detail_apply_region(h);
+        return 0;
+    case WM_LBUTTONUP:
+        if (g_cb.on_click) {
+            int virtual_width = max(g_detail_main_width, g_detail_width);
+            int main_x = GET_X_LPARAM(lp) + (virtual_width - g_detail_width) / 2;
+            int main_y = GET_Y_LPARAM(lp) + g_detail_dial_height + 14;
+            g_cb.on_click(g_cb.ctx, main_x, main_y);
+        }
+        return 0;
+    case WM_MOUSEWHEEL:
+        if (g_cb.on_scroll) g_cb.on_scroll(g_cb.ctx, GET_WHEEL_DELTA_WPARAM(wp));
+        return 0;
+    case WM_RBUTTONUP: {
+        POINT point; GetCursorPos(&point);
+        show_context_menu(g_hwnd, point.x, point.y);
+        return 0;
+    }
+    case WM_MOUSEACTIVATE:
+        return MA_NOACTIVATE;
+    case WM_NCHITTEST:
+        return HTCLIENT;
+    case WM_SETTINGCHANGE:
+    case WM_THEMECHANGED:
+        g_detail_applied_alpha = -1;
+        detail_apply_opacity(h);
+        return 0;
+    case WM_CLOSE:
+        g_detail_wanted = 0;
+        ShowWindow(h, SW_HIDE);
+        return 0;
+    case WM_NCDESTROY:
+        win_fluent_forget(h);
+        if (g_detail_hwnd == h) {
+            g_detail_hwnd = NULL;
+            g_detail_applied_alpha = -1;
+        }
+        return 0;
+    }
+    return DefWindowProcW(h, msg, wp, lp);
+}
+
+static HWND ensure_detail_window(void) {
+    if (IsWindow(g_detail_hwnd)) return g_detail_hwnd;
+    static int registered = 0;
+    if (!registered) {
+        WNDCLASSEXW wc = {0};
+        wc.cbSize = sizeof(wc);
+        wc.lpfnWndProc = detail_proc;
+        wc.hInstance = GetModuleHandleW(NULL);
+        wc.hCursor = LoadCursorW(NULL, IDC_ARROW);
+        wc.hbrBackground = NULL;
+        wc.lpszClassName = L"TokenClockDetail";
+        if (!RegisterClassExW(&wc) && GetLastError() != ERROR_CLASS_ALREADY_EXISTS) return NULL;
+        registered = 1;
+    }
+    DWORD ex_style = WS_EX_TOOLWINDOW | (g_topmost ? WS_EX_TOPMOST : 0);
+    g_detail_hwnd = CreateWindowExW(ex_style, L"TokenClockDetail", L"TokenClock Details",
+                                    WS_POPUP, 0, 0, g_detail_width, g_detail_height,
+                                    g_hwnd, NULL, GetModuleHandleW(NULL), NULL);
+    return g_detail_hwnd;
+}
+
+void win_detail_present(int show, int dial_height, int main_width, int card_width, int card_height) {
+    g_detail_wanted = show ? 1 : 0;
+    if (!show) {
+        if (IsWindow(g_detail_hwnd)) ShowWindow(g_detail_hwnd, SW_HIDE);
+        return;
+    }
+    g_detail_dial_height = dial_height;
+    g_detail_main_width = main_width;
+    g_detail_width = card_width > 0 ? card_width : 320;
+    g_detail_height = card_height > 0 ? card_height : 547;
+    HWND detail = ensure_detail_window();
+    if (!detail) return;
+    detail_apply_opacity(detail);
+    detail_reposition();
+    detail_apply_region(detail);
+    if (g_main_visible) {
+        ShowWindow(detail, SW_SHOWNOACTIVATE);
+        InvalidateRect(detail, NULL, TRUE);
+        UpdateWindow(detail);
+    }
+}
+
+void *win_detail_window(void) { return IsWindow(g_detail_hwnd) ? g_detail_hwnd : NULL; }
+
+int win_detail_diagnostics_json(char *out_utf8, int out_size) {
+    if (!out_utf8 || out_size <= 0) return 0;
+    if (!IsWindow(g_detail_hwnd)) {
+        int count = snprintf(out_utf8, (size_t)out_size, "{\"visible\":false,\"applied\":0}");
+        return count > 0 && count < out_size ? count : 0;
+    }
+    return win_fluent_diagnostics_json(g_detail_hwnd, out_utf8, out_size);
 }
 
 static LRESULT CALLBACK wnd_proc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
@@ -123,10 +312,9 @@ static LRESULT CALLBACK wnd_proc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
     }
 
     case WM_LBUTTONDOWN: {
-        RECT client; GetClientRect(h, &client);
         g_mouse_down = 1; g_mouse_dragged = 0;
-        /* normal layout: panel width = dial diameter + 80 transparent side margin */
-        g_mouse_can_drag = GET_Y_LPARAM(lp) < min(client.bottom - client.top, client.right - client.left - 80);
+        /* Detail is a separate non-layered sibling, so the entire visible dial host is draggable. */
+        g_mouse_can_drag = 1;
         GetCursorPos(&g_mouse_down_screen);
         GetWindowRect(h, &g_mouse_down_window);
         SetCapture(h);
@@ -157,10 +345,15 @@ static LRESULT CALLBACK wnd_proc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
         if (g_cb.on_scroll) g_cb.on_scroll(g_cb.ctx, GET_WHEEL_DELTA_WPARAM(wp));
         return 0;
 
+    case WM_WINDOWPOSCHANGED:
+        if (g_detail_wanted) detail_reposition();
+        break;
+
     case WM_NCHITTEST:
         return HTCLIENT;    /* manual drag preserves click interaction */
 
     case WM_DESTROY:
+        if (IsWindow(g_detail_hwnd)) DestroyWindow(g_detail_hwnd);
         remove_tray();
         if (g_cb.on_destroy) g_cb.on_destroy(g_cb.ctx);
         PostQuitMessage(0);
@@ -202,6 +395,9 @@ int win_run(const win_callbacks *cb) {
 
     gdip_init();
     win_render_set_opacity(cb->initial_opacity);
+    if (cb->initial_opacity <= 0.0) g_detail_alpha = 0;
+    else if (cb->initial_opacity >= 1.0) g_detail_alpha = 255;
+    else g_detail_alpha = (BYTE)(cb->initial_opacity * 255.0 + 0.5);
     if (g_cb.on_tick) g_cb.on_tick(g_cb.ctx);   // first frame immediately (no 1s blank)
 
     MSG msg;
@@ -216,27 +412,49 @@ int win_run(const win_callbacks *cb) {
 /* --- window control --- */
 void win_invalidate(void *hwnd)      { InvalidateRect((HWND)hwnd, NULL, FALSE); }
 void win_set_opacity(void *hwnd, double a) {
+    if (a <= 0.0) g_detail_alpha = 0;
+    else if (a >= 1.0) g_detail_alpha = 255;
+    else g_detail_alpha = (BYTE)(a * 255.0 + 0.5);
     win_render_set_opacity(a);
     InvalidateRect((HWND)hwnd, NULL, FALSE);
+    if (IsWindow(g_detail_hwnd)) detail_apply_opacity(g_detail_hwnd);
 }
-void win_resize(void *hwnd, int w, int h) { SetWindowPos((HWND)hwnd, NULL, 0, 0, w, h, SWP_NOMOVE | SWP_NOZORDER); }
+void win_resize(void *hwnd, int w, int h) {
+    SetWindowPos((HWND)hwnd, NULL, 0, 0, w, h, SWP_NOMOVE | SWP_NOZORDER);
+    if ((HWND)hwnd == g_hwnd && g_detail_wanted) detail_reposition();
+}
 void win_get_pos(void *hwnd, int *x, int *y) { RECT rc; GetWindowRect((HWND)hwnd, &rc); if (x) *x = rc.left; if (y) *y = rc.top; }
 void win_set_pos(void *hwnd, int x, int y)  { SetWindowPos((HWND)hwnd, NULL, x, y, 0, 0, SWP_NOSIZE | SWP_NOZORDER); }
-void win_show(void *hwnd, int show)         { ShowWindowAsync((HWND)hwnd, show ? SW_SHOWNORMAL : SW_HIDE); }
+void win_show(void *hwnd, int show) {
+    if ((HWND)hwnd == g_hwnd) g_main_visible = show ? 1 : 0;
+    ShowWindowAsync((HWND)hwnd, show ? SW_SHOWNORMAL : SW_HIDE);
+    if ((HWND)hwnd == g_hwnd && IsWindow(g_detail_hwnd))
+        ShowWindowAsync(g_detail_hwnd, show && g_detail_wanted ? SW_SHOWNOACTIVATE : SW_HIDE);
+}
 void win_quit(void *hwnd)                   { PostMessageW((HWND)hwnd, WM_CLOSE, 0, 0); }
 void win_set_dpi_aware(void) {
     SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
 }
 void *win_self(void) { return g_hwnd; }
 void win_set_topmost(void *hwnd, int topmost) {
+    if ((HWND)hwnd == g_hwnd) g_topmost = topmost ? 1 : 0;
     SetWindowPos((HWND)hwnd, topmost ? HWND_TOPMOST : HWND_NOTOPMOST,
                  0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+    if ((HWND)hwnd == g_hwnd && IsWindow(g_detail_hwnd))
+        SetWindowPos(g_detail_hwnd, topmost ? HWND_TOPMOST : HWND_NOTOPMOST,
+                     0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
 }
 
 int win_clipboard_set_text(const char *text_utf8) {
     if (!text_utf8) return 0;
     int chars = MultiByteToWideChar(CP_UTF8, 0, text_utf8, -1, NULL, 0);
-    if (chars <= 0 || !OpenClipboard(g_hwnd)) return 0;
+    if (chars <= 0) return 0;
+    int opened = 0;
+    for (int attempt = 0; attempt < 10; attempt++) {
+        if (OpenClipboard(g_hwnd)) { opened = 1; break; }
+        Sleep(10);
+    }
+    if (!opened) return 0;
     EmptyClipboard();
     HGLOBAL memory = GlobalAlloc(GMEM_MOVEABLE, (SIZE_T)chars * sizeof(wchar_t));
     if (!memory) { CloseClipboard(); return 0; }
@@ -328,9 +546,89 @@ static int  g_dlg_result = 0;
 static int  g_dlg_done = 0;
 static dlg_on_cmd_t g_dlg_oncmd = NULL;
 static void *g_dlg_cmdctx = NULL;
+static HBRUSH g_dlg_background_brush = NULL;
+static unsigned int g_dlg_background_rgb = 0xffffffffu;
+static HBRUSH g_dlg_edit_brush = NULL;
+static unsigned int g_dlg_edit_rgb = 0xffffffffu;
+
+static HBRUSH dlg_background_brush(HWND hwnd) {
+    unsigned int rgb = win_fluent_color(hwnd, WIN_FLUENT_COLOR_BACKGROUND);
+    if (!g_dlg_background_brush || rgb != g_dlg_background_rgb) {
+        if (g_dlg_background_brush) DeleteObject(g_dlg_background_brush);
+        g_dlg_background_brush = CreateSolidBrush(to_cr(rgb));
+        g_dlg_background_rgb = rgb;
+    }
+    return g_dlg_background_brush;
+}
+
+static HBRUSH dlg_edit_brush(HWND hwnd) {
+    unsigned int rgb = win_fluent_color(hwnd, WIN_FLUENT_COLOR_SURFACE);
+    if (!g_dlg_edit_brush || rgb != g_dlg_edit_rgb) {
+        if (g_dlg_edit_brush) DeleteObject(g_dlg_edit_brush);
+        g_dlg_edit_brush = CreateSolidBrush(to_cr(rgb));
+        g_dlg_edit_rgb = rgb;
+    }
+    return g_dlg_edit_brush;
+}
+
+static BOOL CALLBACK dlg_invalidate_child(HWND child, LPARAM erase) {
+    win_fluent_theme_child(child);
+    InvalidateRect(child, NULL, erase ? TRUE : FALSE);
+    return TRUE;
+}
 
 static LRESULT CALLBACK dlg_proc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
     switch (msg) {
+    case WM_CREATE:
+        win_fluent_apply(h, WIN_FLUENT_MICA);
+        return 0;
+    case WM_ERASEBKGND: {
+        RECT rect; GetClientRect(h, &rect);
+        /* A successful DWM backdrop attribute does not guarantee that an
+         * ordinary GDI client surface is transparent.  In particular, the
+         * common-controls v6 dialog surface can remain opaque white while
+         * its children have already switched to a dark theme.  Paint a
+         * coherent Fluent canvas ourselves; Mica remains active for the
+         * non-client frame/title bar and the dialog is readable on every
+         * compositor/theme combination. */
+        FillRect((HDC)wp, &rect, dlg_background_brush(h));
+        return 1;
+    }
+    case WM_PAINT: {
+        PAINTSTRUCT paint;
+        HDC dc = BeginPaint(h, &paint);
+        FillRect(dc, &paint.rcPaint, dlg_background_brush(h));
+        EndPaint(h, &paint);
+        return 0;
+    }
+    case WM_CTLCOLORSTATIC: {
+        HDC dc = (HDC)wp;
+        unsigned int rgb = win_fluent_color(h, WIN_FLUENT_COLOR_TEXT);
+        SetTextColor(dc, to_cr(rgb));
+        SetBkColor(dc, to_cr(win_fluent_color(h, WIN_FLUENT_COLOR_BACKGROUND)));
+        SetBkMode(dc, TRANSPARENT);
+        return (LRESULT)dlg_background_brush(h);
+    }
+    case WM_CTLCOLORBTN: {
+        HDC dc = (HDC)wp;
+        SetTextColor(dc, to_cr(win_fluent_color(h, WIN_FLUENT_COLOR_TEXT)));
+        SetBkColor(dc, to_cr(win_fluent_color(h, WIN_FLUENT_COLOR_BACKGROUND)));
+        SetBkMode(dc, TRANSPARENT);
+        return (LRESULT)dlg_background_brush(h);
+    }
+    case WM_CTLCOLOREDIT: {
+        HDC dc = (HDC)wp;
+        SetTextColor(dc, to_cr(win_fluent_color(h, WIN_FLUENT_COLOR_TEXT)));
+        SetBkColor(dc, to_cr(win_fluent_color(h, WIN_FLUENT_COLOR_SURFACE)));
+        return (LRESULT)dlg_edit_brush(h);
+    }
+    case WM_SETTINGCHANGE:
+    case WM_SYSCOLORCHANGE:
+    case WM_THEMECHANGED:
+        win_fluent_apply(h, WIN_FLUENT_MICA);
+        EnumChildWindows(h, dlg_invalidate_child, (LPARAM)TRUE);
+        InvalidateRect(h, NULL, TRUE);
+        return 0;
     case WM_COMMAND:
         /* Keep the HWND and its child controls alive until Swift has read their
          * values after dlg_modal returns.  The caller owns final destruction. */
@@ -340,15 +638,26 @@ static LRESULT CALLBACK dlg_proc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
         return 0;
     case WM_CLOSE:
         g_dlg_result = 0; g_dlg_done = 1; ShowWindow(h, SW_HIDE); return 0;
+    case WM_NCDESTROY:
+        win_fluent_forget(h);
+        break;
     }
     return DefWindowProcW(h, msg, wp, lp);
 }
 
 static HFONT dlg_font(void) {
     static HFONT f = NULL;
-    if (!f) f = CreateFontW(15, 0, 0, 0, FW_NORMAL, 0, 0, 0, DEFAULT_CHARSET,
+    if (!f) f = CreateFontW(-16, 0, 0, 0, FW_NORMAL, 0, 0, 0, DEFAULT_CHARSET,
                             OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
-                            DEFAULT_PITCH | FF_SWISS, L"Segoe UI");
+                            DEFAULT_PITCH | FF_SWISS, L"Segoe UI Variable Text");
+    return f;
+}
+
+static HFONT dlg_title_font(void) {
+    static HFONT f = NULL;
+    if (!f) f = CreateFontW(-22, 0, 0, 0, FW_SEMIBOLD, 0, 0, 0, DEFAULT_CHARSET,
+                            OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
+                            DEFAULT_PITCH | FF_SWISS, L"Segoe UI Variable Display");
     return f;
 }
 
@@ -357,6 +666,7 @@ static HWND dlg_child(HWND dlg, const wchar_t *cls, DWORD style, int id,
     HWND c = CreateWindowExW(0, cls, text, WS_CHILD | WS_VISIBLE | style, x, y, w, h,
                              (HWND)dlg, (HMENU)(LONG_PTR)id, GetModuleHandleW(NULL), NULL);
     SendMessageW(c, WM_SETFONT, (WPARAM)dlg_font(), TRUE);
+    win_fluent_theme_child(c);
     return c;
 }
 
@@ -366,14 +676,14 @@ void *dlg_create(const char *title_utf8, int w, int h) {
         WNDCLASSEXW wc = {0};
         wc.cbSize = sizeof(wc); wc.lpfnWndProc = dlg_proc;
         wc.hInstance = GetModuleHandleW(NULL); wc.hCursor = LoadCursorW(NULL, IDC_ARROW);
-        wc.hbrBackground = (HBRUSH)(COLOR_BTNFACE + 1); wc.lpszClassName = L"TCDialog";
+        wc.hbrBackground = NULL; wc.lpszClassName = L"TCDialog";
         RegisterClassExW(&wc); registered = 1;
     }
     wchar_t title[256];
     if (to_wide(title_utf8, title, 256) == 0) title[0] = 0;
     int sw = GetSystemMetrics(SM_CXSCREEN), sh = GetSystemMetrics(SM_CYSCREEN);
     HWND hwnd = CreateWindowExW(WS_EX_DLGMODALFRAME, L"TCDialog", title,
-                                WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU,
+                                WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_CLIPCHILDREN,
                                 (sw - w) / 2, (sh - h) / 2, w, h,
                                 IsWindow(g_hwnd) ? g_hwnd : NULL, NULL, GetModuleHandleW(NULL), NULL);
     g_dlg = hwnd; g_dlg_done = 0; g_dlg_result = 0;
@@ -401,14 +711,11 @@ void dlg_add_static(void *dlg, const char *text_utf8, int x, int y, int w, int h
 void dlg_add_title(void *dlg, const char *text_utf8, int x, int y, int w, int h) {
     wchar_t t[256]; if (to_wide(text_utf8, t, 256) == 0) t[0] = 0;
     HWND c = dlg_child((HWND)dlg, L"STATIC", SS_LEFT, 0, t, x, y, w, h);
-    HFONT f = CreateFontW(20, 0, 0, 0, FW_SEMIBOLD, 0, 0, 0, DEFAULT_CHARSET,
-                          OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
-                          DEFAULT_PITCH | FF_SWISS, L"Segoe UI Semibold");
-    SendMessageW(c, WM_SETFONT, (WPARAM)f, TRUE);
+    SendMessageW(c, WM_SETFONT, (WPARAM)dlg_title_font(), TRUE);
 }
 
 void dlg_add_sep(void *dlg, int x, int y, int w) {
-    dlg_child((HWND)dlg, L"STATIC", SS_ETCHEDHORZ, 0, L"", x, y, w, 2);
+    dlg_child((HWND)dlg, L"STATIC", SS_ETCHEDHORZ, 0, L"", x, y, w, 1);
 }
 
 void dlg_add_push(void *dlg, int id, const char *text_utf8, int x, int y, int w, int h) {
@@ -424,20 +731,21 @@ static LRESULT CALLBACK brand_logo_proc(HWND h, UINT msg, WPARAM wp, LPARAM lp) 
         int width = rc.right - rc.left, height = rc.bottom - rc.top;
         int radius = (min(width, height) - 8) / 2;
         int cx = width / 2, cy = height / 2;
-        HBRUSH bg = CreateSolidBrush(RGB(244, 244, 246));
-        FillRect(dc, &rc, bg); DeleteObject(bg);
-        HBRUSH face = CreateSolidBrush(RGB(247, 247, 250));
-        HPEN rim = CreatePen(PS_SOLID, 3, RGB(48, 48, 54));
+        unsigned int face_rgb = win_fluent_color(GetParent(h), WIN_FLUENT_COLOR_SURFACE);
+        unsigned int text_rgb = win_fluent_color(GetParent(h), WIN_FLUENT_COLOR_TEXT);
+        win_fluent_paint_parent(h, dc, &rc);
+        HBRUSH face = CreateSolidBrush(to_cr(face_rgb));
+        HPEN rim = CreatePen(PS_SOLID, 3, to_cr(text_rgb));
         HGDIOBJ oldBrush = SelectObject(dc, face), oldPen = SelectObject(dc, rim);
         Ellipse(dc, cx - radius, cy - radius, cx + radius, cy + radius);
         SelectObject(dc, GetStockObject(NULL_BRUSH));
-        HPEN hour = CreatePen(PS_SOLID, 5, RGB(48, 48, 54));
+        HPEN hour = CreatePen(PS_SOLID, 5, to_cr(text_rgb));
         SelectObject(dc, hour); MoveToEx(dc, cx, cy, NULL); LineTo(dc, cx - radius / 3, cy - radius / 3);
-        HPEN minute = CreatePen(PS_SOLID, 3, RGB(48, 48, 54));
+        HPEN minute = CreatePen(PS_SOLID, 3, to_cr(text_rgb));
         SelectObject(dc, minute); MoveToEx(dc, cx, cy, NULL); LineTo(dc, cx - radius / 8, cy + radius / 2);
         HPEN second = CreatePen(PS_SOLID, 2, RGB(231, 74, 60));
         SelectObject(dc, second); MoveToEx(dc, cx, cy, NULL); LineTo(dc, cx + radius / 2, cy - radius / 3);
-        HBRUSH cap = CreateSolidBrush(RGB(48, 48, 54)); SelectObject(dc, cap); SelectObject(dc, GetStockObject(NULL_PEN));
+        HBRUSH cap = CreateSolidBrush(to_cr(text_rgb)); SelectObject(dc, cap); SelectObject(dc, GetStockObject(NULL_PEN));
         Ellipse(dc, cx - 4, cy - 4, cx + 4, cy + 4);
         SelectObject(dc, oldBrush); SelectObject(dc, oldPen);
         DeleteObject(face); DeleteObject(rim); DeleteObject(hour); DeleteObject(minute); DeleteObject(second); DeleteObject(cap);
@@ -451,10 +759,10 @@ void dlg_add_brand_logo(void *dlg, int x, int y, int w, int h) {
     if (!registered) {
         WNDCLASSEXW wc = {0}; wc.cbSize = sizeof(wc); wc.lpfnWndProc = brand_logo_proc;
         wc.hInstance = GetModuleHandleW(NULL); wc.hCursor = LoadCursorW(NULL, IDC_ARROW);
-        wc.hbrBackground = (HBRUSH)(COLOR_BTNFACE + 1); wc.lpszClassName = L"TCBrandLogo";
+        wc.hbrBackground = NULL; wc.lpszClassName = L"TCBrandLogo";
         RegisterClassExW(&wc); registered = 1;
     }
-    CreateWindowExW(0, L"TCBrandLogo", L"", WS_CHILD | WS_VISIBLE,
+    CreateWindowExW(WS_EX_TRANSPARENT, L"TCBrandLogo", L"", WS_CHILD | WS_VISIBLE,
                     x, y, w, h, (HWND)dlg, NULL, GetModuleHandleW(NULL), NULL);
 }
 

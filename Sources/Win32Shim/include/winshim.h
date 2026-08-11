@@ -58,6 +58,8 @@ void   win_quit(void *hwnd);
 void   win_set_dpi_aware(void);
 void   win_set_topmost(void *hwnd, int topmost);   /* HWND_TOPMOST / HWND_NOTOPMOST */
 void  *win_self(void);              /* the main window HWND (for invalidate/resize/opacity from Swift) */
+void  *win_detail_window(void);     /* non-layered Acrylic sibling; NULL while collapsed */
+int    win_detail_diagnostics_json(char *out_utf8, int out_size);
 int    win_clipboard_set_text(const char *text_utf8); /* copy UTF-8 text as CF_UNICODETEXT */
 
 /* --- autostart (HKCU\…\Run) + modal info box --- */
@@ -67,6 +69,50 @@ void   win_message_box(const char *title_utf8, const char *body_utf8);
 int    win_confirm(const char *title_utf8, const char *body_utf8); /* owner-modal Yes/No */
 void   win_open_url(const char *url_utf8);                  /* ShellExecute with the default browser */
 int    win_user_locale(char *buf, int n); /* GetUserDefaultLocaleName → UTF-8 (e.g. "zh-CN"); returns wchars incl. NUL, 0 on failure */
+
+/* --- Windows 11 Fluent surfaces (implemented without Windows App SDK) ---
+ * These helpers feature-detect DWM at runtime.  Unsupported Windows builds,
+ * layered windows, disabled transparency and High Contrast all receive an
+ * opaque system-colour fallback; no optional API is called unconditionally. */
+enum win_fluent_material {
+  WIN_FLUENT_FALLBACK = 0,
+  WIN_FLUENT_MICA = 1,
+  WIN_FLUENT_ACRYLIC = 2,
+  WIN_FLUENT_MICA_ALT = 3
+};
+
+enum win_fluent_color_role {
+  WIN_FLUENT_COLOR_BACKGROUND = 0,
+  WIN_FLUENT_COLOR_SURFACE = 1,
+  WIN_FLUENT_COLOR_TEXT = 2,
+  WIN_FLUENT_COLOR_SUBTEXT = 3,
+  WIN_FLUENT_COLOR_BORDER = 4,
+  WIN_FLUENT_COLOR_ACCENT = 5
+};
+
+typedef struct {
+  uint32_t struct_size;
+  uint32_t windows_build;
+  int requested_material;
+  int applied_material;
+  int dwm_available;
+  int system_backdrop_available;
+  int transparency_enabled;
+  int high_contrast;
+  int dark_mode;
+  int layered_window_rejected;
+  int32_t last_hresult;
+} win_fluent_diagnostics;
+
+int          win_fluent_apply(void *hwnd, int material);
+void         win_fluent_forget(void *hwnd);
+int          win_fluent_get_diagnostics(void *hwnd, win_fluent_diagnostics *out);
+int          win_fluent_diagnostics_json(void *hwnd, char *out_utf8, int out_size);
+int          win_fluent_is_dark(void *hwnd);
+unsigned int win_fluent_color(void *hwnd, int role); /* COLORREF-style 0x00RRGGBB */
+void         win_fluent_theme_child(void *child_hwnd);
+void         win_fluent_paint_fallback(void *hwnd, void *hdc, const void *rect);
+void         win_fluent_paint_parent(void *child_hwnd, void *hdc, const void *rect);
 
 /* --- modal settings dialog (programmatic child controls) ---
  * dlg_create 建一个带标题的 overlapped 窗口；dlg_add_* 摆子控件（按 id 标识）；
@@ -127,6 +173,7 @@ struct win_theme {
     unsigned int dial_fill;      /* 0xAARRGGBB */
     unsigned int dial_rim;
     double       rim_width;      /* px @ radius 116 (macOS 用分数 1.5/2.5) */
+    int          material_style; /* 0 flat, 1 Frost, 2 Porcelain, 3 Smoked Glass */
     int          hand_style;     /* 0 round, 1 tapered, 2 lance, 3 sword */
     unsigned int hour_color, minute_color, second_color;
     double       hour_len, minute_len, second_len;   /* fraction of radius */
@@ -170,6 +217,28 @@ void gdip_init(void);
 void gdip_shutdown(void);
 void win_render_set_opacity(double alpha);  /* SourceConstantAlpha for UpdateLayeredWindow */
 void win_render_clock(int w, int h, int hh, int mm, int ss, const win_theme *t, const win_overlay *ov);
+/* Internal bridge used by winshim.c's normal HWND paint path. */
+void win_render_detail_paint(void *hdc, int w, int h);
+void win_detail_present(int show, int dial_height, int main_width, int card_width, int card_height);
+
+/* --- outbound HTTP(S) client (implemented in winclient.c, WinHTTP) ---
+ * Synchronous and intended for Swift worker queues. Uses NO_PROXY, never follows redirects,
+ * never loads/stores cookies or ambient credentials, retains default HTTPS certificate checks,
+ * and refuses to write beyond response_capacity. Returns 1 once a complete HTTP response has
+ * been received (including non-2xx responses), otherwise 0 with a Win32 error in out_error. */
+int win_native_http_request(const char *url_utf8,
+                            const char *method_utf8,
+                            const char *headers_utf8,
+                            const unsigned char *request_body,
+                            int request_body_length,
+                            int connect_timeout_ms,
+                            int send_timeout_ms,
+                            int receive_timeout_ms,
+                            unsigned char *response_body,
+                            int response_capacity,
+                            int *out_response_length,
+                            int *out_status_code,
+                            unsigned long *out_error);
 
 /* --- loopback HTTP API server (implemented in winhttp.c, Winsock) ---
  * Runs on a background thread bound to 127.0.0.1:port. For each GET it calls `responder`
@@ -182,6 +251,16 @@ void *win_start_api_server(unsigned short port, win_api_responder_t responder, v
 void  win_pause_api_server(void *handle); /* close listener, keep the callback worker alive */
 void  win_reconfigure_api_server(void *handle, unsigned short port); /* rebind on same worker */
 void  win_stop_api_server(void *handle);
+
+/* --- strict CodeBuddy loopback HTTP client (wincodebuddyhttp.c) ---
+ * Always connects directly to IPv4 127.0.0.1 using Winsock. The route is fixed by this enum;
+ * redirects, authentication, chunked transfer and responses larger than 1 MiB are rejected. */
+enum win_codebuddy_route {
+  WIN_CODEBUDDY_STATS = 0,
+  WIN_CODEBUDDY_SESSION_STATS = 1
+};
+int win_codebuddy_http_get(unsigned short port, int route, unsigned char *out,
+                           int out_capacity, int timeout_ms);
 
 #ifdef __cplusplus
 }

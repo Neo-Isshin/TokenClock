@@ -35,6 +35,8 @@
 
 TokenClock is an **always-on-top floating clock** for your desktop (draggable · remembers its position). The dial overlays live data: **today's total token consumption, message counts, the AI tools currently active, a rate indicator, and the weather**. Click the clock to expand a dropdown panel that breaks usage down by **each tool → each session / agent**.
 
+Reused prompt-cache reads stay out of the main total, while new input, cache creation, output, and reasoning still count.
+
 It's built with the macOS 26 **Liquid Glass** material for a crystal clock disc, ships with 7 carefully designed built-in faces plus a fully custom theme editor, and reads **everything locally** — nothing is ever uploaded.
 
 > [!NOTE]
@@ -207,8 +209,12 @@ Windows discovery is maintained separately from macOS and Linux. It expands `%NA
 | **Cline** | `%APPDATA%\Code\User\globalStorage\saoudrizwan.claude-dev\` | `CLINE_HOME` (TokenClock compatibility) |
 | **Continue** | `%USERPROFILE%\.continue\` | `CONTINUE_HOME` (TokenClock compatibility) |
 | **Cursor Agent** | `%APPDATA%\Cursor\User\globalStorage\state.vscdb` | `CURSOR_AGENT_HOME` (TokenClock compatibility) |
+| **Kiro CLI** | `%USERPROFILE%\.kiro\sessions\cli\` | `KIRO_HOME` (home; TokenClock appends `sessions\cli`) |
+| **CodeBuddy CLI** | `http://127.0.0.1:8080` | `CODEBUDDY_STATS_ENDPOINT` (TokenClock compatibility; literal loopback only) |
 
-Detection reports three separate facts: the catalog declaration, whether the selected path exists, and whether the expected JSONL/JSON/SQLite input is actually parser-readable. An empty provider directory is therefore not reported as working. Hermes also probes the legacy `%USERPROFILE%\.hermes`; OpenCode additionally probes `%LOCALAPPDATA%\opencode` and `%USERPROFILE%\.opencode`; Cline also probes Cursor's extension storage.
+Detection reports the catalog declaration, source availability, official contract readability, and whether TokenClock can safely parse statistics as separate facts. An empty provider directory is therefore not reported as working. Hermes also probes the legacy `%USERPROFILE%\.hermes`; OpenCode additionally probes `%LOCALAPPDATA%\opencode` and `%USERPROFILE%\.opencode`; Cline also probes Cursor's extension storage.
+
+[Kiro](https://kiro.dev/docs/cli/acp/) is currently a discovery-only entry: Kiro documents the session files but does not publish stable token or request-count fields, so TokenClock does not invent a number. [CodeBuddy](https://www.workbuddy.ai/docs/cli/http-api) is opt-in and reads the official current-session token fields from its local HTTP service; current-session values stay separate from **Today** totals and percentages. TokenClock sends no password, cookie, or account credential, and refuses non-`127.0.0.1` endpoints.
 
 “Official” above means the variable/path contract is documented by the provider (for example, OpenClaw's `OPENCLAW_STATE_DIR`, Qwen's runtime directory, or the platform-standard `XDG_DATA_HOME`). “TokenClock compatibility” means TokenClock accepts that name as a convenient override, but no stable upstream provider contract was found; it must not be interpreted as an official provider setting.
 
@@ -234,7 +240,9 @@ curl -fsSL https://raw.githubusercontent.com/Neo-Isshin/TokenClock/main/cli/inst
 
 The Windows normal build is currently maintained on the long-lived `windows-port` branch and is not merged back into the macOS/Linux product branches. The per-user installer needs no administrator privileges, verifies the release ZIP against its published SHA-256 file, and installs to `%LOCALAPPDATA%\Programs\TokenClock`.
 
-This channel follows the macOS normal workflow: all 8 built-in faces (Glass, Classic, Glacier, Midnight, Luxe, Antique, Railgun, and Sky), the compact 3×3 face picker and saved custom faces, four sizes, a fixed 320×547 details card with session/model grouping, percentages and expandable rows, weather/forecast, and **Codex Quota** immediately left of **By Percent**. Its right-click menu, overview-and-disclosure Settings window, custom-face save/apply/delete flow, and branded About dialog are Windows-native adaptations of the same normal feature set. Provider paths remain Windows-specific; no macOS or Linux catalog paths are imported.
+This channel follows the macOS normal workflow: all 8 built-in faces, the compact 3×3 face picker and saved custom faces, four sizes, a fixed 320×547 details card with session/model grouping, percentages and expandable rows, weather/forecast, and **Codex Quota** immediately left of **By Percent**. Three familiar face slots have been polished especially for Windows: cool **Frost**, warm **Porcelain**, and dark **Smoked Glass**. The right-click menu, Settings, custom-face save/apply/delete flow, and About window all follow the same normal experience. Provider paths remain Windows-specific.
+
+On Windows 11, the details panel and face picker use Acrylic while Settings, Custom Face, and About use Mica. The round clock keeps its clean transparent edge; its textured glass, ceramic glaze, soft reflections, fine minute track, and dimensional hands are drawn directly into the face, so they stay attractive without adding a busy background process. If transparency is turned off, High Contrast is enabled, or the Windows version does not support these effects, TokenClock automatically switches to a clear solid background.
 
 ```powershell
 # Install the latest x86_64 Windows release and start it.
@@ -253,17 +261,17 @@ The default install does **not** create shortcuts or change login autostart. Ava
 - Uninstall preserves `%LOCALAPPDATA%\TokenClock` settings unless `-RemoveUserData` is explicitly supplied.
 - A missing checksum aborts installation. `-AllowUnsigned` is an explicit escape hatch for a package you already trust.
 
-Windows release archives are built with `pwsh scripts/build-windows.ps1 -Zip`; the ZIP contains `TokenClock.exe`, its Swift/VC++ runtime DLLs, and resources. Publishing uses an independent tag on `windows-port`: after the shared release `v1.4.0` exists, tag the corresponding Windows commit as `windows-v1.4.0` and push that tag. The workflow definition and source are then both present in the immutable Windows tag; it maps `windows-v1.4.0` back to the existing `v1.4.0` release and only attaches the ZIP plus checksum. It never creates a Windows-only release or requires Windows source to be merged into main.
+Windows release archives are built with `pwsh scripts/build-windows.ps1 -Zip`; the ZIP contains `TokenClock.exe`, its Swift/VC++ runtime DLLs, and resources. Publishing uses an independent tag on `windows-port`: after the shared release `v1.4.3` exists, tag the corresponding Windows commit as `windows-v1.4.3` and push that tag. The workflow definition and source are then both present in the immutable Windows tag; it maps `windows-v1.4.3` back to the existing `v1.4.3` release and only attaches the ZIP plus checksum. It never creates a Windows-only release or requires Windows source to be merged into main.
 
 ```bash
-gh release view v1.4.0 --repo Neo-Isshin/TokenClock
+gh release view v1.4.3 --repo Neo-Isshin/TokenClock
 git switch windows-port
 git pull --ff-only origin windows-port
-git tag -a windows-v1.4.0 -m "Windows assets for v1.4.0"
-git push origin windows-v1.4.0
+git tag -a windows-v1.4.3 -m "Windows assets for v1.4.3"
+git push origin windows-v1.4.3
 ```
 
-With `-Version latest`, the installer selects the newest stable release that already has both Windows assets, so a newer macOS/Linux release still waiting for its Windows upload is skipped; an explicit `-Version` resolves that exact shared tag (for example `v1.4.0`, not `windows-v1.4.0`). Current distribution is x86_64 only. The executable is not Microsoft Store/MSIX packaged, so Windows reputation warnings may appear until releases are code-signed. Portable ZIP use remains supported, but shortcuts, updates, and uninstall tracking are then the user's responsibility.
+With `-Version latest`, the installer selects the newest stable release that already has both Windows assets, so a newer macOS/Linux release still waiting for its Windows upload is skipped; an explicit `-Version` resolves that exact shared tag (for example `v1.4.3`, not `windows-v1.4.3`). Current distribution is x86_64 only. The executable is not Microsoft Store/MSIX packaged, so Windows reputation warnings may appear until releases are code-signed. Portable ZIP use remains supported, but shortcuts, updates, and uninstall tracking are then the user's responsibility.
 
 ### Linux normal build
 

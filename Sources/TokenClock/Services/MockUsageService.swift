@@ -9,7 +9,13 @@ final class MockUsageService {
     /// `enabledTools` 保留参数以兼容旧调用点，但不再影响数据（一律返回 0）。
     static func generateInitialData(enabledTools: Set<String> = .init()) -> [ToolUsage] {
         _ = enabledTools
-        let tools: [(name: String, abbr: String, emoji: String)] = [
+        #if os(Windows)
+        let tools: [(name: String, abbr: String, emoji: String, unit: UsageMeasurementUnit, scope: UsageMeasurementScope)] =
+            WindowsProviderCatalog.orderedEntries.map {
+                ($0.displayName, $0.abbreviation, $0.emoji, $0.measurementUnit, $0.measurementScope)
+            }
+        #else
+        let tokenTools: [(name: String, abbr: String, emoji: String)] = [
             ("OpenClaw", "OC", "🦞"),
             ("Gemini CLI", "GC", "✨"),
             ("Claude Code", "CC", "✳️"),
@@ -25,12 +31,16 @@ final class MockUsageService {
             ("Continue", "CN", "▶️"),
             ("Cursor Agent", "CA", "🖱️"),
         ]
-
+        let tools: [(name: String, abbr: String, emoji: String, unit: UsageMeasurementUnit, scope: UsageMeasurementScope)] =
+            tokenTools.map { ($0.name, $0.abbr, $0.emoji, .tokens, .today) }
+        #endif
         return tools.map { tool in
             ToolUsage(
                 name: tool.name,
                 abbreviation: tool.abbr,
                 emoji: tool.emoji,
+                measurementUnit: tool.unit,
+                measurementScope: tool.scope,
                 todayTokens: 0,
                 todayMessages: 0,
                 isActive: false,

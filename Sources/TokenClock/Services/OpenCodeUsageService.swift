@@ -44,7 +44,7 @@ final class OpenCodeUsageService: @unchecked Sendable {
         let d = dailyData[DateHelper.todayKey()]
         let cache = dailyCache[DateHelper.todayKey()] ?? 0
         let total = d?.tokens ?? 0
-        let rate = total > 0 ? Double(cache) / Double(total) : 0
+        let rate = TokenAccounting.cacheReadShare(freshTokens: total, cacheRead: cache)
         return (total, d?.messages ?? 0, rate)
     }
 
@@ -105,6 +105,7 @@ final class OpenCodeUsageService: @unchecked Sendable {
                time_created
         FROM session
         WHERE tokens_input > 0 OR tokens_output > 0
+           OR tokens_reasoning > 0 OR tokens_cache_write > 0
         ORDER BY time_created ASC
         """
 
@@ -123,7 +124,10 @@ final class OpenCodeUsageService: @unchecked Sendable {
             let cacheWrite = sqlite3_column_int(stmt, 4)
             let timeCreatedMs = sqlite3_column_int64(stmt, 5)
 
-            let tokens = Int(inputTokens) + Int(outputTokens) + Int(reasoningTokens) + Int(cacheRead)
+            let tokens = TokenAccounting.separateCacheFields(
+                input: Int(inputTokens), cacheWrite: Int(cacheWrite), output: Int(outputTokens),
+                additional: [Int(reasoningTokens)]
+            )
             guard tokens > 0 else { continue }
 
             let date = Date(timeIntervalSince1970: Double(timeCreatedMs) / 1000.0)
@@ -144,8 +148,7 @@ final class OpenCodeUsageService: @unchecked Sendable {
                 hourlyData[hourKey] = HourlyUsage(tokens: tokens, messages: 1)
             }
 
-            let cacheTokens = Int(cacheRead) + Int(cacheWrite)
-            dailyCache[dateKey, default: 0] += cacheTokens
+            dailyCache[dateKey, default: 0] += Int(cacheRead)
 
             if dateKey == today && date >= now.addingTimeInterval(-AppConfig.Scan.oneDaySeconds) {
                 recentEntries.append(RecentEntry(timestamp: date, tokens: tokens))
@@ -183,7 +186,8 @@ final class OpenCodeUsageService: @unchecked Sendable {
                time_created\(modelSelect)
         FROM session
         WHERE time_created >= ?
-          AND (tokens_input > 0 OR tokens_output > 0)
+          AND (tokens_input > 0 OR tokens_output > 0
+               OR tokens_reasoning > 0 OR tokens_cache_write > 0)
         ORDER BY time_created DESC
         """
 
@@ -206,8 +210,8 @@ final class OpenCodeUsageService: @unchecked Sendable {
             let inputTokens = sqlite3_column_int(stmt, 3)
             let outputTokens = sqlite3_column_int(stmt, 4)
             let reasoningTokens = sqlite3_column_int(stmt, 5)
-            let cacheRead = sqlite3_column_int(stmt, 6)
-            _ = sqlite3_column_int(stmt, 7)   // cacheWrite: 故意不计,避免计数膨胀（其他工具也不计 cacheWrite）
+            _ = sqlite3_column_int(stmt, 6) // cache read: diagnostic only
+            let cacheWrite = sqlite3_column_int(stmt, 7)
             let timeCreatedMs = sqlite3_column_int64(stmt, 8)
             let model: String?
             if hasModelColumn {
@@ -217,7 +221,10 @@ final class OpenCodeUsageService: @unchecked Sendable {
                 model = nil
             }
 
-            let tokens = Int(inputTokens) + Int(outputTokens) + Int(reasoningTokens) + Int(cacheRead)
+            let tokens = TokenAccounting.separateCacheFields(
+                input: Int(inputTokens), cacheWrite: Int(cacheWrite), output: Int(outputTokens),
+                additional: [Int(reasoningTokens)]
+            )
             guard tokens > 0 else { continue }
 
             let date = Date(timeIntervalSince1970: Double(timeCreatedMs) / 1000.0)

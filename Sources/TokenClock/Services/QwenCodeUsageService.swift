@@ -40,7 +40,7 @@ final class QwenCodeUsageService: @unchecked Sendable {
         let d = dailyData[DateHelper.todayKey()]
         let total = d?.tokens ?? 0
         let cache = dailyCache[DateHelper.todayKey()] ?? 0
-        let rate = total > 0 ? Double(cache) / Double(total) : 0
+        let rate = TokenAccounting.cacheReadShare(freshTokens: total, cacheRead: cache)
         return (total, d?.messages ?? 0, rate)
     }
 
@@ -190,7 +190,9 @@ final class QwenCodeUsageService: @unchecked Sendable {
             let cached = tokens["cached"] as? Int ?? 0
             // input(promptTokenCount) 已含 cached → cached 不可再加（双计）。thought 为推理 token。
             let thought = (tokens["thought"] as? Int) ?? (tokens["thoughts"] as? Int) ?? 0
-            let total = input + output + thought
+            let total = TokenAccounting.excludingCacheRead(
+                inclusiveInput: input, cacheRead: cached, output: output, additional: [thought]
+            )
             guard total > 0 else { return nil }
 
             let ts = msg["timestamp"] as? String ?? ""
@@ -209,7 +211,9 @@ final class QwenCodeUsageService: @unchecked Sendable {
             let thoughts = usage["thoughtsTokenCount"] as? Int ?? 0
             let cached = usage["cachedContentTokenCount"] as? Int ?? 0
             // promptTokenCount 已含 cachedContentTokenCount → cached 不可再加（双计）。
-            let total = prompt + candidates + thoughts
+            let total = TokenAccounting.excludingCacheRead(
+                inclusiveInput: prompt, cacheRead: cached, output: candidates, additional: [thoughts]
+            )
             guard total > 0 else { return nil }
 
             let ts = msg["timestamp"] as? String ?? ""

@@ -215,13 +215,12 @@ final class WindowsApp: @unchecked Sendable {
         let quotaSnapshot = codexQuotaState.snapshot()
         let quotaText = detailsVisible ? quotaOverlay(snapshot: quotaSnapshot) : ""
 
-        // macOS normal 基线在 medium 下为 320×547 的独立详情卡。Windows 仍使用同一
-        // layered host，但将可见行为做成等价：表盘直径不变，卡片高度固定，内容分页。
+        // The dial remains a compact per-pixel-alpha layered HWND. Win32Shim presents the
+        // fixed 320×547 detail card in a separate non-layered Desktop Acrylic sibling, so
+        // expanding never turns the round widget back into a tall rectangular host.
         let dialHeight = clockDiameter(for: clockSizeRaw)
-        let newWidth = detailsVisible ? max(Int32(320), currentSize) : currentSize
-        let newHeight: Int32 = detailsVisible
-            ? dialHeight + 14 + 547
-            : dialHeight
+        let newWidth = currentSize
+        let newHeight = dialHeight
         if newHeight != currentHeight || newWidth != currentHostWidth {
             resizeHostKeepingCenter(width: newWidth, height: newHeight)
         }
@@ -264,9 +263,8 @@ final class WindowsApp: @unchecked Sendable {
         }
     }
 
-    /// Expanding Small from a 280pt host to the fixed 320pt detail width must not move the
-    /// visible clock on screen. Shift the host origin by half the width delta before resizing;
-    /// collapsing performs the inverse operation and restores the exact original centre.
+    /// Size changes preserve the dial's screen centre. The independent 320pt detail sibling
+    /// follows the resulting host rectangle in Win32Shim.
     private func resizeHostKeepingCenter(width: Int32, height: Int32) {
         if width != currentHostWidth {
             var x: Int32 = 0, y: Int32 = 0
@@ -422,13 +420,7 @@ final class WindowsApp: @unchecked Sendable {
         let pct = showPercentage
         if let mock = ProcessInfo.processInfo.environment["TC_MOCK"] {
             let modelMode = mock == "model" || groupingMode == .model
-            let mockProviders = [
-                ("OpenClaw", "🦞"), ("Claude Code", "✳️"), ("Gemini CLI", "✨"),
-                ("Codex", "🤖"), ("Hermes", "⚕️"), ("OpenCode", "🐙"),
-                ("Qwen Code", "🟣"), ("Copilot", "🐙"), ("Grok", "⚡"),
-                ("Aider", "🤝"), ("Antigravity", "🛡️"), ("Cline", "🤖"),
-                ("Continue", "▶️"), ("Cursor Agent", "🖱️")
-            ]
+            let mockProviders = Self.providerEntries.map { ($0.displayName, $0.emoji) }
             let parents: [(String, String, Int, Int, [(String, Int, Int)])] = mock == "long"
                 ? (1...18).map { index in
                     let provider = mockProviders[(index - 1) % mockProviders.count]
@@ -454,14 +446,33 @@ final class WindowsApp: @unchecked Sendable {
             return rows
         }
 
-        let active = tools.filter { $0.todayTokens > 0 }
-        guard !active.isEmpty else {
+        // Percent and model grouping remain token-only. Credits/requests are separate units and
+        // must never be compared with or folded into a token denominator.
+        let active = tools.filter {
+            $0.measurementUnit == .tokens && $0.measurementScope == .today && $0.todayTokens > 0
+        }
+        let currentSession = tools.filter {
+            $0.measurementScope == .currentSession && $0.measurementValue != nil
+        }
+        let unavailable = tools.filter {
+            $0.measurementScope == .contractOnly
+                || ($0.measurementScope == .currentSession && $0.measurementValue == nil)
+        }
+        guard !active.isEmpty || !currentSession.isEmpty || !unavailable.isEmpty else {
             return [DetailRow(key: nil, label: L.language == .en ? "No AI usage today" : "今日暂无 AI 用量", value: "—", messages: "—", cache: "", isChild: true, expanded: false)]
         }
         let grand = active.reduce(0) { $0 + $1.todayTokens }
-        var rows: [DetailRow] = []
+        var rows: [DetailRow] = currentSession.map { tool in
+            DetailRow(key: nil, label: "\(tool.emoji) \(tool.name) · \(L.tr("detail.currentSession"))",
+                      value: TokenFormat.compact(tool.value), messages: "—", cache: "—",
+                      isChild: false, expanded: false)
+        }
+        rows.append(contentsOf: unavailable.map { tool in
+            DetailRow(key: nil, label: "\(tool.emoji) \(tool.name)", value: L.tr("detail.statisticsUnavailable"),
+                      messages: "—", cache: "—", isChild: false, expanded: false)
+        })
         if groupingMode == .model {
-            let groups = UsageAggregator.groupedByModel(tools, unknownLabel: L.tr("detail.unknownModel"))
+            let groups = UsageAggregator.groupedByModel(active, unknownLabel: L.tr("detail.unknownModel"))
             for group in groups.prefix(10) {
                 let key = "model:\(group.id)"
                 let open = expandedDetailKeys.contains(key)
@@ -537,17 +548,22 @@ final class WindowsApp: @unchecked Sendable {
             return
         }
         guard detailsVisible else { return }
+        let detailCardWidth = 320.0
+        let virtualHostWidth = max(Double(currentHostWidth), detailCardWidth)
+        let cardX = (virtualHostWidth - detailCardWidth) / 2.0
+        let localX = Double(x) - cardX
+        guard localX >= 0, localX < detailCardWidth else { return }
         let localY = Double(y - dialHeight) - 14.0
         let forecastHeight = (weatherInfo?.cityName.isEmpty == false) ? 76.0 : 0.0
         let controlsY = localY - forecastHeight
         if controlsY >= 8, controlsY < 34 {
-            let requested: GroupingMode = Double(x) < Double(currentHostWidth) / 2.0 ? .session : .model
+            let requested: GroupingMode = localX < detailCardWidth / 2.0 ? .session : .model
             UserDefaults.standard.setInt(requested == .model ? 1 : 0, for: .dropdownGrouping)
             expandedDetailKeys.removeAll()
             detailScrollRow = 0
             render()
         } else if controlsY >= 38, controlsY < 60 {
-            if Double(x) < Double(currentHostWidth) / 2.0 {
+            if localX < detailCardWidth / 2.0 {
                 showsCodexQuota.toggle()
                 detailScrollRow = 0
                 if showsCodexQuota { refreshCodexQuota(force: false) }
@@ -556,7 +572,7 @@ final class WindowsApp: @unchecked Sendable {
             }
             render()
         } else if showsCodexQuota, controlsY >= 68, controlsY < 112,
-                  Double(x) > (Double(currentHostWidth) + 320.0) / 2.0 - 116.0 {
+                  localX > detailCardWidth - 116.0 {
             refreshCodexQuota(force: true)
             render()
         } else if showsCodexQuota {
@@ -747,8 +763,8 @@ final class WindowsApp: @unchecked Sendable {
         let sz = windowSize(for: raw)
         let dialHeight = clockDiameter(for: raw)
         currentSize = sz
-        let hostWidth = detailsVisible ? max(Int32(320), sz) : sz
-        let hostHeight = detailsVisible ? dialHeight + 14 + 547 : dialHeight
+        let hostWidth = sz
+        let hostHeight = dialHeight
         resizeHostKeepingCenter(width: hostWidth, height: hostHeight)
         render()
     }
@@ -765,7 +781,7 @@ final class WindowsApp: @unchecked Sendable {
         defer { aboutDlg = nil; dlg_destroy(dlg) }
         dlg_add_brand_logo(dlg, 136, 22, 88, 88)
         dlg_add_title(dlg, "TokenClock", 112, 120, 180, 30)
-        dlg_add_static(dlg, "v1.4.0", 154, 154, 90, 22)
+        dlg_add_static(dlg, "v1.4.3", 154, 154, 90, 22)
         dlg_add_sep(dlg, 28, 188, 304)
         dlg_add_static(dlg, "Copyright © 2026 Neo-Isshin", 78, 210, 250, 22)
         dlg_add_static(dlg, L10n.shared.tr("about.license"), 128, 238, 180, 22)
@@ -786,7 +802,9 @@ final class WindowsApp: @unchecked Sendable {
     private func openSettings() {
         let names = Self.providerNames
         var draft = SettingsDraft(
-            enabled: Set(UserDefaults.standard.stringArray(for: .enabledTools) ?? names),
+            enabled: WindowsProviderCatalog.enabledDisplayNames(
+                saved: UserDefaults.standard.stringArray(for: .enabledTools)
+            ),
             paths: Dictionary(uniqueKeysWithValues: names.map { ($0, pathFor($0)) }),
             cursorCloud: UserDefaults.standard.bool(for: .cursorCloudFetchEnabled, default: true),
             apiEnabled: apiEnabled,
@@ -855,11 +873,15 @@ final class WindowsApp: @unchecked Sendable {
         dlg_add_static(dlg, en ? "Only enabled providers participate in scans." : "仅扫描已启用的 provider。", 22, 48, 460, 20)
         dlg_add_sep(dlg, 20, 72, 470)
         for (i, name) in Self.providerNames.enumerated() {
-            let col = i / 7, row = i % 7
-            dlg_add_check(dlg, 300 + Int32(i), name, 24 + Int32(col * 240), 86 + Int32(row * 42), 220, 28, draft.enabled.contains(name) ? 1 : 0)
+            let col = i / 6, row = i % 6
+            let entry = Self.providerEntries[i]
+            let label = entry.statisticsSupport == .contractOnly
+                ? "\(name) · \(en ? "No stats" : "仅发现")"
+                : name
+            dlg_add_check(dlg, 300 + Int32(i), label, 24 + Int32(col * 160), 86 + Int32(row * 42), 150, 28, draft.enabled.contains(name) ? 1 : 0)
         }
-        dlg_add_sep(dlg, 20, 390, 470)
-        dlg_add_check(dlg, 410, en ? "Cursor cloud usage (contacts cursor.com)" : "Cursor 云端用量（会访问 cursor.com）", 24, 402, 445, 26, draft.cursorCloud ? 1 : 0)
+        dlg_add_sep(dlg, 20, 344, 470)
+        dlg_add_check(dlg, 410, en ? "Cursor cloud usage (contacts cursor.com)" : "Cursor 云端用量（会访问 cursor.com）", 24, 356, 445, 26, draft.cursorCloud ? 1 : 0)
         dlg_add_push(dlg, 1, en ? "Apply" : "应用", 288, 458, 92, 30)
         dlg_add_push(dlg, 2, en ? "Cancel" : "取消", 392, 458, 92, 30)
         if dlg_modal(dlg) == 1 {
@@ -877,11 +899,17 @@ final class WindowsApp: @unchecked Sendable {
         dlg_add_title(dlg, en ? "Data Source Paths" : "数据源路径", 20, 10, 350, 30)
         dlg_add_static(dlg, en ? "Windows paths are kept provider-specific." : "Windows 路径按 provider 独立维护。", 22, 44, 470, 20)
         let top: Int32 = 70
-        for (i, name) in Self.providerNames.enumerated() {
-            let y = top + Int32(i * 28)
-            dlg_add_static(dlg, name, 20, y + 4, 100, 22)
-            dlg_add_edit(dlg, 200 + Int32(i), draft.paths[name] ?? "", 122, y, 292, 25)
-            dlg_add_push(dlg, 600 + Int32(i), en ? "Browse" : "浏览", 420, y, 72, 25)
+        for (i, entry) in Self.providerEntries.enumerated() {
+            let col = i / 8, row = i % 8
+            let x = Int32(16 + col * 250), y = top + Int32(row * 46)
+            let sourceLabel = entry.statisticsSupport == .contractOnly
+                ? "\(entry.displayName) · \(en ? "discovery only" : "仅发现")"
+                : entry.displayName
+            dlg_add_static(dlg, sourceLabel, x, y, 225, 20)
+            dlg_add_edit(dlg, 200 + Int32(i), draft.paths[entry.displayName] ?? "", x, y + 20, entry.supportsFolderPicker ? 170 : 224, 24)
+            if entry.supportsFolderPicker {
+                dlg_add_push(dlg, 600 + Int32(i), en ? "Browse" : "浏览", x + 174, y + 20, 66, 24)
+            }
         }
         dlg_add_sep(dlg, 20, 468, 470)
         dlg_add_push(dlg, 1, en ? "Apply" : "应用", 288, 478, 92, 28)
@@ -980,12 +1008,12 @@ final class WindowsApp: @unchecked Sendable {
             return
         }
         if id == 700 {
-            let summary = PathDetector.runFullDetection()
+            let summary = PathDetector.runFullDetection(probeLoopbackServices: true)
             if var draft = settingsDraft {
                 for result in summary.results where result.exists {
-                    if let index = Self.providerServiceIDs.firstIndex(of: result.service) {
-                        let name = Self.providerNames[index]
-                        draft.paths[name] = result.detectedPath; draft.enabled.insert(name)
+                    if let entry = WindowsProviderCatalog.entry(serviceID: result.service) {
+                        draft.paths[entry.displayName] = result.detectedPath
+                        draft.enabled.insert(entry.displayName)
                     }
                 }
                 settingsDraft = draft
@@ -1005,43 +1033,13 @@ final class WindowsApp: @unchecked Sendable {
     }
 
     private func pathFor(_ name: String) -> String {
-        switch name {
-        case "OpenClaw": return PathConfig.openclawHome()
-        case "Claude Code": return PathConfig.claudeCodeHome()
-        case "Gemini CLI": return PathConfig.geminiHome()
-        case "Codex": return PathConfig.codexHome()
-        case "Hermes": return PathConfig.hermesHome()
-        case "OpenCode": return PathConfig.opencodeHome()
-        case "Qwen Code": return PathConfig.qwenHome()
-        case "Copilot": return PathConfig.copilotHome()
-        case "Grok": return PathConfig.grokHome()
-        case "Aider": return PathConfig.aiderHome()
-        case "Antigravity": return PathConfig.antigravityHome()
-        case "Cline": return PathConfig.clineHome()
-        case "Continue": return PathConfig.continueHome()
-        case "Cursor Agent": return PathConfig.cursorAgentHome()
-        default: return ""
-        }
+        guard let entry = WindowsProviderCatalog.entry(displayName: name) else { return "" }
+        return WindowsProviderCatalog.configuredSource(for: entry.id)
     }
 
     private func setPath(_ name: String, _ p: String) {
-        switch name {
-        case "OpenClaw": PathConfig.setOpenclawPath(p)
-        case "Claude Code": PathConfig.setClaudeCodePath(p)
-        case "Gemini CLI": PathConfig.setGeminiPath(p)
-        case "Codex": PathConfig.setCodexPath(p)
-        case "Hermes": PathConfig.setHermesPath(p)
-        case "OpenCode": PathConfig.setOpenCodePath(p)
-        case "Qwen Code": PathConfig.setQwenPath(p)
-        case "Copilot": PathConfig.setCopilotPath(p)
-        case "Grok": PathConfig.setGrokPath(p)
-        case "Aider": PathConfig.setAiderPath(p)
-        case "Antigravity": PathConfig.setAntigravityPath(p)
-        case "Cline": PathConfig.setClinePath(p)
-        case "Continue": PathConfig.setContinuePath(p)
-        case "Cursor Agent": PathConfig.setCursorAgentPath(p)
-        default: break
-        }
+        guard let entry = WindowsProviderCatalog.entry(displayName: name) else { return }
+        WindowsProviderCatalog.setConfiguredSource(p, for: entry.id)
     }
 
     fileprivate func shutdown() {
@@ -1218,7 +1216,7 @@ final class WindowsApp: @unchecked Sendable {
 
     private func numberStyleLabel() -> String {
         let en = L10n.shared.language == .en
-        return customCfg.numberStyle == 2 ? (en ? "Chinese numbers ▾" : "中文数字 ▾") : (en ? "Arabic numbers ▾" : "阿拉伯数字 ▾")
+        return customCfg.numberStyle == 2 ? (en ? "Chinese ▾" : "中文 ▾") : (en ? "Arabic ▾" : "阿拉伯数字 ▾")
     }
 
     private func handStyleLabel(_ s: Int) -> String {
@@ -1333,10 +1331,8 @@ final class WindowsApp: @unchecked Sendable {
     private func setLaunchAtLogin(_ on: Bool) { _ = win_autostart_set(on ? 1 : 0) }
 
     // 城市 / 温度 / 时区 / API（镜像 macOS SettingsKey）
-    private static let providerNames = ["OpenClaw", "Claude Code", "Gemini CLI", "Codex", "Hermes", "OpenCode",
-                                        "Qwen Code", "Copilot", "Grok", "Aider", "Antigravity", "Cline", "Continue", "Cursor Agent"]
-    private static let providerServiceIDs = ["openclaw", "claudeCode", "gemini", "codex", "hermes", "opencode",
-                                             "qwen", "copilot", "grok", "aider", "antigravity", "cline", "continue", "cursorAgent"]
+    private static let providerEntries = WindowsProviderCatalog.orderedEntries
+    private static let providerNames = providerEntries.map(\.displayName)
     private static let cities = ["auto", "Hong Kong", "Shanghai", "Beijing", "Tokyo", "Singapore", "New York"]
     private static let timezones = ["auto", "Asia/Hong_Kong", "Asia/Shanghai", "Asia/Tokyo", "Asia/Singapore", "America/New_York", "Europe/London", "America/Los_Angeles"]
     private static let opacityLevels = [25, 50, 75, 100]

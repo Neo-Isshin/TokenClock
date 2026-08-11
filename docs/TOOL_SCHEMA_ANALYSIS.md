@@ -1,10 +1,16 @@
 # TokenClock — Tool Schema Analysis
 
-> Last updated: 2026-07-10
+> Last updated: 2026-08-11
 >
 > **实现状态对账（2026-07-10）：** 下表原为可行性分析。如今 **所有 P0–P3 工具 + Cline + Continue 都已落地为 `Sources/TokenClock/Services/*UsageService.swift`**（共 14 个，~4000 行）。测试覆盖刚起步——目前仅 Claude Code 有解析器单测（`Tests/TokenClockTests/ClaudeCodeUsageServiceTests.swift`，确立 fixture 模式），其余 13 个待按同模式补单测。下表的 "Priority / Ready / Needs verification" 列保留作历史，实际状态见新增的 **Impl** 列。
 
 ## Schema Standardization Template
+
+TokenClock's primary number measures freshly processed usage: ordinary input + cache
+creation/write + output + independent reasoning/tool tokens. Cache reads remain available for
+the cache-rate diagnostic but never enter the primary total. When a provider reports an inclusive
+input/total, the formula subtracts its cache-read subset; when fields are independent, the formula
+adds cache-write and deliberately omits cache-read.
 
 Each tool analysis follows this structure:
 
@@ -34,7 +40,7 @@ Each tool analysis follows this structure:
 | **Format** | JSONL (streaming) |
 | **Scan Pattern** | fileCache + modDate incremental |
 | **Token Fields** | `input`, `output`, `cacheRead`, `cacheWrite` |
-| **Token Formula** | `input + output + cacheRead` |
+| **Token Formula** | `input + cacheWrite + output` |
 | **Date Attribution** | Per-event via timestamp field |
 | **Cache Semantics** | `input` EXCLUDES cached (mutually exclusive) |
 | **Session Source** | JSONL session files |
@@ -49,7 +55,7 @@ Each tool analysis follows this structure:
 | **Format** | JSONL (streaming) |
 | **Scan Pattern** | fileCache + modDate incremental |
 | **Token Fields** | `input_tokens`, `output_tokens`, `cache_read_input_tokens`, `cache_creation_input_tokens` |
-| **Token Formula** | `inputTokens + outputTokens + cacheRead` |
+| **Token Formula** | `inputTokens + cacheCreation + outputTokens` |
 | **Date Attribution** | Per-event via timestamp field |
 | **Cache Semantics** | `input_tokens` EXCLUDES cached (mutually exclusive) |
 | **Session Source** | `~/.claude/sessions/*.json` + find matching JSONL |
@@ -64,7 +70,7 @@ Each tool analysis follows this structure:
 | **Format** | JSON (legacy) + JSONL (current, preferred) |
 | **Scan Pattern** | fileCache + modDate incremental |
 | **Token Fields** | `tokens.input`, `tokens.output`, `tokens.cached`, `tokens.thought` (API `usageMetadata`: `promptTokenCount` / `candidatesTokenCount` / `cachedContentTokenCount` / `thoughtsTokenCount`) |
-| **Token Formula** | `input + output + thought` (do NOT add `cached` — already included in `input`/`promptTokenCount`) |
+| **Token Formula** | `input - cached + output + thought` |
 | **Date Attribution** | Per-event via timestamp field |
 | **Cache Semantics** | `input` INCLUDES `cached` (mutually inclusive, like Codex — adding `cached` double-counts) |
 | **Session Source** | JSONL/JSON session files |
@@ -79,7 +85,7 @@ Each tool analysis follows this structure:
 | **Format** | JSONL (streaming) + SQLite (`state_5.sqlite`) |
 | **Scan Pattern** | jsonlCache + fileSize change detection → fullScan |
 | **Token Fields** | `last_token_usage.total_tokens`, `reasoning_output_tokens`, `cached_input_tokens` |
-| **Token Formula** | `total_tokens + reasoning_output_tokens` per event |
+| **Token Formula** | `total_tokens - cached_input_tokens` per event (`reasoning_output_tokens` is already inside total) |
 | **Date Attribution** | Per-event via timestamp (sessions can span multiple days) |
 | **Cache Semantics** | `input_tokens` INCLUDES `cached_input_tokens` |
 | **Session Source** | SQLite `threads` table + JSONL token data |
@@ -94,7 +100,7 @@ Each tool analysis follows this structure:
 | **Format** | SQLite |
 | **Scan Pattern** | modTime-based full rescan (WAL-aware) |
 | **Token Fields** | `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_write_tokens` |
-| **Token Formula** | `inputTokens + outputTokens + cacheRead` |
+| **Token Formula** | `inputTokens + cacheWrite + outputTokens` |
 | **Date Attribution** | Per-session via `started_at` |
 | **Cache Semantics** | `input_tokens` EXCLUDES cached (mutually exclusive) |
 | **Session Source** | SQLite `sessions` table |
@@ -113,7 +119,7 @@ Each tool analysis follows this structure:
 | **Format** | SQLite |
 | **Scan Pattern** | TBD (likely modTime rescan like Hermes) |
 | **Token Fields** | `tokens_input`, `tokens_output`, `tokens_reasoning`, `tokens_cache_read`, `tokens_cache_write`, `cost` |
-| **Token Formula** | `tokens_input + tokens_output + tokens_cache_read` |
+| **Token Formula** | `tokens_input + tokens_cache_write + tokens_output + tokens_reasoning` |
 | **Date Attribution** | Per-session via `time_created` / `time_updated` (epoch ms) |
 | **Cache Semantics** | TBD (fields named identically to Hermes) |
 | **Session Source** | SQLite `session` table |
@@ -143,9 +149,9 @@ model             TEXT     -- JSON: {"id":"big-pickle","providerID":"opencode"}
 | **Format** | HTTPS POST to `https://cursor.com/api/dashboard/get-filtered-usage-events` |
 | **Scan Pattern** | Poll every 60s+ (throttled), full rescan on `fullScan`, partial on `incrementalScan` |
 | **Token Fields** | Per-event `tokenUsage`: `inputTokens`, `outputTokens`, `cacheReadTokens`, `cacheWriteTokens`, `totalCents` |
-| **Token Formula** | `input + output + cache_read + cache_write` (per-event; cost tracked separately in cents) |
+| **Token Formula** | `input + cache_write + output` (per-event; cache_read is diagnostic only) |
 | **Date Attribution** | Per-event via `timestamp` (Unix ms, from API response) |
-| **Cache Semantics** | All four fields distinct, all added (cache_write is billable on Cursor) |
+| **Cache Semantics** | All four fields distinct; cache_write is fresh work, cache_read is diagnostic only |
 | **Session Source** | API doesn't expose sessions; events grouped by model |
 | **Feasibility** | ✅ **Fully supported** (zero user configuration) |
 
@@ -249,7 +255,7 @@ Antigravity IDE is a closed commercial product. Encrypting sessions prevents:
 | **Format** | SQLite + nested protobuf blobs in two columns |
 | **Scan Pattern** | per-DB modTime, dedup by telemetry `field 11` (tracking_id) |
 | **Token Fields** | Telemetry protobuf: `field 1`=input, `field 2`=output, `field 3`=cache_read, `field 9`=thoughts, `field 10`=tool, `field 11`=tracking_id |
-| **Token Formula** | `field 1 + field 2 + field 3 + field 9 + field 10` (do NOT include `field 5` — it's cumulative total_prompt that double-counts input) |
+| **Token Formula** | `field 1 + field 2 + field 9 + field 10` (exclude cache-read field 3 and cumulative field 5) |
 | **Date Attribution** | Per-row, from `metadata` protobuf column: `outer.field 1 → inner.field 1` (Unix seconds) |
 | **Cache Semantics** | `field 3` is cache_read (discounted); no separate cache_write field observed |
 | **Session Source** | One SQLite DB per session, filename is session UUID |

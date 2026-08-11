@@ -16,12 +16,31 @@ enum TokenFormat {
     }
 }
 
+/// Unit published by the upstream provider contract. TokenClock keeps this attached to every
+/// value so credits/requests can never leak into token totals or cross-unit percentages.
+enum UsageMeasurementUnit: String, Codable, CaseIterable {
+    case tokens
+    case credits
+    case requests
+}
+
+enum UsageMeasurementScope: String, Codable, CaseIterable {
+    case today
+    case currentSession
+    case lifetime
+    case contractOnly
+}
+
 /// 单个工具的 token 使用数据
 struct ToolUsage: Identifiable, Hashable {
     var id: String { name }
     let name: String
     let abbreviation: String
     let emoji: String
+    var measurementUnit: UsageMeasurementUnit = .tokens
+    var measurementScope: UsageMeasurementScope = .today
+    /// Non-today providers keep their honest value here while legacy `todayTokens` stays zero.
+    var measurementValue: Int? = nil
     var todayTokens: Int
     var todayMessages: Int
     var isActive: Bool
@@ -38,6 +57,11 @@ struct ToolUsage: Identifiable, Hashable {
 
     /// 格式化的 token 数（如 "847.2K" / "1.23B"）
     var formattedTokens: String { TokenFormat.compact(todayTokens) }
+
+    /// Unit-neutral aliases used by the API. Legacy token-named fields remain for compatibility.
+    var value: Int { measurementValue ?? todayTokens }
+    var recentValue: Int { measurementScope == .today ? recentTokens : 0 }
+    var hourlyValue: Int { measurementScope == .today ? hourlyTokens : 0 }
 
     /// 格式化的消息数
     var formattedMessages: String {

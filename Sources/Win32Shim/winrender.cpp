@@ -9,9 +9,13 @@
 #include <objidl.h>      // must precede gdiplus.h (IStream / PROPID)
 #include <gdiplus.h>
 #include <string.h>
+#include <algorithm>
 #include <cmath>
 #include <utility>   // std::make_pair
 #include "winshim.h"
+
+using std::max;
+using std::min;
 
 extern "C" HWND g_hwnd;   // defined in winshim.c (C linkage)
 
@@ -19,9 +23,15 @@ static ULONG_PTR  g_gdip_token = 0;
 static HDC        g_mem_dc = NULL;
 static HBITMAP    g_mem_bm = NULL;
 static int        g_mem_w = 0, g_mem_h = 0;
+static HDC        g_detail_mem_dc = NULL;
+static HBITMAP    g_detail_mem_bm = NULL;
+static int        g_detail_mem_w = 0, g_detail_mem_h = 0;
 static BYTE       g_window_alpha = 255;
 static Gdiplus::Image *g_dial_image = NULL;
 static wchar_t    g_dial_image_path[MAX_PATH] = {0};
+static Gdiplus::Bitmap *g_material_face_cache = NULL;
+static int        g_material_face_cache_style = 0;
+static int        g_material_face_cache_size = 0;
 
 struct theme_picker_state {
     win_theme themes[9];
@@ -40,8 +50,15 @@ static Gdiplus::Color cr(unsigned int argb) {
     return Gdiplus::Color((BYTE)((argb >> 24) & 0xff), (BYTE)((argb >> 16) & 0xff),
                           (BYTE)((argb >> 8) & 0xff), (BYTE)(argb & 0xff));
 }
+static Gdiplus::Color fluent_cr(HWND hwnd, int role, BYTE alpha = 255) {
+    unsigned int rgb = win_fluent_color(hwnd, role);
+    return Gdiplus::Color(alpha, (BYTE)((rgb >> 16) & 0xff),
+                         (BYTE)((rgb >> 8) & 0xff), (BYTE)(rgb & 0xff));
+}
 static double deg2rad(double d) { return d * 3.14159265358979 / 180.0; }
+extern "C" {
 static int to_wide(const char *u8, wchar_t *buf, int n);
+}
 
 // GDI+ renders Segoe UI Emoji through its monochrome outline fallback.  That made the
 // Windows widget look markedly flatter than the macOS normal build, even on systems that
@@ -202,41 +219,203 @@ static void picker_rounded_path(Gdiplus::GraphicsPath &path, float x, float y, f
     path.CloseFigure();
 }
 
+/* The layered dial cannot receive DWM Acrylic directly, so its material is drawn as a
+ * compact vector surface.  The full-size result is cached below: these gradients, grain
+ * and highlights are rebuilt only when the face or size changes, never on the one-second
+ * hand refresh.  Picker previews use the same renderer at thumbnail scale. */
+static void material_grain(Gdiplus::Graphics &gfx, Gdiplus::GraphicsPath &clip,
+                           float cx, float cy, float radius, int style, bool preview) {
+    Gdiplus::GraphicsState state = gfx.Save();
+    gfx.SetClip(&clip);
+    unsigned int seed = 0x9e3779b9u ^ (unsigned int)(style * 0x45d9f3bu);
+    const int count = preview ? 36 : 180;
+    const float diameter = radius * 1.76f;
+    const float dot = preview ? 0.42f : max(0.55f, radius / 230.0f);
+    for (int i = 0; i < count; i++) {
+        seed = seed * 1664525u + 1013904223u;
+        float x = cx - diameter * 0.5f + diameter * (float)(seed & 0xffffu) / 65535.0f;
+        seed = seed * 1664525u + 1013904223u;
+        float y = cy - diameter * 0.5f + diameter * (float)(seed & 0xffffu) / 65535.0f;
+        float dx = x - cx, dy = y - cy;
+        if (dx * dx + dy * dy > radius * radius * 0.80f) continue;
+        seed = seed * 1664525u + 1013904223u;
+        bool light = (seed & 1u) != 0;
+        BYTE alpha = (BYTE)(style == 2 ? (light ? 17 : 10) : (light ? 15 : 12));
+        BYTE tone = style == 3 ? (light ? 222 : 8) : (light ? 255 : 73);
+        Gdiplus::SolidBrush grain(Gdiplus::Color(alpha, tone, tone, tone));
+        gfx.FillEllipse(&grain, x, y, dot, dot);
+    }
+    gfx.Restore(state);
+}
+
+static void draw_material_face(Gdiplus::Graphics &gfx, const win_theme &theme,
+                               float cx, float cy, float radius, bool preview) {
+    using namespace Gdiplus;
+    const float faceR = radius - (preview ? 0.45f : 1.25f);
+
+    SolidBrush shadow(theme.material_style == 3
+                          ? Color(90, 0, 0, 0)
+                          : Color(48, 30, 43, 55));
+    gfx.FillEllipse(&shadow, cx - faceR - 0.8f, cy - faceR + (preview ? 0.9f : 2.0f),
+                    faceR * 2.0f + 1.6f, faceR * 2.0f + 1.2f);
+
+    GraphicsPath face;
+    face.AddEllipse(cx - faceR, cy - faceR, faceR * 2.0f, faceR * 2.0f);
+
+    if (theme.material_style == 1) {
+        // Frost: a cool translucent crystal, brighter at the upper-left and denser below.
+        LinearGradientBrush base(PointF(cx - faceR, cy - faceR), PointF(cx + faceR, cy + faceR),
+                                 Color(252, 250, 253, 255), Color(247, 204, 220, 235));
+        base.SetGammaCorrection(TRUE);
+        gfx.FillPath(&base, &face);
+
+        PathGradientBrush edge(&face);
+        edge.SetCenterPoint(PointF(cx - faceR * 0.24f, cy - faceR * 0.30f));
+        edge.SetCenterColor(Color(16, 255, 255, 255));
+        Color surround[1] = { Color(78, 73, 111, 140) }; INT surroundCount = 1;
+        edge.SetSurroundColors(surround, &surroundCount);
+        gfx.FillPath(&edge, &face);
+
+        Pen innerLight(Color(170, 255, 255, 255), preview ? 0.8f : 1.25f);
+        gfx.DrawArc(&innerLight, cx - faceR + 2.0f, cy - faceR + 2.0f,
+                    (faceR - 2.0f) * 2.0f, (faceR - 2.0f) * 2.0f, 203.0f, 150.0f);
+        Pen reflection(Color(102, 255, 255, 255), preview ? 1.0f : 2.0f);
+        reflection.SetLineCap(LineCapRound, LineCapRound, DashCapRound);
+        gfx.DrawArc(&reflection, cx - faceR * 0.73f, cy - faceR * 0.76f,
+                    faceR * 1.46f, faceR * 1.30f, 207.0f, 102.0f);
+        material_grain(gfx, face, cx, cy, faceR, theme.material_style, preview);
+
+        Pen outer(Color(190, 238, 248, 255), preview ? 0.9f : 1.5f);
+        Pen inner(Color(92, 70, 105, 132), preview ? 0.7f : 1.0f);
+        gfx.DrawEllipse(&outer, cx - faceR, cy - faceR, faceR * 2.0f, faceR * 2.0f);
+        gfx.DrawEllipse(&inner, cx - faceR + 2.2f, cy - faceR + 2.2f,
+                        (faceR - 2.2f) * 2.0f, (faceR - 2.2f) * 2.0f);
+    } else if (theme.material_style == 2) {
+        // Porcelain: warm glaze with a soft centre bloom and a pressed ceramic rim.
+        LinearGradientBrush base(PointF(cx - faceR, cy - faceR), PointF(cx + faceR, cy + faceR),
+                                 Color(255, 255, 253, 245), Color(255, 229, 221, 207));
+        base.SetGammaCorrection(TRUE);
+        gfx.FillPath(&base, &face);
+
+        PathGradientBrush glaze(&face);
+        glaze.SetCenterPoint(PointF(cx - faceR * 0.18f, cy - faceR * 0.22f));
+        glaze.SetCenterColor(Color(92, 255, 255, 250));
+        Color surround[1] = { Color(72, 165, 148, 126) }; INT surroundCount = 1;
+        glaze.SetSurroundColors(surround, &surroundCount);
+        gfx.FillPath(&glaze, &face);
+        material_grain(gfx, face, cx, cy, faceR, theme.material_style, preview);
+
+        Pen glazeLine(Color(190, 255, 255, 251), preview ? 0.9f : 1.6f);
+        gfx.DrawArc(&glazeLine, cx - faceR + 1.5f, cy - faceR + 1.5f,
+                    (faceR - 1.5f) * 2.0f, (faceR - 1.5f) * 2.0f, 198.0f, 150.0f);
+        Pen warmRim(Color(185, 151, 137, 112), preview ? 1.0f : 1.7f);
+        Pen pressed(Color(105, 104, 89, 72), preview ? 0.7f : 0.95f);
+        gfx.DrawEllipse(&warmRim, cx - faceR, cy - faceR, faceR * 2.0f, faceR * 2.0f);
+        gfx.DrawEllipse(&pressed, cx - faceR + 2.4f, cy - faceR + 2.4f,
+                        (faceR - 2.4f) * 2.0f, (faceR - 2.4f) * 2.0f);
+    } else {
+        // Smoked Glass: blue-black glass with restrained edge light and a diagonal sheen.
+        LinearGradientBrush base(PointF(cx - faceR, cy - faceR), PointF(cx + faceR, cy + faceR),
+                                 Color(248, 40, 54, 67), Color(248, 7, 12, 18));
+        base.SetGammaCorrection(TRUE);
+        gfx.FillPath(&base, &face);
+
+        PathGradientBrush depth(&face);
+        depth.SetCenterPoint(PointF(cx - faceR * 0.20f, cy - faceR * 0.28f));
+        depth.SetCenterColor(Color(42, 79, 112, 134));
+        Color surround[1] = { Color(132, 0, 4, 9) }; INT surroundCount = 1;
+        depth.SetSurroundColors(surround, &surroundCount);
+        gfx.FillPath(&depth, &face);
+        material_grain(gfx, face, cx, cy, faceR, theme.material_style, preview);
+
+        GraphicsState state = gfx.Save();
+        gfx.SetClip(&face);
+        LinearGradientBrush sheen(PointF(cx - faceR, cy - faceR * 0.85f),
+                                  PointF(cx + faceR * 0.35f, cy + faceR * 0.45f),
+                                  Color(22, 184, 224, 245), Color(0, 184, 224, 245));
+        gfx.FillEllipse(&sheen, cx - faceR * 1.08f, cy - faceR * 1.02f,
+                        faceR * 1.62f, faceR * 0.78f);
+        gfx.Restore(state);
+
+        Pen outer(Color(195, 131, 160, 181), preview ? 0.9f : 1.45f);
+        Pen inner(Color(130, 22, 42, 56), preview ? 0.7f : 1.1f);
+        gfx.DrawEllipse(&outer, cx - faceR, cy - faceR, faceR * 2.0f, faceR * 2.0f);
+        gfx.DrawEllipse(&inner, cx - faceR + 2.4f, cy - faceR + 2.4f,
+                        (faceR - 2.4f) * 2.0f, (faceR - 2.4f) * 2.0f);
+        Pen reflection(Color(88, 225, 244, 255), preview ? 1.0f : 1.8f);
+        reflection.SetLineCap(LineCapRound, LineCapRound, DashCapRound);
+        gfx.DrawArc(&reflection, cx - faceR * 0.76f, cy - faceR * 0.78f,
+                    faceR * 1.52f, faceR * 1.35f, 207.0f, 86.0f);
+    }
+}
+
+static bool draw_cached_material_face(Gdiplus::Graphics &gfx, const win_theme &theme,
+                                      float cx, float cy, int faceSize) {
+    if (theme.material_style <= 0 || faceSize <= 8) return false;
+    if (!g_material_face_cache || g_material_face_cache_style != theme.material_style ||
+        g_material_face_cache_size != faceSize) {
+        delete g_material_face_cache;
+        g_material_face_cache = new Gdiplus::Bitmap(faceSize, faceSize, PixelFormat32bppPARGB);
+        g_material_face_cache_style = theme.material_style;
+        g_material_face_cache_size = faceSize;
+        if (!g_material_face_cache || g_material_face_cache->GetLastStatus() != Gdiplus::Ok) return false;
+        Gdiplus::Graphics cached(g_material_face_cache);
+        cached.Clear(Gdiplus::Color(0, 0, 0, 0));
+        cached.SetSmoothingMode(Gdiplus::SmoothingModeAntiAlias);
+        cached.SetPixelOffsetMode(Gdiplus::PixelOffsetModeHighQuality);
+        draw_material_face(cached, theme, faceSize * 0.5f, faceSize * 0.5f,
+                           faceSize * 0.5f - 4.0f, false);
+    }
+    gfx.DrawImage(g_material_face_cache,
+                  Gdiplus::RectF(cx - faceSize * 0.5f, cy - faceSize * 0.5f,
+                                 (Gdiplus::REAL)faceSize, (Gdiplus::REAL)faceSize));
+    return true;
+}
+
 static void draw_picker_cell(DRAWITEMSTRUCT *item) {
     int index = (int)item->CtlID - 5000;
     if (index < 0 || index >= g_picker.count) return;
     const win_theme &theme = g_picker.themes[index];
     const RECT &rcItem = item->rcItem;
     const float w = (float)(rcItem.right - rcItem.left), h = (float)(rcItem.bottom - rcItem.top);
+    win_fluent_paint_parent(item->hwndItem, item->hDC, &rcItem);
     Gdiplus::Graphics gfx(item->hDC);
     gfx.SetSmoothingMode(Gdiplus::SmoothingModeAntiAlias);
     gfx.SetTextRenderingHint(Gdiplus::TextRenderingHintClearTypeGridFit);
-    gfx.Clear(Gdiplus::Color(255, 246, 246, 248));
 
     Gdiplus::GraphicsPath card;
     picker_rounded_path(card, 3, 3, w - 6, h - 6, 12);
-    BYTE bg = (item->itemState & ODS_SELECTED) ? 236 : 252;
-    Gdiplus::SolidBrush cardBrush(Gdiplus::Color(255, bg, bg, (BYTE)min(255, bg + 2)));
+    Gdiplus::SolidBrush cardBrush(item->itemState & ODS_SELECTED
+                                     ? fluent_cr(g_picker.hwnd, WIN_FLUENT_COLOR_SURFACE)
+                                     : fluent_cr(g_picker.hwnd, WIN_FLUENT_COLOR_SURFACE, 245));
     gfx.FillPath(&cardBrush, &card);
     Gdiplus::Pen border(index == g_picker.selected
-                            ? Gdiplus::Color(255, 36, 126, 235)
-                            : Gdiplus::Color(80, 70, 70, 78),
+                            ? fluent_cr(g_picker.hwnd, WIN_FLUENT_COLOR_ACCENT)
+                            : fluent_cr(g_picker.hwnd, WIN_FLUENT_COLOR_BORDER, 150),
                         index == g_picker.selected ? 2.6f : 1.0f);
     gfx.DrawPath(&border, &card);
 
     const float cx = w / 2.0f, cy = 48.0f, radius = 34.0f;
-    Gdiplus::SolidBrush dial(cr(theme.dial_fill));
-    gfx.FillEllipse(&dial, cx - radius, cy - radius, radius * 2, radius * 2);
-    if ((theme.dial_rim >> 24) && theme.rim_width > 0) {
-        Gdiplus::Pen rim(cr(theme.dial_rim), (float)max(1.0, theme.rim_width * 0.42));
-        gfx.DrawEllipse(&rim, cx - radius, cy - radius, radius * 2, radius * 2);
+    if (theme.material_style > 0) {
+        draw_material_face(gfx, theme, cx, cy, radius, true);
+    } else {
+        Gdiplus::SolidBrush dial(cr(theme.dial_fill));
+        gfx.FillEllipse(&dial, cx - radius, cy - radius, radius * 2, radius * 2);
+        if ((theme.dial_rim >> 24) && theme.rim_width > 0) {
+            Gdiplus::Pen rim(cr(theme.dial_rim), (float)max(1.0, theme.rim_width * 0.42));
+            gfx.DrawEllipse(&rim, cx - radius, cy - radius, radius * 2, radius * 2);
+        }
     }
     if (theme.show_ticks) {
-        for (int tick = 0; tick < 12; tick++) {
-            double angle = deg2rad(tick * 30.0 - 90.0);
-            bool major = tick % 3 == 0;
-            float inner = radius * (major ? 0.79f : 0.86f), outer = radius * 0.94f;
-            Gdiplus::Pen pen(cr(major ? theme.major_tick_color : theme.tick_color), major ? 1.4f : 0.8f);
+        const int tickCount = theme.material_style > 0 ? 60 : 12;
+        for (int tick = 0; tick < tickCount; tick++) {
+            double angle = deg2rad(tick * (360.0 / tickCount) - 90.0);
+            int minute = theme.material_style > 0 ? tick : tick * 5;
+            bool major = minute % 15 == 0, hour = minute % 5 == 0;
+            float inner = radius * (major ? 0.78f : (hour ? 0.84f : 0.89f));
+            float outer = radius * 0.94f;
+            Gdiplus::Pen pen(cr(major || hour ? theme.major_tick_color : theme.tick_color),
+                             major ? 1.45f : (hour ? 1.0f : 0.55f));
             gfx.DrawLine(&pen,
                          Gdiplus::PointF(cx + (float)cos(angle) * inner, cy + (float)sin(angle) * inner),
                          Gdiplus::PointF(cx + (float)cos(angle) * outer, cy + (float)sin(angle) * outer));
@@ -257,14 +436,33 @@ static void draw_picker_cell(DRAWITEMSTRUCT *item) {
 
     Gdiplus::FontFamily family(L"Segoe UI");
     Gdiplus::Font font(&family, 12.0f, index == g_picker.selected ? Gdiplus::FontStyleBold : Gdiplus::FontStyleRegular, Gdiplus::UnitPixel);
-    Gdiplus::SolidBrush text(Gdiplus::Color(255, 42, 42, 48));
+    Gdiplus::SolidBrush text(fluent_cr(g_picker.hwnd, WIN_FLUENT_COLOR_TEXT));
     Gdiplus::StringFormat format; format.SetAlignment(Gdiplus::StringAlignmentCenter); format.SetLineAlignment(Gdiplus::StringAlignmentCenter);
     Gdiplus::RectF label(5, h - 35, w - 10, 27);
     gfx.DrawString(g_picker.names[index], -1, &font, label, &format, &text);
 }
 
+static BOOL CALLBACK invalidate_picker_child(HWND child, LPARAM) {
+    InvalidateRect(child, NULL, TRUE);
+    return TRUE;
+}
+
 static LRESULT CALLBACK theme_picker_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     switch (msg) {
+    case WM_CREATE:
+        win_fluent_apply(hwnd, WIN_FLUENT_ACRYLIC);
+        return 0;
+    case WM_ERASEBKGND: {
+        RECT rect; GetClientRect(hwnd, &rect);
+        win_fluent_paint_fallback(hwnd, (void *)wp, &rect);
+        return 1;
+    }
+    case WM_SETTINGCHANGE:
+    case WM_THEMECHANGED:
+        win_fluent_apply(hwnd, WIN_FLUENT_ACRYLIC);
+        InvalidateRect(hwnd, NULL, TRUE);
+        EnumChildWindows(hwnd, invalidate_picker_child, 0);
+        return 0;
     case WM_DRAWITEM:
         draw_picker_cell((DRAWITEMSTRUCT *)lp);
         return TRUE;
@@ -283,6 +481,9 @@ static LRESULT CALLBACK theme_picker_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM
         break;
     case WM_CLOSE:
         g_picker.result = -1; g_picker.done = true; ShowWindow(hwnd, SW_HIDE); return 0;
+    case WM_NCDESTROY:
+        win_fluent_forget(hwnd);
+        break;
     }
     return DefWindowProcW(hwnd, msg, wp, lp);
 }
@@ -295,8 +496,14 @@ void gdip_init(void) {
 }
 void gdip_shutdown(void) {
     if (g_dial_image) { delete g_dial_image; g_dial_image = NULL; g_dial_image_path[0] = 0; }
-    if (g_mem_bm) { DeleteObject(g_mem_bm); g_mem_bm = NULL; }
+    if (g_material_face_cache) { delete g_material_face_cache; g_material_face_cache = NULL; }
+    g_material_face_cache_style = 0; g_material_face_cache_size = 0;
+    /* A bitmap cannot be deleted while selected into a memory DC. Destroying the DC first
+     * releases the selection; reversing this order leaks one GDI bitmap per cache resize. */
     if (g_mem_dc) { DeleteDC(g_mem_dc); g_mem_dc = NULL; }
+    if (g_mem_bm) { DeleteObject(g_mem_bm); g_mem_bm = NULL; }
+    if (g_detail_mem_dc) { DeleteDC(g_detail_mem_dc); g_detail_mem_dc = NULL; }
+    if (g_detail_mem_bm) { DeleteObject(g_detail_mem_bm); g_detail_mem_bm = NULL; }
     if (g_gdip_token) { Gdiplus::GdiplusShutdown(g_gdip_token); g_gdip_token = 0; }
 }
 
@@ -322,7 +529,7 @@ int win_theme_picker(const win_theme *themes, const char **names_utf8, int count
     if (!registered) {
         WNDCLASSEXW wc = {0}; wc.cbSize = sizeof(wc); wc.lpfnWndProc = theme_picker_proc;
         wc.hInstance = GetModuleHandleW(NULL); wc.hCursor = LoadCursorW(NULL, IDC_ARROW);
-        wc.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1); wc.lpszClassName = L"TCThemePicker";
+        wc.hbrBackground = NULL; wc.lpszClassName = L"TCThemePicker";
         RegisterClassExW(&wc); registered = true;
     }
     wchar_t title[256]; if (to_wide(title_utf8, title, 256) == 0) wcscpy_s(title, L"Select Clock Face");
@@ -337,9 +544,10 @@ int win_theme_picker(const win_theme *themes, const char **names_utf8, int count
     if (!g_picker.hwnd) return -1;
     for (int i = 0; i < count; i++) {
         int col = i % 3, row = i / 3;
-        CreateWindowExW(0, L"BUTTON", L"", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_OWNERDRAW,
-                        18 + col * 164, 14 + row * 136, 154, 126,
-                        g_picker.hwnd, (HMENU)(LONG_PTR)(5000 + i), GetModuleHandleW(NULL), NULL);
+        HWND cell = CreateWindowExW(0, L"BUTTON", L"", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_OWNERDRAW,
+                                    18 + col * 164, 14 + row * 136, 154, 126,
+                                    g_picker.hwnd, (HMENU)(LONG_PTR)(5000 + i), GetModuleHandleW(NULL), NULL);
+        win_fluent_theme_child(cell);
     }
     if (g_picker.owner) EnableWindow(g_picker.owner, FALSE);
     ShowWindow(g_picker.hwnd, SW_SHOWNORMAL); UpdateWindow(g_picker.hwnd); SetForegroundWindow(g_picker.hwnd);
@@ -355,8 +563,8 @@ int win_theme_picker(const win_theme *themes, const char **names_utf8, int count
 
 static void ensure_mem(int w, int h) {
     if (g_mem_dc && g_mem_w == w && g_mem_h == h) return;
-    if (g_mem_bm) DeleteObject(g_mem_bm);
     if (g_mem_dc) DeleteDC(g_mem_dc);
+    if (g_mem_bm) DeleteObject(g_mem_bm);
     HDC screen = GetDC(NULL);
     g_mem_dc = CreateCompatibleDC(screen);
     BITMAPINFO bi; memset(&bi, 0, sizeof(bi));
@@ -369,6 +577,48 @@ static void ensure_mem(int w, int h) {
     g_mem_w = w; g_mem_h = h;
 }
 
+static void ensure_detail_mem(int w, int h) {
+    if (g_detail_mem_dc && g_detail_mem_w == w && g_detail_mem_h == h) return;
+    if (g_detail_mem_dc) DeleteDC(g_detail_mem_dc);
+    if (g_detail_mem_bm) DeleteObject(g_detail_mem_bm);
+    HDC screen = GetDC(NULL);
+    g_detail_mem_dc = CreateCompatibleDC(screen);
+    BITMAPINFO bi; memset(&bi, 0, sizeof(bi));
+    bi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+    bi.bmiHeader.biWidth = w; bi.bmiHeader.biHeight = -h;
+    bi.bmiHeader.biPlanes = 1; bi.bmiHeader.biBitCount = 32; bi.bmiHeader.biCompression = BI_RGB;
+    g_detail_mem_bm = CreateDIBSection(screen, &bi, DIB_RGB_COLORS, NULL, NULL, 0);
+    ReleaseDC(NULL, screen);
+    SelectObject(g_detail_mem_dc, g_detail_mem_bm);
+    g_detail_mem_w = w; g_detail_mem_h = h;
+}
+
+typedef BOOL (WINAPI *tc_alpha_blend_t)(HDC, int, int, int, int, HDC, int, int, int, int, BLENDFUNCTION);
+
+void win_render_detail_paint(void *device_context, int w, int h) {
+    HDC dc = (HDC)device_context;
+    if (!dc || !g_detail_mem_dc || !g_detail_mem_bm || w <= 0 || h <= 0) return;
+    static tc_alpha_blend_t alpha_blend = NULL;
+    static int attempted = 0;
+    if (!attempted) {
+        attempted = 1;
+        HMODULE msimg32 = LoadLibraryW(L"msimg32.dll");
+        if (msimg32) alpha_blend = (tc_alpha_blend_t)(void *)GetProcAddress(msimg32, "AlphaBlend");
+    }
+    int draw_w = min(w, g_detail_mem_w), draw_h = min(h, g_detail_mem_h);
+    if (alpha_blend) {
+        /* The detail HWND owns uniform opacity.  At 100% it is native Acrylic; below 100%
+         * Win32Shim switches it to a uniformly faded layered fallback.  Applying the main
+         * dial alpha again here would square the selected opacity. */
+        BLENDFUNCTION blend = {AC_SRC_OVER, 0, 255, AC_SRC_ALPHA};
+        alpha_blend(dc, 0, 0, draw_w, draw_h, g_detail_mem_dc, 0, 0, draw_w, draw_h, blend);
+    } else {
+        /* AlphaBlend exists on every supported Windows release.  Keep a readable
+         * last-resort path for stripped compatibility environments. */
+        BitBlt(dc, 0, 0, draw_w, draw_h, g_detail_mem_dc, 0, 0, SRCCOPY);
+    }
+}
+
 // UTF-8 → UTF-16。返回写入 wchar 数（含 NUL）；空串/溢出返回 0。
 static int to_wide(const char *u8, wchar_t *buf, int n) {
     if (!u8 || !u8[0]) { if (n > 0) buf[0] = 0; return 0; }
@@ -378,7 +628,15 @@ static int to_wide(const char *u8, wchar_t *buf, int n) {
 // Draw one clock frame into the memory ARGB bitmap and present it via UpdateLayeredWindow.
 void win_render_clock(int w, int h, int hh, int mm, int ss, const win_theme *t, const win_overlay *ov) {
     if (!g_hwnd || !t) return;
-    ensure_mem(w, h);
+    const int mainW = w, mainH = h;
+    const bool expanded = ov && ov->detail_visible;
+    const int dialHeight = (ov && ov->clock_diameter > 0) ? ov->clock_diameter : h;
+    const int detailWidth = (ov && ov->detail_card_width > 0) ? ov->detail_card_width : 320;
+    const int detailHeight = 547;
+    const int renderW = expanded ? max(mainW, detailWidth) : mainW;
+    const int renderH = expanded ? dialHeight + 14 + detailHeight : mainH;
+    w = renderW; h = renderH;
+    ensure_mem(renderW, renderH);
     DIBSECTION ds; GetObject(g_mem_bm, sizeof(ds), &ds);
     if (ds.dsBm.bmBits) memset(ds.dsBm.bmBits, 0, (size_t)w * h * 4);
 
@@ -387,17 +645,18 @@ void win_render_clock(int w, int h, int hh, int mm, int ss, const win_theme *t, 
     gfx.SetTextRenderingHint(Gdiplus::TextRenderingHintAntiAliasGridFit);
     gfx.SetPixelOffsetMode(Gdiplus::PixelOffsetModeHighQuality);
 
-    const bool expanded = ov && ov->detail_visible;
     const double clockH = (ov && ov->clock_diameter > 0) ? ov->clock_diameter : (w - 80.0);
     const double cxd = w / 2.0, cyd = clockH / 2.0;
     const double r = clockH / 2.0 - 4.0;        // exact ClockFaceView radius
     const double S = r / 116.0;                 // medium macOS radius = 120 - 4
 
-    // 盘体 + 外环。glass 使用与 macOS normal 相同的预捕获 Liquid Glass PNG。
+    // 盘体 + 外环。Windows material faces are cached vector surfaces; legacy glass_disc
+    // remains available to flat themes/custom payloads for backwards compatibility.
     {
-        bool drewImage = false;
+        bool drewImage = draw_cached_material_face(gfx, *t, (float)cxd, (float)cyd,
+                                                    (int)std::lround(clockH));
         wchar_t imagePath[MAX_PATH];
-        if (ov && to_wide(ov->dial_image_path, imagePath, MAX_PATH) > 0) {
+        if (!drewImage && ov && to_wide(ov->dial_image_path, imagePath, MAX_PATH) > 0) {
             if (!g_dial_image || wcscmp(imagePath, g_dial_image_path) != 0) {
                 if (g_dial_image) delete g_dial_image;
                 g_dial_image = new Gdiplus::Image(imagePath);
@@ -421,16 +680,24 @@ void win_render_clock(int w, int h, int hh, int mm, int ss, const win_theme *t, 
         }
     }
 
-    // 刻度（移植自 ClockFaceView.drawTickMarks：12 根，i%3==0 为主）
+    // Material faces use a watch-like 60-minute track; legacy faces retain the exact
+    // 12-tick macOS-normal geometry.
     if (t->show_ticks) {
-        for (int i = 1; i <= 12; i++) {
-            double a = deg2rad(i * 30.0 - 90.0);
-            bool major = (i % 3 == 0);
-            double innerR = r * (major ? 0.91 : 0.935);
+        const int tickCount = t->material_style > 0 ? 60 : 12;
+        for (int i = 0; i < tickCount; i++) {
+            double a = deg2rad(i * (360.0 / tickCount) - 90.0);
+            int minute = t->material_style > 0 ? i : i * 5;
+            bool major = (minute % 15 == 0), hour = (minute % 5 == 0);
+            double innerR = t->material_style > 0
+                ? r * (major ? 0.885 : (hour ? 0.915 : 0.943))
+                : r * (major ? 0.91 : 0.935);
             double outerR = r * 0.97;
-            unsigned int col = major ? t->major_tick_color : t->tick_color;
+            unsigned int col = (major || hour) ? t->major_tick_color : t->tick_color;
             if ((col >> 24) == 0) continue;
-            Gdiplus::Pen tp(cr(col), (Gdiplus::REAL)((major ? 2.0 : 1.2) * S));
+            double width = t->material_style > 0
+                ? (major ? 2.15 : (hour ? 1.35 : 0.72))
+                : (major ? 2.0 : 1.2);
+            Gdiplus::Pen tp(cr(col), (Gdiplus::REAL)(width * S));
             tp.SetLineCap(Gdiplus::LineCapRound, Gdiplus::LineCapRound, Gdiplus::DashCapRound);
             gfx.DrawLine(&tp,
                          Gdiplus::PointF(Gdiplus::REAL(cxd + cos(a) * innerR), Gdiplus::REAL(cyd + sin(a) * innerR)),
@@ -569,6 +836,14 @@ void win_render_clock(int w, int h, int hh, int mm, int ss, const win_theme *t, 
         default: roundHand(deg, lenRatio, width, argb); break;
         }
     };
+    if (t->material_style > 0) {
+        // One soft physical shadow is enough to separate the hands from every material.
+        gfx.TranslateTransform((Gdiplus::REAL)(0.9 * S), (Gdiplus::REAL)(1.25 * S));
+        drawHand(hourDeg,   t->hour_len,   t->hour_w   * S, 0x52000000u, t->hand_style);
+        drawHand(minuteDeg, t->minute_len, t->minute_w * S, 0x46000000u, t->hand_style);
+        drawHand(secondDeg, t->second_len, t->second_w * S, 0x30000000u, secStyle);
+        gfx.ResetTransform();
+    }
     drawHand(hourDeg,   t->hour_len,   t->hour_w   * S, t->hour_color,   t->hand_style);
     drawHand(minuteDeg, t->minute_len, t->minute_w * S, t->minute_color, t->hand_style);
     drawHand(secondDeg, t->second_len, t->second_w * S, t->second_color, secStyle);
@@ -576,6 +851,11 @@ void win_render_clock(int w, int h, int hh, int mm, int ss, const win_theme *t, 
     // 中心帽：外盘 r4 + 内盘 r2（缩放）
     {
         double co = 4.0 * S, ci = 2.0 * S;
+        if (t->material_style > 0) {
+            Gdiplus::SolidBrush shadow(Gdiplus::Color(82, 0, 0, 0));
+            gfx.FillEllipse(&shadow, Gdiplus::REAL(cxd - co + 0.9 * S), Gdiplus::REAL(cyd - co + 1.25 * S),
+                            Gdiplus::REAL(co * 2.2), Gdiplus::REAL(co * 2.2));
+        }
         if ((t->cap_outer >> 24) > 0) {
             Gdiplus::SolidBrush o(cr(t->cap_outer));
             gfx.FillEllipse(&o, Gdiplus::REAL(cxd - co), Gdiplus::REAL(cyd - co), Gdiplus::REAL(co * 2), Gdiplus::REAL(co * 2));
@@ -583,6 +863,14 @@ void win_render_clock(int w, int h, int hh, int mm, int ss, const win_theme *t, 
         if ((t->cap_inner >> 24) > 0) {
             Gdiplus::SolidBrush in(cr(t->cap_inner));
             gfx.FillEllipse(&in, Gdiplus::REAL(cxd - ci), Gdiplus::REAL(cyd - ci), Gdiplus::REAL(ci * 2), Gdiplus::REAL(ci * 2));
+        }
+        if (t->material_style > 0) {
+            Gdiplus::SolidBrush highlight(Gdiplus::Color(135, 255, 255, 255));
+            gfx.FillEllipse(&highlight, Gdiplus::REAL(cxd - co * 0.58), Gdiplus::REAL(cyd - co * 0.68),
+                            Gdiplus::REAL(co * 0.72), Gdiplus::REAL(co * 0.48));
+            Gdiplus::Pen ring(Gdiplus::Color(92, 255, 255, 255), (Gdiplus::REAL)max(0.65, 0.85 * S));
+            gfx.DrawEllipse(&ring, Gdiplus::REAL(cxd - co), Gdiplus::REAL(cyd - co),
+                            Gdiplus::REAL(co * 2), Gdiplus::REAL(co * 2));
         }
     }
 
@@ -689,6 +977,14 @@ void win_render_clock(int w, int h, int hh, int mm, int ss, const win_theme *t, 
     // 展开态：与 macOS normal 对齐的交互卡片——分组胶囊、百分比 chip、四列表头、
     // 可展开父行与缩进子行。Swift 负责点击状态，renderer 只画当前快照。
     if (expanded) {
+        /* The sibling's real DWM Acrylic supplies the material.  Keep each face's
+         * detail palette as a translucent tint rather than hiding the backdrop
+         * beneath the former opaque layered card.  Dial rendering above already
+         * consumed the original theme. */
+        win_theme acrylicTheme = *t;
+        acrylicTheme.dd_bg = (0x68u << 24) | (t->dd_bg & 0x00ffffffu);
+        acrylicTheme.dd_border = (0x90u << 24) | (t->dd_border & 0x00ffffffu);
+        t = &acrylicTheme;
         // Detail geometry is intentionally independent from face size. The macOS normal panel is
         // 320x547 at all four clock-size choices; only the dial uses the ClockSize scale above.
         const double S = 1.0;
@@ -995,11 +1291,22 @@ void win_render_clock(int w, int h, int hh, int mm, int ss, const win_theme *t, 
         }
     }
 
-    POINT zero{0, 0};
+    if (expanded) {
+        const int detailX = (renderW - detailWidth) / 2;
+        const int detailY = dialHeight + 14;
+        ensure_detail_mem(detailWidth, detailHeight);
+        BitBlt(g_detail_mem_dc, 0, 0, detailWidth, detailHeight,
+               g_mem_dc, detailX, detailY, SRCCOPY);
+        win_detail_present(1, dialHeight, mainW, detailWidth, detailHeight);
+    } else {
+        win_detail_present(0, dialHeight, mainW, detailWidth, detailHeight);
+    }
+
+    POINT source{(renderW - mainW) / 2, 0};
     RECT wrc; GetWindowRect(g_hwnd, &wrc); POINT pos{wrc.left, wrc.top};
-    SIZE sz{w, h};
+    SIZE sz{mainW, mainH};
     BLENDFUNCTION bf; bf.BlendOp = AC_SRC_OVER; bf.BlendFlags = 0; bf.SourceConstantAlpha = g_window_alpha; bf.AlphaFormat = AC_SRC_ALPHA;
-    UpdateLayeredWindow(g_hwnd, NULL, &pos, &sz, g_mem_dc, &zero, 0, &bf, ULW_ALPHA);
+    UpdateLayeredWindow(g_hwnd, NULL, &pos, &sz, g_mem_dc, &source, 0, &bf, ULW_ALPHA);
 }
 
 } // extern "C"

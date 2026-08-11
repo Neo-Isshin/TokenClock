@@ -16,26 +16,30 @@ enum WindowsClockTheme: String, CaseIterable {
         t.hour_len = 0.48; t.minute_len = 0.68; t.second_len = 0.78
         switch self {
         case .classic:
-            t.dial_fill = rgb(0.97, 0.97, 0.98); t.dial_rim = gray(0.82); t.rim_width = 6
+            // Porcelain — warm glazed ceramic, fine minute track, graphite hands.
+            t.dial_fill = rgb(0.985, 0.976, 0.945); t.dial_rim = rgb(0.72, 0.68, 0.59); t.rim_width = 2.2
+            t.material_style = 2
             t.hand_style = 0
-            t.hour_color = rgb(0.718, 0.110, 0.110); t.minute_color = rgb(0.898, 0.224, 0.208); t.second_color = rgb(1.0, 0.322, 0.322)
-            t.hour_w = 4.5; t.minute_w = 3.0; t.second_w = 1.5
-            t.cap_outer = gray(0.82); t.cap_inner = rgb(0.898, 0.224, 0.208)
-            t.show_ticks = 0; t.tick_color = clear; t.major_tick_color = clear
+            t.hour_color = rgb(0.15, 0.14, 0.13); t.minute_color = rgb(0.23, 0.21, 0.19); t.second_color = rgb(0.82, 0.20, 0.14)
+            t.hour_w = 5.0; t.minute_w = 3.2; t.second_w = 1.35
+            t.cap_outer = rgb(0.36, 0.32, 0.27); t.cap_inner = rgb(0.89, 0.72, 0.43)
+            t.show_ticks = 1; t.tick_color = rgb(0.36, 0.33, 0.29, 0.52); t.major_tick_color = rgb(0.22, 0.20, 0.18)
             t.show_numbers = 0; t.number_color = clear
             t.has_decoration = 0
-            t.text_primary = rgb(0.18, 0.18, 0.20); t.text_secondary = rgb(0.45, 0.45, 0.48)
+            t.text_primary = rgb(0.17, 0.16, 0.14); t.text_secondary = rgb(0.40, 0.37, 0.32)
 
         case .midnight:
-            t.dial_fill = rgb(0.106, 0.157, 0.220); t.dial_rim = rgb(0.165, 0.247, 0.373); t.rim_width = 2.5
+            // Smoked Glass — near-black glass with cool edge light and a cyan seconds hand.
+            t.dial_fill = rgb(0.055, 0.075, 0.098, 0.96); t.dial_rim = rgb(0.36, 0.48, 0.59, 0.82); t.rim_width = 2.0
+            t.material_style = 3
             t.hand_style = 1
-            t.hour_color = rgb(0.149, 0.776, 0.855); t.minute_color = rgb(0.502, 0.871, 0.918); t.second_color = gray(1.0)
-            t.hour_w = 5.5; t.minute_w = 3.5; t.second_w = 1.2
-            t.cap_outer = rgb(0.149, 0.776, 0.855); t.cap_inner = gray(1.0)
-            t.show_ticks = 1; t.tick_color = rgb(0.290, 0.396, 0.502); t.major_tick_color = rgb(0.502, 0.871, 0.918)
-            t.show_numbers = 1; t.number_color = rgb(0.400, 0.533, 0.667)
+            t.hour_color = rgb(0.89, 0.93, 0.96); t.minute_color = rgb(0.68, 0.77, 0.84); t.second_color = rgb(0.16, 0.78, 0.91)
+            t.hour_w = 5.5; t.minute_w = 3.4; t.second_w = 1.25
+            t.cap_outer = rgb(0.69, 0.82, 0.89); t.cap_inner = rgb(0.16, 0.78, 0.91)
+            t.show_ticks = 1; t.tick_color = rgb(0.66, 0.75, 0.82, 0.42); t.major_tick_color = rgb(0.86, 0.93, 0.97, 0.92)
+            t.show_numbers = 0; t.number_color = clear
             t.has_decoration = 0
-            t.text_primary = rgb(0.878, 0.878, 0.878); t.text_secondary = rgb(0.533, 0.600, 0.667)
+            t.text_primary = rgb(0.91, 0.94, 0.96); t.text_secondary = rgb(0.59, 0.68, 0.75)
 
         case .luxe:
             t.dial_fill = rgb(0.102, 0.102, 0.180); t.dial_rim = rgb(0.176, 0.176, 0.267); t.rim_width = 2
@@ -82,15 +86,17 @@ enum WindowsClockTheme: String, CaseIterable {
             t.text_primary = rgb(0.180, 0.340, 0.520); t.text_secondary = rgb(0.380, 0.520, 0.660)
 
         case .glass:
-            t.dial_fill = rgb(0.91, 0.93, 0.96); t.dial_rim = gray(0.85); t.rim_width = 1.5
+            // Frost — cool translucent crystal with an icy inner edge and Windows-blue seconds.
+            t.dial_fill = rgb(0.91, 0.95, 0.99, 0.92); t.dial_rim = rgb(0.70, 0.82, 0.91, 0.85); t.rim_width = 1.5
+            t.material_style = 1
             t.hand_style = 0
-            t.hour_color = rgb(0.16, 0.16, 0.18); t.minute_color = rgb(0.16, 0.16, 0.18); t.second_color = rgb(0.90, 0.42, 0.18)
-            t.hour_w = 4.5; t.minute_w = 3.0; t.second_w = 1.5
-            t.cap_outer = rgb(0.16, 0.16, 0.18); t.cap_inner = rgb(0.90, 0.42, 0.18)
-            t.show_ticks = 1; t.tick_color = gray(1.0, 0.7); t.major_tick_color = gray(1.0)
+            t.hour_color = rgb(0.12, 0.17, 0.22); t.minute_color = rgb(0.20, 0.28, 0.35); t.second_color = rgb(0.0, 0.47, 0.84)
+            t.hour_w = 4.8; t.minute_w = 3.0; t.second_w = 1.25
+            t.cap_outer = rgb(0.18, 0.25, 0.31); t.cap_inner = rgb(0.74, 0.89, 0.98)
+            t.show_ticks = 1; t.tick_color = rgb(0.18, 0.29, 0.38, 0.38); t.major_tick_color = rgb(0.12, 0.22, 0.30, 0.78)
             t.show_numbers = 0; t.number_color = clear
             t.has_decoration = 0
-            t.text_primary = gray(1.0); t.text_secondary = gray(1.0, 0.8)
+            t.text_primary = rgb(0.11, 0.16, 0.20); t.text_secondary = rgb(0.31, 0.40, 0.47)
 
         case .glacier:
             t.dial_fill = gray(0.96); t.dial_rim = clear; t.rim_width = 0

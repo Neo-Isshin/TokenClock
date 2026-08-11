@@ -54,7 +54,7 @@ final class OpenClawUsageService: @unchecked Sendable {
         let d = dailyData[DateHelper.todayKey()]
         let total = d?.tokens ?? 0
         let cache = dailyCache[DateHelper.todayKey()] ?? 0
-        let rate = total > 0 ? Double(cache) / Double(total) : 0
+        let rate = TokenAccounting.cacheReadShare(freshTokens: total, cacheRead: cache)
         return (total, d?.messages ?? 0, rate)
     }
 
@@ -253,8 +253,10 @@ final class OpenClawUsageService: @unchecked Sendable {
         let output = usage["output"] as? Int ?? 0
         let cacheRead = usage["cacheRead"] as? Int ?? 0
         let cacheWrite = usage["cacheWrite"] as? Int ?? 0
-        let tokens = input + output + cacheRead
-        let cacheTokens = cacheRead + cacheWrite
+        let tokens = TokenAccounting.separateCacheFields(
+            input: input, cacheWrite: cacheWrite, output: output
+        )
+        let cacheTokens = cacheRead
         guard tokens > 0 else { return nil }
 
         let timestamp = obj["timestamp"] as? String ?? ""

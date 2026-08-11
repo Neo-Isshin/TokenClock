@@ -30,23 +30,47 @@ try {
 $exe = Join-Path $root '.build\release\TokenClock.exe'
 if (-not (Test-Path $exe)) { throw "build did not produce $exe" }
 
-# Swift 运行时目录：先从 PATH 里找含 swiftCore.dll 的 Swift\Runtimes 条目（最稳），再退回从 swift.exe 推导。
+# The Windows app deliberately uses native WinHTTP/Winsock. Swift 6.3.3's
+# FoundationNetworking runtime has produced repeatable 0xc000001d cold-start crashes on the
+# supported Windows 11 test host, so fail packaging if a URLSession dependency is reintroduced.
+$llvmReadObj = (Get-Command llvm-readobj.exe -ErrorAction Stop).Source
+$peImports = (& $llvmReadObj --coff-imports $exe | Out-String)
+if ($LASTEXITCODE -ne 0) { throw 'failed to inspect TokenClock.exe PE imports' }
+if ($peImports -match '(?i)FoundationNetworking\.dll') {
+    throw 'Windows build unexpectedly links FoundationNetworking.dll; use the native HTTP client'
+}
+
+# Swift 运行时目录必须与本次编译实际使用的工具链一致。机器上可能并存多套
+# Swift；直接拿 PATH 中第一个 Runtimes 目录会把新版 EXE 和旧版 Foundation DLL
+# 混装，最终在启动时崩溃。优先读取同一 swiftc 的 target-info，仅在旧工具链不
+# 支持该查询时才使用兼容回退。
 $runtimeBin = $null
-foreach ($p in ($env:PATH -split ';')) {
-    if ($p -and ($p -match 'Runtimes') -and (Test-Path (Join-Path $p 'swiftCore.dll'))) { $runtimeBin = $p; break }
+$swiftCommand = Get-Command swift -ErrorAction Stop
+$swiftc = Join-Path (Split-Path $swiftCommand.Source) 'swiftc.exe'
+if (-not (Test-Path $swiftc)) { $swiftc = (Get-Command swiftc -ErrorAction Stop).Source }
+try {
+    $targetInfoText = (& $swiftc -print-target-info | Out-String)
+    if ($LASTEXITCODE -eq 0 -and $targetInfoText) {
+        $targetInfo = $targetInfoText | ConvertFrom-Json
+        foreach ($candidate in @($targetInfo.paths.runtimeLibraryPaths)) {
+            if ($candidate -and (Test-Path (Join-Path $candidate 'swiftCore.dll'))) {
+                $runtimeBin = $candidate
+                break
+            }
+        }
+    }
+} catch {
+    Write-Warning "swiftc target-info unavailable; trying compatibility runtime discovery"
 }
 if (-not $runtimeBin) {
-    $swift = (Get-Command swift -ErrorAction SilentlyContinue).Source
-    if (-not $swift) { $sw = @(where.exe swift); if ($sw) { $swift = $sw[0] } }
-    if ($swift) {
-        $swiftRoot = Split-Path (Split-Path (Split-Path (Split-Path $swift)))   # …\Swift
-        foreach ($d in (Get-ChildItem (Join-Path $swiftRoot 'Runtimes') -Directory -ErrorAction SilentlyContinue)) {
-            $cand = Join-Path $d.FullName 'usr\bin'
-            if (Test-Path (Join-Path $cand 'swiftCore.dll')) { $runtimeBin = $cand; break }
+    foreach ($p in ($env:PATH -split ';')) {
+        if ($p -and ($p -match 'Runtimes') -and (Test-Path (Join-Path $p 'swiftCore.dll'))) {
+            $runtimeBin = $p
+            break
         }
     }
 }
-if (-not $runtimeBin) { throw 'cannot locate Swift runtime (swiftCore.dll): neither PATH nor swift.exe resolved it' }
+if (-not $runtimeBin) { throw 'cannot locate the Swift runtime matching the active compiler' }
 Write-Host "== runtime DLLs: $runtimeBin =="
 $vcrt = Get-ChildItem 'C:\Program Files (x86)\Microsoft Visual Studio\*\BuildTools\VC\Redist\MSVC\*\x64\Microsoft.VC143.CRT\vcruntime140.dll' -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName
 
@@ -55,7 +79,9 @@ if (Test-Path $dist) { Remove-Item -Recurse -Force $dist }
 New-Item -ItemType Directory -Path $dist | Out-Null
 
 Copy-Item $exe $dist
-Copy-Item (Join-Path $runtimeBin '*.dll') $dist
+Get-ChildItem -LiteralPath $runtimeBin -Filter '*.dll' -File |
+    Where-Object { $_.Name -ine 'FoundationNetworking.dll' } |
+    Copy-Item -Destination $dist
 if ($vcrt -and -not (Test-Path (Join-Path $dist 'vcruntime140.dll'))) { Copy-Item $vcrt $dist }
 $resources = Join-Path (Split-Path $exe) 'TokenClock_TokenClock.resources'
 if (-not (Test-Path $resources)) { throw "build did not produce resource bundle $resources" }

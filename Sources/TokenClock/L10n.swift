@@ -173,6 +173,8 @@ final class L10n: @unchecked Sendable {
         "detail.unknownModel":   [.zhHans: "未知",   .zhHant: "未知",    .en: "Unknown"],
         "detail.model":          [.zhHans: "模型",   .zhHant: "模型",    .en: "Model"],
         "detail.percent":        [.zhHans: "按百分比", .zhHant: "按百分比", .en: "By Percent"],
+        "detail.currentSession": [.zhHans: "当前会话", .zhHant: "目前工作階段", .en: "Current session"],
+        "detail.statisticsUnavailable": [.zhHans: "暂不可统计", .zhHant: "暫不可統計", .en: "Unavailable"],
         "detail.share":          [.zhHans: "占比",   .zhHant: "佔比",    .en: "Share"],
         "detail.codexQuota":     [.zhHans: "Codex 额度", .zhHant: "Codex 額度", .en: "Codex Quota"],
         "quota.loading":         [.zhHans: "正在读取 Codex 额度…", .zhHant: "正在讀取 Codex 額度…", .en: "Loading Codex quota…"],
@@ -306,13 +308,13 @@ final class L10n: @unchecked Sendable {
         "handStyle.sword":   [.zhHans: "剑形",  .zhHant: "劍形",  .en: "Sword"],
 
         // MARK: Clock face themes
-        "themeName.classic":    [.zhHans: "经典",   .zhHant: "經典",   .en: "Classic"],
-        "themeName.midnight":   [.zhHans: "深夜",   .zhHant: "深夜",   .en: "Midnight"],
+        "themeName.classic":    [.zhHans: "瓷白",   .zhHant: "瓷白",   .en: "Porcelain"],
+        "themeName.midnight":   [.zhHans: "烟熏玻璃", .zhHant: "煙燻玻璃", .en: "Smoked Glass"],
         "themeName.luxe":       [.zhHans: "暗金",   .zhHant: "暗金",   .en: "Luxe"],
         "themeName.gufeng":     [.zhHans: "古风",   .zhHant: "古風",   .en: "Antique"],
         "themeName.railgun":    [.zhHans: "超電磁砲", .zhHant: "超電磁砲", .en: "Railgun"],
         "themeName.sky":        [.zhHans: "天空",   .zhHant: "天空",   .en: "Sky"],
-        "themeName.glass":      [.zhHans: "玻璃",   .zhHant: "玻璃",   .en: "Glass"],
+        "themeName.glass":      [.zhHans: "冰霜玻璃", .zhHant: "冰霜玻璃", .en: "Frost"],
         "themeName.glacier":    [.zhHans: "冰川",   .zhHant: "冰川",   .en: "Glacier"],
         "themeName.custom":     [.zhHans: "自定义", .zhHant: "自訂",   .en: "Custom"],
 
@@ -339,5 +341,6 @@ final class L10n: @unchecked Sendable {
         "pathDetail.notFound":      [.zhHans: "未找到",                 .zhHant: "未找到",                   .en: "Not found"],
         "pathDetail.existsUnreadable":[.zhHans: "路径存在，但没有解析器可读取的用量数据", .zhHant: "路徑存在，但沒有解析器可讀取的用量資料", .en: "Path exists, but no parser-readable usage data was found"],
         "pathDetail.notFoundDefault":[.zhHans: "未找到有效日志文件，将使用默认路径", .zhHant: "未找到有效日誌文件，將使用預設路徑", .en: "No valid log files found, using default path"],
+        "pathDetail.contractOnly": [.zhHans: "已识别官方数据契约；暂无可安全统计的字段", .zhHant: "已識別官方資料契約；暫無可安全統計的欄位", .en: "Official data contract detected; no safely aggregatable fields yet"],
     ]
 }
