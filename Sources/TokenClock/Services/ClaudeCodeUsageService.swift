@@ -50,7 +50,7 @@ final class ClaudeCodeUsageService: @unchecked Sendable {
         let d = dailyData[DateHelper.todayKey()]
         let cache = dailyCache[DateHelper.todayKey()] ?? 0
         let total = d?.tokens ?? 0
-        let rate = total > 0 ? Double(cache) / Double(total) : 0
+        let rate = TokenAccounting.cacheReadShare(freshTokens: total, cacheRead: cache)
         return (total, d?.messages ?? 0, rate)
     }
 
@@ -219,13 +219,15 @@ final class ClaudeCodeUsageService: @unchecked Sendable {
         let outputTokens = usage["output_tokens"] as? Int ?? 0
         let cacheRead = usage["cache_read_input_tokens"] as? Int ?? 0
         let cacheCreation = usage["cache_creation_input_tokens"] as? Int ?? 0
-        let tokens = inputTokens + outputTokens + cacheRead
+        let tokens = TokenAccounting.separateCacheFields(
+            input: inputTokens, cacheWrite: cacheCreation, output: outputTokens
+        )
         guard tokens > 0 else { return nil }
         let timestamp = obj["timestamp"] as? String ?? ""
         let dateKey = DateHelper.localDateKey(from: timestamp)
         guard dateKey.count == 10 else { return nil }
         return R(dateKey: dateKey, hourKey: DateHelper.localHourKey(from: timestamp),
-                 tokens: tokens, cacheTokens: cacheRead + cacheCreation,
+                 tokens: tokens, cacheTokens: cacheRead,
                  ts: DateHelper.parseISO8601(timestamp),
                  model: msg["model"] as? String)
     }

@@ -32,7 +32,7 @@ final class ClineUsageService: @unchecked Sendable {
         let d = dailyData[DateHelper.todayKey()]
         let cache = dailyCache[DateHelper.todayKey()] ?? 0
         let total = d?.tokens ?? 0
-        let rate = total > 0 ? Double(cache) / Double(total) : 0
+        let rate = TokenAccounting.cacheReadShare(freshTokens: total, cacheRead: cache)
         return (total, d?.messages ?? 0, rate)
     }
 
@@ -116,7 +116,9 @@ final class ClineUsageService: @unchecked Sendable {
             let cacheWrite = (usage["cache_creation_input_tokens"] as? Int)
                 ?? (usage["cacheWrite"] as? Int)
                 ?? (usage["cacheCreationInputTokens"] as? Int) ?? 0
-            let total = input + output + cacheRead + cacheWrite
+            let total = TokenAccounting.separateCacheFields(
+                input: input, cacheWrite: cacheWrite, output: output
+            )
             guard total > 0 else { continue }
 
             if var e = dailyData[dateKey] {
@@ -131,8 +133,7 @@ final class ClineUsageService: @unchecked Sendable {
                 hourlyData[hourKey] = HourlyUsage(tokens: total, messages: 1)
             }
 
-            let cacheTokens = cacheRead + cacheWrite
-            dailyCache[dateKey, default: 0] += cacheTokens
+            dailyCache[dateKey, default: 0] += cacheRead
 
             if dateKey == today {
                 recentEntries.append(RecentEntry(timestamp: date, tokens: total))
@@ -169,11 +170,16 @@ final class ClineUsageService: @unchecked Sendable {
                 guard DateHelper.dateKey(from: date) == today else { continue }
                 guard let message = entry["message"] as? [String: Any],
                       let usage = message["usage"] as? [String: Any] else { continue }
-                let input = (usage["input_tokens"] as? Int) ?? 0
-                let output = (usage["output_tokens"] as? Int) ?? 0
-                let cacheRead = (usage["cache_read_input_tokens"] as? Int) ?? 0
-                let cacheWrite = (usage["cache_creation_input_tokens"] as? Int) ?? 0
-                let total = input + output + cacheRead + cacheWrite
+                let input = (usage["input_tokens"] as? Int)
+                    ?? (usage["inputTokens"] as? Int) ?? 0
+                let output = (usage["output_tokens"] as? Int)
+                    ?? (usage["outputTokens"] as? Int) ?? 0
+                let cacheWrite = (usage["cache_creation_input_tokens"] as? Int)
+                    ?? (usage["cacheWrite"] as? Int)
+                    ?? (usage["cacheCreationInputTokens"] as? Int) ?? 0
+                let total = TokenAccounting.separateCacheFields(
+                    input: input, cacheWrite: cacheWrite, output: output
+                )
                 guard total > 0 else { continue }
                 totalTokens += total; msgCount += 1
             }

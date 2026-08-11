@@ -28,6 +28,7 @@ let linuxSources = [
     "Services/OpenClawUsageService.swift",
     "Services/OpenCodeUsageService.swift",
     "Services/QwenCodeUsageService.swift",
+    "Services/TokenAccounting.swift",
     "Services/UsageAggregator.swift",
     "Services/UsageServiceProtocol.swift",
     "Linux/LinuxAPIServer.swift",
