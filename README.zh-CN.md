@@ -245,7 +245,7 @@ Windows 11 上，详情面板和表盘选择器使用 Acrylic 毛玻璃，设置
 
 ```powershell
 # 安装最新 x86_64 Windows 版并启动。
-irm https://raw.githubusercontent.com/Neo-Isshin/TokenClock/windows-port/cli/install.ps1 | iex
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/Neo-Isshin/TokenClock/windows-port/cli/install.ps1)))
 
 # 显式传参示例：安装后不启动，并创建开始菜单快捷方式。
 & ([scriptblock]::Create((irm https://raw.githubusercontent.com/Neo-Isshin/TokenClock/windows-port/cli/install.ps1))) -NoStart -StartMenuShortcut

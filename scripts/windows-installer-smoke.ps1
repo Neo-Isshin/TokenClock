@@ -63,6 +63,25 @@ try {
     }
     if (-not $nullEnvironmentPassed) { throw 'Installer did not tolerate missing legacy profile environment variables.' }
 
+    # Reproduce Invoke-Expression execution: downloaded script text has no $PSCmdlet. Inject only
+    # disposable fixture defaults so this stays offline and cannot touch the normal install path.
+    $iexInstall = Join-Path $TestRoot 'invoke-expression\TokenClock'
+    $iexSource = Get-Content -LiteralPath $installer -Raw
+    $installParameter = "[string] " + '$InstallDir' + " = '" + $iexInstall.Replace("'", "''") + "',"
+    $packageParameter = "[string] " + '$PackagePath' + " = '" + $zip.Replace("'", "''") + "',"
+    $checksumParameter = "[string] " + '$ChecksumPath' + " = '" + $sha.Replace("'", "''") + "',"
+    $iexSource = $iexSource.Replace('[string] $InstallDir,', $installParameter)
+    $iexSource = $iexSource.Replace('[string] $PackagePath,', $packageParameter)
+    $iexSource = $iexSource.Replace('[string] $ChecksumPath,', $checksumParameter)
+    $iexSource = $iexSource.Replace('[switch] $NoStart,', '[switch] $NoStart = $true,')
+    $invokeExpressionPassed = & {
+        param([string] $Source, [string] $Target)
+        Invoke-Expression $Source
+        Test-Path -LiteralPath (Join-Path $Target 'TokenClock.exe') -PathType Leaf
+    } $iexSource $iexInstall
+    if (-not $invokeExpressionPassed) { throw 'Invoke-Expression one-liner path did not install the fixture.' }
+    & $installer -Action Uninstall -InstallDir $iexInstall
+
     $runAfter = (Get-ItemProperty -Path $runKey -Name TokenClock -ErrorAction SilentlyContinue).TokenClock
     if ($runAfter -ne $runBefore) { throw 'Default install unexpectedly changed autostart.' }
     if ((Test-Path -LiteralPath $startLink) -ne $startBefore) { throw 'Default install unexpectedly changed Start Menu shortcuts.' }
@@ -197,6 +216,7 @@ try {
         missingProfileEnvironmentHandled = $nullEnvironmentPassed
         latestWindowsAssetPairSelection = $releaseSelectionPassed
         releaseAssetCacheBusting = $assetCacheBustingPassed
+        invokeExpressionOneLinerPassed = $invokeExpressionPassed
         uninstallPassed = $true
         testRoot = $TestRoot
     } | ConvertTo-Json

@@ -246,7 +246,7 @@ On Windows 11, the details panel and face picker use Acrylic while Settings, Cus
 
 ```powershell
 # Install the latest x86_64 Windows release and start it.
-irm https://raw.githubusercontent.com/Neo-Isshin/TokenClock/windows-port/cli/install.ps1 | iex
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/Neo-Isshin/TokenClock/windows-port/cli/install.ps1)))
 
 # Pass options explicitly (example: do not start; add a Start Menu shortcut).
 & ([scriptblock]::Create((irm https://raw.githubusercontent.com/Neo-Isshin/TokenClock/windows-port/cli/install.ps1))) -NoStart -StartMenuShortcut

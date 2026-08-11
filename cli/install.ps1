@@ -1,7 +1,7 @@
 # TokenClock Windows per-user installer.
 #
 # One-liner:
-#   irm https://raw.githubusercontent.com/Neo-Isshin/TokenClock/windows-port/cli/install.ps1 | iex
+#   & ([scriptblock]::Create((irm https://raw.githubusercontent.com/Neo-Isshin/TokenClock/windows-port/cli/install.ps1)))
 #
 # Passing options through a one-liner:
 #   & ([scriptblock]::Create((irm https://raw.githubusercontent.com/Neo-Isshin/TokenClock/windows-port/cli/install.ps1))) -NoStart -StartMenuShortcut
@@ -216,7 +216,7 @@ if ($Action -eq 'Uninstall') {
     if ((Test-Path -LiteralPath $InstallDir) -and -not (Test-TokenClockInstallation $InstallDir)) {
         throw "Refusing to uninstall an unrecognized directory: $InstallDir"
     }
-    if (-not $PSCmdlet.ShouldProcess($InstallDir, 'Uninstall TokenClock')) { return }
+    if ($null -ne $PSCmdlet -and -not $PSCmdlet.ShouldProcess($InstallDir, 'Uninstall TokenClock')) { return }
     Stop-TokenClock $exe
     Remove-ShortcutIfOwned $startMenuLink $exe
     Remove-ShortcutIfOwned $desktopLink $exe
@@ -236,7 +236,10 @@ if ($Action -eq 'Uninstall') {
 if ((Test-Path -LiteralPath $InstallDir) -and -not (Test-TokenClockInstallation $InstallDir)) {
     throw "Refusing to replace an unrecognized directory: $InstallDir"
 }
-if (-not $PSCmdlet.ShouldProcess($InstallDir, "$Action TokenClock")) { return }
+# Invoke-Expression runs downloaded text in its caller's scope and does not create $PSCmdlet,
+# even when that text contains CmdletBinding. Keep the short pipeline form compatible while
+# explicit scriptblock invocation continues to provide ShouldProcess and WhatIf normally.
+if ($null -ne $PSCmdlet -and -not $PSCmdlet.ShouldProcess($InstallDir, "$Action TokenClock")) { return }
 
 $temporaryRoot = Join-Path ([IO.Path]::GetTempPath()) ("TokenClockInstaller-" + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $temporaryRoot | Out-Null
