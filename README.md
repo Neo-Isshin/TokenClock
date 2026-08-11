@@ -80,7 +80,7 @@ On Linux, install `libfuse2` if your desktop cannot open the AppImage (`libfuse2
 Paste this into PowerShell:
 
 ```powershell
-irm https://raw.githubusercontent.com/Neo-Isshin/TokenClock/windows-port/cli/install.ps1 | iex
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/Neo-Isshin/TokenClock/windows-port/cli/install.ps1)))
 ```
 
 TokenClock installs for the current user under `%LOCALAPPDATA%\Programs\TokenClock`. It verifies the release checksum and does not enable autostart or create shortcuts unless you ask it to.
