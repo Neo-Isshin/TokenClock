@@ -80,7 +80,7 @@ tokenclock uninstall
 复制到 PowerShell 运行：
 
 ```powershell
-irm https://raw.githubusercontent.com/Neo-Isshin/TokenClock/windows-port/cli/install.ps1 | iex
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/Neo-Isshin/TokenClock/windows-port/cli/install.ps1)))
 ```
 
 TokenClock 会安装到当前用户的 `%LOCALAPPDATA%\Programs\TokenClock`，下载后自动校验文件。默认不会创建快捷方式，也不会启用开机自启。
