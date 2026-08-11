@@ -8,6 +8,7 @@
 
 [![macOS 12+](https://img.shields.io/badge/macOS-12%2B-000000?style=for-the-badge&logo=apple&logoColor=white)](#macos-与-linux)
 [![macOS 26+](https://img.shields.io/badge/macOS%2026-Liquid%20Glass-00B0F0?style=for-the-badge)](#macos-与-linux)
+[![macOS 27 Beta 5](https://img.shields.io/badge/macOS%2027-Beta%205%20%E5%B7%B2%E6%94%AF%E6%8C%81-8A2BE2?style=for-the-badge&logo=apple&logoColor=white)](#macos-与-linux)
 [![Windows normal](https://img.shields.io/badge/Windows-normal-0078D4?style=for-the-badge&logo=windows&logoColor=white)](#windows)
 [![Linux normal](https://img.shields.io/badge/Linux-normal-FCC624?style=for-the-badge&logo=linux&logoColor=black)](#macos-与-linux)
 
@@ -45,7 +46,7 @@ TokenClock 是一个置顶显示在桌面的小时钟。除了时间，它还会
 
 | 平台 | 版本 | 说明 |
 |---|---|---|
-| macOS 26+ | Liquid Glass + Normal | Apple 芯片与 Intel 通用版本 |
+| macOS 26+ | Liquid Glass + Normal | Apple 芯片与 Intel 通用版本，已支持 macOS 27 Beta 5 |
 | macOS 12–25 | Normal | 经典不透明桌面小组件 |
 | Windows 11 x86_64 | Normal | 当前用户安装，无需管理员权限 |
 | Linux x86_64 | Normal | 预编译 GTK3 AppImage，要求 glibc 2.35+ |

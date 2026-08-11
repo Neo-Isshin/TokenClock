@@ -76,12 +76,16 @@ struct ClockContentView: View {
                     .font(.system(size: 28 * s))
                     .padding(.trailing, 22 * s)
             }
+
+            // SwiftUI's tap recognizer consumes the window-drag mouse sequence on recent
+            // runtimes. Route click-versus-drag through AppKit explicitly.
+            ClockInteractionLayer {
+                viewModel.isExpanded.toggle()
+            }
+            .frame(width: d, height: d)
+            .accessibilityHidden(true)
         }
         .frame(width: d, height: d)
-        .contentShape(Rectangle())
-        .onTapGesture {
-            viewModel.isExpanded.toggle()
-        }
         // 无障碍：表盘是纯视觉（指针/emoji/格式化数字），VoiceOver 读不出含义。
         // 收拢成单一元素，朗读「时间 + 今日用量」摘要；保留按钮特性（点按展开）。
         .accessibilityElement(children: .ignore)
