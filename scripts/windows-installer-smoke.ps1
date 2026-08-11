@@ -144,7 +144,7 @@ try {
 
     # Dot-source the installer in an isolated child scope, mock the GitHub response, and verify
     # that "latest" skips a newer release until it finds both Windows assets together.
-    $releaseSelectionPassed = & {
+    $releaseResolution = & {
         . $installer -Action Check -InstallDir $install | Out-Null
         function Invoke-RestMethod {
             param([string] $Uri, [hashtable] $Headers)
@@ -166,9 +166,21 @@ try {
             Write-Output -NoEnumerate $mockReleases
         }
         $Version = 'latest'
-        (Get-Release).tag_name -eq 'v1.9.0'
+        $selectedRelease = Get-Release
+        [pscustomobject]@{
+            selectionPassed = ($selectedRelease.tag_name -eq 'v1.9.0')
+            cacheBustingPassed = (
+                (Get-AssetDownloadUrl ([pscustomobject]@{
+                    id = 12345
+                    browser_download_url = 'https://example.invalid/TokenClock.zip'
+                })) -eq 'https://example.invalid/TokenClock.zip?asset_revision=12345'
+            )
+        }
     }
+    $releaseSelectionPassed = [bool] $releaseResolution.selectionPassed
+    $assetCacheBustingPassed = [bool] $releaseResolution.cacheBustingPassed
     if (-not $releaseSelectionPassed) { throw 'Latest release selection did not require both Windows assets.' }
+    if (-not $assetCacheBustingPassed) { throw 'Release asset URL did not include its immutable asset revision.' }
 
     [ordered]@{
         passed = $true
@@ -184,6 +196,7 @@ try {
         checkActionPassed = $check.installed
         missingProfileEnvironmentHandled = $nullEnvironmentPassed
         latestWindowsAssetPairSelection = $releaseSelectionPassed
+        releaseAssetCacheBusting = $assetCacheBustingPassed
         uninstallPassed = $true
         testRoot = $TestRoot
     } | ConvertTo-Json

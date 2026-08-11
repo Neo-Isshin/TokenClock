@@ -139,6 +139,18 @@ function Test-ReleaseHasWindowsAssets($Release) {
     return ($assetName -in $names) -and ($checksumAssetName -in $names)
 }
 
+function Get-AssetDownloadUrl($Asset) {
+    if ($null -eq $Asset -or [string]::IsNullOrWhiteSpace([string] $Asset.browser_download_url)) {
+        return $null
+    }
+    $url = [string] $Asset.browser_download_url
+    $revision = [string] $Asset.id
+    if ([string]::IsNullOrWhiteSpace($revision)) { $revision = [string] $Asset.updated_at }
+    if ([string]::IsNullOrWhiteSpace($revision)) { return $url }
+    $separator = if ($url.Contains('?')) { '&' } else { '?' }
+    return ($url + $separator + 'asset_revision=' + [Uri]::EscapeDataString($revision))
+}
+
 function Get-Release {
     $headers = @{ 'User-Agent' = 'TokenClock-Windows-Installer'; 'Accept' = 'application/vnd.github+json' }
     if ($Version -eq 'latest') {
@@ -243,8 +255,12 @@ try {
             throw 'GitHub returned release metadata without a tag name. Retry shortly or specify -Version v1.4.3.'
         }
         $releaseTag = [string] $release.tag_name
-        $zipUrl = ($release.assets | Where-Object name -eq $assetName | Select-Object -First 1).browser_download_url
-        $shaUrl = ($release.assets | Where-Object name -eq $checksumAssetName | Select-Object -First 1).browser_download_url
+        $zipAsset = $release.assets | Where-Object name -eq $assetName | Select-Object -First 1
+        $shaAsset = $release.assets | Where-Object name -eq $checksumAssetName | Select-Object -First 1
+        # A workflow and a local release may replace an asset under the same public filename.
+        # Include the GitHub asset id so CDNs cannot serve bytes from the previous asset object.
+        $zipUrl = Get-AssetDownloadUrl $zipAsset
+        $shaUrl = Get-AssetDownloadUrl $shaAsset
         if (-not $zipUrl) { throw "Release '$releaseTag' has no $assetName asset." }
         Invoke-WebRequest $zipUrl -OutFile $zip -Headers @{ 'User-Agent' = 'TokenClock-Windows-Installer' }
         if ($shaUrl) { Invoke-WebRequest $shaUrl -OutFile $sha -Headers @{ 'User-Agent' = 'TokenClock-Windows-Installer' } }
