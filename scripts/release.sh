@@ -220,24 +220,29 @@ step "对比 install.sh 旧 pin"
 gc checkout "$BR_GLASS" --quiet
 OLD_NORMAL="$(grep -oE 'normal\) echo "[a-f0-9]{64}"' cli/install.sh | grep -oE '[a-f0-9]{64}')"
 OLD_GLASS="$(grep -oE 'glass\)  echo "[a-f0-9]{64}"' cli/install.sh | grep -oE '[a-f0-9]{64}')"
-OLD_TAG="$(grep -oE 'RELEASE_TAG="\$\{TOKENCLOCK_RELEASE_TAG:-v[0-9.]+' cli/install.sh | grep -oE 'v[0-9.]+')"
+OLD_NORMAL_TAG="$(grep -oE 'normal\) echo "v[0-9.]+"' cli/install.sh | grep -oE 'v[0-9.]+')"
+OLD_GLASS_TAG="$(grep -oE 'glass\)  echo "v[0-9.]+"' cli/install.sh | grep -oE 'v[0-9.]+')"
 
-info "旧: tag=$OLD_TAG  normal=${OLD_NORMAL:0:12}…  glass=${OLD_GLASS:0:12}…"
-info "新: tag=$VERSION  normal=${SHA_NORMAL:-（沿用）}  glass=${SHA_GLASS:-（沿用）}"
+info "旧: normal tag=$OLD_NORMAL_TAG sha=${OLD_NORMAL:0:12}…  glass tag=$OLD_GLASS_TAG sha=${OLD_GLASS:0:12}…"
+info "新: normal tag=$([ "$DO_NORMAL" = 1 ] && echo "$VERSION" || echo "$OLD_NORMAL_TAG") sha=${SHA_NORMAL:-（沿用）}  glass tag=$([ "$DO_GLASS" = 1 ] && echo "$VERSION" || echo "$OLD_GLASS_TAG") sha=${SHA_GLASS:-（沿用）}"
 
-# 实际要写进 install.sh 的 SHA（没重建的沿用旧值）
+# 实际要写进 install.sh 的 tag/SHA（没重建的变体沿用旧值）
 NEW_NORMAL="${SHA_NORMAL:-$OLD_NORMAL}"
 NEW_GLASS="${SHA_GLASS:-$OLD_GLASS}"
+NEW_NORMAL_TAG="$OLD_NORMAL_TAG"; [ "$DO_NORMAL" = 0 ] || NEW_NORMAL_TAG="$VERSION"
+NEW_GLASS_TAG="$OLD_GLASS_TAG"; [ "$DO_GLASS" = 0 ] || NEW_GLASS_TAG="$VERSION"
 
-NORMAL_CHANGED=0; GLASS_CHANGED=0
+NORMAL_CHANGED=0; GLASS_CHANGED=0; TAGS_CHANGED=0
 [ "${SHA_NORMAL:-}" != "" ] && [ "$SHA_NORMAL" != "$OLD_NORMAL" ] && NORMAL_CHANGED=1
 [ "${SHA_GLASS:-}"  != "" ] && [ "$SHA_GLASS"  != "$OLD_GLASS"  ] && GLASS_CHANGED=1
+[ "$NEW_NORMAL_TAG" != "$OLD_NORMAL_TAG" ] && TAGS_CHANGED=1
+[ "$NEW_GLASS_TAG" != "$OLD_GLASS_TAG" ] && TAGS_CHANGED=1
 [ "$NORMAL_CHANGED" = 1 ] && ok "normal SHA 变更 → 将更新 pin + 重传资产"
 [ "$GLASS_CHANGED"  = 1 ] && ok "glass SHA 变更  → 将更新 pin + 重传资产"
 
 # SHA 与 tag 都没变时，不能直接 exit 0 —— 上次构建/发版可能中途失败（release 没建或资产不全），
 # 这种"重跑"恰恰最需要继续走发布步骤。只有当 release 已存在且两变体资产齐全时才真的无事可做。
-if [ "$NORMAL_CHANGED" = 0 ] && [ "$GLASS_CHANGED" = 0 ] && [ "$VERSION" = "$OLD_TAG" ]; then
+if [ "$NORMAL_CHANGED" = 0 ] && [ "$GLASS_CHANGED" = 0 ] && [ "$TAGS_CHANGED" = 0 ]; then
   if gh release view "$VERSION" >/dev/null 2>&1; then
     n_assets="$(gh release view "$VERSION" --json assets -q '.assets | length' 2>/dev/null || echo 0)"
     if [ "${n_assets:-0}" -ge 2 ]; then
@@ -252,7 +257,8 @@ fi
 
 if [ "$DRY_RUN" = 1 ]; then
   step "DRY-RUN diff（install.sh / tokenclock 预览）"
-  info "RELEASE_TAG: $OLD_TAG → $VERSION"
+  info "normal tag: $OLD_NORMAL_TAG → $NEW_NORMAL_TAG"
+  info "glass tag : $OLD_GLASS_TAG → $NEW_GLASS_TAG"
   info "normal SHA : ${OLD_NORMAL:0:16}… → ${NEW_NORMAL:0:16}…"
   info "glass SHA  : ${OLD_GLASS:0:16}… → ${NEW_GLASS:0:16}…"
   info "CLI_VERSION: → $VERSION"
@@ -265,8 +271,9 @@ fi
 step "更新 install.sh / cli/tokenclock（编辑于 ${BR_GLASS}）"
 gc checkout "$BR_GLASS" --quiet
 
-# RELEASE_TAG（文件内唯一形如 :-vX.Y.Z} 的片段）
-perl -pi -e 's/(:-)v[0-9]+\.[0-9]+\.[0-9]+\}/${1}'"${VERSION}"'}/' cli/install.sh
+# 各渠道独立 pin 版本；只构建的渠道更新到本次版本，未构建渠道继续沿用旧 release。
+[ "$DO_GLASS" = 0 ] || perl -pi -e 's/(glass\)\s+echo ")v[0-9]+\.[0-9]+\.[0-9]+(")/${1}'"$NEW_GLASS_TAG"'${2}/' cli/install.sh
+[ "$DO_NORMAL" = 0 ] || perl -pi -e 's/(normal\)\s+echo ")v[0-9]+\.[0-9]+\.[0-9]+(")/${1}'"$NEW_NORMAL_TAG"'${2}/' cli/install.sh
 # glass SHA（glass)  echo "<hex>"）
 perl -pi -e 's/(glass\)\s+echo ")[a-f0-9]{64}(")/${1}'"$NEW_GLASS"'${2}/' cli/install.sh
 # normal SHA（normal) echo "<hex>"）
@@ -278,11 +285,13 @@ bash -n cli/install.sh || die "install.sh 语法错误"
 bash -n cli/tokenclock || die "tokenclock 语法错误"
 
 # 回读校验
-read_tag="$(grep -oE 'RELEASE_TAG="\$\{TOKENCLOCK_RELEASE_TAG:-v[0-9.]+' cli/install.sh | grep -oE 'v[0-9.]+')"
+read_normal_tag="$(grep -oE 'normal\) echo "v[0-9.]+"' cli/install.sh | grep -oE 'v[0-9.]+')"
+read_glass_tag="$(grep -oE 'glass\)  echo "v[0-9.]+"' cli/install.sh | grep -oE 'v[0-9.]+')"
 read_normal="$(grep -oE 'normal\) echo "[a-f0-9]{64}"' cli/install.sh | grep -oE '[a-f0-9]{64}')"
 read_glass="$(grep -oE 'glass\)  echo "[a-f0-9]{64}"' cli/install.sh | grep -oE '[a-f0-9]{64}')"
 read_cli="$(grep -oE 'CLI_VERSION="[0-9.]+"' cli/tokenclock | grep -oE '[0-9.]+')"
-[ "$read_tag" = "$VERSION" ] || die "回读 RELEASE_TAG 不符: $read_tag"
+[ "$read_normal_tag" = "$NEW_NORMAL_TAG" ] || die "回读 normal release tag 不符: $read_normal_tag"
+[ "$read_glass_tag" = "$NEW_GLASS_TAG" ] || die "回读 glass release tag 不符: $read_glass_tag"
 [ "$read_normal" = "$NEW_NORMAL" ] || die "回读 normal SHA 不符"
 [ "$read_glass" = "$NEW_GLASS" ] || die "回读 glass SHA 不符"
 [ "v$read_cli" = "$VERSION" ] || die "回读 CLI_VERSION 不符: $read_cli"
