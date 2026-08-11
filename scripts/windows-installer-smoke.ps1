@@ -46,6 +46,23 @@ try {
     $check = (& $installer -Action Check -InstallDir $install | ConvertFrom-Json)
     if (-not $check.installed) { throw 'Installer Check did not report the fixture installation.' }
 
+    # Some fresh/minimal user sessions do not export the legacy profile variables even though
+    # Windows known-folder APIs work. Installer initialization must not pass null into Join-Path.
+    $savedProfileEnvironment = @($env:USERPROFILE, $env:LOCALAPPDATA, $env:APPDATA)
+    $nullEnvironmentPassed = $false
+    try {
+        $env:USERPROFILE = $null
+        $env:LOCALAPPDATA = $null
+        $env:APPDATA = $null
+        $nullEnvironmentCheck = (& $installer -Action Check -InstallDir $install | ConvertFrom-Json)
+        $nullEnvironmentPassed = [bool] $nullEnvironmentCheck.installed
+    } finally {
+        $env:USERPROFILE = $savedProfileEnvironment[0]
+        $env:LOCALAPPDATA = $savedProfileEnvironment[1]
+        $env:APPDATA = $savedProfileEnvironment[2]
+    }
+    if (-not $nullEnvironmentPassed) { throw 'Installer did not tolerate missing legacy profile environment variables.' }
+
     $runAfter = (Get-ItemProperty -Path $runKey -Name TokenClock -ErrorAction SilentlyContinue).TokenClock
     if ($runAfter -ne $runBefore) { throw 'Default install unexpectedly changed autostart.' }
     if ((Test-Path -LiteralPath $startLink) -ne $startBefore) { throw 'Default install unexpectedly changed Start Menu shortcuts.' }
@@ -131,7 +148,7 @@ try {
         . $installer -Action Check -InstallDir $install | Out-Null
         function Invoke-RestMethod {
             param([string] $Uri, [hashtable] $Headers)
-            return @(
+            $mockReleases = @(
                 [pscustomobject]@{
                     tag_name = 'v2.0.0'; draft = $false; prerelease = $false
                     assets = @([pscustomobject]@{ name = 'TokenClock-normal-universal.tar.gz' })
@@ -144,6 +161,9 @@ try {
                     )
                 }
             )
+            # Match Windows PowerShell 5.1 Invoke-RestMethod, which can emit a top-level JSON
+            # array as one non-enumerated pipeline object.
+            Write-Output -NoEnumerate $mockReleases
         }
         $Version = 'latest'
         (Get-Release).tag_name -eq 'v1.9.0'
@@ -162,6 +182,7 @@ try {
         defaultAutostartUnchanged = ($runAfter -eq $runBefore)
         defaultShortcutsUnchanged = $true
         checkActionPassed = $check.installed
+        missingProfileEnvironmentHandled = $nullEnvironmentPassed
         latestWindowsAssetPairSelection = $releaseSelectionPassed
         uninstallPassed = $true
         testRoot = $TestRoot

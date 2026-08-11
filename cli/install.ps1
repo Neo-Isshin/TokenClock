@@ -11,7 +11,7 @@ param(
     [ValidateSet('Install', 'Update', 'Check', 'Uninstall')]
     [string] $Action = 'Install',
     [string] $Version = 'latest',
-    [string] $InstallDir = (Join-Path $env:LOCALAPPDATA 'Programs\TokenClock'),
+    [string] $InstallDir,
     [string] $PackagePath,
     [string] $ChecksumPath,
     [switch] $AllowUnsigned,
@@ -29,9 +29,33 @@ $repo = 'Neo-Isshin/TokenClock'
 $assetName = 'TokenClock-windows-x86_64.zip'
 $checksumAssetName = "$assetName.sha256"
 $runKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
-$startMenuLink = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\TokenClock.lnk'
-$desktopLink = Join-Path ([Environment]::GetFolderPath('Desktop')) 'TokenClock.lnk'
-$userDataDir = Join-Path $env:LOCALAPPDATA 'TokenClock'
+
+function Get-KnownFolder(
+    [Environment+SpecialFolder] $Folder,
+    [string] $EnvironmentName,
+    [string] $Fallback
+) {
+    $value = [Environment]::GetFolderPath($Folder)
+    if ([string]::IsNullOrWhiteSpace($value) -and $EnvironmentName) {
+        $value = [Environment]::GetEnvironmentVariable($EnvironmentName, 'Process')
+    }
+    if ([string]::IsNullOrWhiteSpace($value)) { $value = $Fallback }
+    if ([string]::IsNullOrWhiteSpace($value)) {
+        throw "Windows did not provide a path for $Folder. Sign in with a normal user profile and retry."
+    }
+    return $value
+}
+
+$userProfile = Get-KnownFolder ([Environment+SpecialFolder]::UserProfile) 'USERPROFILE' $null
+$localAppData = Get-KnownFolder ([Environment+SpecialFolder]::LocalApplicationData) 'LOCALAPPDATA' (Join-Path $userProfile 'AppData\Local')
+$roamingAppData = Get-KnownFolder ([Environment+SpecialFolder]::ApplicationData) 'APPDATA' (Join-Path $userProfile 'AppData\Roaming')
+$desktopDirectory = Get-KnownFolder ([Environment+SpecialFolder]::DesktopDirectory) $null (Join-Path $userProfile 'Desktop')
+if ([string]::IsNullOrWhiteSpace($InstallDir)) {
+    $InstallDir = Join-Path $localAppData 'Programs\TokenClock'
+}
+$startMenuLink = Join-Path $roamingAppData 'Microsoft\Windows\Start Menu\Programs\TokenClock.lnk'
+$desktopLink = Join-Path $desktopDirectory 'TokenClock.lnk'
+$userDataDir = Join-Path $localAppData 'TokenClock'
 
 function Get-FullPath([string] $Path) {
     if ([string]::IsNullOrWhiteSpace($Path)) { throw 'Path must not be empty.' }
@@ -42,10 +66,10 @@ function Assert-SafeOwnedDirectory([string] $Path) {
     $candidate = Get-FullPath $Path
     $protected = @(
         [IO.Path]::GetPathRoot($candidate),
-        (Get-FullPath $env:USERPROFILE),
-        (Get-FullPath $env:LOCALAPPDATA),
-        (Get-FullPath $env:APPDATA),
-        (Get-FullPath (Join-Path $env:LOCALAPPDATA 'Programs'))
+        (Get-FullPath $userProfile),
+        (Get-FullPath $localAppData),
+        (Get-FullPath $roamingAppData),
+        (Get-FullPath (Join-Path $localAppData 'Programs'))
     )
     if ($protected -contains $candidate) { throw "Refusing broad install/uninstall target: $candidate" }
     return $candidate
@@ -108,7 +132,10 @@ function New-Shortcut([string] $LinkPath, [string] $ExePath, [string] $WorkingDi
 }
 
 function Test-ReleaseHasWindowsAssets($Release) {
-    $names = @($Release.assets | ForEach-Object name)
+    if ($null -eq $Release) { return $false }
+    $names = @($Release.assets | ForEach-Object { [string] $_.name } | Where-Object {
+        -not [string]::IsNullOrWhiteSpace($_)
+    })
     return ($assetName -in $names) -and ($checksumAssetName -in $names)
 }
 
@@ -118,7 +145,11 @@ function Get-Release {
         # The repository's newest macOS/Linux release may precede its Windows asset upload.
         # Pick the newest stable release that already contains both the ZIP and its checksum.
         for ($page = 1; $page -le 10; $page++) {
-            $releases = @(Invoke-RestMethod "https://api.github.com/repos/$repo/releases?per_page=100&page=$page" -Headers $headers)
+            # Windows PowerShell 5.1 can preserve a top-level JSON array as one pipeline object
+            # when Invoke-RestMethod is called directly inside @(...). Assign first so foreach
+            # consistently receives individual release objects on both 5.1 and PowerShell 7.
+            $response = Invoke-RestMethod "https://api.github.com/repos/$repo/releases?per_page=100&page=$page" -Headers $headers
+            $releases = @($response)
             foreach ($release in $releases) {
                 if (-not $release.draft -and -not $release.prerelease -and (Test-ReleaseHasWindowsAssets $release)) {
                     return $release
@@ -208,7 +239,10 @@ try {
     } else {
         Write-Host "Fetching TokenClock release metadata ($Version)..."
         $release = Get-Release
-        $releaseTag = $release.tag_name
+        if ($null -eq $release -or [string]::IsNullOrWhiteSpace([string] $release.tag_name)) {
+            throw 'GitHub returned release metadata without a tag name. Retry shortly or specify -Version v1.4.3.'
+        }
+        $releaseTag = [string] $release.tag_name
         $zipUrl = ($release.assets | Where-Object name -eq $assetName | Select-Object -First 1).browser_download_url
         $shaUrl = ($release.assets | Where-Object name -eq $checksumAssetName | Select-Object -First 1).browser_download_url
         if (-not $zipUrl) { throw "Release '$releaseTag' has no $assetName asset." }
