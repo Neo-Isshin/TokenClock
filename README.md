@@ -8,6 +8,7 @@
 
 [![macOS 12+](https://img.shields.io/badge/macOS-12%2B-000000?style=for-the-badge&logo=apple&logoColor=white)](#macos-and-linux)
 [![macOS 26+](https://img.shields.io/badge/macOS%2026-Liquid%20Glass-00B0F0?style=for-the-badge)](#macos-and-linux)
+[![macOS 27 Beta 5](https://img.shields.io/badge/macOS%2027-Beta%205%20Supported-8A2BE2?style=for-the-badge&logo=apple&logoColor=white)](#macos-and-linux)
 [![Windows normal](https://img.shields.io/badge/Windows-normal-0078D4?style=for-the-badge&logo=windows&logoColor=white)](#windows)
 [![Linux normal](https://img.shields.io/badge/Linux-normal-FCC624?style=for-the-badge&logo=linux&logoColor=black)](#macos-and-linux)
 
@@ -45,7 +46,7 @@ Click the clock for session and model details. Right-click it to change the face
 
 | Platform | Edition | Notes |
 |---|---|---|
-| macOS 26+ | Liquid Glass + Normal | Universal Apple Silicon/Intel build |
+| macOS 26+ | Liquid Glass + Normal | Universal Apple Silicon/Intel build; supports macOS 27 Beta 5 |
 | macOS 12–25 | Normal | Classic opaque desktop widget |
 | Windows 11 x86_64 | Normal | Per-user install; no administrator rights required |
 | Linux x86_64 | Normal | Prebuilt GTK3 AppImage; glibc 2.35+ |

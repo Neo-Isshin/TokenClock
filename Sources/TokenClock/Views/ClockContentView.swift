@@ -113,10 +113,14 @@ struct ClockContentView: View {
                 glassEnabled: viewModel.glassRefractionEnabled,
                 glassBackingAlpha: viewModel.glassBackingAlpha
             ))
-            .contentShape(Rectangle())
-            .onTapGesture {
+
+            // SwiftUI's tap recognizer consumes the window-drag mouse sequence on recent
+            // runtimes. Keep the glass visuals intact and route click/drag through AppKit.
+            ClockInteractionLayer {
                 viewModel.isExpanded.toggle()
             }
+            .frame(width: d, height: d)
+            .accessibilityHidden(true)
         }
         .frame(width: d, height: d)
         // 无障碍：表盘是纯视觉（指针/emoji/格式化数字），VoiceOver 读不出含义。
