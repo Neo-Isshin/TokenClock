@@ -2,11 +2,9 @@ import Foundation
 import SQLite3
 
 /// 从 Codex CLI 读取 token 使用数据
-/// Token 计数直接使用 last_token_usage（每条消息的增量值），取 total_tokens。
-/// 注意：total_tokens == input + output，已包含 reasoning_output_tokens（reasoning ⊂ output），
-/// 故不再额外累加 reasoning，否则会重复计算。
-/// last_token_usage.input_tokens 已包含 cached_input_tokens，与 total_token_usage 语义一致
-/// 缓存率从 last_token_usage.cached_input_tokens 计算
+/// Token 计数使用 last_token_usage（每条消息的增量值）。total_tokens 已包含
+/// cached_input_tokens，因此主用量必须减去缓存输入；reasoning 已包含在 total 中，
+/// 不再额外累加。
 /// Session 列表从 SQLite threads 表读取
 final class CodexUsageService: @unchecked Sendable {
     private static let relevantLineNeedles = [
@@ -62,7 +60,7 @@ final class CodexUsageService: @unchecked Sendable {
         let d = dailyData[DateHelper.todayKey()]
         let total = d?.tokens ?? 0
         let cache = dailyCache[DateHelper.todayKey()] ?? 0
-        let rate = total > 0 ? Double(cache) / Double(total) : 0
+        let rate = TokenAccounting.cacheReadShare(freshTokens: total, cacheRead: cache)
         return (total, d?.messages ?? 0, rate)
     }
 
@@ -176,8 +174,9 @@ final class CodexUsageService: @unchecked Sendable {
         if line.contains("\"type\":\"token_count\"") {
             guard let ltuRange = line.range(of: "\"last_token_usage\":{") else { return }
             let segment = String(line[ltuRange.lowerBound...].prefix(500))
-            let tokens = extractInt(from: segment, key: "\"total_tokens\"")
+            let rawTotal = extractInt(from: segment, key: "\"total_tokens\"")
             let cached = extractInt(from: segment, key: "\"cached_input_tokens\"")
+            let tokens = TokenAccounting.excludingCacheRead(inclusiveTotal: rawTotal, cacheRead: cached)
             let contextWindow = extractInt(from: line, key: "\"model_context_window\"")
             let modelForTurn = state.currentModel ?? (contextWindow == 258400 ? "gpt-5.5" : nil)
 

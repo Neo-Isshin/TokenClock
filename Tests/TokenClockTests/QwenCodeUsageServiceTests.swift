@@ -3,7 +3,7 @@ import XCTest
 
 /// QwenCodeUsageService 公式测试 —— 验证 `usageMetadata` 分支：
 /// `promptTokenCount` 已含 `cachedContentTokenCount`，故
-/// `total = prompt + candidates + thoughts`（**不含 cached**，否则双计）。
+/// `total = prompt - cached + candidates + thoughts`。
 /// （gemini-CLI 分支的公式与 GeminiUsageService 相同，由 GeminiUsageServiceTests 覆盖。）
 final class QwenCodeUsageServiceTests: XCTestCase {
 
@@ -23,7 +23,6 @@ final class QwenCodeUsageServiceTests: XCTestCase {
     }
 
     /// 在 tmp/projects/<proj>/chats/<session>.jsonl 写入若干行
-    @discardableResult
     private func writeSession(project: String, session: String, lines: [String]) {
         let chatsDir = tmpRoot + "projects/\(project)/chats/"
         try? FileManager.default.createDirectory(atPath: chatsDir, withIntermediateDirectories: true)
@@ -41,15 +40,15 @@ final class QwenCodeUsageServiceTests: XCTestCase {
 
     func testUsageMetadata_excludesCached() {
         let ts = "2026-07-10T12:00:00.000Z"
-        // prompt=1000（已含 cached=800）+ candidates=100 + thoughts=50 = 1150（非 1950）
+        // fresh prompt=1000-800，另加 candidates=100、thoughts=50，总计 350。
         writeSession(project: "p1", session: "session-s1.jsonl", lines: [
             usageLine(prompt: 1000, candidates: 100, thoughts: 50, cached: 800, timestamp: ts),
         ])
         let svc = QwenCodeUsageService()
         svc.fullScan()
         let key = DateHelper.localDateKey(from: ts)
-        XCTAssertEqual(svc.dailyData[key]?.tokens, 1150,
-                       "usageMetadata total = prompt+candidates+thoughts；cached 已含在 prompt 内")
+        XCTAssertEqual(svc.dailyData[key]?.tokens, 350,
+                       "usageMetadata total = prompt-cached+candidates+thoughts")
         XCTAssertEqual(svc.dailyCache[key], 800)
     }
 

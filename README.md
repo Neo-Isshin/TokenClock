@@ -36,6 +36,7 @@ Click the clock for session and model details. Right-click it to change the face
 ## What you get
 
 - **14 AI coding tools in one place.** TokenClock finds their local usage data automatically and lets you correct a path in Settings when needed.
+- **A clearer usage total.** Reused prompt-cache reads stay out of the main number, while new input, cache creation, output, and reasoning still count.
 - **8 carefully designed clock faces.** Glass, Classic, Glacier, Midnight, Luxe, Antique, Railgun, and Sky, plus saved custom faces.
 - **Useful details without leaving the desktop.** Group usage by session or model, expand individual rows, and sort by percentage.
 - **Codex remaining quota on every edition.** Open Codex Quota to see available windows and reset times. It only checks when you open it.

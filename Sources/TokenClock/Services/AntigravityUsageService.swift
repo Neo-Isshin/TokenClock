@@ -51,7 +51,7 @@ final class AntigravityUsageService: @unchecked Sendable {
         let d = dailyData[DateHelper.todayKey()]
         let cache = dailyCache[DateHelper.todayKey()] ?? 0
         let total = d?.tokens ?? 0
-        let rate = total > 0 ? Double(cache) / Double(total) : 0
+        let rate = TokenAccounting.cacheReadShare(freshTokens: total, cacheRead: cache)
         return (total, d?.messages ?? 0, rate)
     }
 
@@ -170,7 +170,9 @@ final class AntigravityUsageService: @unchecked Sendable {
             let cacheTokens = varintValue(tel, field: 3)
             let thoughtTokens = varintValue(tel, field: 9)
             let toolTokens = varintValue(tel, field: 10)
-            let total = inputTokens + outputTokens + cacheTokens + thoughtTokens + toolTokens
+            let total = TokenAccounting.separateCacheFields(
+                input: inputTokens, output: outputTokens, additional: [thoughtTokens, toolTokens]
+            )
             guard total > 0 else { continue }
 
             // 使用 metadata 提供的真实时间戳；缺失时退回到当前时间
@@ -335,10 +337,12 @@ final class AntigravityUsageService: @unchecked Sendable {
                         // 字段映射与 processStepPayload 保持一致（已校准）
                         let inputT = varintValue(tel, field: 1)
                         let outputT = varintValue(tel, field: 2)
-                        let cacheT = varintValue(tel, field: 3)
+                        _ = varintValue(tel, field: 3) // cache read: diagnostic only
                         let thoughtT = varintValue(tel, field: 9)
                         let toolT = varintValue(tel, field: 10)
-                        let total = inputT + outputT + cacheT + thoughtT + toolT
+                        let total = TokenAccounting.separateCacheFields(
+                            input: inputT, output: outputT, additional: [thoughtT, toolT]
+                        )
                         guard total > 0 else { continue }
                         sessionTokens += total
                         sessionMsgs += 1

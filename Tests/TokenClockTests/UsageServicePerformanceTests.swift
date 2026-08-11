@@ -25,7 +25,7 @@ final class UsageServicePerformanceTests: XCTestCase {
 
         let service = CodexUsageService(codexHome: home.path)
         service.fullScan()
-        assertUsage(service.todayUsage(), tokens: 120, messages: 1, cacheRate: 40.0 / 120.0)
+        assertUsage(service.todayUsage(), tokens: 80, messages: 1, cacheRate: 40.0 / 120.0)
 
         let handle = try FileHandle(forWritingTo: rollout)
         try handle.seekToEnd()
@@ -33,9 +33,9 @@ final class UsageServicePerformanceTests: XCTestCase {
         try handle.close()
 
         service.incrementalScan()
-        assertUsage(service.todayUsage(), tokens: 200, messages: 2, cacheRate: 60.0 / 200.0)
+        assertUsage(service.todayUsage(), tokens: 140, messages: 2, cacheRate: 60.0 / 200.0)
         service.incrementalScan()
-        assertUsage(service.todayUsage(), tokens: 200, messages: 2, cacheRate: 60.0 / 200.0)
+        assertUsage(service.todayUsage(), tokens: 140, messages: 2, cacheRate: 60.0 / 200.0)
 
         try FileManager.default.removeItem(at: rollout)
         service.incrementalScan()
@@ -58,25 +58,25 @@ final class UsageServicePerformanceTests: XCTestCase {
 
         let service = CodexUsageService(codexHome: home.path)
         service.fullScan()
-        XCTAssertEqual(service.currentHourTokens(), 100)
-        XCTAssertEqual(service.recentUsage(minutes: 10).tokens, 100)
+        XCTAssertEqual(service.currentHourTokens(), 90)
+        XCTAssertEqual(service.recentUsage(minutes: 10).tokens, 90)
         XCTAssertEqual(service.recentUsage(minutes: 10).messages, 1)
-        XCTAssertEqual(service.recentUsage(minutes: 60).tokens, 100)
+        XCTAssertEqual(service.recentUsage(minutes: 60).tokens, 90)
 
         let handle = try FileHandle(forWritingTo: rollout)
         try handle.seekToEnd()
         try handle.write(contentsOf: Data((codexUsage(timestamp: recentTimestamp, total: 50, cached: 5) + "\n").utf8))
         try handle.close()
         service.incrementalScan()
-        XCTAssertEqual(service.currentHourTokens(), 150)
-        XCTAssertEqual(service.recentUsage(minutes: 10).tokens, 150)
+        XCTAssertEqual(service.currentHourTokens(), 135)
+        XCTAssertEqual(service.recentUsage(minutes: 10).tokens, 135)
         XCTAssertEqual(service.recentUsage(minutes: 10).messages, 2)
 
         try write(codexUsage(timestamp: recentTimestamp, total: 7, cached: 2) + "\n", to: rollout)
         service.incrementalScan()
-        assertUsage(service.todayUsage(), tokens: 7, messages: 1, cacheRate: 2.0 / 7.0)
-        XCTAssertEqual(service.currentHourTokens(), 7)
-        XCTAssertEqual(service.recentUsage(minutes: 10).tokens, 7)
+        assertUsage(service.todayUsage(), tokens: 5, messages: 1, cacheRate: 2.0 / 7.0)
+        XCTAssertEqual(service.currentHourTokens(), 5)
+        XCTAssertEqual(service.recentUsage(minutes: 10).tokens, 5)
         XCTAssertEqual(service.recentUsage(minutes: 10).messages, 1)
     }
 
@@ -130,14 +130,14 @@ final class UsageServicePerformanceTests: XCTestCase {
 
         let service = ClaudeCodeUsageService(claudeHome: home.path)
         service.fullScan()
-        assertUsage(service.todayUsage(), tokens: 17, messages: 1, cacheRate: 3.0 / 17.0)
+        assertUsage(service.todayUsage(), tokens: 16, messages: 1, cacheRate: 2.0 / 18.0)
         XCTAssertEqual(Dictionary(uniqueKeysWithValues: service.todaySessions().map { ($0.rawId, $0.todayTokens) }), [
-            "top-session": 17,
-            "nested-session": 24,
+            "top-session": 16,
+            "nested-session": 23,
         ])
 
         service.incrementalScan()
-        assertUsage(service.todayUsage(), tokens: 17, messages: 1, cacheRate: 3.0 / 17.0)
+        assertUsage(service.todayUsage(), tokens: 16, messages: 1, cacheRate: 2.0 / 18.0)
         try FileManager.default.removeItem(at: nestedLog)
         service.incrementalScan()
         XCTAssertEqual(service.todaySessions().map(\.rawId), ["top-session"])
@@ -155,14 +155,14 @@ final class UsageServicePerformanceTests: XCTestCase {
 
         let service = OpenClawUsageService(openclawHome: home.path)
         service.fullScan()
-        assertUsage(service.todayUsage(), tokens: 12, messages: 1, cacheRate: 11.0 / 12.0)
-        XCTAssertEqual(service.todaySessions().first?.todayTokens, 12)
+        assertUsage(service.todayUsage(), tokens: 13, messages: 1, cacheRate: 5.0 / 18.0)
+        XCTAssertEqual(service.todaySessions().first?.todayTokens, 13)
         XCTAssertEqual(service.todaySessions().first?.model, "gpt-5.6")
 
         let renamed = sessions.appendingPathComponent("renamed.jsonl")
         try FileManager.default.moveItem(at: live, to: renamed)
         service.incrementalScan()
-        assertUsage(service.todayUsage(), tokens: 12, messages: 1, cacheRate: 11.0 / 12.0)
+        assertUsage(service.todayUsage(), tokens: 13, messages: 1, cacheRate: 5.0 / 18.0)
         XCTAssertEqual(service.todaySessions().count, 1)
 
         try FileManager.default.removeItem(at: renamed)
@@ -192,13 +192,13 @@ final class UsageServicePerformanceTests: XCTestCase {
 
         let service = GeminiUsageService(geminiHome: home.path)
         service.fullScan()
-        assertUsage(service.todayUsage(), tokens: 17, messages: 1, cacheRate: 3.0 / 17.0)
+        assertUsage(service.todayUsage(), tokens: 14, messages: 1, cacheRate: 3.0 / 17.0)
         XCTAssertEqual(service.todaySessions().map(\.rawId), ["gemini-jsonl"])
         XCTAssertEqual(service.todaySessions().first?.model, "gemini-2.5-pro")
 
         try FileManager.default.removeItem(at: jsonl)
         service.incrementalScan()
-        assertUsage(service.todayUsage(), tokens: 41, messages: 1, cacheRate: 4.0 / 41.0)
+        assertUsage(service.todayUsage(), tokens: 37, messages: 1, cacheRate: 4.0 / 41.0)
         XCTAssertEqual(service.todaySessions().map(\.rawId), ["gemini-json"])
         XCTAssertEqual(service.todaySessions().first?.model, "gemini-2.5-flash")
     }
@@ -224,7 +224,7 @@ final class UsageServicePerformanceTests: XCTestCase {
 
         try FileManager.default.setAttributes([.modificationDate: Date()], ofItemAtPath: session.path)
         service.incrementalScan()
-        assertUsage(service.todayUsage(), tokens: 17, messages: 1, cacheRate: 3.0 / 17.0)
+        assertUsage(service.todayUsage(), tokens: 14, messages: 1, cacheRate: 3.0 / 17.0)
     }
 
     func testQwenCachedDetailsPreserveTotalsAndEvictRenamedDeletedFiles() throws {
@@ -236,10 +236,10 @@ final class UsageServicePerformanceTests: XCTestCase {
 
         let service = QwenCodeUsageService(qwenHome: home.path)
         service.fullScan()
-        assertUsage(service.todayUsage(), tokens: 17, messages: 1, cacheRate: 3.0 / 17.0)
+        assertUsage(service.todayUsage(), tokens: 14, messages: 1, cacheRate: 3.0 / 17.0)
         XCTAssertEqual(service.todaySessions().first?.rawId, "qwen-one.jsonl")
         service.incrementalScan()
-        assertUsage(service.todayUsage(), tokens: 17, messages: 1, cacheRate: 3.0 / 17.0)
+        assertUsage(service.todayUsage(), tokens: 14, messages: 1, cacheRate: 3.0 / 17.0)
 
         let renamed = chats.appendingPathComponent("qwen-two.jsonl")
         try FileManager.default.moveItem(at: original, to: renamed)
@@ -259,15 +259,15 @@ final class UsageServicePerformanceTests: XCTestCase {
         try FileManager.default.createDirectory(at: sessionOne, withIntermediateDirectories: true)
         let timestamp = todayTimestamp()
         let otelLog = otel.appendingPathComponent("usage.jsonl")
-        try write(copilotOtelEvent(timestamp: timestamp, input: 10, output: 5, cached: 2) + "\n", to: otelLog)
-        try write(copilotSessionEvent(timestamp: timestamp, input: 3, output: 4, cached: 1) + "\n", to: sessionOne.appendingPathComponent("events.jsonl"))
+        try write(copilotOtelEvent(timestamp: timestamp, input: 10, output: 5, cached: 2, cacheWrite: 3) + "\n", to: otelLog)
+        try write(copilotSessionEvent(timestamp: timestamp, input: 3, output: 4, cached: 1, cacheWrite: 2) + "\n", to: sessionOne.appendingPathComponent("events.jsonl"))
 
         let service = CopilotUsageService(copilotHome: home.path)
         service.fullScan()
-        assertUsage(service.todayUsage(), tokens: 25, messages: 2, cacheRate: 3.0 / 25.0)
+        assertUsage(service.todayUsage(), tokens: 19, messages: 2, cacheRate: 3.0 / 22.0)
         XCTAssertEqual(service.todaySessions().first?.rawId, "session-one")
         service.incrementalScan()
-        assertUsage(service.todayUsage(), tokens: 25, messages: 2, cacheRate: 3.0 / 25.0)
+        assertUsage(service.todayUsage(), tokens: 19, messages: 2, cacheRate: 3.0 / 22.0)
 
         let sessionTwo = home.appendingPathComponent("session-state/session-two", isDirectory: true)
         try FileManager.default.moveItem(at: sessionOne, to: sessionTwo)
@@ -394,7 +394,7 @@ final class UsageServicePerformanceTests: XCTestCase {
         let appendMilliseconds = elapsedMilliseconds { service.incrementalScan() }
 
         let result = service.todayUsage()
-        XCTAssertEqual(result.tokens, 200_010)
+        XCTAssertEqual(result.tokens, 120_006)
         XCTAssertEqual(result.messages, 20_001)
         XCTAssertEqual(legacyResult.tokens, result.tokens)
         XCTAssertEqual(legacyResult.messages, result.messages)
@@ -629,11 +629,13 @@ final class UsageServicePerformanceTests: XCTestCase {
             let timestamp = legacyTimestamp(from: line)
             guard !timestamp.isEmpty, !legacyLocalDateKey(from: timestamp).isEmpty else { return }
             let usage = String(line[usageRange.lowerBound...].prefix(500))
-            let tokens = legacyExtractInt(usage, key: "\"total_tokens\"")
+            let total = legacyExtractInt(usage, key: "\"total_tokens\"")
+            let cached = legacyExtractInt(usage, key: "\"cached_input_tokens\"")
+            let tokens = max(0, total - cached)
             guard tokens > 0 else { return }
             totals.tokens += tokens
             totals.messages += 1
-            totals.cache += legacyExtractInt(usage, key: "\"cached_input_tokens\"")
+            totals.cache += cached
         }
 
         while stream.hasBytesAvailable {
@@ -720,7 +722,7 @@ final class UsageServicePerformanceTests: XCTestCase {
 
     private func qwenTokens(_ object: [String: Any]) -> Int {
         guard let values = object["tokens"] as? [String: Any] else { return 0 }
-        return (values["input"] as? Int ?? 0)
+        return max(0, (values["input"] as? Int ?? 0) - (values["cached"] as? Int ?? 0))
             + (values["output"] as? Int ?? 0)
             + (values["thought"] as? Int ?? 0)
     }
@@ -732,9 +734,8 @@ final class UsageServicePerformanceTests: XCTestCase {
 
     private func copilotTokens(_ object: [String: Any]) -> Int {
         guard let values = object["usage"] as? [String: Any] else { return 0 }
-        return (values["inputTokens"] as? Int ?? 0)
+        return max(0, (values["inputTokens"] as? Int ?? 0) - (values["cacheReadTokens"] as? Int ?? 0))
             + (values["outputTokens"] as? Int ?? 0)
-            + (values["cacheReadTokens"] as? Int ?? 0)
     }
 
     private func grokTokens(_ object: [String: Any]) -> Int {
@@ -794,12 +795,12 @@ final class UsageServicePerformanceTests: XCTestCase {
         "{\"type\":\"gemini\",\"timestamp\":\"\(timestamp)\",\"model\":\"\(model)\",\"tokens\":{\"input\":\(input),\"output\":\(output),\"cached\":\(cached),\"thought\":\(thought)}}"
     }
 
-    private func copilotOtelEvent(timestamp: String, input: Int, output: Int, cached: Int) -> String {
-        "{\"startTime\":\"\(timestamp)\",\"attributes\":{\"gen_ai.usage.input_tokens\":\(input),\"gen_ai.usage.output_tokens\":\(output),\"gen_ai.usage.cache_read.input_tokens\":\(cached)}}"
+    private func copilotOtelEvent(timestamp: String, input: Int, output: Int, cached: Int, cacheWrite: Int = 0) -> String {
+        "{\"startTime\":\"\(timestamp)\",\"attributes\":{\"gen_ai.usage.input_tokens\":\(input),\"gen_ai.usage.output_tokens\":\(output),\"gen_ai.usage.cache_read.input_tokens\":\(cached),\"gen_ai.usage.cache_creation.input_tokens\":\(cacheWrite)}}"
     }
 
-    private func copilotSessionEvent(timestamp: String, input: Int, output: Int, cached: Int) -> String {
-        "{\"type\":\"assistant.usage\",\"timestamp\":\"\(timestamp)\",\"usage\":{\"inputTokens\":\(input),\"outputTokens\":\(output),\"cacheReadTokens\":\(cached)}}"
+    private func copilotSessionEvent(timestamp: String, input: Int, output: Int, cached: Int, cacheWrite: Int = 0) -> String {
+        "{\"type\":\"assistant.usage\",\"timestamp\":\"\(timestamp)\",\"usage\":{\"inputTokens\":\(input),\"outputTokens\":\(output),\"cacheReadTokens\":\(cached),\"cacheWriteTokens\":\(cacheWrite)}}"
     }
 
     private func continueEvent(timestamp: String, input: Int, output: Int) -> String {

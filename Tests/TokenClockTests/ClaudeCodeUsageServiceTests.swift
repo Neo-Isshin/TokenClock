@@ -2,8 +2,8 @@ import XCTest
 @testable import TokenClock
 
 /// ClaudeCodeUsageService 集成测试 —— 验证 token 字段公式（来自 docs/TOOL_SCHEMA_ANALYSIS）：
-///   tokens = input_tokens + output_tokens + cache_read_input_tokens
-///   （cache_creation_input_tokens **不**计入 tokens，但计入 cacheTokens）
+///   tokens = input_tokens + output_tokens + cache_creation_input_tokens
+///   （cache_read_input_tokens 仅作为缓存命中诊断，不进入主用量）
 ///
 /// 通过 PathConfig.setClaudeCodePath(tmp) 把服务重定向到临时 fixture 目录，
 /// 不读真实 ~/.claude、无需侵入式重构。期望的日期/小时 key 用 DateHelper（服务的依赖，
@@ -27,7 +27,6 @@ final class ClaudeCodeUsageServiceTests: XCTestCase {
     }
 
     /// 在 tmp/projects/<proj>/<session>.jsonl 写入若干 JSONL 行
-    @discardableResult
     private func writeSession(project: String, session: String, lines: [String]) {
         let projDir = tmpRoot + "projects/\(project)/"
         try? FileManager.default.createDirectory(atPath: projDir, withIntermediateDirectories: true)
@@ -43,12 +42,12 @@ final class ClaudeCodeUsageServiceTests: XCTestCase {
         return "{\"type\":\"assistant\",\"message\":{\"usage\":\(usage)},\"timestamp\":\"\(timestamp)\"}"
     }
 
-    func testTokenFormula_excludesCacheCreation() {
+    func testTokenFormula_excludesCacheRead_includesCacheCreation() {
         // 12:00Z 与 12:30Z 在所有现实时区都落同一本地日 → 可安全合计
         let ts1 = "2026-07-10T12:00:00.000Z"
         let ts2 = "2026-07-10T12:30:00.000Z"
         writeSession(project: "p1", session: "s1.jsonl", lines: [
-            assistantLine(input: 100, output: 50, cacheRead: 200, cacheCreation: 30, timestamp: ts1),  // 350
+            assistantLine(input: 100, output: 50, cacheRead: 200, cacheCreation: 30, timestamp: ts1),  // 180
             assistantLine(input: 10, output: 5, cacheRead: 0, timestamp: ts2),                         // 15
         ])
 
@@ -57,9 +56,9 @@ final class ClaudeCodeUsageServiceTests: XCTestCase {
 
         let key = DateHelper.localDateKey(from: ts1)
         let day = svc.dailyData[key]
-        XCTAssertEqual(day?.tokens, 365, "tokens 应 = input+output+cache_read（不含 cache_creation）")
+        XCTAssertEqual(day?.tokens, 195, "tokens 应 = input+output+cache_creation（不含 cache_read）")
         XCTAssertEqual(day?.messages, 2)
-        XCTAssertEqual(svc.dailyCache[key], 230, "cacheTokens = cache_read + cache_creation")
+        XCTAssertEqual(svc.dailyCache[key], 200, "缓存诊断仅统计 cache_read")
     }
 
     func testHourlyBuckets_splitByHour() {

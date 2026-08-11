@@ -32,7 +32,7 @@ final class HermesUsageService: @unchecked Sendable {
         let d = dailyData[DateHelper.todayKey()]
         let cache = dailyCache[DateHelper.todayKey()] ?? 0
         let total = d?.tokens ?? 0
-        let rate = total > 0 ? Double(cache) / Double(total) : 0
+        let rate = TokenAccounting.cacheReadShare(freshTokens: total, cacheRead: cache)
         return (total, d?.messages ?? 0, rate)
     }
 
@@ -96,7 +96,7 @@ final class HermesUsageService: @unchecked Sendable {
                cache_write_tokens,
                message_count
         FROM sessions
-        WHERE input_tokens > 0 OR output_tokens > 0
+        WHERE input_tokens > 0 OR output_tokens > 0 OR cache_write_tokens > 0
         ORDER BY started_at ASC
         """
 
@@ -115,7 +115,9 @@ final class HermesUsageService: @unchecked Sendable {
             let cacheWrite = sqlite3_column_int(stmt, 4)
             let msgCount = sqlite3_column_int(stmt, 5)
 
-            let tokens = Int(inputTokens) + Int(outputTokens) + Int(cacheRead)
+            let tokens = TokenAccounting.separateCacheFields(
+                input: Int(inputTokens), cacheWrite: Int(cacheWrite), output: Int(outputTokens)
+            )
             guard tokens > 0 else { continue }
 
             let date = Date(timeIntervalSince1970: startedAt)
@@ -143,8 +145,7 @@ final class HermesUsageService: @unchecked Sendable {
             }
 
             // Cache
-            let cacheTokens = Int(cacheRead) + Int(cacheWrite)
-            dailyCache[dateKey, default: 0] += cacheTokens
+            dailyCache[dateKey, default: 0] += Int(cacheRead)
 
             // Recent (今天内的 session)
             if dateKey == today && date >= now.addingTimeInterval(-AppConfig.Scan.oneDaySeconds) {
@@ -177,7 +178,7 @@ final class HermesUsageService: @unchecked Sendable {
                message_count
         FROM sessions
         WHERE started_at >= ?
-          AND (input_tokens > 0 OR output_tokens > 0)
+          AND (input_tokens > 0 OR output_tokens > 0 OR cache_write_tokens > 0)
         ORDER BY started_at DESC
         """
 
@@ -197,10 +198,13 @@ final class HermesUsageService: @unchecked Sendable {
             let model = modelPtr != nil ? String(cString: modelPtr!) : nil
             let inputTokens = sqlite3_column_int(stmt, 3)
             let outputTokens = sqlite3_column_int(stmt, 4)
-            let cacheRead = sqlite3_column_int(stmt, 5)
+            _ = sqlite3_column_int(stmt, 5) // cache read: diagnostic only
+            let cacheWrite = sqlite3_column_int(stmt, 6)
             let msgCount = sqlite3_column_int(stmt, 7)
 
-            let tokens = Int(inputTokens) + Int(outputTokens) + Int(cacheRead)
+            let tokens = TokenAccounting.separateCacheFields(
+                input: Int(inputTokens), cacheWrite: Int(cacheWrite), output: Int(outputTokens)
+            )
             guard tokens > 0 else { continue }
 
             let date = Date(timeIntervalSince1970: startedAt)
