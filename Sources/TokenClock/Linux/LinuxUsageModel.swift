@@ -51,6 +51,13 @@ final class LinuxUsageModel: @unchecked Sendable {
             let summary = PathDetector.runFullDetection()
             saveDetectedPaths(summary.results)
         }
+
+        // 每周自动静默刷新价格目录（与 macOS ViewModel 一致）
+        if PricingService.shared.isStale() {
+            Task.detached(priority: .utility) {
+                try? await PricingService.shared.refresh()
+            }
+        }
     }
 
     var tools: [ToolUsage] {
@@ -125,7 +132,7 @@ final class LinuxUsageModel: @unchecked Sendable {
         }
         if enabled.contains("Claude Code") {
             let usage = claudeCodeService.todayUsage()
-            results["Claude Code"] = snapshot(usage, claudeCodeService.recentUsage(minutes: rateWindow).tokens, claudeCodeService.currentHourTokens(), claudeCodeService.isActive(), claudeCodeService.todaySessions())
+            results["Claude Code"] = snapshot(usage, claudeCodeService.recentUsage(minutes: rateWindow).tokens, claudeCodeService.currentHourTokens(), claudeCodeService.isActive(), claudeCodeService.todaySessions(), claudeCodeService.todayCost())
         }
         if enabled.contains("Gemini CLI") {
             let usage = geminiService.todayUsage()
@@ -133,7 +140,7 @@ final class LinuxUsageModel: @unchecked Sendable {
         }
         if enabled.contains("Codex") {
             let usage = codexService.todayUsage()
-            results["Codex"] = snapshot(usage, codexService.recentUsage(minutes: rateWindow).tokens, codexService.currentHourTokens(), codexService.isActive(), codexService.todaySessions())
+            results["Codex"] = snapshot(usage, codexService.recentUsage(minutes: rateWindow).tokens, codexService.currentHourTokens(), codexService.isActive(), codexService.todaySessions(), codexService.todayCost())
         }
         if enabled.contains("Hermes") {
             let usage = hermesService.todayUsage()
@@ -190,6 +197,7 @@ final class LinuxUsageModel: @unchecked Sendable {
                 cacheRate: result.cacheRate,
                 recentTokens: result.recent,
                 hourlyTokens: result.hourly,
+                todayCost: result.cost,
                 sessions: result.sessions
             )
         }
@@ -220,6 +228,8 @@ final class LinuxUsageModel: @unchecked Sendable {
                     "cacheRate": tool.cacheRate,
                     "recentTokens": tool.recentTokens,
                     "hourlyTokens": tool.hourlyTokens,
+                    "todayCost": tool.todayCost.value,
+                    "costComplete": tool.todayCost.complete,
                     "sessions": tool.sessions.map {
                         [
                             "id": $0.rawId,
@@ -281,6 +291,8 @@ final class LinuxUsageModel: @unchecked Sendable {
         let hourly: Int
         let active: Bool
         let cacheRate: Double
+        /// 今日估算费用（暂只有 Claude Code / Codex 提供分桶计费，其余工具为 .zero）
+        var cost: CostEstimate = .zero
         let sessions: [SessionInfo]
     }
 
@@ -289,7 +301,8 @@ final class LinuxUsageModel: @unchecked Sendable {
         _ recent: Int,
         _ hourly: Int,
         _ active: Bool,
-        _ sessions: [SessionInfo]
+        _ sessions: [SessionInfo],
+        _ cost: CostEstimate = .zero
     ) -> ScanSnapshot {
         ScanSnapshot(
             tokens: usage.tokens,
@@ -298,6 +311,7 @@ final class LinuxUsageModel: @unchecked Sendable {
             hourly: hourly,
             active: active,
             cacheRate: usage.cacheRate,
+            cost: cost,
             sessions: sessions
         )
     }

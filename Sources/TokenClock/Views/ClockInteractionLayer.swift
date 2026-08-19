@@ -4,6 +4,8 @@ import SwiftUI
 /// AppKit owns the primary mouse sequence so click and native window dragging remain compatible
 /// across SwiftUI/runtime changes. Transparent corners stay click-through by using a circular
 /// hit test instead of a full rectangular content shape.
+/// （自 main 分支移植：SwiftUI 的 tap 手势会吞掉窗口拖拽的鼠标序列，点击/拖动改由 AppKit 分发；
+/// 拖动超过 3pt 判定为拖拽并移动窗口，否则视为点击切换详情面板。）
 struct ClockInteractionLayer: NSViewRepresentable {
     let onClick: () -> Void
 

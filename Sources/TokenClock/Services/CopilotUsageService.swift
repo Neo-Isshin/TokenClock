@@ -155,7 +155,7 @@ final class CopilotUsageService: @unchecked Sendable {
         let output = attrs["gen_ai.usage.output_tokens"] as? Int ?? 0
         let cacheRead = attrs["gen_ai.usage.cache_read.input_tokens"] as? Int ?? 0
         _ = attrs["gen_ai.usage.cache_creation.input_tokens"] as? Int ?? 0
-        // OTel input_tokens includes cache-read and cache-creation tokens. Cache creation is
+        // OTel input_tokens includes both cache-read and cache-creation tokens. Cache creation is
         // fresh work, so subtract only the read portion.
         let total = TokenAccounting.excludingCacheRead(
             inclusiveInput: input, cacheRead: cacheRead, output: output

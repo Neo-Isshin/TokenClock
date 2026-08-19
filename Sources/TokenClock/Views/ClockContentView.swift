@@ -77,8 +77,8 @@ struct ClockContentView: View {
                     .padding(.trailing, 22 * s)
             }
 
-            // SwiftUI's tap recognizer consumes the window-drag mouse sequence on recent
-            // runtimes. Route click-versus-drag through AppKit explicitly.
+            // SwiftUI 的 tap 手势会吞掉「窗口背景拖拽」的鼠标序列（normal 版曾因此拖不动表盘）。
+            // 点击/拖动改由 AppKit 层分发：>3pt 位移 = 拖动窗口，否则 = 点击展开详情。
             ClockInteractionLayer {
                 viewModel.isExpanded.toggle()
             }

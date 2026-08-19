@@ -257,6 +257,7 @@ final class LinuxDetailsPanel: @unchecked Sendable {
         if grouping == .session {
             appendLabel(tr("detail.cacheRate"), width: 44, alignment: 1, style: "tokenclock-detail-header", to: row)
         }
+        appendLabel(tr("detail.cost"), width: 56, alignment: 1, style: "tokenclock-detail-header", to: row)
         return row
     }
 
@@ -277,6 +278,7 @@ final class LinuxDetailsPanel: @unchecked Sendable {
                 tokens: usageText(tool.todayTokens, total: total),
                 messages: "\(tool.todayMessages)",
                 trailing: cacheText(tool.cacheRate),
+                cost: tool.formattedCost,
                 actionName: tool.sessions.isEmpty ? nil : "details:tool:\(tool.name)",
                 child: false,
                 to: list
@@ -291,6 +293,7 @@ final class LinuxDetailsPanel: @unchecked Sendable {
                         tokens: usageText(session.todayTokens, total: total),
                         messages: "\(session.todayMessages)",
                         trailing: "–",
+                        cost: session.formattedCost,
                         actionName: nil,
                         child: true,
                         to: list
@@ -318,6 +321,7 @@ final class LinuxDetailsPanel: @unchecked Sendable {
                 tokens: usageText(group.totalTokens, total: total),
                 messages: "\(group.totalMessages)",
                 trailing: nil,
+                cost: group.formattedCost,
                 actionName: group.contributions.isEmpty ? nil : "details:model-row:\(group.name)",
                 child: false,
                 to: list
@@ -329,6 +333,7 @@ final class LinuxDetailsPanel: @unchecked Sendable {
                         tokens: usageText(contribution.tokens, total: total),
                         messages: "\(contribution.messages)",
                         trailing: nil,
+                        cost: contribution.formattedCost,
                         actionName: nil,
                         child: true,
                         to: list
@@ -343,6 +348,7 @@ final class LinuxDetailsPanel: @unchecked Sendable {
         tokens: String,
         messages: String,
         trailing: String?,
+        cost: String? = nil,
         actionName: String?,
         child: Bool,
         to list: UnsafeMutablePointer<GtkWidget>
@@ -355,6 +361,9 @@ final class LinuxDetailsPanel: @unchecked Sendable {
         appendLabel(messages, width: 40, alignment: 1, style: "tokenclock-detail-subtext", to: row)
         if let trailing {
             appendLabel(trailing, width: 44, alignment: 1, style: "tokenclock-detail-subtext", to: row)
+        }
+        if let cost {
+            appendLabel(cost, width: 56, alignment: 1, style: "tokenclock-detail-subtext", to: row)
         }
 
         if let actionName, let button = gtk_button_new() {

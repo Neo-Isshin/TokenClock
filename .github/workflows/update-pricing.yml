@@ -1,0 +1,58 @@
+# 每周自动刷新价格快照（LiteLLM 上游日更），有变化时创建 PR 供人工 review。
+# 价格快照的 diff 逐模型一行，review 时可直接核对单价变化。
+name: update-pricing
+
+on:
+  schedule:
+    # UTC 每周一 03:17（避开整点，降低 GitHub 定时任务高峰拥堵）
+    - cron: '17 3 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: update-pricing
+  cancel-in-progress: true
+
+jobs:
+  update-snapshot:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Generate snapshot
+        run: python3 scripts/update-pricing-snapshot.py
+
+      - name: Check for changes
+        id: diff
+        run: |
+          if git diff --quiet Sources/TokenClock/Resources/pricing-snapshot.json; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create pull request
+        if: steps.diff.outputs.changed == 'true'
+        run: |
+          BRANCH="chore/pricing-snapshot-$(date -u +%Y%m%d)"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$BRANCH"
+          git add Sources/TokenClock/Resources/pricing-snapshot.json
+          git commit -m "chore(pricing): refresh snapshot from LiteLLM ($(date -u +%Y-%m-%d))"
+          git push origin "$BRANCH"
+          gh pr create \
+            --base main \
+            --head "$BRANCH" \
+            --title "chore(pricing): refresh snapshot $(date -u +%Y-%m-%d)" \
+            --body "由 .github/workflows/update-pricing.yml 自动生成。逐模型核对 diff 中的单价变化后合并。" \
+            --label chore
+        env:
+          GH_TOKEN: ${{ github.token }}
