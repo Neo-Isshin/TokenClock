@@ -13,11 +13,15 @@ final class ClaudeCodeUsageService: @unchecked Sendable {
     private var fileCacheContrib: [String: [String: Int]] = [:]
     private var fileRecentContrib: [String: [RecentEntry]] = [:]
     private var fileLastModel: [String: [String: String]] = [:]
+    /// path → dateKey → 归一化模型名 → 计费分桶。费用按需聚合（todayModelBuckets），
+    /// 重扫同一文件时整体替换，不参与 dailyData 那套减法镜像。
+    private var fileBucketContrib: [String: [String: [String: ModelBuckets]]] = [:]
     /// Nested project logs historically participate in session detail only, not
     /// the tool total. Keep that behavior while avoiding recursive re-parsing.
     private var nestedFileCache: [String: FileMeta] = [:]
     private var nestedDailyContrib: [String: [String: DayUsage]] = [:]
     private var nestedLastModel: [String: [String: String]] = [:]
+    private var nestedBucketContrib: [String: [String: [String: ModelBuckets]]] = [:]
     private var recentEntries: [RecentEntry] = []
 
     private let fm = FileManager.default
@@ -37,9 +41,11 @@ final class ClaudeCodeUsageService: @unchecked Sendable {
         fileCacheContrib.removeAll()
         fileRecentContrib.removeAll()
         fileLastModel.removeAll()
+        fileBucketContrib.removeAll()
         nestedFileCache.removeAll()
         nestedDailyContrib.removeAll()
         nestedLastModel.removeAll()
+        nestedBucketContrib.removeAll()
         recentEntries = []
         scanProjectsDir()
     }
@@ -50,7 +56,7 @@ final class ClaudeCodeUsageService: @unchecked Sendable {
         let d = dailyData[DateHelper.todayKey()]
         let cache = dailyCache[DateHelper.todayKey()] ?? 0
         let total = d?.tokens ?? 0
-        let rate = total > 0 ? Double(cache) / Double(total) : 0
+        let rate = TokenAccounting.cacheReadShare(freshTokens: total, cacheRead: cache)
         return (total, d?.messages ?? 0, rate)
     }
 
@@ -81,6 +87,7 @@ final class ClaudeCodeUsageService: @unchecked Sendable {
             nestedFileCache.removeAll()
             nestedDailyContrib.removeAll()
             nestedLastModel.removeAll()
+            nestedBucketContrib.removeAll()
             rebuildRecentEntries()
             return
         }
@@ -127,6 +134,7 @@ final class ClaudeCodeUsageService: @unchecked Sendable {
         nestedFileCache = nestedFileCache.filter { liveNestedPaths.contains($0.key) }
         nestedDailyContrib = nestedDailyContrib.filter { liveNestedPaths.contains($0.key) }
         nestedLastModel = nestedLastModel.filter { liveNestedPaths.contains($0.key) }
+        nestedBucketContrib = nestedBucketContrib.filter { liveNestedPaths.contains($0.key) }
         rebuildRecentEntries()
     }
 
@@ -142,6 +150,7 @@ final class ClaudeCodeUsageService: @unchecked Sendable {
             fileCacheContrib.removeValue(forKey: path)
             fileRecentContrib.removeValue(forKey: path)
             fileLastModel.removeValue(forKey: path)
+            fileBucketContrib.removeValue(forKey: path)
         }
     }
 
@@ -182,12 +191,14 @@ final class ClaudeCodeUsageService: @unchecked Sendable {
         var newCache: [String: Int] = [:]
         var newRecent: [RecentEntry] = []
         var newLastModels: [String: String] = [:]
+        var newBuckets: [String: [String: ModelBuckets]] = [:]
 
         guard let result = JSONLLineReader.read(path: path, matchingAny: Self.assistantLineNeedle, onLine: { line in
             if line.contains("\"assistant\""), let r = parseLine(line) {
                 accumulate(
                     r, today: today, daily: &newDaily, hourly: &newHourly,
-                    cache: &newCache, recent: &newRecent, lastModels: &newLastModels
+                    cache: &newCache, recent: &newRecent, lastModels: &newLastModels,
+                    buckets: &newBuckets
                 )
             }
         }) else { return }
@@ -195,7 +206,8 @@ final class ClaudeCodeUsageService: @unchecked Sendable {
             if line.contains("\"assistant\""), let r = parseLine(line) {
                 accumulate(
                     r, today: today, daily: &newDaily, hourly: &newHourly,
-                    cache: &newCache, recent: &newRecent, lastModels: &newLastModels
+                    cache: &newCache, recent: &newRecent, lastModels: &newLastModels,
+                    buckets: &newBuckets
                 )
             }
         }
@@ -205,9 +217,19 @@ final class ClaudeCodeUsageService: @unchecked Sendable {
         fileCacheContrib[path] = newCache
         fileRecentContrib[path] = newRecent
         fileLastModel[path] = newLastModels
+        fileBucketContrib[path] = newBuckets
     }
 
-    private struct R { let dateKey: String; let hourKey: String; let tokens: Int; let cacheTokens: Int; let ts: Date?; let model: String? }
+    private struct R {
+        let dateKey: String
+        let hourKey: String
+        let tokens: Int
+        let cacheTokens: Int
+        let ts: Date?
+        let model: String?
+        /// 计费分桶（按原始 model 归一化后的键累计，由调用方合并）
+        let buckets: ModelBuckets
+    }
 
     private func parseLine(_ line: String) -> R? {
         guard let data = line.data(using: .utf8) else { return nil }
@@ -219,20 +241,28 @@ final class ClaudeCodeUsageService: @unchecked Sendable {
         let outputTokens = usage["output_tokens"] as? Int ?? 0
         let cacheRead = usage["cache_read_input_tokens"] as? Int ?? 0
         let cacheCreation = usage["cache_creation_input_tokens"] as? Int ?? 0
-        let tokens = inputTokens + outputTokens + cacheRead
+        // Anthropic reports uncached input, cache read and cache creation as separate fields.
+        // Cache creation is fresh input for this turn; only cache reads are excluded.
+        // （口径与 main 分支 TokenAccounting 一致：主用量不含缓存读，缓存写按新输入计入）
+        let tokens = TokenAccounting.separateCacheFields(
+            input: inputTokens, cacheWrite: cacheCreation, output: outputTokens
+        )
         guard tokens > 0 else { return nil }
         let timestamp = obj["timestamp"] as? String ?? ""
         let dateKey = DateHelper.localDateKey(from: timestamp)
         guard dateKey.count == 10 else { return nil }
         return R(dateKey: dateKey, hourKey: DateHelper.localHourKey(from: timestamp),
-                 tokens: tokens, cacheTokens: cacheRead + cacheCreation,
+                 tokens: tokens, cacheTokens: cacheRead,
                  ts: DateHelper.parseISO8601(timestamp),
-                 model: msg["model"] as? String)
+                 model: msg["model"] as? String,
+                 buckets: ModelBuckets(input: inputTokens, output: outputTokens,
+                                       cacheRead: cacheRead, cacheWrite: cacheCreation))
     }
 
     private func accumulate(_ r: R, today: String, daily: inout [String: DayUsage],
                             hourly: inout [String: HourlyUsage], cache: inout [String: Int],
-                            recent: inout [RecentEntry], lastModels: inout [String: String]) {
+                            recent: inout [RecentEntry], lastModels: inout [String: String],
+                            buckets: inout [String: [String: ModelBuckets]]) {
         if var e = dailyData[r.dateKey] { e.tokens += r.tokens; e.messages += 1; dailyData[r.dateKey] = e }
         else { dailyData[r.dateKey] = DayUsage(tokens: r.tokens, messages: 1) }
         if var e = daily[r.dateKey] { e.tokens += r.tokens; e.messages += 1; daily[r.dateKey] = e }
@@ -244,6 +274,10 @@ final class ClaudeCodeUsageService: @unchecked Sendable {
         // cache tokens
         dailyCache[r.dateKey, default: 0] += r.cacheTokens
         cache[r.dateKey, default: 0] += r.cacheTokens
+        // 费用分桶（按归一化模型名累计，跨日期后缀的同模型自动合并）
+        if let model = ModelNormalizer.normalize(r.model) {
+            buckets[r.dateKey, default: [:]][model, default: ModelBuckets()].merge(r.buckets)
+        }
         // recent
         if r.dateKey == today, let ts = r.ts {
             recent.append(RecentEntry(timestamp: ts, tokens: r.tokens))
@@ -253,27 +287,65 @@ final class ClaudeCodeUsageService: @unchecked Sendable {
         }
     }
 
+    // MARK: - 费用估算
+
+    /// 今日（顶层文件，与工具总数同口径）按归一化模型聚合的计费分桶。
+    /// 保留分桶而非金额：价格目录刷新/自定义价修改后无需重扫日志即可重算。
+    func todayModelBuckets() -> [String: ModelBuckets] {
+        let today = DateHelper.todayKey()
+        var result: [String: ModelBuckets] = [:]
+        for (_, dates) in fileBucketContrib {
+            guard let models = dates[today] else { continue }
+            for (model, b) in models {
+                result[model, default: ModelBuckets()].merge(b)
+            }
+        }
+        return result
+    }
+
+    /// 今日工具级估算费用
+    func todayCost() -> CostEstimate {
+        PricingService.shared.cost(of: todayModelBuckets())
+    }
+
+    /// 今日缓存读 token 总数（顶层文件口径，与工具总数同源；「包含缓存读」展示用）
+    func todayCacheReadTokens() -> Int {
+        let today = DateHelper.todayKey()
+        var result = 0
+        for (_, dates) in fileBucketContrib {
+            guard let models = dates[today] else { continue }
+            for (_, b) in models { result += b.cacheRead }
+        }
+        return result
+    }
+
     private func parseNestedDetailFile(path: String) {
         var daily: [String: DayUsage] = [:]
         var lastModels: [String: String] = [:]
+        var buckets: [String: [String: ModelBuckets]] = [:]
         guard let result = JSONLLineReader.read(path: path, matchingAny: Self.assistantLineNeedle, onLine: { line in
-            accumulateDetailLine(line, daily: &daily, lastModels: &lastModels)
+            accumulateDetailLine(line, daily: &daily, lastModels: &lastModels, buckets: &buckets)
         }) else { return }
         _ = JSONLLineReader.consumeCompleteTrailingLine(result.trailingData) { line in
-            accumulateDetailLine(line, daily: &daily, lastModels: &lastModels)
+            accumulateDetailLine(line, daily: &daily, lastModels: &lastModels, buckets: &buckets)
         }
         nestedDailyContrib[path] = daily
         nestedLastModel[path] = lastModels
+        nestedBucketContrib[path] = buckets
     }
 
     private func accumulateDetailLine(
         _ line: String,
         daily: inout [String: DayUsage],
-        lastModels: inout [String: String]
+        lastModels: inout [String: String],
+        buckets: inout [String: [String: ModelBuckets]]
     ) {
         guard line.contains("\"assistant\""), let result = parseLine(line) else { return }
         daily[result.dateKey, default: DayUsage(tokens: 0, messages: 0)].tokens += result.tokens
         daily[result.dateKey]!.messages += 1
+        if let model = ModelNormalizer.normalize(result.model) {
+            buckets[result.dateKey, default: [:]][model, default: ModelBuckets()].merge(result.buckets)
+        }
         if let model = result.model, !model.isEmpty {
             lastModels[result.dateKey] = model
         }
@@ -330,7 +402,9 @@ final class ClaudeCodeUsageService: @unchecked Sendable {
                 todayTokens: tokens,
                 todayMessages: messages,
                 isActive: true,
-                model: model
+                model: model,
+                todayCost: usage.map { PricingService.shared.cost(of: $0.buckets) } ?? .zero,
+                cacheReadTokens: usage?.cacheReadTokens ?? 0
             ))
         }
 
@@ -341,6 +415,12 @@ final class ClaudeCodeUsageService: @unchecked Sendable {
         var tokens = 0
         var messages = 0
         var model: String?
+        /// 该 session 今日的计费分桶（与 tokens 同源：顶层优先，其次嵌套明细）
+        var buckets: [String: ModelBuckets] = [:]
+        /// 分桶中的缓存读合计（「包含缓存读」展示用）
+        var cacheReadTokens: Int {
+            buckets.values.reduce(0) { $0 + $1.cacheRead }
+        }
     }
 
     private func cachedSessionUsage(for dateKey: String) -> [String: CachedSessionUsage] {
@@ -355,7 +435,8 @@ final class ClaudeCodeUsageService: @unchecked Sendable {
             result[sessionId] = CachedSessionUsage(
                 tokens: usage.tokens,
                 messages: usage.messages,
-                model: fileLastModel[path]?[dateKey]
+                model: fileLastModel[path]?[dateKey],
+                buckets: fileBucketContrib[path]?[dateKey] ?? [:]
             )
         }
 
@@ -368,7 +449,8 @@ final class ClaudeCodeUsageService: @unchecked Sendable {
             result[sessionId] = CachedSessionUsage(
                 tokens: usage.tokens,
                 messages: usage.messages,
-                model: nestedLastModel[path]?[dateKey]
+                model: nestedLastModel[path]?[dateKey],
+                buckets: nestedBucketContrib[path]?[dateKey] ?? [:]
             )
         }
         return result

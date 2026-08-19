@@ -64,7 +64,7 @@ final class CursorAgentUsageService: @unchecked Sendable {
         let d = dailyData[DateHelper.todayKey()]
         let cache = dailyCache[DateHelper.todayKey()] ?? 0
         let total = d?.tokens ?? 0
-        let rate = total > 0 ? Double(cache) / Double(total) : 0
+        let rate = TokenAccounting.cacheReadShare(freshTokens: total, cacheRead: cache)
         return (total, d?.messages ?? 0, rate)
     }
 
@@ -282,7 +282,9 @@ final class CursorAgentUsageService: @unchecked Sendable {
             let outputTokens = intValue(tokenUsage, "outputTokens")
             let cacheRead = intValue(tokenUsage, "cacheReadTokens")
             let cacheWrite = intValue(tokenUsage, "cacheWriteTokens")
-            let total = inputTokens + outputTokens + cacheRead + cacheWrite
+            let total = TokenAccounting.separateCacheFields(
+                input: inputTokens, cacheWrite: cacheWrite, output: outputTokens
+            )
             guard total > 0 else { continue }
 
             if var e = dailyData[dateKey] {
@@ -297,7 +299,7 @@ final class CursorAgentUsageService: @unchecked Sendable {
                 hourlyData[hourKey] = HourlyUsage(tokens: total, messages: 1)
             }
 
-            dailyCache[dateKey, default: 0] += cacheRead + cacheWrite
+            dailyCache[dateKey, default: 0] += cacheRead
 
             if dateKey == today {
                 recentEntries.append(RecentEntry(timestamp: date, tokens: total))

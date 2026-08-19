@@ -27,7 +27,9 @@ let linuxSources = [
     "Services/OpenCodeUsageService.swift",
     "Services/PathConfig.swift",
     "Services/PathDetector.swift",
+    "Services/PricingService.swift",
     "Services/QwenCodeUsageService.swift",
+    "Services/TokenAccounting.swift",
     "Services/UsageAggregator.swift",
     "Services/UsageServiceProtocol.swift",
     "Linux/LinuxAPIServer.swift",
@@ -75,7 +77,10 @@ let package = Package(
                 "main.swift",
             ],
             sources: linuxSources,
-            resources: [.copy("Resources/glass_disc.png")],
+            resources: [
+                .copy("Resources/glass_disc.png"),
+                .copy("Resources/pricing-snapshot.json"),
+            ],
             swiftSettings: [.unsafeFlags(["-parse-as-library"])]
         ),
     ]
@@ -89,7 +94,10 @@ let package = Package(
             name: "TokenClock",
             path: "Sources/TokenClock",
             exclude: ["Linux"],
-            resources: [.copy("Resources/glass_disc.png")],
+            resources: [
+                .copy("Resources/glass_disc.png"),
+                .copy("Resources/pricing-snapshot.json"),
+            ],
             swiftSettings: [.unsafeFlags(["-parse-as-library"])]
         ),
         .testTarget(

@@ -37,6 +37,7 @@ Click the clock for session and model details. Right-click it to change the face
 - **14 AI coding tools in one place.** TokenClock finds their local usage data automatically and lets you correct a path in Settings when needed.
 - **8 carefully designed clock faces.** Glass, Classic, Glacier, Midnight, Luxe, Antique, Railgun, and Sky, plus saved custom faces.
 - **Useful details without leaving the desktop.** Group usage by session or model, expand individual rows, and sort by percentage.
+- **Cost estimation.** Today's token usage converted to USD at API list prices (catalog from LiteLLM, auto-refreshed weekly); custom proxy models can be priced manually in Settings.
 - **Codex remaining quota.** Open the Codex Quota view to see available windows and reset times. It only checks when you open it.
 - **Weather without a location permission popup.** Automatic weather uses an approximate city from your public IP, or you can choose a city yourself.
 - **A native experience on each platform.** macOS uses SwiftUI/AppKit, Windows uses Win32, and Linux uses GTK3. The workflow is shared while controls keep their native appearance.
@@ -105,6 +106,7 @@ Windows may show a reputation warning for an unsigned first release. Check that 
 
 - **Left-click the clock:** show or hide usage details.
 - **Codex Quota:** show remaining Codex limits and reset times.
+- **Cost column:** estimated USD cost of today's usage at API list prices (customize prices in Settings).
 - **By Session / By Model:** change how details are grouped.
 - **By Percent:** compare which tools consumed the most.
 - **Click a detail row:** expand its sessions or models.

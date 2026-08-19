@@ -246,6 +246,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         menu.addItem(tempItem)
         menu.addItem(.separator())
 
+        // 用量口径：token 展示是否包含缓存读（费用估算始终含缓存计价，不受此影响）
+        let scopeItem = NSMenuItem(title: tr("menu.usageScope"), action: nil, keyEquivalent: "")
+        let scopeMenu = NSMenu()
+        let exclItem = NSMenuItem(title: tr("menu.usageExclCache"), action: #selector(setUsageExcludesCache(_:)), keyEquivalent: "")
+        exclItem.state = viewModel.usageIncludesCache ? .off : .on
+        let inclItem = NSMenuItem(title: tr("menu.usageInclCache"), action: #selector(setUsageIncludesCache(_:)), keyEquivalent: "")
+        inclItem.state = viewModel.usageIncludesCache ? .on : .off
+        scopeMenu.addItem(exclItem)
+        scopeMenu.addItem(inclItem)
+        scopeItem.submenu = scopeMenu
+        menu.addItem(scopeItem)
+        menu.addItem(.separator())
+
         let cityMenu = NSMenu()
         let currentCity = viewModel.selectedCity
         for city in ViewModel.cityOptions {
@@ -523,6 +536,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         setupRightClickMenu()
     }
 
+    @objc private func setUsageExcludesCache(_ sender: NSMenuItem) {
+        viewModel.usageIncludesCache = false
+        setupRightClickMenu()
+    }
+
+    @objc private func setUsageIncludesCache(_ sender: NSMenuItem) {
+        viewModel.usageIncludesCache = true
+        setupRightClickMenu()
+    }
+
     @objc private func selectLanguage(_ sender: NSMenuItem) {
         guard let raw = sender.representedObject as? String,
               let lang = AppLanguage(rawValue: raw) else { return }
@@ -746,8 +769,9 @@ private struct DropdownPanelView: View {
                 isLoading: viewModel.isInitialLoading,
                 groupingMode: viewModel.groupingMode,
                 onGroupingChange: { viewModel.groupingMode = $0 },
-                showPercentage: viewModel.showPercentage,
-                onShowPercentageChange: { viewModel.showPercentage = $0 },
+                valueMode: viewModel.valueMode,
+                onValueModeChange: { viewModel.valueMode = $0 },
+                usageIncludesCache: viewModel.usageIncludesCache,
                 showsCodexQuota: viewModel.showsCodexQuota,
                 codexQuota: viewModel.codexQuota,
                 onCodexQuotaToggle: {

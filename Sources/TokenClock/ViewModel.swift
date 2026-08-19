@@ -52,11 +52,23 @@ final class ViewModel: ObservableObject {
         didSet { UserDefaults.standard.setInt(groupingMode.rawValue, for: .dropdownGrouping) }
     }
 
-    /// 下拉面板用量列是否以「占总数百分比」显示（true=百分比，false=绝对 token），持久化
-    @Published var showPercentage: Bool = {
-        UserDefaults.standard.bool(for: .dropdownShowPercentage, default: false)
+    /// 下拉面板数值显示模式（用量+消息数 / 费用+占比），chip 点击切换，持久化
+    @Published var valueMode: DetailValueMode = {
+        if let raw = UserDefaults.standard.object(forKey: SettingsKey.dropdownValueMode.rawValue) as? Int,
+           let mode = DetailValueMode(rawValue: raw) {
+            return mode
+        }
+        // 迁移：旧版布尔（true=按百分比）与三态中间版本（1=percent / 2=cost）都归入组合模式
+        if UserDefaults.standard.bool(for: .dropdownShowPercentage) { return .costPercent }
+        return .tokens
     }() {
-        didSet { UserDefaults.standard.setBool(showPercentage, for: .dropdownShowPercentage) }
+        didSet { UserDefaults.standard.setInt(valueMode.rawValue, for: .dropdownValueMode) }
+    }
+
+    /// 用量口径：是否把缓存读计入展示的 token 数（默认排除，与 Codex 官方口径一致）。
+    /// 只影响表盘总数与用量列显示，不影响费用估算（费用始终按分桶全量计价）。
+    @Published var usageIncludesCache = UserDefaults.standard.bool(for: .usageIncludesCacheRead) {
+        didSet { UserDefaults.standard.setBool(usageIncludesCache, for: .usageIncludesCacheRead) }
     }
 
     /// Codex 额度面板按需读取；不开面板时不会启动 app-server，也没有额外轮询。
@@ -181,6 +193,7 @@ final class ViewModel: ObservableObject {
         loadSavedCustomThemes()
         // 首次启动时自动探测各工具日志路径
         runInitialPathDetection()
+        setupPricingObservers()
         startTimers()
         // 日结历史:启动时检查上次结算日(漏了不补打,SQLite 有啥返回啥)
         performStartupHistoryCatchup()
@@ -215,6 +228,27 @@ final class ViewModel: ObservableObject {
             guard !Task.isCancelled else { return }
             self?.codexQuota = result
         }
+    }
+
+    // MARK: - 价格目录
+
+    /// 价格目录刷新 / 自定义价修改后，费用需要重算。
+    /// 分桶缓存在扫描服务里，增量重扫不读盘（modDate 未变的文件直接跳过），代价极小。
+    private func setupPricingObservers() {
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(handlePricingUpdate),
+            name: PricingService.catalogUpdatedNotification, object: nil
+        )
+        // 每周自动静默刷新一次价格目录（手动刷新入口在设置页）
+        if PricingService.shared.isStale() {
+            Task.detached(priority: .utility) {
+                try? await PricingService.shared.refresh()
+            }
+        }
+    }
+
+    @objc private func handlePricingUpdate() {
+        updateMockData()
     }
 
     // MARK: - 首次启动路径探测
@@ -405,7 +439,24 @@ final class ViewModel: ObservableObject {
     // 否则十亿级用量会停在 "1625M" 不切 B 档。
     var totalTokensFormatted: String {
         if isInitialLoading { return "—" }
-        return TokenFormat.compact(UsageAggregator.totalTokens(visibleTools))
+        return TokenFormat.compact(UsageAggregator.totalTokens(visibleTools, includingCacheRead: usageIncludesCache))
+    }
+
+    /// 今日全部已启用工具的估算费用（按 API 牌价折算；未计价模型记 0 并触发 ≈ 前缀）
+    var totalCost: CostEstimate {
+        var result = CostEstimate.zero
+        guard !isInitialLoading else { return result }
+        for tool in visibleTools { result.merge(tool.todayCost) }
+        return result
+    }
+
+    var totalCostFormatted: String {
+        UsageAggregator.totalTokens(visibleTools) > 0 ? CostFormat.estimate(totalCost) : "—"
+    }
+
+    /// 当前口径下所有可见工具的 token 总数（表盘/占比分母共用）
+    var displayTotalTokens: Int {
+        UsageAggregator.totalTokens(visibleTools, includingCacheRead: usageIncludesCache)
     }
 
     var totalMessagesFormatted: String {
@@ -678,6 +729,11 @@ final class ViewModel: ObservableObject {
         runBackgroundScan(incremental: true)
     }
 
+    /// 设置页修改自定义价格后立即重算费用（增量扫描，modDate 未变的文件不重读，代价极小）
+    func refreshUsageData() {
+        runBackgroundScan(incremental: true)
+    }
+
     private func performFullScan() {
         runBackgroundScan(incremental: false)
     }
@@ -718,19 +774,19 @@ final class ViewModel: ObservableObject {
             var results: [String: ToolSnapshot] = [:]
             if enabled.contains("OpenClaw") {
                 let u = self.openclawService.todayUsage()
-                results["OpenClaw"] = ToolSnapshot(tokens: u.tokens, messages: u.messages, recent: self.openclawService.recentUsage(minutes: rateWindow).tokens, hourly: self.openclawService.currentHourTokens(), active: self.openclawService.isActive(), cacheRate: u.cacheRate, sessions: self.openclawService.todaySessions())
+                results["OpenClaw"] = ToolSnapshot(tokens: u.tokens, messages: u.messages, recent: self.openclawService.recentUsage(minutes: rateWindow).tokens, hourly: self.openclawService.currentHourTokens(), active: self.openclawService.isActive(), cacheRate: u.cacheRate, cost: .zero, sessions: self.openclawService.todaySessions())
             }
             if enabled.contains("Claude Code") {
                 let u = self.claudeCodeService.todayUsage()
-                results["Claude Code"] = ToolSnapshot(tokens: u.tokens, messages: u.messages, recent: self.claudeCodeService.recentUsage(minutes: rateWindow).tokens, hourly: self.claudeCodeService.currentHourTokens(), active: self.claudeCodeService.isActive(), cacheRate: u.cacheRate, sessions: self.claudeCodeService.todaySessions())
+                results["Claude Code"] = ToolSnapshot(tokens: u.tokens, messages: u.messages, recent: self.claudeCodeService.recentUsage(minutes: rateWindow).tokens, hourly: self.claudeCodeService.currentHourTokens(), active: self.claudeCodeService.isActive(), cacheRate: u.cacheRate, cost: self.claudeCodeService.todayCost(), cacheRead: self.claudeCodeService.todayCacheReadTokens(), sessions: self.claudeCodeService.todaySessions())
             }
             if enabled.contains("Gemini CLI") {
                 let u = self.geminiService.todayUsage()
-                results["Gemini CLI"] = ToolSnapshot(tokens: u.tokens, messages: u.messages, recent: self.geminiService.recentUsage(minutes: rateWindow).tokens, hourly: self.geminiService.currentHourTokens(), active: self.geminiService.isActive(), cacheRate: u.cacheRate, sessions: self.geminiService.todaySessions())
+                results["Gemini CLI"] = ToolSnapshot(tokens: u.tokens, messages: u.messages, recent: self.geminiService.recentUsage(minutes: rateWindow).tokens, hourly: self.geminiService.currentHourTokens(), active: self.geminiService.isActive(), cacheRate: u.cacheRate, cost: .zero, sessions: self.geminiService.todaySessions())
             }
             if enabled.contains("Codex") {
                 let u = self.codexService.todayUsage()
-                results["Codex"] = ToolSnapshot(tokens: u.tokens, messages: u.messages, recent: self.codexService.recentUsage(minutes: rateWindow).tokens, hourly: self.codexService.currentHourTokens(), active: self.codexService.isActive(), cacheRate: u.cacheRate, sessions: self.codexService.todaySessions())
+                results["Codex"] = ToolSnapshot(tokens: u.tokens, messages: u.messages, recent: self.codexService.recentUsage(minutes: rateWindow).tokens, hourly: self.codexService.currentHourTokens(), active: self.codexService.isActive(), cacheRate: u.cacheRate, cost: self.codexService.todayCost(), cacheRead: self.codexService.todayCacheReadTokens(), sessions: self.codexService.todaySessions())
             }
             if enabled.contains("Hermes") {
                 let u = self.hermesService.todayUsage()
@@ -794,6 +850,10 @@ final class ViewModel: ObservableObject {
         let hourly: Int
         let active: Bool
         let cacheRate: Double
+        /// 今日估算费用（暂只有 Claude Code / Codex 提供分桶计费，其余工具为 .zero）
+        var cost: CostEstimate = .zero
+        /// 今日缓存读 token 数（「包含缓存读」口径展示用）
+        var cacheRead: Int = 0
         let sessions: [SessionInfo]
     }
 
@@ -810,6 +870,8 @@ final class ViewModel: ObservableObject {
             cacheRate: snap.cacheRate,
             recentTokens: snap.recent,
             hourlyTokens: snap.hourly,
+            todayCost: snap.cost,
+            todayCacheReadTokens: snap.cacheRead,
             sessions: snap.sessions
         )
     }

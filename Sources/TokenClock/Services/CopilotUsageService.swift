@@ -39,7 +39,7 @@ final class CopilotUsageService: @unchecked Sendable {
         let d = dailyData[DateHelper.todayKey()]
         let total = d?.tokens ?? 0
         let cache = dailyCache[DateHelper.todayKey()] ?? 0
-        let rate = total > 0 ? Double(cache) / Double(total) : 0
+        let rate = TokenAccounting.cacheReadShare(freshTokens: total, cacheRead: cache)
         return (total, d?.messages ?? 0, rate)
     }
 
@@ -154,7 +154,12 @@ final class CopilotUsageService: @unchecked Sendable {
         let input = attrs["gen_ai.usage.input_tokens"] as? Int ?? 0
         let output = attrs["gen_ai.usage.output_tokens"] as? Int ?? 0
         let cacheRead = attrs["gen_ai.usage.cache_read.input_tokens"] as? Int ?? 0
-        let total = input + output + cacheRead
+        _ = attrs["gen_ai.usage.cache_creation.input_tokens"] as? Int ?? 0
+        // OTel input_tokens includes both cache-read and cache-creation tokens. Cache creation is
+        // fresh work, so subtract only the read portion.
+        let total = TokenAccounting.excludingCacheRead(
+            inclusiveInput: input, cacheRead: cacheRead, output: output
+        )
         guard total > 0 else { return nil }
 
         let ts = obj["startTime"] as? String ?? obj["timestamp"] as? String ?? ""
@@ -173,7 +178,12 @@ final class CopilotUsageService: @unchecked Sendable {
         let input = usage["inputTokens"] as? Int ?? 0
         let output = usage["outputTokens"] as? Int ?? 0
         let cacheRead = usage["cacheReadTokens"] as? Int ?? 0
-        let total = input + output + cacheRead
+        _ = usage["cacheWriteTokens"] as? Int ?? 0
+        // GitHub documents assistant.usage inputTokens as the input total. Treat cacheReadTokens
+        // as its cached subset; cacheWriteTokens remains fresh input already included in input.
+        let total = TokenAccounting.excludingCacheRead(
+            inclusiveInput: input, cacheRead: cacheRead, output: output
+        )
         guard total > 0 else { return nil }
 
         let ts = obj["timestamp"] as? String ?? ""
