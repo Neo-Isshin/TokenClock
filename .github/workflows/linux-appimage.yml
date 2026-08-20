@@ -11,6 +11,11 @@ on:
   push:
     tags: ['v*']
   workflow_dispatch:       # 允许手动触发，便于在不打 tag 时验证
+    inputs:
+      release_tag:
+        description: 'Existing shared release tag, for example v1.4.4 (empty = use ref name)'
+        required: false
+        type: string
 
 permissions:
   contents: write          # 附加资产到 release 需要
@@ -34,7 +39,7 @@ jobs:
       - name: Attach AppImage + SHA256 to the release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref_name }}
+          tag_name: ${{ inputs.release_tag || github.ref_name }}
           files: |
             TokenClock-x86_64.AppImage
             TokenClock-x86_64.AppImage.sha256
