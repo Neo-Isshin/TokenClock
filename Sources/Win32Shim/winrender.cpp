@@ -989,7 +989,7 @@ void win_render_clock(int w, int h, int hh, int mm, int ss, const win_theme *t, 
         // 320x547 at all four clock-size choices; only the dial uses the ClockSize scale above.
         const double S = 1.0;
         wchar_t wb[2048];
-        if (to_wide(ov->detail_text, wb, 2048) == 0) wcscpy_s(wb, L"C|\t\t\t\t");
+        if (to_wide(ov->detail_text, wb, 2048) == 0) wcscpy_s(wb, L"C|\t\t\t");
         {
             const double gap = 14.0 * S, rowH = 30.0 * S, radius = 12.0 * S;
             const bool hasForecast = ov->forecast_summary && ov->forecast_summary[0];
@@ -1216,14 +1216,13 @@ void win_render_clock(int w, int h, int hh, int mm, int ss, const win_theme *t, 
             } else {
             // Column header.
             const double labelX = cardLeft + 14.0 * S;
-            const double costW = 50.0 * S, cacheW = 40.0 * S, messagesW = 34.0 * S, usageW = 62.0 * S;
-            const double costX = cardRight - 12.0 * S - costW;
-            const double cacheX = costX - 4.0 * S - cacheW;
+            const double cacheW = 42.0 * S, messagesW = 38.0 * S, usageW = 68.0 * S;
+            const double cacheX = cardRight - 12.0 * S - cacheW;
             const double messagesX = cacheX - messagesW;
             const double usageX = messagesX - usageW;
             wchar_t header[256];
             if (to_wide(ov->detail_header, header, 256) > 0) {
-                wchar_t *parts[5]; splitTabs(header, parts, 5);
+                wchar_t *parts[4]; splitTabs(header, parts, 4);
                 Gdiplus::Font fHeader(&famD, (float)(9.0 * S), Gdiplus::FontStyleRegular, Gdiplus::UnitPixel);
                 Gdiplus::SolidBrush headerBrush(cr(t->dd_subtext));
                 double headerTop = contentTop + 64.0 * S;
@@ -1232,11 +1231,9 @@ void win_render_clock(int w, int h, int hh, int mm, int ss, const win_theme *t, 
                 Gdiplus::RectF ur((Gdiplus::REAL)usageX, (Gdiplus::REAL)headerTop, (Gdiplus::REAL)usageW, (Gdiplus::REAL)(22.0 * S));
                 Gdiplus::RectF mr((Gdiplus::REAL)messagesX, (Gdiplus::REAL)headerTop, (Gdiplus::REAL)messagesW, (Gdiplus::REAL)(22.0 * S));
                 Gdiplus::RectF crct((Gdiplus::REAL)cacheX, (Gdiplus::REAL)headerTop, (Gdiplus::REAL)cacheW, (Gdiplus::REAL)(22.0 * S));
-                Gdiplus::RectF costR((Gdiplus::REAL)costX, (Gdiplus::REAL)headerTop, (Gdiplus::REAL)costW, (Gdiplus::REAL)(22.0 * S));
                 gfx.DrawString(parts[1], -1, &fHeader, ur, &sfR, &headerBrush);
                 gfx.DrawString(parts[2], -1, &fHeader, mr, &sfR, &headerBrush);
                 gfx.DrawString(parts[3], -1, &fHeader, crct, &sfR, &headerBrush);
-                gfx.DrawString(parts[4], -1, &fHeader, costR, &sfR, &headerBrush);
             }
 
             Gdiplus::Font fParent(&famD, (float)(11.0 * S), Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
@@ -1250,7 +1247,7 @@ void win_render_clock(int w, int h, int hh, int mm, int ss, const win_theme *t, 
                 if (nl) *nl = 0;
                 wchar_t kind = line[0];
                 wchar_t *content = (line[1] == L'|') ? line + 2 : line;
-                wchar_t *parts[5]; splitTabs(content, parts, 5);
+                wchar_t *parts[4]; splitTabs(content, parts, 4);
                 bool child = kind == L'C';
                 unsigned int rowColor = child ? t->dd_subtext : t->dd_text;
                 Gdiplus::SolidBrush rowBrush(cr(rowColor));
@@ -1279,11 +1276,9 @@ void win_render_clock(int w, int h, int hh, int mm, int ss, const win_theme *t, 
                 Gdiplus::RectF ur((Gdiplus::REAL)usageX, (Gdiplus::REAL)y, (Gdiplus::REAL)usageW, (Gdiplus::REAL)rowH);
                 Gdiplus::RectF mr((Gdiplus::REAL)messagesX, (Gdiplus::REAL)y, (Gdiplus::REAL)messagesW, (Gdiplus::REAL)rowH);
                 Gdiplus::RectF crct((Gdiplus::REAL)cacheX, (Gdiplus::REAL)y, (Gdiplus::REAL)cacheW, (Gdiplus::REAL)rowH);
-                Gdiplus::RectF costR((Gdiplus::REAL)costX, (Gdiplus::REAL)y, (Gdiplus::REAL)costW, (Gdiplus::REAL)rowH);
                 gfx.DrawString(parts[1], -1, rowFont, ur, &sfR, &rowBrush);
                 gfx.DrawString(parts[2], -1, &fChild, mr, &sfR, &rowBrush);
                 gfx.DrawString(parts[3], -1, &fChild, crct, &sfR, &rowBrush);
-                gfx.DrawString(parts[4], -1, &fChild, costR, &sfR, &rowBrush);
 
                 Gdiplus::Pen divider(cr(alpha(t->dd_border, 55)), (Gdiplus::REAL)(0.5 * S));
                 gfx.DrawLine(&divider, (Gdiplus::REAL)(cardLeft + 12.0 * S), (Gdiplus::REAL)(y + rowH),

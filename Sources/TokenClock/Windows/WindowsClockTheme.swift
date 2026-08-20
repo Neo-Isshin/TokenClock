@@ -92,8 +92,8 @@ enum WindowsClockTheme: String, CaseIterable {
             t.text_primary = rgb(0.180, 0.340, 0.520); t.text_secondary = rgb(0.380, 0.520, 0.660)
 
         case .glass:
-            // macOS glass：墨色时针分针 + 琥珀秒针（玻璃盘体为 Windows 材质渲染，保留浅霜面
-            // 与深色文字保证可读；指针/秒针/中心点与 macOS 完全一致）
+            // macOS glass：浅玻璃盘（glass_disc.png 贴图）+ 白色文字 + 墨色时分针 + 琥珀秒针。
+            // dial_fill 仅作贴图缺失时的兜底；文字/指针/秒针/中心点与 macOS 完全一致。
             t.dial_fill = rgb(0.91, 0.95, 0.99, 0.92); t.dial_rim = rgb(0.70, 0.82, 0.91, 0.85); t.rim_width = 1.5
             t.material_style = 1
             t.hand_style = 0
@@ -103,7 +103,8 @@ enum WindowsClockTheme: String, CaseIterable {
             t.show_ticks = 1; t.tick_color = gray(1.0, 0.7); t.major_tick_color = gray(1.0)
             t.show_numbers = 0; t.number_color = clear
             t.has_decoration = 0
-            t.text_primary = rgb(0.11, 0.16, 0.20); t.text_secondary = rgb(0.31, 0.40, 0.47)
+            // macOS glass：浅玻璃盘上用白字（对比由盘面渐变提供），与 ClockFaceView 实拍观感一致
+            t.text_primary = gray(1.0); t.text_secondary = gray(1.0, 0.8)
 
         case .glacier:
             // macOS glacier：雪白极简 + 藏蓝刻度数字 + 玫红秒针

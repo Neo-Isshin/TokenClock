@@ -44,6 +44,7 @@ final class WindowsApp: @unchecked Sendable {
     private let cmdAbout: Int32 = 50
     private let cmdThemeBase: Int32 = 60   // + 索引 → WindowsClockTheme.allCases[i]
     private let cmdTempC: Int32 = 70, cmdTempF: Int32 = 71
+    private let cmdScopeExcl: Int32 = 72, cmdScopeIncl: Int32 = 73
     private let cmdCityBase: Int32 = 80    // + 索引 → cities[i]
     private let cmdTzBase: Int32 = 90      // + 索引 → timezones[i]
     private let cmdApi: Int32 = 100         // copy endpoint (same action as macOS normal)
@@ -184,7 +185,7 @@ final class WindowsApp: @unchecked Sendable {
         let date = dateFmt.string(from: now)
 
         let tools = model.tools
-        let tokens = TokenFormat.compact(UsageAggregator.totalTokens(tools))
+        let tokens = TokenFormat.compact(UsageAggregator.totalTokens(tools, includingCacheRead: usageIncludesCache))
         let todayLabel = L10n.shared.tr("clock.todayTokens")
         let messages = L10n.shared.tr("clock.messagesCount", UsageAggregator.totalMessages(tools))
         let top = UsageAggregator.topToolsByTokens(tools, limit: 2)
@@ -209,11 +210,12 @@ final class WindowsApp: @unchecked Sendable {
         renderedDetailRows = visibleDetailRows
         let detailText = visibleDetailRows.map(\.encoded).joined(separator: "\n")
         let L = L10n.shared
-        let detailControls = [L.tr("detail.groupBySession"), L.tr("detail.groupByModel"), L.tr("detail.percent")].joined(separator: "\t")
+        let modeLabel = "\(L.tr("detail.byCost")) / \(L.tr("detail.byPercent"))"
+        let detailControls = [L.tr("detail.groupBySession"), L.tr("detail.groupByModel"), modeLabel].joined(separator: "\t")
         let detailHeader = [L.tr(groupingMode == .model ? "detail.model" : "detail.instance"),
-                            L.tr(showPercentage ? "detail.share" : "detail.todayUsage"),
-                            L.tr("detail.messages"), groupingMode == .session ? L.tr("detail.cacheRate") : "",
-                            L.tr("detail.cost")].joined(separator: "\t")
+                            L.tr(valueMode == .tokens ? "detail.todayUsage" : "detail.cost"),
+                            L.tr(valueMode == .tokens ? "detail.messages" : "detail.share"),
+                            groupingMode == .session ? L.tr("detail.cacheRate") : ""].joined(separator: "\t")
         let quotaSnapshot = codexQuotaState.snapshot()
         let quotaText = detailsVisible ? quotaOverlay(snapshot: quotaSnapshot) : ""
 
@@ -249,7 +251,7 @@ final class WindowsApp: @unchecked Sendable {
             ov.quota_label = ptrs[14]
             ov.quota_text = ptrs[15]
             ov.detail_grouping = groupingMode == .model ? 1 : 0
-            ov.detail_percentage = showPercentage ? 1 : 0
+            ov.detail_percentage = valueMode == .costPercent ? 1 : 0
             ov.detail_visible = detailsVisible ? 1 : 0
             ov.detail_quota_visible = showsCodexQuota ? 1 : 0
             ov.clock_diameter = dialHeight
@@ -404,24 +406,23 @@ final class WindowsApp: @unchecked Sendable {
     private struct DetailRow {
         let key: String?
         let label: String
+        /// 主列：用量（紧凑 token）或 费用（随 valueMode 切换）
         let value: String
+        /// 次列：消息数或占总数百分比（随 valueMode 切换）
         let messages: String
         let cache: String
-        /// 第 5 列：按 API 牌价折算的今日费用（"—" = 无数据/未计价工具）
-        var cost: String = "—"
         let isChild: Bool
         let expanded: Bool
 
         var encoded: String {
             let kind = isChild ? "C" : (expanded ? "V" : "P")
-            return "\(kind)|\(label)\t\(value)\t\(messages)\t\(cache)\t\(cost)"
+            return "\(kind)|\(label)\t\(value)\t\(messages)\t\(cache)"
         }
     }
 
     /// 对齐 macOS DetailDropdownView：按会话/按模型、百分比、可展开父行以及消息/缓存列。
     private func buildDetailRows(_ tools: [ToolUsage]) -> [DetailRow] {
         let L = L10n.shared
-        let pct = showPercentage
         if let mock = ProcessInfo.processInfo.environment["TC_MOCK"] {
             let modelMode = mock == "model" || groupingMode == .model
             let mockProviders = Self.providerEntries.map { ($0.displayName, $0.emoji) }
@@ -442,9 +443,9 @@ final class WindowsApp: @unchecked Sendable {
             for p in parents {
                 let key = "mock:\(p.0)"
                 let open = expandedDetailKeys.contains(key)
-                rows.append(DetailRow(key: key, label: "\(p.1) \(p.0)", value: rowValue(p.2, formatted: TokenFormat.compact(p.2), grand: grand, pct: pct), messages: "\(p.3)", cache: modelMode ? "" : "42%", isChild: false, expanded: open))
+                rows.append(DetailRow(key: key, label: "\(p.1) \(p.0)", value: valueMode == .tokens ? TokenFormat.compact(p.2) : "—", messages: secondaryValue(tokens: p.2, messages: p.3, grand: grand), cache: modelMode ? "" : "42%", isChild: false, expanded: open))
                 if open {
-                    for child in p.4 { rows.append(DetailRow(key: nil, label: child.0, value: rowValue(child.1, formatted: TokenFormat.compact(child.1), grand: grand, pct: pct), messages: "\(child.2)", cache: "", isChild: true, expanded: false)) }
+                    for child in p.4 { rows.append(DetailRow(key: nil, label: child.0, value: valueMode == .tokens ? TokenFormat.compact(child.1) : "—", messages: secondaryValue(tokens: child.1, messages: child.2, grand: grand), cache: "", isChild: true, expanded: false)) }
                 }
             }
             return rows
@@ -465,7 +466,9 @@ final class WindowsApp: @unchecked Sendable {
         guard !active.isEmpty || !currentSession.isEmpty || !unavailable.isEmpty else {
             return [DetailRow(key: nil, label: L.language == .en ? "No AI usage today" : "今日暂无 AI 用量", value: "—", messages: "—", cache: "", isChild: true, expanded: false)]
         }
-        let grand = active.reduce(0) { $0 + $1.todayTokens }
+        let grand = active.reduce(0) {
+            $0 + $1.todayTokens + (usageIncludesCache ? $1.todayCacheReadTokens : 0)
+        }
         var rows: [DetailRow] = currentSession.map { tool in
             DetailRow(key: nil, label: "\(tool.emoji) \(tool.name) · \(L.tr("detail.currentSession"))",
                       value: TokenFormat.compact(tool.value), messages: "—", cache: "—",
@@ -480,10 +483,10 @@ final class WindowsApp: @unchecked Sendable {
             for group in groups.prefix(10) {
                 let key = "model:\(group.id)"
                 let open = expandedDetailKeys.contains(key)
-                rows.append(DetailRow(key: key, label: "\(group.emoji) \(group.name)", value: rowValue(group.totalTokens, formatted: group.formattedTokens, grand: grand, pct: pct), messages: "\(group.totalMessages)", cache: "", cost: group.formattedCost, isChild: false, expanded: open))
+                rows.append(DetailRow(key: key, label: "\(group.emoji) \(group.name)", value: primaryValue(tokens: group.totalTokens, cacheRead: group.totalCacheReadTokens, cost: group.totalCost), messages: secondaryValue(tokens: group.totalTokens, cacheRead: group.totalCacheReadTokens, messages: group.totalMessages, grand: grand), cache: "", isChild: false, expanded: open))
                 if open {
                     for contribution in group.contributions.prefix(5) {
-                        rows.append(DetailRow(key: nil, label: "\(contribution.emoji) \(contribution.tool)", value: rowValue(contribution.tokens, formatted: TokenFormat.compact(contribution.tokens), grand: grand, pct: pct), messages: "\(contribution.messages)", cache: "", cost: contribution.formattedCost, isChild: true, expanded: false))
+                        rows.append(DetailRow(key: nil, label: "\(contribution.emoji) \(contribution.tool)", value: primaryValue(tokens: contribution.tokens, cacheRead: contribution.cacheReadTokens, cost: contribution.cost), messages: secondaryValue(tokens: contribution.tokens, cacheRead: contribution.cacheReadTokens, messages: contribution.messages, grand: grand), cache: "", isChild: true, expanded: false))
                     }
                 }
             }
@@ -492,12 +495,12 @@ final class WindowsApp: @unchecked Sendable {
                 let key = "tool:\(tool.id)"
                 let open = expandedDetailKeys.contains(key)
                 let cache = tool.cacheRate > 0 ? String(format: "%.0f%%", tool.cacheRate * 100) : "—"
-                rows.append(DetailRow(key: key, label: "\(tool.emoji) \(tool.name)", value: rowValue(tool.todayTokens, formatted: tool.formattedTokens, grand: grand, pct: pct), messages: "\(tool.todayMessages)", cache: cache, cost: tool.formattedCost, isChild: false, expanded: open))
+                rows.append(DetailRow(key: key, label: "\(tool.emoji) \(tool.name)", value: primaryValue(tokens: tool.todayTokens, cacheRead: tool.todayCacheReadTokens, cost: tool.todayCost), messages: secondaryValue(tokens: tool.todayTokens, cacheRead: tool.todayCacheReadTokens, messages: tool.todayMessages, grand: grand), cache: cache, isChild: false, expanded: open))
                 if open {
                     let sessions = tool.sessions.filter { $0.todayTokens > 0 }.sorted { $0.todayTokens > $1.todayTokens }
                     for session in sessions.prefix(5) {
                         let source = session.source.map { " · \($0)" } ?? ""
-                        rows.append(DetailRow(key: nil, label: "\(session.displayName)\(source)", value: rowValue(session.todayTokens, formatted: session.formattedTokens, grand: grand, pct: pct), messages: "\(session.todayMessages)", cache: "", cost: session.formattedCost, isChild: true, expanded: false))
+                        rows.append(DetailRow(key: nil, label: "\(session.displayName)\(source)", value: primaryValue(tokens: session.todayTokens, cacheRead: session.cacheReadTokens, cost: session.todayCost), messages: secondaryValue(tokens: session.todayTokens, cacheRead: session.cacheReadTokens, messages: session.todayMessages, grand: grand), cache: "", isChild: true, expanded: false))
                     }
                 }
             }
@@ -505,14 +508,37 @@ final class WindowsApp: @unchecked Sendable {
         return rows
     }
 
-    /// pct=true ⇒ "42%"；否则用紧凑 token 数。
-    private func rowValue(_ tokens: Int, formatted: String, grand: Int, pct: Bool) -> String {
-        guard pct, grand > 0 else { return formatted }
-        let percent = Double(tokens) / Double(grand) * 100
+    /// 主列（用量 ↔ 费用），与 macOS DetailValueMode 一致；tokens=0 时费用列显示 "—"。
+    private func primaryValue(tokens: Int, cacheRead: Int = 0, cost: CostEstimate = .zero) -> String {
+        switch valueMode {
+        case .tokens:
+            return TokenFormat.compact(usageIncludesCache ? tokens + cacheRead : tokens)
+        case .costPercent:
+            return tokens > 0 ? CostFormat.estimate(cost) : "—"
+        }
+    }
+
+    /// 次列（消息数 ↔ 占比）；占比分母与主列同口径（含缓存时把缓存读计入）。
+    private func secondaryValue(tokens: Int, cacheRead: Int = 0, messages: Int, grand: Int) -> String {
+        guard valueMode == .costPercent, grand > 0 else { return "\(messages)" }
+        let shown = usageIncludesCache ? tokens + cacheRead : tokens
+        let percent = Double(shown) / Double(grand) * 100
         return percent >= 10 ? String(format: "%.0f%%", percent) : String(format: "%.1f%%", percent)
     }
 
-    private var showPercentage: Bool { UserDefaults.standard.bool(for: .dropdownShowPercentage) }
+    /// 详情面板数值模式（用量+消息数 ↔ 费用+占比），与 macOS DetailValueMode 一致。
+    /// 迁移：旧版 dropdownShowPercentage=true 归入 .costPercent。
+    private var valueMode: DetailValueMode {
+        if UserDefaults.standard.object(forKey: SettingsKey.dropdownValueMode.rawValue) != nil {
+            return DetailValueMode(rawValue: UserDefaults.standard.int(for: .dropdownValueMode)) ?? .tokens
+        }
+        return UserDefaults.standard.bool(for: .dropdownShowPercentage) ? .costPercent : .tokens
+    }
+    private func setValueMode(_ mode: DetailValueMode) {
+        UserDefaults.standard.setInt(mode.rawValue, for: .dropdownValueMode)
+    }
+    /// 用量口径：token 展示是否包含缓存读（右键菜单切换，与 macOS 一致；默认排除）
+    private var usageIncludesCache: Bool { UserDefaults.standard.bool(for: .usageIncludesCacheRead) }
 
     private enum GroupingMode { case session, model }
     private var groupingMode: GroupingMode {
@@ -572,7 +598,7 @@ final class WindowsApp: @unchecked Sendable {
                 detailScrollRow = 0
                 if showsCodexQuota { refreshCodexQuota(force: false) }
             } else {
-                UserDefaults.standard.setBool(!showPercentage, for: .dropdownShowPercentage)
+                setValueMode(valueMode.next)
             }
             render()
         } else if showsCodexQuota, controlsY >= 68, controlsY < 112,
@@ -659,6 +685,12 @@ final class WindowsApp: @unchecked Sendable {
             addMenuItem(um, cmdTempF, L.tr("menu.fahrenheit"), useFahrenheit)
             addSubmenu(menu, L.tr("menu.temperature"), um)
         }
+        // 用量口径：token 展示是否包含缓存读（费用估算始终按分桶全量计价，不受影响）
+        if let gm = menu_create() {
+            addMenuItem(gm, cmdScopeExcl, L.tr("menu.usageExclCache"), !usageIncludesCache)
+            addMenuItem(gm, cmdScopeIncl, L.tr("menu.usageInclCache"), usageIncludesCache)
+            addSubmenu(menu, L.tr("menu.usageScope"), gm)
+        }
         // 城市（Auto=IP 定位 + 6 预置）
         if let cm = menu_create() {
             for (i, c) in Self.cities.enumerated() {
@@ -713,6 +745,8 @@ final class WindowsApp: @unchecked Sendable {
         case cmdEditCustom: openCustomThemeEditor()
         case cmdTempC:      setUseFahrenheit(false)
         case cmdTempF:      setUseFahrenheit(true)
+        case cmdScopeExcl:  UserDefaults.standard.setBool(false, for: .usageIncludesCacheRead)
+        case cmdScopeIncl:  UserDefaults.standard.setBool(true, for: .usageIncludesCacheRead)
         case cmdApi:        copyAPIEndpoint()
         case cmdRefresh:
             scheduleScan(incremental: false)
