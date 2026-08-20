@@ -52,7 +52,7 @@ final class WindowsUsageModel: @unchecked Sendable {
 
         // 每周自动静默刷新价格目录（与 macOS/Linux 一致）
         if PricingService.shared.isStale() {
-            DispatchQueue.global(qos: .utility).async {
+            Task.detached(priority: .utility) {
                 try? await PricingService.shared.refresh()
             }
         }

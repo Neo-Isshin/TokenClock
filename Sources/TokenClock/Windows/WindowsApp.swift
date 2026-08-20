@@ -1069,7 +1069,7 @@ final class WindowsApp: @unchecked Sendable {
     }
 
     /// 刷新按钮：同步等待（带超时），结果直接改写目录状态行。额度恢复后 UI 会随下一轮扫描更新费用。
-    private func handlePricingCmd(id: Int32) {
+    func handlePricingCmd(id: Int32) {
         guard id == 750, let dlg = pricingDlg else { return }
         let sem = DispatchSemaphore(value: 0)
         DispatchQueue.global(qos: .userInitiated).async {
@@ -1629,7 +1629,7 @@ private let settingsCmdCb: @convention(c) (UnsafeMutableRawPointer?, Int32) -> V
     WindowsApp.shared.handleSettingsCmd(id)
 }
 private let pricingCmdCb: @convention(c) (UnsafeMutableRawPointer?, Int32) -> Void = { _, id in
-    WindowsApp.shared.handlePricingCmd(id)
+    WindowsApp.shared.handlePricingCmd(id: id)
 }
 private let aboutCmdCb: @convention(c) (UnsafeMutableRawPointer?, Int32) -> Void = { _, id in
     WindowsApp.shared.handleAboutCmd(id)
