@@ -181,15 +181,6 @@ extension UserDefaults {
         #endif
     }
 
-    /// 类型安全的 double 读写（object==nil 区分「未存」与「存了 0」）
-    func setDouble(_ value: Double, for key: SettingsKey) {
-        set(value, forKey: key.rawValue)
-    }
-    func double(for key: SettingsKey, `default` fallback: Double = 0) -> Double {
-        if object(forKey: key.rawValue) == nil { return fallback }
-        return double(forKey: key.rawValue)
-    }
-
     /// 移除 key
     func remove(_ key: SettingsKey) {
         #if os(Windows)
