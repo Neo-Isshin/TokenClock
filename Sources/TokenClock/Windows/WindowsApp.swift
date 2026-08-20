@@ -84,9 +84,10 @@ final class WindowsApp: @unchecked Sendable {
     fileprivate var editingSavedThemeId: String?
     private var settingsDraft: SettingsDraft?
     private var requestedSettingsSection: SettingsSection?
+    private var pricingDlg: UnsafeMutableRawPointer?
     private var requestedCustomSection: CustomSection?
 
-    private enum SettingsSection { case tools, paths, thresholds, customFace, localAPI }
+    private enum SettingsSection { case tools, paths, thresholds, pricing, customFace, localAPI }
     private enum CustomSection { case colors, geometry }
     private struct SettingsDraft {
         var enabled: Set<String>
@@ -832,6 +833,7 @@ final class WindowsApp: @unchecked Sendable {
             case .tools: editToolSelection(&draft)
             case .paths: editDataSourcePaths(&draft)
             case .thresholds: editHeatThresholds(&draft)
+            case .pricing: editCostEstimation()
             case .customFace: openCustomThemeEditor()
             case .localAPI: editLocalAPI(&draft)
             }
@@ -849,19 +851,23 @@ final class WindowsApp: @unchecked Sendable {
         dlg_add_static(dlg, en ? "Overview · select a section to edit" : "概览 · 选择分组进行编辑", 22, 47, 450, 20)
         dlg_add_sep(dlg, 20, 70, 470)
 
+        let pricing = PricingService.shared.catalogSummary
+        let pricingDesc = en ? "\(pricing.count) models · \(pricing.generatedAt.map { String($0.prefix(10)) } ?? "—")"
+                             : "\(pricing.count) 个模型 · \(pricing.generatedAt.map { String($0.prefix(10)) } ?? "—")"
         let rows: [(Int32, String, String)] = [
             (700, en ? "Auto Detect" : "自动探测", en ? "Find readable Windows data sources" : "探测 Windows 中实际可读的数据源"),
             (710, en ? "Tool Selection  ›" : "工具选择  ›", en ? "\(draft.enabled.count) of \(Self.providerNames.count) enabled" : "已启用 \(draft.enabled.count)/\(Self.providerNames.count)"),
             (711, en ? "Data Source Paths  ›" : "数据源路径  ›", en ? "Review provider-specific Windows paths" : "检查各 provider 的 Windows 专用路径"),
             (712, en ? "Heat Thresholds  ›" : "热力阈值  ›", en ? "\(draft.rateWindow) min rate window" : "\(draft.rateWindow) 分钟速率窗口"),
+            (715, en ? "Cost Estimation  ›" : "费用估算  ›", pricingDesc),
             (713, en ? "Custom Clock Face  ›" : "自定义表盘  ›", en ? "Create, save, apply, and delete faces" : "创建、保存、应用与删除表盘"),
             (714, en ? "Local API  ›" : "本地 API  ›", draft.apiEnabled ? "localhost:\(draft.apiPort)" : (en ? "Disabled" : "已关闭")),
         ]
         for (index, row) in rows.enumerated() {
-            let y = Int32(80 + index * 64)
-            dlg_add_push(dlg, row.0, row.1, 22, y, 205, 42)
-            dlg_add_static(dlg, row.2, 244, y + 5, 240, 34)
-            if index < rows.count - 1 { dlg_add_sep(dlg, 22, y + 50, 462) }
+            let y = Int32(80 + index * 52)
+            dlg_add_push(dlg, row.0, row.1, 22, y, 205, 36)
+            dlg_add_static(dlg, row.2, 244, y + 4, 240, 28)
+            if index < rows.count - 1 { dlg_add_sep(dlg, 22, y + 43, 462) }
         }
         dlg_add_sep(dlg, 20, 465, 470)
         dlg_add_push(dlg, 1, en ? "Save" : "保存", 288, 478, 92, 30)
@@ -948,6 +954,99 @@ final class WindowsApp: @unchecked Sendable {
         dlg_destroy(dlg)
     }
 
+    /// 💰 费用估算分节：目录状态 + 手动刷新 + 未计价模型 + 自定义价格表（对齐 macOS Settings 同名分节）。
+    private func editCostEstimation() {
+        let L = L10n.shared
+        let en = L.language == .en
+        guard let dlg = dlg_create(en ? "Cost Estimation" : "费用估算", 520, 548) else { return }
+        pricingDlg = dlg
+        defer { pricingDlg = nil; dlg_destroy(dlg) }
+        dlg_add_title(dlg, en ? "Cost Estimation" : "费用估算", 20, 12, 360, 30)
+        dlg_add_static(dlg, L.tr("pricing.note"), 22, 46, 470, 34)
+        dlg_add_sep(dlg, 20, 84, 470)
+
+        // 目录状态 + 手动刷新
+        let summary = PricingService.shared.catalogSummary
+        _ = dlg_add_static_id(dlg, 760, pricingCatalogText(summary), 24, 96, 340, 20)
+        dlg_add_static(dlg, L.tr("pricing.unit"), 24, 118, 200, 18)
+        dlg_add_push(dlg, 750, L.tr("pricing.refresh"), 396, 94, 92, 26)
+
+        // 未计价模型
+        let unpriced = PricingService.shared.unpricedModels
+        let unpricedText = unpriced.isEmpty
+            ? (en ? "Unpriced models: none" : "未能计价的模型：无")
+            : (en ? "Unpriced: \(unpriced.joined(separator: ", "))" : "未能计价：\(unpriced.joined(separator: "、"))")
+        dlg_add_static(dlg, unpricedText, 24, 140, 464, 32)
+        dlg_add_sep(dlg, 20, 176, 470)
+
+        // 自定义价格表：5 个可编辑槽位 [模型名 | 输入 | 输出 | 缓存读 | 缓存写]
+        dlg_add_static(dlg, L.tr("pricing.customTitle"), 24, 184, 240, 20)
+        let colX: [Int32] = [24, 180, 240, 300, 362, 424]
+        let colW: [Int32] = [152, 56, 56, 58, 58, 58]
+        let headers = [L.tr("pricing.modelName"), L.tr("pricing.input"), L.tr("pricing.output"), L.tr("pricing.cacheRead"), L.tr("pricing.cacheWrite")]
+        for (c, text) in headers.enumerated() {
+            dlg_add_static(dlg, text, colX[c + 1], 208, colW[c + 1], 16)
+        }
+        let custom = PricingService.shared.customModels
+        for i in 0..<5 {
+            let y = Int32(228 + i * 34)
+            let prefilled: ModelPrice? = i < custom.count
+                ? PricingService.shared.customPrice(for: custom[i]) : nil
+            let modelText = i < custom.count ? custom[i] : ""
+            dlg_add_edit(dlg, 800 + Int32(i), modelText, colX[0], y, colW[0], 24)
+            dlg_add_edit(dlg, 810 + Int32(i), prefilled.map { String(format: "%.6g", $0.input) } ?? "", colX[1], y, colW[1], 24)
+            dlg_add_edit(dlg, 820 + Int32(i), prefilled.map { String(format: "%.6g", $0.output) } ?? "", colX[2], y, colW[2], 24)
+            dlg_add_edit(dlg, 830 + Int32(i), prefilled.flatMap { $0.cacheRead == 0 ? nil : String(format: "%.6g", $0.cacheRead) } ?? "", colX[3], y, colW[3], 24)
+            dlg_add_edit(dlg, 840 + Int32(i), prefilled.flatMap { $0.cacheWrite == 0 ? nil : String(format: "%.6g", $0.cacheWrite) } ?? "", colX[4], y, colW[4], 24)
+        }
+        dlg_add_sep(dlg, 20, 404, 470)
+        dlg_add_push(dlg, 1, en ? "Apply" : "应用", 288, 478, 92, 30)
+        dlg_add_push(dlg, 2, en ? "Cancel" : "取消", 392, 478, 92, 30)
+        if dlg_modal_cb(dlg, pricingCmdCb, nil) == 1 {
+            let buffer = UnsafeMutablePointer<CChar>.allocate(capacity: 512)
+            defer { buffer.deallocate() }
+            var seenModels = Set<String>()
+            for i in 0..<5 {
+                dlg_edit_get(dlg, 800 + Int32(i), buffer, 512)
+                let model = String(cString: buffer).trimmingCharacters(in: .whitespaces)
+                guard !model.isEmpty else { continue }
+                seenModels.insert(model)
+                func field(_ base: Int32) -> Double {
+                    dlg_edit_get(dlg, base + Int32(i), buffer, 512)
+                    return Double(String(cString: buffer)) ?? 0
+                }
+                PricingService.shared.setCustomPrice(
+                    model: model,
+                    price: ModelPrice(input: field(810), output: field(820),
+                                      cacheRead: field(830), cacheWrite: field(840))
+                )
+            }
+            // 清空行 = 删除该自定义价（槽位被清空的旧条目移除）
+            for old in PricingService.shared.customModels where !seenModels.contains(old) {
+                PricingService.shared.setCustomPrice(model: old, price: nil)
+            }
+            scheduleScan(incremental: true)
+        }
+    }
+
+    private func pricingCatalogText(_ summary: (count: Int, generatedAt: String?)) -> String {
+        let L = L10n.shared
+        return L.tr("pricing.catalog", summary.count, summary.generatedAt.map { String($0.prefix(10)) } ?? "—")
+    }
+
+    /// 刷新按钮：同步等待（带超时），结果直接改写目录状态行。额度恢复后 UI 会随下一轮扫描更新费用。
+    private func handlePricingCmd(id: Int32) {
+        guard id == 750, let dlg = pricingDlg else { return }
+        let sem = DispatchSemaphore(value: 0)
+        DispatchQueue.global(qos: .userInitiated).async {
+            _ = try? PricingService.shared.refresh()
+            sem.signal()
+        }
+        _ = sem.wait(timeout: .now() + 12)
+        let summary = PricingService.shared.catalogSummary
+        dlg_set_text(dlg, 760, pricingCatalogText(summary))
+    }
+
     private func editLocalAPI(_ draft: inout SettingsDraft) {
         let en = L10n.shared.language == .en
         guard let dlg = dlg_create(en ? "Local API" : "本地 API", 520, 245) else { return }
@@ -1028,6 +1127,7 @@ final class WindowsApp: @unchecked Sendable {
         case 710: requestedSettingsSection = .tools
         case 711: requestedSettingsSection = .paths
         case 712: requestedSettingsSection = .thresholds
+        case 715: requestedSettingsSection = .pricing
         case 713: requestedSettingsSection = .customFace
         case 714: requestedSettingsSection = .localAPI
         default: return
@@ -1493,6 +1593,9 @@ private let customCmdCb: @convention(c) (UnsafeMutableRawPointer?, Int32) -> Voi
 }
 private let settingsCmdCb: @convention(c) (UnsafeMutableRawPointer?, Int32) -> Void = { _, id in
     WindowsApp.shared.handleSettingsCmd(id)
+}
+private let pricingCmdCb: @convention(c) (UnsafeMutableRawPointer?, Int32) -> Void = { _, id in
+    WindowsApp.shared.handlePricingCmd(id)
 }
 private let aboutCmdCb: @convention(c) (UnsafeMutableRawPointer?, Int32) -> Void = { _, id in
     WindowsApp.shared.handleAboutCmd(id)

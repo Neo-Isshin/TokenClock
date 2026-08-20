@@ -708,6 +708,12 @@ void dlg_add_static(void *dlg, const char *text_utf8, int x, int y, int w, int h
     dlg_child((HWND)dlg, L"STATIC", SS_LEFT, 0, t, x, y, w, h);
 }
 
+/* 同 dlg_add_static，但携带 id：dlg_set_text 可在运行时改写文案（如价格目录状态行）。 */
+void *dlg_add_static_id(void *dlg, int id, const char *text_utf8, int x, int y, int w, int h) {
+    wchar_t t[256]; if (to_wide(text_utf8, t, 256) == 0) t[0] = 0;
+    return dlg_child((HWND)dlg, L"STATIC", SS_LEFT, id, t, x, y, w, h);
+}
+
 void dlg_add_title(void *dlg, const char *text_utf8, int x, int y, int w, int h) {
     wchar_t t[256]; if (to_wide(text_utf8, t, 256) == 0) t[0] = 0;
     HWND c = dlg_child((HWND)dlg, L"STATIC", SS_LEFT, 0, t, x, y, w, h);
