@@ -15,7 +15,6 @@ enum AppLanguage: String, CaseIterable, Identifiable {
         }
     }
 }
-
 final class L10n: @unchecked Sendable {
     static let shared = L10n()
     private static let storageKey = SettingsKey.language.rawValue
@@ -83,6 +82,9 @@ final class L10n: @unchecked Sendable {
         "menu.temperature":      [.zhHans: "🌡️ 温度",              .zhHant: "🌡️ 溫度",             .en: "🌡️ Temperature"],
         "menu.celsius":          [.zhHans: "摄氏度 °C",            .zhHant: "攝氏度 °C",            .en: "Celsius °C"],
         "menu.fahrenheit":       [.zhHans: "华氏度 °F",            .zhHant: "華氏度 °F",            .en: "Fahrenheit °F"],
+        "menu.usageScope":       [.zhHans: "📊 用量口径",           .zhHant: "📊 用量口徑",           .en: "📊 Usage Scope"],
+        "menu.usageExclCache":   [.zhHans: "排除缓存读（默认）",     .zhHant: "排除緩存讀（預設）",     .en: "Exclude cache reads (default)"],
+        "menu.usageInclCache":   [.zhHans: "包含缓存读",            .zhHant: "包含緩存讀",            .en: "Include cache reads"],
         "menu.city":             [.zhHans: "🌤️ 城市",             .zhHant: "🌤️ 城市",             .en: "🌤️ City"],
         "menu.cityAuto":         [.zhHans: "自动(%@)",             .zhHant: "自動(%@)",             .en: "Auto (%@)"],
         "menu.cityAutoLocating": [.zhHans: "自动(定位中...)",       .zhHant: "自動(定位中...)",       .en: "Auto (locating...)"],
@@ -156,6 +158,10 @@ final class L10n: @unchecked Sendable {
         "detail.model":          [.zhHans: "模型",   .zhHant: "模型",    .en: "Model"],
         "detail.percent":        [.zhHans: "按百分比", .zhHant: "按百分比", .en: "By Percent"],
         "detail.share":          [.zhHans: "占比",   .zhHant: "佔比",    .en: "Share"],
+        "detail.cost":           [.zhHans: "费用",   .zhHant: "費用",    .en: "Cost"],
+        "detail.byPercent":      [.zhHans: "按占比", .zhHant: "按佔比",  .en: "By Percent"],
+        "detail.byCost":         [.zhHans: "按费用", .zhHant: "按費用",  .en: "By Cost"],
+        "detail.valueModeHelp":  [.zhHans: "切换 用量+消息数 / 费用+占比 显示", .zhHant: "切換 用量+訊息數 / 費用+佔比 顯示", .en: "Toggle usage+msgs / cost+percent columns"],
         "detail.codexQuota":     [.zhHans: "Codex 额度", .zhHant: "Codex 額度", .en: "Codex Quota"],
         "quota.loading":         [.zhHans: "正在读取 Codex 额度…", .zhHant: "正在讀取 Codex 額度…", .en: "Loading Codex quota…"],
         "quota.unavailable":     [.zhHans: "暂时无法读取额度", .zhHant: "暫時無法讀取額度", .en: "Quota is temporarily unavailable"],
@@ -173,6 +179,30 @@ final class L10n: @unchecked Sendable {
         "quota.liveSource":      [.zhHans: "实时", .zhHant: "即時", .en: "Live"],
         "quota.logSource":       [.zhHans: "本地记录", .zhHant: "本機記錄", .en: "Local log"],
         "quota.updated":         [.zhHans: "更新于 %@", .zhHant: "更新於 %@", .en: "Updated %@"],
+
+        // MARK: Pricing（费用估算）
+        "pricing.title":         [.zhHans: "💰 费用估算", .zhHant: "💰 費用估算", .en: "💰 Cost Estimation"],
+        "pricing.note":          [.zhHans: "按 API 牌价将当日 token 消耗折算为美元估算值，订阅额度内的实际用量不产生该费用。",
+                                  .zhHant: "按 API 牌價將當日 token 消耗折算為美元估算值，訂閱額度內的實際用量不產生該費用。",
+                                  .en: "Estimates today's token usage in USD at list prices. Usage inside subscriptions does not incur this cost."],
+        "pricing.refresh":       [.zhHans: "刷新价格目录", .zhHant: "重新整理價格目錄", .en: "Refresh price catalog"],
+        "pricing.refreshing":    [.zhHans: "正在更新…", .zhHant: "正在更新…", .en: "Updating…"],
+        "pricing.refreshFailed": [.zhHans: "刷新失败，请稍后重试", .zhHant: "重新整理失敗，請稍後重試", .en: "Refresh failed, try again later"],
+        "pricing.catalog":       [.zhHans: "目录：%d 个模型 · 数据时点 %@", .zhHant: "目錄：%d 個模型 · 資料時點 %@", .en: "Catalog: %d models · as of %@"],
+        "pricing.unpricedTitle": [.zhHans: "未能计价的模型", .zhHant: "未能計價的模型", .en: "Models without a price"],
+        "pricing.unpricedHint":  [.zhHans: "以下模型在目录中没有单价（多为代理/自定义模型），消耗未计入费用。可在下方添加自定义价格。",
+                                  .zhHant: "以下模型在目錄中沒有單價（多為代理/自訂模型），消耗未計入費用。可在下方添加自訂價格。",
+                                  .en: "These models have no catalog price (proxies / custom models) and are excluded from the estimate. Add custom prices below."],
+        "pricing.customTitle":   [.zhHans: "自定义价格", .zhHant: "自訂價格", .en: "Custom prices"],
+        "pricing.addCustom":     [.zhHans: "添加", .zhHant: "添加", .en: "Add"],
+        "pricing.modelName":     [.zhHans: "模型名", .zhHant: "模型名", .en: "Model name"],
+        "pricing.input":         [.zhHans: "输入", .zhHant: "輸入", .en: "Input"],
+        "pricing.output":        [.zhHans: "输出", .zhHant: "輸出", .en: "Output"],
+        "pricing.cacheRead":     [.zhHans: "缓存读", .zhHant: "緩存讀", .en: "Cache R"],
+        "pricing.cacheWrite":    [.zhHans: "缓存写", .zhHant: "緩存寫", .en: "Cache W"],
+        "pricing.unit":          [.zhHans: "$/百万 tokens", .zhHant: "$/百萬 tokens", .en: "$/M tokens"],
+        "pricing.remove":        [.zhHans: "移除", .zhHant: "移除", .en: "Remove"],
+        "pricing.example":       [.zhHans: "如 glm-5.3", .zhHant: "如 glm-5.3", .en: "e.g. glm-5.3"],
 
         // MARK: Theme picker
         "themePicker.title": [.zhHans: "选择表盘", .zhHant: "選擇錶盤", .en: "Select Clock Face"],
@@ -259,6 +289,7 @@ final class L10n: @unchecked Sendable {
         "editor.handWidthHour": [.zhHans: "时针宽度",    .zhHant: "時針寬度",    .en: "Hour Width"],
         "editor.handWidthMin":  [.zhHans: "分针宽度",    .zhHant: "分針寬度",    .en: "Minute Width"],
         "editor.handWidthSec":  [.zhHans: "秒针宽度",    .zhHant: "秒針寬度",    .en: "Second Width"],
+        "editor.handStyle":     [.zhHans: "指针样式",    .zhHant: "指針樣式",    .en: "Hand Style"],
         "editor.centerOuter":   [.zhHans: "中心外圈",    .zhHant: "中心外圈",    .en: "Center Outer"],
         "editor.centerInner":   [.zhHans: "中心内圈",    .zhHant: "中心內圈",    .en: "Center Inner"],
         "editor.showTicks":     [.zhHans: "显示刻度",    .zhHant: "顯示刻度",    .en: "Show Tick Marks"],
@@ -267,6 +298,8 @@ final class L10n: @unchecked Sendable {
         "editor.tickColor":     [.zhHans: "刻度颜色",    .zhHant: "刻度顏色",    .en: "Tick Color"],
         "editor.majorTickColor":[.zhHans: "主刻度颜色",   .zhHant: "主刻度顏色",   .en: "Major Tick Color"],
         "editor.numberColor":   [.zhHans: "数字颜色",    .zhHant: "數字顏色",    .en: "Number Color"],
+        "editor.numberStyle":   [.zhHans: "数字样式",    .zhHant: "數字樣式",    .en: "Number Style"],
+        "editor.numberFont":    [.zhHans: "数字字体",    .zhHant: "數字字體",    .en: "Number Font"],
         "editor.numArabic":     [.zhHans: "阿拉伯数字",   .zhHant: "阿拉伯數字",   .en: "Arabic"],
         "editor.numChinese":    [.zhHans: "中文数字",     .zhHant: "中文數字",     .en: "Chinese"],
         "editor.fontDefault":   [.zhHans: "默认",        .zhHant: "預設",         .en: "Default"],

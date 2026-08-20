@@ -27,6 +27,7 @@ let linuxSources = [
     "Services/ModelNormalizer.swift",
     "Services/OpenClawUsageService.swift",
     "Services/OpenCodeUsageService.swift",
+    "Services/PricingService.swift",
     "Services/QwenCodeUsageService.swift",
     "Services/TokenAccounting.swift",
     "Services/UsageAggregator.swift",
@@ -81,7 +82,10 @@ let package = Package(
                 "main.swift",
             ],
             sources: linuxSources,
-            resources: [.copy("Resources/glass_disc.png")],
+            resources: [
+                .copy("Resources/glass_disc.png"),
+                .copy("Resources/pricing-snapshot.json"),
+            ],
             swiftSettings: [.unsafeFlags(["-parse-as-library"])]
         ),
         .testTarget(
@@ -100,7 +104,10 @@ let package = Package(
             name: "TokenClock",
             path: "Sources/TokenClock",
             exclude: ["Linux"],
-            resources: [.copy("Resources/glass_disc.png")],
+            resources: [
+                .copy("Resources/glass_disc.png"),
+                .copy("Resources/pricing-snapshot.json"),
+            ],
             swiftSettings: [.unsafeFlags(["-parse-as-library"])]
         )
     ]

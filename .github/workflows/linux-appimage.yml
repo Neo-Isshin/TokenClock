@@ -1,12 +1,10 @@
 # 从独立维护的 Linux 分支构建 x86_64 AppImage，并附加到已存在的共享 release。
 #
-# linux-v1.4.0 映射到共享 release v1.4.0。构建源码和 workflow 都来自这个不可变的
-# Linux tag，因此 Linux catalog、路径和 GTK 界面无需并入 macOS normal/main 分支。
+# 云端构建仅保留为显式手动兜底。正式资产默认在自有 Debian 主机本地构建并上传；
+# linux-v* tag 只固定对应源码，不再自动触发 GitHub 编译。
 name: linux-appimage
 
 on:
-  push:
-    tags: ['linux-v*']
   workflow_dispatch:
     inputs:
       release_tag:

@@ -54,6 +54,14 @@ final class LinuxUsageModel: @unchecked Sendable {
             let summary = PathDetector.runFullDetection()
             saveDetectedPaths(summary.results)
         }
+        if PricingService.shared.isStale() {
+            Task.detached(priority: .utility) { [weak self] in
+                do {
+                    try await PricingService.shared.refresh()
+                    _ = self?.scan(incremental: true)
+                } catch {}
+            }
+        }
     }
 
     var tools: [ToolUsage] {
@@ -74,6 +82,14 @@ final class LinuxUsageModel: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         return storedRateWindowMinutes
+    }
+
+    var usageIncludesCacheRead: Bool {
+        UserDefaults.standard.bool(for: .usageIncludesCacheRead)
+    }
+
+    func setUsageIncludesCacheRead(_ value: Bool) {
+        UserDefaults.standard.setBool(value, for: .usageIncludesCacheRead)
     }
 
     func applyPreferences(enabledTools: Set<String>, rateWindowMinutes: Int) {
@@ -128,7 +144,7 @@ final class LinuxUsageModel: @unchecked Sendable {
         }
         if enabled.contains("Claude Code") {
             let usage = claudeCodeService.todayUsage()
-            results["Claude Code"] = snapshot(usage, claudeCodeService.recentUsage(minutes: rateWindow).tokens, claudeCodeService.currentHourTokens(), claudeCodeService.isActive(), claudeCodeService.todaySessions())
+            results["Claude Code"] = snapshot(usage, claudeCodeService.recentUsage(minutes: rateWindow).tokens, claudeCodeService.currentHourTokens(), claudeCodeService.isActive(), claudeCodeService.todaySessions(), cost: claudeCodeService.todayCost(), cacheRead: claudeCodeService.todayCacheReadTokens())
         }
         if enabled.contains("Gemini CLI") {
             let usage = geminiService.todayUsage()
@@ -136,7 +152,7 @@ final class LinuxUsageModel: @unchecked Sendable {
         }
         if enabled.contains("Codex") {
             let usage = codexService.todayUsage()
-            results["Codex"] = snapshot(usage, codexService.recentUsage(minutes: rateWindow).tokens, codexService.currentHourTokens(), codexService.isActive(), codexService.todaySessions())
+            results["Codex"] = snapshot(usage, codexService.recentUsage(minutes: rateWindow).tokens, codexService.currentHourTokens(), codexService.isActive(), codexService.todaySessions(), cost: codexService.todayCost(), cacheRead: codexService.todayCacheReadTokens())
         }
         if enabled.contains("Hermes") {
             let usage = hermesService.todayUsage()
@@ -193,6 +209,8 @@ final class LinuxUsageModel: @unchecked Sendable {
                 cacheRate: result.cacheRate,
                 recentTokens: result.recent,
                 hourlyTokens: result.hourly,
+                todayCost: result.cost,
+                todayCacheReadTokens: result.cacheRead,
                 sessions: result.sessions
             )
         }
@@ -205,10 +223,18 @@ final class LinuxUsageModel: @unchecked Sendable {
 
     func usageJSONObject() -> [String: Any] {
         let current = tools
+        let includesCache = usageIncludesCacheRead
+        var totalCost = CostEstimate.unavailable
+        for tool in current where tool.todayTokens > 0 { totalCost.merge(tool.todayCost) }
         return [
             "timestamp": ISO8601DateFormatter().string(from: Date()),
             "totalTokens": UsageAggregator.totalTokens(current),
+            "displayTotalTokens": UsageAggregator.totalTokens(current, includingCacheRead: includesCache),
+            "usageIncludesCacheRead": includesCache,
             "totalMessages": UsageAggregator.totalMessages(current),
+            "totalCost": totalCost.value,
+            "costComplete": totalCost.complete,
+            "costAvailable": totalCost.available,
             "rateEmoji": UsageAggregator.rateEmoji(current),
             "windowMinutes": rateWindowMinutes,
             "variant": "normal",
@@ -218,7 +244,11 @@ final class LinuxUsageModel: @unchecked Sendable {
                     "name": tool.name,
                     "emoji": tool.emoji,
                     "todayTokens": tool.todayTokens,
+                    "todayCacheReadTokens": tool.todayCacheReadTokens,
                     "todayMessages": tool.todayMessages,
+                    "todayCost": tool.todayCost.value,
+                    "costComplete": tool.todayCost.complete,
+                    "costAvailable": tool.todayCost.available,
                     "isActive": tool.isActive,
                     "cacheRate": tool.cacheRate,
                     "recentTokens": tool.recentTokens,
@@ -228,7 +258,11 @@ final class LinuxUsageModel: @unchecked Sendable {
                             "id": $0.rawId,
                             "displayName": $0.displayName,
                             "todayTokens": $0.todayTokens,
+                            "todayCacheReadTokens": $0.cacheReadTokens,
                             "todayMessages": $0.todayMessages,
+                            "todayCost": $0.todayCost.value,
+                            "costComplete": $0.todayCost.complete,
+                            "costAvailable": $0.todayCost.available,
                             "isActive": $0.isActive,
                         ] as [String: Any]
                     },
@@ -284,6 +318,8 @@ final class LinuxUsageModel: @unchecked Sendable {
         let hourly: Int
         let active: Bool
         let cacheRate: Double
+        var cost: CostEstimate = .unavailable
+        var cacheRead: Int = 0
         let sessions: [SessionInfo]
     }
 
@@ -292,7 +328,9 @@ final class LinuxUsageModel: @unchecked Sendable {
         _ recent: Int,
         _ hourly: Int,
         _ active: Bool,
-        _ sessions: [SessionInfo]
+        _ sessions: [SessionInfo],
+        cost: CostEstimate = .unavailable,
+        cacheRead: Int = 0
     ) -> ScanSnapshot {
         ScanSnapshot(
             tokens: usage.tokens,
@@ -301,6 +339,8 @@ final class LinuxUsageModel: @unchecked Sendable {
             hourly: hourly,
             active: active,
             cacheRate: usage.cacheRate,
+            cost: cost,
+            cacheRead: cacheRead,
             sessions: sessions
         )
     }

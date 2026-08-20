@@ -15,7 +15,6 @@ enum TokenFormat {
         return "\(tokens)"
     }
 }
-
 /// 单个工具的 token 使用数据
 struct ToolUsage: Identifiable, Hashable {
     var id: String { name }
@@ -33,11 +32,23 @@ struct ToolUsage: Identifiable, Hashable {
     /// 当前小时 token 消耗（用于热力计算）
     var hourlyTokens: Int
 
+    /// 今日按 API 牌价折算的估算费用（tokens 为 0 时无意义，由 formattedCost 显示「—」）
+    var todayCost: CostEstimate = .unavailable
+
+    /// 今日被排除在主用量之外的缓存读 token 数（「包含缓存读」口径的展示数据源）。
+    /// 主用量 todayTokens 不变；含缓存总数 = todayTokens + todayCacheReadTokens。
+    var todayCacheReadTokens: Int = 0
+
     /// 今日活跃的 session/agent 列表（用于展开展示）
     var sessions: [SessionInfo] = []
 
     /// 格式化的 token 数（如 "847.2K" / "1.23B"）
     var formattedTokens: String { TokenFormat.compact(todayTokens) }
+
+    /// 格式化的估算费用（如 "$12.34" / "≈$3.20" / "—"）
+    var formattedCost: String {
+        todayTokens > 0 && todayCost.available ? CostFormat.estimate(todayCost) : "—"
+    }
 
     /// 格式化的消息数
     var formattedMessages: String {
@@ -67,8 +78,29 @@ struct SessionInfo: Identifiable, Hashable {
     /// nil = 日志里解析不到 → 在「按模型」视图里归入「未知」桶。
     var model: String? = nil
 
+    /// 该 session 今日的估算费用（按 API 牌价折算）
+    var todayCost: CostEstimate = .unavailable
+
+    /// 该 session 今日的缓存读 token 数（「包含缓存读」口径用）
+    var cacheReadTokens: Int = 0
+
     /// 格式化的 token 数
     var formattedTokens: String { TokenFormat.compact(todayTokens) }
+
+    /// 格式化的估算费用（tokens 为 0 时显示「—」）
+    var formattedCost: String {
+        todayTokens > 0 && todayCost.available ? CostFormat.estimate(todayCost) : "—"
+    }
+}
+
+/// 下拉面板的数值展示模式（两态，chip 点击切换）：
+/// - tokens：经典三列 用量 | 消息数 | 缓存率
+/// - costPercent：用量列→费用、消息数列→占比，缓存率列不变
+enum DetailValueMode: Int {
+    case tokens = 0
+    case costPercent = 1
+
+    var next: DetailValueMode { self == .tokens ? .costPercent : .tokens }
 }
 
 /// Session ID 统一格式化：取前 6 位 + "…" + 末 4 位

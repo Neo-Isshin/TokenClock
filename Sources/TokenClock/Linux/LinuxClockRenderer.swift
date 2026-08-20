@@ -235,7 +235,10 @@ final class LinuxClockRenderer: @unchecked Sendable {
         let scale = snapshot.size.scale
         let theme = snapshot.theme
         let tools = snapshot.tools
-        let totalTokens = TokenFormat.compact(UsageAggregator.totalTokens(tools))
+        let totalTokens = TokenFormat.compact(UsageAggregator.totalTokens(
+            tools,
+            includingCacheRead: UserDefaults.standard.bool(for: .usageIncludesCacheRead)
+        ))
         let totalMessages = UsageAggregator.totalMessages(tools)
 
         let formatter = DateFormatter()

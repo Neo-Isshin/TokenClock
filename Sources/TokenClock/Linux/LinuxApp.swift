@@ -257,6 +257,24 @@ final class LinuxApp: @unchecked Sendable {
         _ = tc_gtk_on_activate(fahrenheit, linuxMenuAction, opaque)
         gtk_menu_shell_append(tc_gtk_menu_shell(temperatureMenu), fahrenheit)
 
+        let scopeRoot = gtk_menu_item_new_with_label(L10n.shared.tr("menu.usageScope"))
+        let scopeMenu = gtk_menu_new()
+        gtk_menu_item_set_submenu(tc_gtk_menu_item(scopeRoot), scopeMenu)
+        gtk_menu_shell_append(tc_gtk_menu_shell(root), scopeRoot)
+        let includesCache = model.usageIncludesCacheRead
+        let excludes = gtk_menu_item_new_with_label(
+            menuSelectionLabel(!includesCache, title: L10n.shared.tr("menu.usageExclCache"))
+        )
+        gtk_widget_set_name(excludes, "usage-scope:exclude")
+        _ = tc_gtk_on_activate(excludes, linuxMenuAction, opaque)
+        gtk_menu_shell_append(tc_gtk_menu_shell(scopeMenu), excludes)
+        let includes = gtk_menu_item_new_with_label(
+            menuSelectionLabel(includesCache, title: L10n.shared.tr("menu.usageInclCache"))
+        )
+        gtk_widget_set_name(includes, "usage-scope:include")
+        _ = tc_gtk_on_activate(includes, linuxMenuAction, opaque)
+        gtk_menu_shell_append(tc_gtk_menu_shell(scopeMenu), includes)
+
         let cityRoot = gtk_menu_item_new_with_label(L10n.shared.tr("menu.city"))
         let cityMenu = gtk_menu_new()
         gtk_menu_item_set_submenu(tc_gtk_menu_item(cityRoot), cityMenu)
@@ -459,6 +477,12 @@ final class LinuxApp: @unchecked Sendable {
             selectCity(String(name.dropFirst("city:".count)))
             return
         }
+        if name.hasPrefix("usage-scope:") {
+            model.setUsageIncludesCacheRead(name.hasSuffix(":include"))
+            rebuildContextMenu()
+            refreshUI()
+            return
+        }
         if name.hasPrefix("custom-theme:"),
            let id = UUID(uuidString: String(name.dropFirst("custom-theme:".count))) {
             applyCustomTheme(id: id)
@@ -478,9 +502,9 @@ final class LinuxApp: @unchecked Sendable {
         case "about":
             if let window {
                 if let path = Bundle.module.path(forResource: "glass_disc", ofType: "png") {
-                    path.withCString { tc_gtk_show_about(window, "v1.4.3", $0) }
+                    path.withCString { tc_gtk_show_about(window, "v1.4.5", $0) }
                 } else {
-                    tc_gtk_show_about(window, "v1.4.3", nil)
+                    tc_gtk_show_about(window, "v1.4.5", nil)
                 }
             }
         case "quit":
@@ -666,6 +690,10 @@ final class LinuxApp: @unchecked Sendable {
     func openThemePickerFromSettings() {
         settingsWindow?.hide()
         themePicker?.show(selected: selectedTheme)
+    }
+
+    func pricingCatalogDidChange() {
+        scheduleScan(incremental: true)
     }
 
     func settingsDidSave(apiChanged: Bool) {

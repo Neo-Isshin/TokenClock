@@ -23,9 +23,11 @@ final class LinuxDetailsPanel: @unchecked Sendable {
     private var grouping = LinuxGroupingMode(
         rawValue: UserDefaults.standard.int(for: .dropdownGrouping, default: 0)
     ) ?? .session
-    private var showPercentage = UserDefaults.standard.bool(
-        for: .dropdownShowPercentage, default: false
-    )
+    private var valueMode: DetailValueMode = {
+        if let raw = UserDefaults.standard.object(forKey: SettingsKey.dropdownValueMode.rawValue) as? Int,
+           let mode = DetailValueMode(rawValue: raw) { return mode }
+        return UserDefaults.standard.bool(for: .dropdownShowPercentage) ? .costPercent : .tokens
+    }()
     private var expandedTools: Set<String> = []
     private var expandedModels: Set<String> = []
     private var appliedTheme: LinuxClockTheme?
@@ -109,9 +111,9 @@ final class LinuxDetailsPanel: @unchecked Sendable {
         case "details:model":
             grouping = .model
             UserDefaults.standard.setInt(grouping.rawValue, for: .dropdownGrouping)
-        case "details:percentage":
-            showPercentage.toggle()
-            UserDefaults.standard.setBool(showPercentage, for: .dropdownShowPercentage)
+        case "details:value-mode":
+            valueMode = valueMode.next
+            UserDefaults.standard.setInt(valueMode.rawValue, for: .dropdownValueMode)
         case "details:quota":
             showsCodexQuota.toggle()
             if showsCodexQuota, codexQuota.status == .idle || codexQuota.isStale {
@@ -188,8 +190,10 @@ final class LinuxDetailsPanel: @unchecked Sendable {
             name: "details:quota", to: displayRow
         )
         appendControl(
-            showPercentage ? "✓  \(tr("detail.percent"))" : "%  \(tr("detail.percent"))",
-            name: "details:percentage", to: displayRow
+            valueMode == .costPercent
+                ? "✓  \(tr("detail.byCost")) · \(tr("detail.byPercent"))"
+                : "$  \(tr("detail.byCost")) · %  \(tr("detail.byPercent"))",
+            name: "details:value-mode", to: displayRow
         )
 
         gtk_box_pack_start(tc_gtk_box(card), separator(), 0, 0, 0)
@@ -284,8 +288,8 @@ final class LinuxDetailsPanel: @unchecked Sendable {
         gtk_container_set_border_width(tc_gtk_container(row), 8)
         let first = grouping == .session ? tr("detail.instance") : tr("detail.model")
         appendLabel(first, width: 130, expands: true, alignment: 0, style: "tokenclock-detail-header", to: row)
-        appendLabel(showPercentage ? tr("detail.share") : tr("detail.todayUsage"), width: 60, alignment: 1, style: "tokenclock-detail-header", to: row)
-        appendLabel(tr("detail.messages"), width: 40, alignment: 1, style: "tokenclock-detail-header", to: row)
+        appendLabel(tr(valueMode == .tokens ? "detail.todayUsage" : "detail.cost"), width: 60, alignment: 1, style: "tokenclock-detail-header", to: row)
+        appendLabel(tr(valueMode == .tokens ? "detail.messages" : "detail.share"), width: 40, alignment: 1, style: "tokenclock-detail-header", to: row)
         if grouping == .session {
             appendLabel(tr("detail.cacheRate"), width: 44, alignment: 1, style: "tokenclock-detail-header", to: row)
         }
@@ -298,7 +302,8 @@ final class LinuxDetailsPanel: @unchecked Sendable {
             appendEmptyState(to: list)
             return
         }
-        let total = max(1, UsageAggregator.totalTokens(tools))
+        let includeCache = UserDefaults.standard.bool(for: .usageIncludesCacheRead)
+        let total = max(1, UsageAggregator.totalTokens(tools, includingCacheRead: includeCache))
         for (index, tool) in active.enumerated() {
             if index > 0 { gtk_box_pack_start(tc_gtk_box(list), separator(), 0, 0, 0) }
             let expanded = expandedTools.contains(tool.name)
@@ -306,8 +311,8 @@ final class LinuxDetailsPanel: @unchecked Sendable {
             let title = "\(prefix) \(tool.emoji) \(tool.name)"
             appendDataRow(
                 title: title,
-                tokens: usageText(tool.todayTokens, total: total),
-                messages: "\(tool.todayMessages)",
+                tokens: primaryValue(tokens: tool.todayTokens, cacheRead: tool.todayCacheReadTokens, cost: tool.todayCost, includeCacheRead: includeCache),
+                messages: secondaryValue(tokens: tool.todayTokens, cacheRead: tool.todayCacheReadTokens, messages: tool.todayMessages, total: total, includeCacheRead: includeCache),
                 trailing: cacheText(tool.cacheRate),
                 actionName: tool.sessions.isEmpty ? nil : "details:tool:\(tool.name)",
                 child: false,
@@ -320,8 +325,8 @@ final class LinuxDetailsPanel: @unchecked Sendable {
                     if let source = session.source, !source.isEmpty { name += " · \(source)" }
                     appendDataRow(
                         title: name,
-                        tokens: usageText(session.todayTokens, total: total),
-                        messages: "\(session.todayMessages)",
+                        tokens: primaryValue(tokens: session.todayTokens, cacheRead: session.cacheReadTokens, cost: session.todayCost, includeCacheRead: includeCache),
+                        messages: secondaryValue(tokens: session.todayTokens, cacheRead: session.cacheReadTokens, messages: session.todayMessages, total: total, includeCacheRead: includeCache),
                         trailing: "–",
                         actionName: nil,
                         child: true,
@@ -340,15 +345,16 @@ final class LinuxDetailsPanel: @unchecked Sendable {
             appendEmptyState(to: list)
             return
         }
-        let total = max(1, UsageAggregator.totalTokens(tools))
+        let includeCache = UserDefaults.standard.bool(for: .usageIncludesCacheRead)
+        let total = max(1, UsageAggregator.totalTokens(tools, includingCacheRead: includeCache))
         for (index, group) in groups.enumerated() {
             if index > 0 { gtk_box_pack_start(tc_gtk_box(list), separator(), 0, 0, 0) }
             let expanded = expandedModels.contains(group.name)
             let prefix = group.contributions.isEmpty ? "  " : (expanded ? "▾" : "▸")
             appendDataRow(
                 title: "\(prefix) \(group.emoji) \(group.name)",
-                tokens: usageText(group.totalTokens, total: total),
-                messages: "\(group.totalMessages)",
+                tokens: primaryValue(tokens: group.totalTokens, cacheRead: group.totalCacheReadTokens, cost: group.totalCost, includeCacheRead: includeCache),
+                messages: secondaryValue(tokens: group.totalTokens, cacheRead: group.totalCacheReadTokens, messages: group.totalMessages, total: total, includeCacheRead: includeCache),
                 trailing: nil,
                 actionName: group.contributions.isEmpty ? nil : "details:model-row:\(group.name)",
                 child: false,
@@ -358,8 +364,8 @@ final class LinuxDetailsPanel: @unchecked Sendable {
                 for contribution in group.contributions {
                     appendDataRow(
                         title: "    \(contribution.emoji) \(contribution.tool)",
-                        tokens: usageText(contribution.tokens, total: total),
-                        messages: "\(contribution.messages)",
+                        tokens: primaryValue(tokens: contribution.tokens, cacheRead: contribution.cacheReadTokens, cost: contribution.cost, includeCacheRead: includeCache),
+                        messages: secondaryValue(tokens: contribution.tokens, cacheRead: contribution.cacheReadTokens, messages: contribution.messages, total: total, includeCacheRead: includeCache),
                         trailing: nil,
                         actionName: nil,
                         child: true,
@@ -634,10 +640,16 @@ final class LinuxDetailsPanel: @unchecked Sendable {
         return separator
     }
 
-    private func usageText(_ tokens: Int, total: Int) -> String {
-        guard showPercentage else { return TokenFormat.compact(tokens) }
-        guard tokens > 0, total > 0 else { return "–" }
-        let percent = Double(tokens) / Double(total) * 100
+    private func primaryValue(tokens: Int, cacheRead: Int, cost: CostEstimate, includeCacheRead: Bool) -> String {
+        if valueMode == .costPercent { return CostFormat.estimate(cost) }
+        return TokenFormat.compact(tokens + (includeCacheRead ? cacheRead : 0))
+    }
+
+    private func secondaryValue(tokens: Int, cacheRead: Int, messages: Int, total: Int, includeCacheRead: Bool) -> String {
+        if valueMode == .tokens { return "\(messages)" }
+        let shown = tokens + (includeCacheRead ? cacheRead : 0)
+        guard shown > 0, total > 0 else { return "–" }
+        let percent = Double(shown) / Double(total) * 100
         return percent < 1 ? "<1%" : String(format: "%.0f%%", percent)
     }
 

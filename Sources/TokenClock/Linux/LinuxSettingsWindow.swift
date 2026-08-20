@@ -55,6 +55,13 @@ final class LinuxSettingsWindow: @unchecked Sendable {
     private var selectedCustomHandStyle = "round"
     private var selectedCustomNumberStyle = "arabic"
     private var selectedCustomFont = "rounded"
+    private var pricingModelEntry: UnsafeMutablePointer<GtkWidget>?
+    private var pricingInputEntry: UnsafeMutablePointer<GtkWidget>?
+    private var pricingOutputEntry: UnsafeMutablePointer<GtkWidget>?
+    private var pricingCacheReadEntry: UnsafeMutablePointer<GtkWidget>?
+    private var pricingCacheWriteEntry: UnsafeMutablePointer<GtkWidget>?
+    private var pricingRemoveModels: [String: String] = [:]
+    private var pricingRefreshInFlight = false
 
     private lazy var opaque = Unmanaged.passUnretained(self).toOpaque()
 
@@ -69,6 +76,10 @@ final class LinuxSettingsWindow: @unchecked Sendable {
         loadValues()
         guard let window else { return }
         gtk_widget_show_all(window)
+        // A GtkRevealer still contributes its hidden child's natural width. Re-assert the
+        // user-facing fixed geometry after realization so long hints/custom editors cannot make
+        // the collapsed overview wider than the macOS-normal settings panel.
+        gtk_window_resize(tc_gtk_window(window), 520, 548)
         syncDisclosureStates()
         gtk_window_present(tc_gtk_window(window))
     }
@@ -130,11 +141,21 @@ final class LinuxSettingsWindow: @unchecked Sendable {
             show()
             return
         }
+        if name.hasPrefix("settings:pricing-remove:"),
+           let model = pricingRemoveModels[name] {
+            PricingService.shared.setCustomPrice(model: model, price: nil)
+            owner?.pricingCatalogDidChange()
+            refreshLanguage()
+            show()
+            return
+        }
         switch name {
         case "settings:detect": runDetection()
         case "settings:clock-face": owner?.openThemePickerFromSettings()
         case "settings:custom-save": saveCustomTheme()
         case "settings:custom-reset": resetCustomTheme()
+        case "settings:pricing-save": saveCustomPrice()
+        case "settings:pricing-refresh": refreshPricingCatalog()
         case "settings:save": saveAndClose()
         case "settings:cancel": hide()
         default: break
@@ -186,6 +207,10 @@ final class LinuxSettingsWindow: @unchecked Sendable {
         appendDisclosure(
             key: "usage", title: L10n.shared.tr("rate.title"),
             page: usagePage(), to: content
+        )
+        appendDisclosure(
+            key: "pricing", title: L10n.shared.tr("pricing.title"),
+            page: pricingPage(), to: content
         )
         appendDisclosure(
             key: "themes", title: localized(zh: "表盘与自定义", en: "Clock Faces & Custom"),
@@ -361,6 +386,142 @@ final class LinuxSettingsWindow: @unchecked Sendable {
         tc_gtk_add_class(hint, "tokenclock-settings-hint")
         gtk_box_pack_start(tc_gtk_box(page), hint, 0, 0, 0)
         return page
+    }
+
+    private func pricingPage() -> UnsafeMutablePointer<GtkWidget>? {
+        guard let page = verticalPage() else { return nil }
+        let summary = PricingService.shared.catalogSummary
+        let generated = summary.generatedAt.map { String($0.prefix(10)) } ?? "—"
+
+        // GTK computes a hidden revealer's natural width before it is expanded. A single long
+        // pricing sentence therefore widened the entire non-resizable Settings window to nearly
+        // 1,000 px. Insert a semantic sentence break so the collapsed page keeps the normal
+        // 520 px footprint while preserving the full explanatory text.
+        let rawNote = L10n.shared.tr("pricing.note")
+        let wrappedNote = rawNote
+            .replacingOccurrences(of: ". Usage", with: ".\nUsage")
+            .replacingOccurrences(of: "，订阅", with: "，\n订阅")
+            .replacingOccurrences(of: "，訂閱", with: "，\n訂閱")
+        let note = gtk_label_new(wrappedNote)
+        gtk_label_set_xalign(tc_gtk_label(note), 0)
+        gtk_label_set_line_wrap(tc_gtk_label(note), 1)
+        gtk_label_set_max_width_chars(tc_gtk_label(note), 62)
+        tc_gtk_add_class(note, "tokenclock-settings-hint")
+        gtk_box_pack_start(tc_gtk_box(page), note, 0, 0, 0)
+
+        let statusRow = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8)
+        let status = gtk_label_new(L10n.shared.tr("pricing.catalog", summary.count, generated))
+        gtk_label_set_xalign(tc_gtk_label(status), 0)
+        gtk_widget_set_hexpand(status, 1)
+        gtk_box_pack_start(tc_gtk_box(statusRow), status, 1, 1, 0)
+        appendButton(
+            pricingRefreshInFlight ? L10n.shared.tr("pricing.refreshing") : L10n.shared.tr("pricing.refresh"),
+            name: "settings:pricing-refresh", to: statusRow
+        )
+        gtk_box_pack_start(tc_gtk_box(page), statusRow, 0, 0, 0)
+
+        let unpriced = PricingService.shared.unpricedModels
+        if !unpriced.isEmpty {
+            appendSection(L10n.shared.tr("pricing.unpricedTitle"), to: page)
+            let wrappedModels = stride(from: 0, to: unpriced.count, by: 3).map { start in
+                unpriced[start..<min(start + 3, unpriced.count)].joined(separator: "  ·  ")
+            }.joined(separator: "\n")
+            let label = gtk_label_new(wrappedModels)
+            gtk_label_set_xalign(tc_gtk_label(label), 0)
+            gtk_label_set_line_wrap(tc_gtk_label(label), 1)
+            gtk_label_set_max_width_chars(tc_gtk_label(label), 62)
+            tc_gtk_add_class(label, "tokenclock-settings-hint")
+            gtk_box_pack_start(tc_gtk_box(page), label, 0, 0, 0)
+        }
+
+        appendSection(L10n.shared.tr("pricing.customTitle"), to: page)
+        let headers = gtk_label_new("\(L10n.shared.tr("pricing.modelName"))  ·  \(L10n.shared.tr("pricing.input"))  ·  \(L10n.shared.tr("pricing.output"))  ·  \(L10n.shared.tr("pricing.cacheRead"))  ·  \(L10n.shared.tr("pricing.cacheWrite"))")
+        gtk_label_set_xalign(tc_gtk_label(headers), 0)
+        gtk_label_set_max_width_chars(tc_gtk_label(headers), 62)
+        tc_gtk_add_class(headers, "tokenclock-settings-hint")
+        gtk_box_pack_start(tc_gtk_box(page), headers, 0, 0, 0)
+
+        let editor = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 5)
+        pricingModelEntry = pricingEntry(placeholder: L10n.shared.tr("pricing.example"), width: 150, to: editor)
+        pricingInputEntry = pricingEntry(placeholder: "3.0", width: 58, to: editor)
+        pricingOutputEntry = pricingEntry(placeholder: "15.0", width: 58, to: editor)
+        pricingCacheReadEntry = pricingEntry(placeholder: "0.3", width: 58, to: editor)
+        pricingCacheWriteEntry = pricingEntry(placeholder: "3.75", width: 58, to: editor)
+        appendButton(L10n.shared.tr("pricing.addCustom"), name: "settings:pricing-save", to: editor)
+        gtk_box_pack_start(tc_gtk_box(page), editor, 0, 0, 0)
+
+        pricingRemoveModels.removeAll()
+        for (index, model) in PricingService.shared.customModels.enumerated() {
+            guard let price = PricingService.shared.customPrice(for: model) else { continue }
+            let row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6)
+            let description = String(
+                format: "%@  ·  %.6g / %.6g / %.6g / %.6g",
+                model, price.input, price.output, price.cacheRead, price.cacheWrite
+            )
+            let label = gtk_label_new(description)
+            gtk_label_set_xalign(tc_gtk_label(label), 0)
+            gtk_widget_set_hexpand(label, 1)
+            gtk_box_pack_start(tc_gtk_box(row), label, 1, 1, 0)
+            let action = "settings:pricing-remove:\(index)"
+            pricingRemoveModels[action] = model
+            appendButton(L10n.shared.tr("pricing.remove"), name: action, to: row)
+            gtk_box_pack_start(tc_gtk_box(page), row, 0, 0, 0)
+        }
+        return page
+    }
+
+    @discardableResult
+    private func pricingEntry(placeholder: String, width: Int32, to row: UnsafeMutablePointer<GtkWidget>?) -> UnsafeMutablePointer<GtkWidget>? {
+        let entry = gtk_entry_new()
+        gtk_entry_set_placeholder_text(tc_gtk_entry(entry), placeholder)
+        let characterWidth: gint = width >= 100 ? 14 : 5
+        gtk_entry_set_width_chars(tc_gtk_entry(entry), characterWidth)
+        gtk_entry_set_max_width_chars(tc_gtk_entry(entry), characterWidth)
+        gtk_widget_set_size_request(entry, gint(width), -1)
+        gtk_box_pack_start(tc_gtk_box(row), entry, 0, 0, 0)
+        return entry
+    }
+
+    private func saveCustomPrice() {
+        guard let modelEntry = pricingModelEntry else { return }
+        let name = String(cString: gtk_entry_get_text(tc_gtk_entry(modelEntry)))
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { return }
+        func number(_ widget: UnsafeMutablePointer<GtkWidget>?) -> Double {
+            guard let widget else { return 0 }
+            return Double(String(cString: gtk_entry_get_text(tc_gtk_entry(widget)))) ?? 0
+        }
+        PricingService.shared.setCustomPrice(
+            model: name,
+            price: ModelPrice(
+                input: number(pricingInputEntry),
+                output: number(pricingOutputEntry),
+                cacheRead: number(pricingCacheReadEntry),
+                cacheWrite: number(pricingCacheWriteEntry)
+            )
+        )
+        owner?.pricingCatalogDidChange()
+        refreshLanguage()
+        show()
+    }
+
+    private func refreshPricingCatalog() {
+        guard !pricingRefreshInFlight else { return }
+        pricingRefreshInFlight = true
+        Task.detached(priority: .utility) { [weak self] in
+            try? await PricingService.shared.refresh()
+            guard let self else { return }
+            _ = tc_gtk_idle_add(linuxPricingRefreshFinished, self.opaque)
+        }
+        refreshLanguage()
+        show()
+    }
+
+    fileprivate func pricingRefreshFinished() {
+        pricingRefreshInFlight = false
+        owner?.pricingCatalogDidChange()
+        refreshLanguage()
+        show()
     }
 
     private func themesPage() -> UnsafeMutablePointer<GtkWidget>? {
@@ -908,6 +1069,12 @@ final class LinuxSettingsWindow: @unchecked Sendable {
         customHandButtons.removeAll()
         customNumberStyleButtons.removeAll()
         customFontButtons.removeAll()
+        pricingModelEntry = nil
+        pricingInputEntry = nil
+        pricingOutputEntry = nil
+        pricingCacheReadEntry = nil
+        pricingCacheWriteEntry = nil
+        pricingRemoveModels.removeAll()
         sectionRevealers.removeAll()
         sectionButtons.removeAll()
         sectionTitles.removeAll()
@@ -929,4 +1096,9 @@ private func linuxSettingsAction(
 ) {
     guard let widget else { return }
     settings(from: data)?.handleAction(widget: widget)
+}
+
+private func linuxPricingRefreshFinished(_ data: gpointer?) -> gboolean {
+    settings(from: data)?.pricingRefreshFinished()
+    return 0
 }

@@ -3,8 +3,11 @@ import Foundation
 /// 聚合计算工具使用数据
 enum UsageAggregator {
     /// 计算所有工具的 token 总数
-    static func totalTokens(_ tools: [ToolUsage]) -> Int {
-        tools.reduce(0) { $0 + $1.todayTokens }
+    /// - Parameter includingCacheRead: true 时返回「包含缓存读」口径（todayTokens + 缓存读）
+    static func totalTokens(_ tools: [ToolUsage], includingCacheRead: Bool = false) -> Int {
+        tools.reduce(0) {
+            $0 + $1.todayTokens + (includingCacheRead ? $1.todayCacheReadTokens : 0)
+        }
     }
 
     /// 计算所有工具的消息总数
@@ -60,13 +63,20 @@ enum UsageAggregator {
                     emoji: name == unknownLabel ? "❓" : ModelEmoji.emoji(for: name))
                 group.totalTokens += session.todayTokens
                 group.totalMessages += session.todayMessages
+                group.totalCost.merge(session.todayCost)
+                group.totalCacheReadTokens += session.cacheReadTokens
                 if let idx = group.contributions.firstIndex(where: { $0.tool == tool.name }) {
                     group.contributions[idx].tokens += session.todayTokens
                     group.contributions[idx].messages += session.todayMessages
+                    group.contributions[idx].cost.merge(session.todayCost)
+                    group.contributions[idx].cacheReadTokens += session.cacheReadTokens
                 } else {
-                    group.contributions.append(ToolContribution(
+                    var contribution = ToolContribution(
                         tool: tool.name, emoji: tool.emoji,
-                        tokens: session.todayTokens, messages: session.todayMessages))
+                        tokens: session.todayTokens, messages: session.todayMessages)
+                    contribution.cost = session.todayCost
+                    contribution.cacheReadTokens = session.cacheReadTokens
+                    group.contributions.append(contribution)
                 }
                 bucket[name] = group
             }
@@ -85,7 +95,6 @@ enum UsageAggregator {
         return result
     }
 }
-
 /// 「按模型」视图：某个模型下，各工具对其的消耗贡献
 struct ModelGroup: Identifiable, Hashable {
     var id: String { name }
@@ -95,10 +104,17 @@ struct ModelGroup: Identifiable, Hashable {
     var emoji: String = "🧠"
     var totalTokens: Int = 0
     var totalMessages: Int = 0
+    /// 该模型今日的估算费用（各 session 费用之和；「未知」桶必然查不到价 → 恒为 ≈ 前缀或 0）
+    var totalCost: CostEstimate = .unavailable
+    /// 该模型今日的缓存读 token 数（「包含缓存读」口径用）
+    var totalCacheReadTokens: Int = 0
     /// 该模型下每个工具的贡献（按 token 降序）
     var contributions: [ToolContribution] = []
 
     var formattedTokens: String { TokenFormat.compact(totalTokens) }
+    var formattedCost: String {
+        totalTokens > 0 && totalCost.available ? CostFormat.estimate(totalCost) : "—"
+    }
 }
 
 /// 单个工具对某个模型的贡献
@@ -108,4 +124,12 @@ struct ToolContribution: Identifiable, Hashable {
     let emoji: String
     var tokens: Int = 0
     var messages: Int = 0
+    /// 该工具对该模型的今日估算费用
+    var cost: CostEstimate = .unavailable
+    /// 该工具对该模型的今日缓存读 token 数（「包含缓存读」口径用）
+    var cacheReadTokens: Int = 0
+
+    var formattedCost: String {
+        tokens > 0 && cost.available ? CostFormat.estimate(cost) : "—"
+    }
 }
