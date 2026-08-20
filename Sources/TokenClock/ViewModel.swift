@@ -60,11 +60,21 @@ final class ViewModel: ObservableObject {
         didSet { UserDefaults.standard.setInt(groupingMode.rawValue, for: .dropdownGrouping) }
     }
 
-    /// 下拉面板用量列是否以「占总数百分比」显示（true=百分比，false=绝对 token），持久化
-    @Published var showPercentage: Bool = {
-        UserDefaults.standard.bool(for: .dropdownShowPercentage, default: false)
+    /// 下拉面板数值显示模式（用量+消息数 / 费用+占比）。
+    @Published var valueMode: DetailValueMode = {
+        if let raw = UserDefaults.standard.object(forKey: SettingsKey.dropdownValueMode.rawValue) as? Int,
+           let mode = DetailValueMode(rawValue: raw) {
+            return mode
+        }
+        if UserDefaults.standard.bool(for: .dropdownShowPercentage) { return .costPercent }
+        return .tokens
     }() {
-        didSet { UserDefaults.standard.setBool(showPercentage, for: .dropdownShowPercentage) }
+        didSet { UserDefaults.standard.setInt(valueMode.rawValue, for: .dropdownValueMode) }
+    }
+
+    /// token 展示是否包含缓存读；费用估算不受此开关影响。
+    @Published var usageIncludesCache = UserDefaults.standard.bool(for: .usageIncludesCacheRead) {
+        didSet { UserDefaults.standard.setBool(usageIncludesCache, for: .usageIncludesCacheRead) }
     }
 
     /// Codex 额度按需读取；不开面板时不启动 app-server，也没有额外轮询。
@@ -268,6 +278,7 @@ final class ViewModel: ObservableObject {
         loadSavedCustomThemes()
         // 首次启动时自动探测各工具日志路径
         runInitialPathDetection()
+        setupPricingObservers()
         startTimers()
         // 日结历史:启动时检查上次结算日(漏了不补打,SQLite 有啥返回啥)
         performStartupHistoryCatchup()
@@ -281,6 +292,26 @@ final class ViewModel: ObservableObject {
         stopTimers()
         codexQuotaTask?.cancel()
         codexQuotaTask = nil
+    }
+
+    // MARK: - 价格目录
+
+    private func setupPricingObservers() {
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(handlePricingUpdate),
+            name: PricingService.catalogUpdatedNotification, object: nil
+        )
+        if PricingService.shared.isStale() {
+            Task.detached(priority: .utility) {
+                try? await PricingService.shared.refresh()
+            }
+        }
+    }
+
+    @objc nonisolated private func handlePricingUpdate() {
+        Task { @MainActor [weak self] in
+            self?.updateMockData()
+        }
     }
 
     func toggleCodexQuota() {
@@ -480,7 +511,22 @@ final class ViewModel: ObservableObject {
 
     var totalTokensFormatted: String {
         if isInitialLoading { return "—" }
-        return TokenFormat.compact(UsageAggregator.totalTokens(visibleTools))
+        return TokenFormat.compact(UsageAggregator.totalTokens(visibleTools, includingCacheRead: usageIncludesCache))
+    }
+
+    var totalCost: CostEstimate {
+        var result = CostEstimate.unavailable
+        guard !isInitialLoading else { return result }
+        for tool in visibleTools where tool.todayTokens > 0 { result.merge(tool.todayCost) }
+        return result
+    }
+
+    var totalCostFormatted: String {
+        UsageAggregator.totalTokens(visibleTools) > 0 && totalCost.available ? CostFormat.estimate(totalCost) : "—"
+    }
+
+    var displayTotalTokens: Int {
+        UsageAggregator.totalTokens(visibleTools, includingCacheRead: usageIncludesCache)
     }
 
     var totalMessagesFormatted: String {
@@ -753,6 +799,10 @@ final class ViewModel: ObservableObject {
         runBackgroundScan(incremental: true)
     }
 
+    func refreshUsageData() {
+        runBackgroundScan(incremental: true)
+    }
+
     private func performFullScan() {
         runBackgroundScan(incremental: false)
     }
@@ -797,7 +847,7 @@ final class ViewModel: ObservableObject {
             }
             if enabled.contains("Claude Code") {
                 let u = self.claudeCodeService.todayUsage()
-                results["Claude Code"] = ToolSnapshot(tokens: u.tokens, messages: u.messages, recent: self.claudeCodeService.recentUsage(minutes: rateWindow).tokens, hourly: self.claudeCodeService.currentHourTokens(), active: self.claudeCodeService.isActive(), cacheRate: u.cacheRate, sessions: self.claudeCodeService.todaySessions())
+                results["Claude Code"] = ToolSnapshot(tokens: u.tokens, messages: u.messages, recent: self.claudeCodeService.recentUsage(minutes: rateWindow).tokens, hourly: self.claudeCodeService.currentHourTokens(), active: self.claudeCodeService.isActive(), cacheRate: u.cacheRate, cost: self.claudeCodeService.todayCost(), cacheRead: self.claudeCodeService.todayCacheReadTokens(), sessions: self.claudeCodeService.todaySessions())
             }
             if enabled.contains("Gemini CLI") {
                 let u = self.geminiService.todayUsage()
@@ -805,7 +855,7 @@ final class ViewModel: ObservableObject {
             }
             if enabled.contains("Codex") {
                 let u = self.codexService.todayUsage()
-                results["Codex"] = ToolSnapshot(tokens: u.tokens, messages: u.messages, recent: self.codexService.recentUsage(minutes: rateWindow).tokens, hourly: self.codexService.currentHourTokens(), active: self.codexService.isActive(), cacheRate: u.cacheRate, sessions: self.codexService.todaySessions())
+                results["Codex"] = ToolSnapshot(tokens: u.tokens, messages: u.messages, recent: self.codexService.recentUsage(minutes: rateWindow).tokens, hourly: self.codexService.currentHourTokens(), active: self.codexService.isActive(), cacheRate: u.cacheRate, cost: self.codexService.todayCost(), cacheRead: self.codexService.todayCacheReadTokens(), sessions: self.codexService.todaySessions())
             }
             if enabled.contains("Hermes") {
                 let u = self.hermesService.todayUsage()
@@ -869,6 +919,8 @@ final class ViewModel: ObservableObject {
         let hourly: Int
         let active: Bool
         let cacheRate: Double
+        var cost: CostEstimate = .unavailable
+        var cacheRead: Int = 0
         let sessions: [SessionInfo]
     }
 
@@ -885,6 +937,8 @@ final class ViewModel: ObservableObject {
             cacheRate: snap.cacheRate,
             recentTokens: snap.recent,
             hourlyTokens: snap.hourly,
+            todayCost: snap.cost,
+            todayCacheReadTokens: snap.cacheRead,
             sessions: snap.sessions
         )
     }
@@ -896,7 +950,7 @@ final class ViewModel: ObservableObject {
         UserDefaults.standard.set(CGFloat(point.y), forKey: "\(SettingsKey.windowPosition.rawValue)Y")
     }
 
-    static func loadWindowPosition(screenSize: NSSize) -> NSPoint {
+    static func loadWindowPosition(screenFrame: NSRect, panelSize: NSSize) -> NSPoint {
         // 用 object(forKey:)==nil 区分"从未保存"与"保存为 0"，
         // 否则用户把窗口拖到屏幕左下角(x≈0,y≈0)会被误判为未保存而弹回右上角。
         let xKey = "\(SettingsKey.windowPosition.rawValue)X"
@@ -908,8 +962,15 @@ final class ViewModel: ObservableObject {
             let y = UserDefaults.standard.double(forKey: yKey)
             return NSPoint(x: x, y: y)
         }
-        // 默认右上角
-        return NSPoint(x: screenSize.width - 220, y: screenSize.height - 260)
+        return defaultWindowPosition(screenFrame: screenFrame, panelSize: panelSize)
+    }
+
+    static func defaultWindowPosition(screenFrame: NSRect, panelSize: NSSize) -> NSPoint {
+        let margin: CGFloat = 20
+        return NSPoint(
+            x: screenFrame.maxX - panelSize.width - margin,
+            y: screenFrame.maxY - panelSize.height - margin
+        )
     }
 
     // MARK: - 清理

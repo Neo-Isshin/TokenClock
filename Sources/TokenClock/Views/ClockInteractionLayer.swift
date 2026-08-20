@@ -4,6 +4,8 @@ import SwiftUI
 /// AppKit owns the primary mouse sequence so click and native window dragging remain compatible
 /// across SwiftUI/runtime changes. Transparent corners stay click-through by using a circular
 /// hit test instead of a full rectangular content shape.
+/// （自 main 分支移植：SwiftUI 的 tap 手势会吞掉窗口拖拽的鼠标序列，点击/拖动改由 AppKit 分发；
+/// 拖动超过 3pt 判定为拖拽并移动窗口，否则视为点击切换详情面板。）
 struct ClockInteractionLayer: NSViewRepresentable {
     let onClick: () -> Void
 
@@ -15,7 +17,6 @@ struct ClockInteractionLayer: NSViewRepresentable {
         nsView.onClick = onClick
     }
 }
-
 final class ClockInteractionNSView: NSView {
     var onClick: () -> Void
     private var dragStartMouse: NSPoint?
@@ -44,6 +45,22 @@ final class ClockInteractionNSView: NSView {
 
     override func mouseDown(with event: NSEvent) {
         guard let window else { return }
+
+        // Production mouse events carry the real window number. Let AppKit own that tracking
+        // sequence: performDrag survives SwiftUI/runtime changes and nonactivating NSPanel quirks
+        // better than rebuilding the window drag from mouseDragged callbacks.
+        if event.windowNumber != 0 {
+            let startMouse = NSEvent.mouseLocation
+            window.performDrag(with: event)
+            let endMouse = NSEvent.mouseLocation
+            if max(abs(endMouse.x - startMouse.x), abs(endMouse.y - startMouse.y)) <= 3 {
+                onClick()
+            }
+            resetDragState()
+            return
+        }
+
+        // Synthetic windowNumber=0 events are retained for deterministic unit tests.
         dragStartMouse = screenPoint(for: event, in: window)
         dragStartOrigin = window.frame.origin
         isDragging = false
@@ -60,9 +77,7 @@ final class ClockInteractionNSView: NSView {
         if !isDragging {
             onClick()
         }
-        dragStartMouse = nil
-        dragStartOrigin = nil
-        isDragging = false
+        resetDragState()
     }
 
     override func rightMouseDown(with event: NSEvent) {
@@ -89,5 +104,11 @@ final class ClockInteractionNSView: NSView {
 
     private func screenPoint(for event: NSEvent, in window: NSWindow) -> NSPoint {
         window.convertPoint(toScreen: event.locationInWindow)
+    }
+
+    private func resetDragState() {
+        dragStartMouse = nil
+        dragStartOrigin = nil
+        isDragging = false
     }
 }

@@ -51,6 +51,24 @@ struct SettingsView: View {
     @State private var customThemeExpanded = false
     @State private var toolSelectionExpanded = false
 
+    // MARK: - 费用估算状态
+    @State private var pricingExpanded = false
+    @State private var pricingRefreshing = false
+    @State private var pricingRefreshFailed = false
+    @State private var pricingCatalogCount = 0
+    @State private var pricingGeneratedAt = ""
+    @State private var pricingUnpriced: [String] = []
+    @State private var pricingCustomRows: [CustomPriceRow] = []
+
+    struct CustomPriceRow: Identifiable {
+        let id = UUID()
+        var model = ""
+        var input = ""
+        var output = ""
+        var cacheRead = ""
+        var cacheWrite = ""
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             // 标题栏
@@ -208,6 +226,10 @@ struct SettingsView: View {
                         rateThresholdSection()
                     }
 
+                    collapsibleSection(title: L10n.shared.tr("pricing.title"), isExpanded: $pricingExpanded) {
+                        pricingSection()
+                    }
+
                     // 自定义表盘
                     collapsibleSection(title: L10n.shared.tr("theme.title"), isExpanded: $customThemeExpanded) {
                         customThemeSection()
@@ -225,6 +247,7 @@ struct SettingsView: View {
                     savePaths()
                     saveRateSettings()
                     saveCustomTheme()
+                    persistAllCustomRows()
                     onDone?()
                 }
                 .buttonStyle(.borderedProminent)
@@ -239,8 +262,222 @@ struct SettingsView: View {
             loadCurrentPaths()
             loadRateSettings()
             runAutoDetection()
+            reloadPricingState()
         }
     }
+
+    // MARK: - 费用估算
+
+    private func pricingSection() -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(L10n.shared.tr("pricing.note"))
+                .font(.system(size: 11))
+                .foregroundColor(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            // 目录状态 + 手动刷新
+            HStack(spacing: 8) {
+                Text(L10n.shared.tr("pricing.catalog", pricingCatalogCount, pricingGeneratedAt))
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
+                Spacer()
+                if pricingRefreshing {
+                    ProgressView().controlSize(.small)
+                    Text(L10n.shared.tr("pricing.refreshing"))
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
+                } else {
+                    Button(L10n.shared.tr("pricing.refresh")) { refreshPricingCatalog() }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .font(.system(size: 11))
+                }
+            }
+            if pricingRefreshFailed {
+                Text(L10n.shared.tr("pricing.refreshFailed"))
+                    .font(.system(size: 11))
+                    .foregroundColor(.red)
+            }
+
+            // 未能计价的模型
+            if !pricingUnpriced.isEmpty {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(L10n.shared.tr("pricing.unpricedTitle"))
+                        .font(.system(size: 12, weight: .semibold))
+                    Text(L10n.shared.tr("pricing.unpricedHint"))
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    FlowLikeChips(pricingUnpriced)
+                }
+            }
+
+            // 自定义价格表
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Text(L10n.shared.tr("pricing.customTitle"))
+                        .font(.system(size: 12, weight: .semibold))
+                    Spacer()
+                    Button(L10n.shared.tr("pricing.addCustom")) {
+                        pricingCustomRows.append(CustomPriceRow())
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .font(.system(size: 11))
+                }
+
+                // 表头
+                HStack(spacing: 6) {
+                    Text(L10n.shared.tr("pricing.modelName"))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    ForEach(["pricing.input", "pricing.output", "pricing.cacheRead", "pricing.cacheWrite"], id: \.self) { key in
+                        Text(L10n.shared.tr(key))
+                            .frame(width: 58, alignment: .trailing)
+                    }
+                    Color.clear.frame(width: 44)
+                }
+                .font(.system(size: 10, weight: .medium))
+                .foregroundColor(.secondary)
+
+                ForEach($pricingCustomRows) { $row in
+                    customPriceRow(row: $row)
+                }
+                Text(L10n.shared.tr("pricing.unit"))
+                    .font(.system(size: 10))
+                    .foregroundColor(.secondary)
+            }
+        }
+    }
+
+    private func customPriceRow(row: Binding<CustomPriceRow>) -> some View {
+        HStack(spacing: 6) {
+            TextField(L10n.shared.tr("pricing.example"), text: row.model)
+                .textFieldStyle(.roundedBorder)
+                .font(.system(size: 11, design: .monospaced))
+            priceField(row.input, placeholder: "3.0")
+            priceField(row.output, placeholder: "15.0")
+            priceField(row.cacheRead, placeholder: "0.3")
+            priceField(row.cacheWrite, placeholder: "3.75")
+            Button {
+                removeCustomRow(row.wrappedValue)
+            } label: {
+                Image(systemName: "minus.circle.fill")
+                    .foregroundColor(.red.opacity(0.8))
+            }
+            .buttonStyle(.plain)
+            .frame(width: 44)
+            .help(L10n.shared.tr("pricing.remove"))
+        }
+        .onSubmit { persistCustomRow(row.wrappedValue) }
+    }
+
+    private func priceField(_ binding: Binding<String>, placeholder: String) -> some View {
+        TextField(placeholder, text: binding)
+            .textFieldStyle(.roundedBorder)
+            .font(.system(size: 11, design: .monospaced))
+            .frame(width: 58)
+            .onSubmit { persistAllCustomRows() }
+    }
+
+    /// 未计价模型名的紧凑展示（简单折行 chips，避免长列表撑爆设置页）
+    private func FlowLikeChips(_ names: [String]) -> some View {
+        var rows: [[String]] = [[]]
+        var width = 0
+        for name in names {
+            let w = name.count * 7 + 16
+            if width + w > 460, !rows[rows.count - 1].isEmpty {
+                rows.append([])
+                width = 0
+            }
+            rows[rows.count - 1].append(name)
+            width += w
+        }
+        return VStack(alignment: .leading, spacing: 4) {
+            ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
+                HStack(spacing: 4) {
+                    ForEach(row, id: \.self) { name in
+                        Text(name)
+                            .font(.system(size: 10, design: .monospaced))
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Capsule().fill(Color.secondary.opacity(0.12)))
+                    }
+                }
+            }
+        }
+    }
+
+    private func reloadPricingState() {
+        let summary = PricingService.shared.catalogSummary
+        pricingCatalogCount = summary.count
+        pricingGeneratedAt = String(summary.generatedAt?.prefix(10) ?? "—")
+        pricingUnpriced = PricingService.shared.unpricedModels
+        let custom = PricingService.shared.customModels
+        // 保留用户正在编辑但尚未提交的行（按 model 名去重合并）
+        let editingModels = Set(pricingCustomRows.map { $0.model })
+        var rows = pricingCustomRows
+        for model in custom where !editingModels.contains(model) {
+            guard let p = PricingService.shared.customPrice(for: model) else { continue }
+            rows.append(CustomPriceRow(
+                model: model,
+                input: formatPrice(p.input),
+                output: formatPrice(p.output),
+                cacheRead: formatPrice(p.cacheRead),
+                cacheWrite: formatPrice(p.cacheWrite)
+            ))
+        }
+        pricingCustomRows = rows
+    }
+
+    private func formatPrice(_ v: Double) -> String {
+        v == 0 ? "" : String(format: "%.6g", v)
+    }
+
+    private func refreshPricingCatalog() {
+        guard !pricingRefreshing else { return }
+        pricingRefreshing = true
+        Task { @MainActor in
+            do {
+                try await PricingService.shared.refresh()
+                pricingRefreshFailed = false
+            } catch {
+                pricingRefreshFailed = true
+            }
+            pricingRefreshing = false
+            reloadPricingState()
+        }
+    }
+
+    private func persistCustomRow(_ row: CustomPriceRow) {
+        let name = row.model.trimmingCharacters(in: .whitespaces)
+        guard !name.isEmpty else { return }
+        PricingService.shared.setCustomPrice(
+            model: name,
+            price: ModelPrice(
+                input: Double(row.input) ?? 0,
+                output: Double(row.output) ?? 0,
+                cacheRead: Double(row.cacheRead) ?? 0,
+                cacheWrite: Double(row.cacheWrite) ?? 0
+            )
+        )
+        viewModel.refreshUsageData()
+        reloadPricingState()
+    }
+
+    private func persistAllCustomRows() {
+        for row in pricingCustomRows { persistCustomRow(row) }
+    }
+
+    private func removeCustomRow(_ row: CustomPriceRow) {
+        pricingCustomRows.removeAll { $0.id == row.id }
+        let name = row.model.trimmingCharacters(in: .whitespaces)
+        if !name.isEmpty {
+            PricingService.shared.setCustomPrice(model: name, price: nil)
+            viewModel.refreshUsageData()
+        }
+        reloadPricingState()
+    }
+
 
     // MARK: - 自动探测区域
 

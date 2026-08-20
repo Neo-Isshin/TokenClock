@@ -161,7 +161,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     nonisolated func applicationWillTerminate(_ notification: Notification) {
-        Task { @MainActor in
+        MainActor.assumeIsolated {
             // 先停 ViewModel 定时器（含 historyTimer），再处理其余清理
             viewModel?.shutdown()
             UsageAPIServer.shared.stop()
@@ -332,6 +332,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         tempMenu.addItem(fahrenheitItem)
         tempItem.submenu = tempMenu
         menu.addItem(tempItem)
+        menu.addItem(.separator())
+
+        let scopeItem = NSMenuItem(title: tr("menu.usageScope"), action: nil, keyEquivalent: "")
+        let scopeMenu = NSMenu()
+        let exclItem = NSMenuItem(title: tr("menu.usageExclCache"), action: #selector(setUsageExcludesCache(_:)), keyEquivalent: "")
+        exclItem.state = viewModel.usageIncludesCache ? .off : .on
+        let inclItem = NSMenuItem(title: tr("menu.usageInclCache"), action: #selector(setUsageIncludesCache(_:)), keyEquivalent: "")
+        inclItem.state = viewModel.usageIncludesCache ? .on : .off
+        scopeMenu.addItem(exclItem)
+        scopeMenu.addItem(inclItem)
+        scopeItem.submenu = scopeMenu
+        menu.addItem(scopeItem)
         menu.addItem(.separator())
 
         let cityMenu = NSMenu()
@@ -716,6 +728,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         settingsWindow?.title = L10n.shared.tr("settings.title")
     }
 
+    @objc private func setUsageExcludesCache(_ sender: NSMenuItem) {
+        viewModel.usageIncludesCache = false
+        setupRightClickMenu()
+    }
+
+    @objc private func setUsageIncludesCache(_ sender: NSMenuItem) {
+        viewModel.usageIncludesCache = true
+        setupRightClickMenu()
+    }
+
     @objc private func openSettings(_ sender: NSMenuItem) {
         showSettingsWindow()
     }
@@ -931,8 +953,9 @@ private struct DropdownPanelView: View {
                 isLoading: viewModel.isInitialLoading,
                 groupingMode: viewModel.groupingMode,
                 onGroupingChange: { viewModel.groupingMode = $0 },
-                showPercentage: viewModel.showPercentage,
-                onShowPercentageChange: { viewModel.showPercentage = $0 },
+                valueMode: viewModel.valueMode,
+                onValueModeChange: { viewModel.valueMode = $0 },
+                usageIncludesCache: viewModel.usageIncludesCache,
                 showsCodexQuota: viewModel.showsCodexQuota,
                 codexQuota: viewModel.codexQuota,
                 onCodexQuotaToggle: {

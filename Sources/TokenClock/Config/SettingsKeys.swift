@@ -86,6 +86,10 @@ enum SettingsKey: String {
     // MARK: - 下拉面板
     /// 分组模式：0=按会话 1=按模型
     case dropdownGrouping = "TC_dropdownGrouping"
+    /// 数值列显示模式：0=用量 1=费用+占比
+    case dropdownValueMode = "TC_dropdownValueMode"
+    /// token 展示是否包含缓存读（默认 false）
+    case usageIncludesCacheRead = "TC_usageIncludesCacheRead"
     /// 用量列是否以「占总数百分比」显示（true=百分比，false=绝对 token）
     case dropdownShowPercentage = "TC_dropdownShowPercentage"
 
@@ -94,6 +98,10 @@ enum SettingsKey: String {
 
     // MARK: - 日结历史
     case historyLastSettledDateKey = "TC_historyLastSettledDateKey"
+
+    // MARK: - 费用估算
+    case pricingLastRefresh = "TC_pricingLastRefresh"
+    case customModelPrices = "TC_customModelPrices"
 }
 
 extension UserDefaults {
@@ -113,6 +121,15 @@ extension UserDefaults {
     func int(for key: SettingsKey, `default` fallback: Int = 0) -> Int {
         if object(forKey: key.rawValue) == nil { return fallback }
         return integer(forKey: key.rawValue)
+    }
+
+    /// 类型安全的 double 读写
+    func setDouble(_ value: Double, for key: SettingsKey) {
+        set(value, forKey: key.rawValue)
+    }
+    func double(for key: SettingsKey, `default` fallback: Double = 0) -> Double {
+        if object(forKey: key.rawValue) == nil { return fallback }
+        return double(forKey: key.rawValue)
     }
 
     /// 类型安全的 string 读写

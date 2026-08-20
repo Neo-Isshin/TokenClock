@@ -8,6 +8,30 @@ private func formatPercent(_ tokens: Int, of total: Int) -> String {
     return String(format: "%.0f%%", pct)
 }
 
+/// 数值列按显示模式取文案（两态）：tokens=用量/消息数；costPercent=费用/占比。
+/// includeCacheRead=true 时用量列显示「含缓存」口径（tokens + cacheRead）。
+private func primaryValueText(tokens: Int, cacheRead: Int, cost: CostEstimate,
+                              mode: DetailValueMode, includeCacheRead: Bool) -> String {
+    switch mode {
+    case .tokens:
+        let shown = includeCacheRead ? tokens + cacheRead : tokens
+        return TokenFormat.compact(shown)
+    case .costPercent:
+        return tokens > 0 ? CostFormat.estimate(cost) : "—"
+    }
+}
+
+/// 次列（消息数 ↔ 占比）
+private func secondaryValueText(tokens: Int, cacheRead: Int, messages: Int,
+                                mode: DetailValueMode, grandTotal: Int, includeCacheRead: Bool) -> String {
+    switch mode {
+    case .tokens: return "\(messages)"
+    case .costPercent:
+        let shown = includeCacheRead ? tokens + cacheRead : tokens
+        return formatPercent(shown, of: grandTotal)
+    }
+}
+
 /// 小型 chip 按钮的按压反馈：按下时轻微缩放 + 降透明，给纯文字 toggle 一个"可点"手感。
 private struct ChipPressStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
@@ -22,7 +46,7 @@ private struct ChipPressStyle: ButtonStyle {
 struct DetailDropdownView: View {
     let tools: [ToolUsage]
     var theme: ClockFaceTheme = .classic
-    /// 下拉面板主文字色覆写（nil = 跟随主题）。来自右键「表盘外观 → 详情面板文字色」。
+    /// Glass 版可覆写详情面板文字色；nil 时跟随表盘主题。
     var dropdownTextColorOverride: Color? = nil
     var weather: WeatherInfo = WeatherInfo()
     var localizedCityName: String = ""
@@ -34,22 +58,24 @@ struct DetailDropdownView: View {
     /// 分组模式切换回调
     var onGroupingChange: ((GroupingMode) -> Void)? = nil
 
-    /// 用量列是否以「占总数百分比」显示（true=百分比，false=绝对 token）
-    var showPercentage: Bool = false
-    /// 百分比显示切换回调
-    var onShowPercentageChange: ((Bool) -> Void)? = nil
+    /// 数值显示模式（用量 / 占比 / 费用）
+    var valueMode: DetailValueMode = .tokens
+    /// 显示模式循环切换回调
+    var onValueModeChange: ((DetailValueMode) -> Void)? = nil
 
-    /// Codex 剩余额度面板。额度只在点击后按需读取，不参与定时用量扫描。
+    /// 用量口径：true=token 展示包含缓存读（右键菜单切换）
+    var usageIncludesCache: Bool = false
+
+    /// Codex 剩余额度面板。额度只在点击后按需读取，不参与 30 秒用量扫描。
     var showsCodexQuota: Bool = false
     var codexQuota: CodexQuotaSnapshot = .idle
     var onCodexQuotaToggle: (() -> Void)? = nil
     var onCodexQuotaRefresh: (() -> Void)? = nil
 
-    /// 百分比开关按钮的悬停态（用于 hover 高亮反馈）
+    /// 百分比 chip 的悬停态（驱动背景底色透明度）
     @State private var percentHovered = false
     @State private var quotaHovered = false
 
-    /// 实际面板主文字色：有覆写则用覆写，否则用主题色。
     private var textColor: Color { dropdownTextColorOverride ?? theme.dropdownTextColor }
     private var subtextColor: Color { dropdownTextColorOverride.map { $0.opacity(0.65) } ?? theme.dropdownSubtextColor }
     private var headerColor: Color { dropdownTextColorOverride.map { $0.opacity(0.7) } ?? theme.dropdownHeaderColor }
@@ -64,11 +90,24 @@ struct DetailDropdownView: View {
         UsageAggregator.groupedByModel(tools, unknownLabel: L10n.shared.tr("detail.unknownModel"))
     }
 
-    /// 百分比分母：所有工具当日 token 总和。未激活工具 todayTokens 为 0，
-    /// 故该值与「仅活跃工具之和」「各模型分组之和」三者一致，两种分组模式可共用。
+    /// 百分比分母：所有工具当日 token 总和（随用量口径切换；未激活工具为 0，
+    /// 与「仅活跃工具之和」「各模型分组之和」一致，两种分组模式共用）。
     private var grandTotal: Int {
-        tools.reduce(0) { $0 + $1.todayTokens }
+        tools.reduce(0) {
+            $0 + $1.todayTokens + (usageIncludesCache ? $1.todayCacheReadTokens : 0)
+        }
     }
+
+    /// 全部工具今日估算费用（费用模式下的表头汇总行暂未使用，保留聚合口径）
+    private var totalCost: CostEstimate {
+        var result = CostEstimate.zero
+        for tool in tools { result.merge(tool.todayCost) }
+        return result
+    }
+
+    /// 数值列表头（主列：用量↔费用；次列：消息数↔占比）
+    private var primaryHeaderKey: String { valueMode == .tokens ? "detail.todayUsage" : "detail.cost" }
+    private var secondaryHeaderKey: String { valueMode == .tokens ? "detail.messages" : "detail.share" }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -122,6 +161,7 @@ struct DetailDropdownView: View {
                 // 百分比显示开关：置于分组胶囊正下方，切换用量列在「绝对 token」与「占总数百分比」之间。
                 // 做成带常驻底色 + 描边的胶囊 chip（与上方分组胶囊同语言），悬停/按下有反馈，
                 // 确保一眼能看出是可点交互元素（而非一行说明文字）。
+                // 右上操作 chip 行：Codex 额度 + 数值列模式（用量/占比/费用循环切换）
                 HStack {
                     Spacer()
                     Button { onCodexQuotaToggle?() } label: {
@@ -148,29 +188,34 @@ struct DetailDropdownView: View {
                     .help(L10n.shared.tr("detail.codexQuota"))
                     .accessibilityLabel(L10n.shared.tr("detail.codexQuota"))
 
-                    Button { onShowPercentageChange?(!showPercentage) } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: "percent")
+                    Button { onValueModeChange?(valueMode.next) } label: {
+                        HStack(spacing: 5) {
+                            Image(systemName: "dollarsign.circle")
                                 .font(.system(size: 11, weight: .semibold))
-                            Text(L10n.shared.tr("detail.percent"))
-                                .font(.system(size: 10, weight: showPercentage ? .semibold : .regular))
+                            // 两行标签：按费用 / 按占比（点击后两列同时切换）
+                            VStack(alignment: .leading, spacing: 0) {
+                                Text(L10n.shared.tr("detail.byCost"))
+                                    .font(.system(size: 8, weight: valueMode == .costPercent ? .semibold : .regular))
+                                Text(L10n.shared.tr("detail.byPercent"))
+                                    .font(.system(size: 8, weight: valueMode == .costPercent ? .semibold : .regular))
+                            }
                         }
-                        .foregroundColor(showPercentage ? textColor : subtextColor)
+                        .foregroundColor(valueMode == .costPercent ? textColor : subtextColor)
                         .padding(.horizontal, 9)
-                        .padding(.vertical, 4)
+                        .padding(.vertical, 3)
                         .background(
                             Capsule(style: .continuous)
-                                .fill(textColor.opacity(showPercentage ? 0.18 : (percentHovered ? 0.11 : 0.07)))
+                                .fill(textColor.opacity(valueMode == .costPercent ? 0.18 : (percentHovered ? 0.11 : 0.07)))
                         )
                         .overlay(
                             Capsule(style: .continuous)
-                                .strokeBorder(textColor.opacity(showPercentage ? 0.32 : 0.15), lineWidth: 0.5)
+                                .strokeBorder(textColor.opacity(valueMode == .costPercent ? 0.32 : 0.15), lineWidth: 0.5)
                         )
                     }
                     .buttonStyle(ChipPressStyle())
                     .onHover { percentHovered = $0 }
-                    .help(L10n.shared.tr("detail.percent"))
-                    .accessibilityLabel(L10n.shared.tr("detail.percent"))
+                    .help(L10n.shared.tr("detail.valueModeHelp"))
+                    .accessibilityLabel(L10n.shared.tr("detail.valueModeHelp"))
                 }
                 .padding(.horizontal, 12)
                 .padding(.top, 2)
@@ -180,13 +225,13 @@ struct DetailDropdownView: View {
                     codexQuotaPanel()
                         .frame(maxHeight: .infinity)
                 } else {
-                    // 表头
+                    // 表头：名称 + 主列（用量↔费用）+ 次列（消息数↔占比）+ 缓存率（仅会话模式）
                     HStack(spacing: 0) {
                         Text(L10n.shared.tr(groupingMode == .model ? "detail.model" : "detail.instance"))
                             .frame(maxWidth: .infinity, alignment: .leading)
-                        Text(L10n.shared.tr(showPercentage ? "detail.share" : "detail.todayUsage"))
+                        Text(L10n.shared.tr(primaryHeaderKey))
                             .frame(width: 62, alignment: .trailing)
-                        Text(L10n.shared.tr("detail.messages"))
+                        Text(L10n.shared.tr(secondaryHeaderKey))
                             .frame(width: 36, alignment: .trailing)
                         if groupingMode == .session {
                             Text(L10n.shared.tr("detail.cacheRate"))
@@ -208,7 +253,7 @@ struct DetailDropdownView: View {
                                         Divider()
                                             .background(theme.dropdownDividerColor)
                                     }
-                                    ToolExpandableRow(tool: tool, theme: theme, textColorOverride: dropdownTextColorOverride, showPercentage: showPercentage, grandTotal: grandTotal)
+                                    ToolExpandableRow(tool: tool, theme: theme, textColorOverride: dropdownTextColorOverride, valueMode: valueMode, grandTotal: grandTotal, usageIncludesCache: usageIncludesCache)
                                 }
                             } else {
                                 ForEach(Array(modelGroups.enumerated()), id: \.element.id) { index, group in
@@ -216,7 +261,7 @@ struct DetailDropdownView: View {
                                         Divider()
                                             .background(theme.dropdownDividerColor)
                                     }
-                                    ModelExpandableRow(group: group, theme: theme, textColorOverride: dropdownTextColorOverride, showPercentage: showPercentage, grandTotal: grandTotal)
+                                    ModelExpandableRow(group: group, theme: theme, textColorOverride: dropdownTextColorOverride, valueMode: valueMode, grandTotal: grandTotal, usageIncludesCache: usageIncludesCache)
                                 }
                             }
                         }
@@ -233,6 +278,7 @@ struct DetailDropdownView: View {
         .padding(.horizontal, 8)
         .padding(.bottom, 10)
     }
+
     // MARK: - Codex quota
 
     @ViewBuilder
@@ -432,6 +478,7 @@ struct DetailDropdownView: View {
         relative.unitsStyle = .short
         return relative.localizedString(for: date, relativeTo: Date())
     }
+
     // MARK: - 天气趋势条
 
     private func forecastBar() -> some View {
@@ -534,16 +581,18 @@ struct DetailDropdownView: View {
 private struct ToolExpandableRow: View {
     let tool: ToolUsage
     let theme: ClockFaceTheme
-    /// 面板主文字色覆写（nil = 跟随主题）。
     var textColorOverride: Color? = nil
-    /// 用量列是否显示百分比
-    var showPercentage: Bool = false
+    /// 数值显示模式
+    var valueMode: DetailValueMode = .tokens
     /// 百分比分母（所有工具当日 token 总和）
     var grandTotal: Int = 0
+    /// 用量口径：true=token 展示包含缓存读
+    var usageIncludesCache: Bool = false
+    @State private var isExpanded = false
+
     private var textColor: Color { textColorOverride ?? theme.dropdownTextColor }
     private var subtextColor: Color { textColorOverride.map { $0.opacity(0.65) } ?? theme.dropdownSubtextColor }
     private var headerColor: Color { textColorOverride.map { $0.opacity(0.7) } ?? theme.dropdownHeaderColor }
-    @State private var isExpanded = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -563,12 +612,12 @@ private struct ToolExpandableRow: View {
                         .truncationMode(.tail)
                         .frame(maxWidth: .infinity, alignment: .leading)
 
-                    Text(showPercentage ? formatPercent(tool.todayTokens, of: grandTotal) : tool.formattedTokens)
+                    Text(primaryValueText(tokens: tool.todayTokens, cacheRead: tool.todayCacheReadTokens, cost: tool.todayCost, mode: valueMode, includeCacheRead: usageIncludesCache))
                         .font(.system(size: 11, weight: .semibold, design: .monospaced))
                         .foregroundColor(textColor)
                         .frame(width: 62, alignment: .trailing)
 
-                    Text("\(tool.todayMessages)")
+                    Text(secondaryValueText(tokens: tool.todayTokens, cacheRead: tool.todayCacheReadTokens, messages: tool.todayMessages, mode: valueMode, grandTotal: grandTotal, includeCacheRead: usageIncludesCache))
                         .font(.system(size: 10, design: .monospaced))
                         .foregroundColor(subtextColor)
                         .frame(width: 36, alignment: .trailing)
@@ -596,9 +645,9 @@ private struct ToolExpandableRow: View {
                             session: session,
                             isOpenClaw: tool.name == "OpenClaw",
                             theme: theme,
-                            textColorOverride: textColorOverride,
-                            showPercentage: showPercentage,
-                            grandTotal: grandTotal
+                            valueMode: valueMode,
+                            grandTotal: grandTotal,
+                            usageIncludesCache: usageIncludesCache
                         )
                     }
                 }
@@ -619,12 +668,14 @@ private struct SessionRow: View {
     let session: SessionInfo
     let isOpenClaw: Bool
     let theme: ClockFaceTheme
-    /// 面板主文字色覆写（nil = 跟随主题）。
     var textColorOverride: Color? = nil
-    /// 用量列是否显示百分比
-    var showPercentage: Bool = false
+    /// 数值显示模式
+    var valueMode: DetailValueMode = .tokens
     /// 百分比分母（所有工具当日 token 总和）
     var grandTotal: Int = 0
+    /// 用量口径：true=token 展示包含缓存读
+    var usageIncludesCache: Bool = false
+
     private var textColor: Color { textColorOverride ?? theme.dropdownTextColor }
     private var subtextColor: Color { textColorOverride.map { $0.opacity(0.65) } ?? theme.dropdownSubtextColor }
     private var headerColor: Color { textColorOverride.map { $0.opacity(0.7) } ?? theme.dropdownHeaderColor }
@@ -675,12 +726,12 @@ private struct SessionRow: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
-            Text(showPercentage ? formatPercent(session.todayTokens, of: grandTotal) : session.formattedTokens)
+            Text(primaryValueText(tokens: session.todayTokens, cacheRead: session.cacheReadTokens, cost: session.todayCost, mode: valueMode, includeCacheRead: usageIncludesCache))
                 .font(.system(size: 10, weight: .semibold, design: .monospaced))
                 .foregroundColor(subtextColor)
                 .frame(width: 62, alignment: .trailing)
 
-            Text("\(session.todayMessages)")
+            Text(secondaryValueText(tokens: session.todayTokens, cacheRead: session.cacheReadTokens, messages: session.todayMessages, mode: valueMode, grandTotal: grandTotal, includeCacheRead: usageIncludesCache))
                 .font(.system(size: 9, design: .monospaced))
                 .foregroundColor(subtextColor)
                 .frame(width: 36, alignment: .trailing)
@@ -705,16 +756,18 @@ private struct SessionRow: View {
 private struct ModelExpandableRow: View {
     let group: ModelGroup
     let theme: ClockFaceTheme
-    /// 面板主文字色覆写（nil = 跟随主题）。
     var textColorOverride: Color? = nil
-    /// 用量列是否显示百分比
-    var showPercentage: Bool = false
+    /// 数值显示模式
+    var valueMode: DetailValueMode = .tokens
     /// 百分比分母（所有工具当日 token 总和）
     var grandTotal: Int = 0
+    /// 用量口径：true=token 展示包含缓存读
+    var usageIncludesCache: Bool = false
+    @State private var isExpanded = false
+
     private var textColor: Color { textColorOverride ?? theme.dropdownTextColor }
     private var subtextColor: Color { textColorOverride.map { $0.opacity(0.65) } ?? theme.dropdownSubtextColor }
     private var headerColor: Color { textColorOverride.map { $0.opacity(0.7) } ?? theme.dropdownHeaderColor }
-    @State private var isExpanded = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -732,12 +785,12 @@ private struct ModelExpandableRow: View {
                         .truncationMode(.middle)
                         .frame(maxWidth: .infinity, alignment: .leading)
 
-                    Text(showPercentage ? formatPercent(group.totalTokens, of: grandTotal) : group.formattedTokens)
+                    Text(primaryValueText(tokens: group.totalTokens, cacheRead: group.totalCacheReadTokens, cost: group.totalCost, mode: valueMode, includeCacheRead: usageIncludesCache))
                         .font(.system(size: 11, weight: .semibold, design: .monospaced))
                         .foregroundColor(textColor)
                         .frame(width: 62, alignment: .trailing)
 
-                    Text("\(group.totalMessages)")
+                    Text(secondaryValueText(tokens: group.totalTokens, cacheRead: group.totalCacheReadTokens, messages: group.totalMessages, mode: valueMode, grandTotal: grandTotal, includeCacheRead: usageIncludesCache))
                         .font(.system(size: 10, design: .monospaced))
                         .foregroundColor(subtextColor)
                         .frame(width: 36, alignment: .trailing)
@@ -755,7 +808,7 @@ private struct ModelExpandableRow: View {
                         .padding(.horizontal, 12)
 
                     ForEach(group.contributions) { c in
-                        ModelContributionRow(contribution: c, theme: theme, textColorOverride: textColorOverride, showPercentage: showPercentage, grandTotal: grandTotal)
+                        ModelContributionRow(contribution: c, theme: theme, textColorOverride: textColorOverride, valueMode: valueMode, grandTotal: grandTotal, usageIncludesCache: usageIncludesCache)
                     }
                 }
                 .transition(.opacity.combined(with: .move(edge: .top)))
@@ -769,12 +822,14 @@ private struct ModelExpandableRow: View {
 private struct ModelContributionRow: View {
     let contribution: ToolContribution
     let theme: ClockFaceTheme
-    /// 面板主文字色覆写（nil = 跟随主题）。
     var textColorOverride: Color? = nil
-    /// 用量列是否显示百分比
-    var showPercentage: Bool = false
+    /// 数值显示模式
+    var valueMode: DetailValueMode = .tokens
     /// 百分比分母（所有工具当日 token 总和）
     var grandTotal: Int = 0
+    /// 用量口径：true=token 展示包含缓存读
+    var usageIncludesCache: Bool = false
+
     private var textColor: Color { textColorOverride ?? theme.dropdownTextColor }
     private var subtextColor: Color { textColorOverride.map { $0.opacity(0.65) } ?? theme.dropdownSubtextColor }
     private var headerColor: Color { textColorOverride.map { $0.opacity(0.7) } ?? theme.dropdownHeaderColor }
@@ -793,12 +848,12 @@ private struct ModelContributionRow: View {
                 .truncationMode(.tail)
                 .frame(maxWidth: .infinity, alignment: .leading)
 
-            Text(showPercentage ? formatPercent(contribution.tokens, of: grandTotal) : TokenFormat.compact(contribution.tokens))
+            Text(primaryValueText(tokens: contribution.tokens, cacheRead: contribution.cacheReadTokens, cost: contribution.cost, mode: valueMode, includeCacheRead: usageIncludesCache))
                 .font(.system(size: 10, weight: .semibold, design: .monospaced))
                 .foregroundColor(subtextColor)
                 .frame(width: 62, alignment: .trailing)
 
-            Text("\(contribution.messages)")
+            Text(secondaryValueText(tokens: contribution.tokens, cacheRead: contribution.cacheReadTokens, messages: contribution.messages, mode: valueMode, grandTotal: grandTotal, includeCacheRead: usageIncludesCache))
                 .font(.system(size: 9, design: .monospaced))
                 .foregroundColor(subtextColor)
                 .frame(width: 36, alignment: .trailing)

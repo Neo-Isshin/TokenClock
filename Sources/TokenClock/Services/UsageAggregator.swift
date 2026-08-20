@@ -3,8 +3,10 @@ import Foundation
 /// 聚合计算工具使用数据
 enum UsageAggregator {
     /// 计算所有工具的 token 总数
-    static func totalTokens(_ tools: [ToolUsage]) -> Int {
-        tools.reduce(0) { $0 + $1.todayTokens }
+    static func totalTokens(_ tools: [ToolUsage], includingCacheRead: Bool = false) -> Int {
+        tools.reduce(0) {
+            $0 + $1.todayTokens + (includingCacheRead ? $1.todayCacheReadTokens : 0)
+        }
     }
 
     /// 计算所有工具的消息总数
@@ -60,13 +62,20 @@ enum UsageAggregator {
                     emoji: name == unknownLabel ? "❓" : ModelEmoji.emoji(for: name))
                 group.totalTokens += session.todayTokens
                 group.totalMessages += session.todayMessages
+                group.totalCost.merge(session.todayCost)
+                group.totalCacheReadTokens += session.cacheReadTokens
                 if let idx = group.contributions.firstIndex(where: { $0.tool == tool.name }) {
                     group.contributions[idx].tokens += session.todayTokens
                     group.contributions[idx].messages += session.todayMessages
+                    group.contributions[idx].cost.merge(session.todayCost)
+                    group.contributions[idx].cacheReadTokens += session.cacheReadTokens
                 } else {
-                    group.contributions.append(ToolContribution(
+                    var contribution = ToolContribution(
                         tool: tool.name, emoji: tool.emoji,
-                        tokens: session.todayTokens, messages: session.todayMessages))
+                        tokens: session.todayTokens, messages: session.todayMessages)
+                    contribution.cost = session.todayCost
+                    contribution.cacheReadTokens = session.cacheReadTokens
+                    group.contributions.append(contribution)
                 }
                 bucket[name] = group
             }
@@ -95,10 +104,15 @@ struct ModelGroup: Identifiable, Hashable {
     var emoji: String = "🧠"
     var totalTokens: Int = 0
     var totalMessages: Int = 0
+    var totalCost: CostEstimate = .unavailable
+    var totalCacheReadTokens: Int = 0
     /// 该模型下每个工具的贡献（按 token 降序）
     var contributions: [ToolContribution] = []
 
     var formattedTokens: String { TokenFormat.compact(totalTokens) }
+    var formattedCost: String {
+        totalTokens > 0 && totalCost.available ? CostFormat.estimate(totalCost) : "—"
+    }
 }
 
 /// 单个工具对某个模型的贡献
@@ -108,4 +122,10 @@ struct ToolContribution: Identifiable, Hashable {
     let emoji: String
     var tokens: Int = 0
     var messages: Int = 0
+    var cost: CostEstimate = .unavailable
+    var cacheReadTokens: Int = 0
+
+    var formattedCost: String {
+        tokens > 0 && cost.available ? CostFormat.estimate(cost) : "—"
+    }
 }

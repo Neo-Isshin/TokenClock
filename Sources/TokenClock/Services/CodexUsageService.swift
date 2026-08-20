@@ -1,10 +1,14 @@
 import Foundation
+#if os(Linux)
+import CSQLite
+#else
 import SQLite3
+#endif
 
 /// 从 Codex CLI 读取 token 使用数据
 /// Token 计数使用 last_token_usage（每条消息的增量值）。total_tokens 已包含
-/// cached_input_tokens，因此主用量必须减去缓存输入；reasoning 已包含在 total 中，
-/// 不再额外累加。
+/// cached_input_tokens，因此主用量必须减去缓存输入（口径同 main 的 TokenAccounting）；
+/// reasoning 已包含在 total 中，不再额外累加。
 /// Session 列表从 SQLite threads 表读取
 final class CodexUsageService: @unchecked Sendable {
     private static let relevantLineNeedles = [
@@ -17,6 +21,10 @@ final class CodexUsageService: @unchecked Sendable {
     private var recentEntries: [RecentEntry] = []
     private var sessionMessagesByDate: [String: [String: Int]] = [:]
     private var sessionTokensByDate: [String: [String: Int]] = [:]
+    /// dateKey → 归一化模型名 → 计费分桶（工具级费用，与 dailyData 同口径重建）
+    private var dailyModelBuckets: [String: [String: ModelBuckets]] = [:]
+    /// dateKey → sessionId → 归一化模型名 → 计费分桶（session 级费用）
+    private var sessionBucketsByDate: [String: [String: [String: ModelBuckets]]] = [:]
     /// 每个 session 的代表模型（按 token 占比最高的那个）。
     /// Codex rollout 里模型由 turn_context 事件声明，同一 session 切换模型时取用量最大的。
     private var sessionModels: [String: String] = [:]
@@ -36,6 +44,8 @@ final class CodexUsageService: @unchecked Sendable {
         var hourlyMessages: [String: Int] = [:]
         var recentEntries: [RecentEntry] = []
         var modelTokens: [String: Int] = [:]
+        /// dateKey → 归一化模型名 → 计费分桶（费用估算；input 已扣除 cached 部分）
+        var dailyBuckets: [String: [String: ModelBuckets]] = [:]
     }
 
     private var jsonlCache: [String: JSONLFileState] = [:]
@@ -177,6 +187,8 @@ final class CodexUsageService: @unchecked Sendable {
             let rawTotal = extractInt(from: segment, key: "\"total_tokens\"")
             let cached = extractInt(from: segment, key: "\"cached_input_tokens\"")
             let tokens = TokenAccounting.excludingCacheRead(inclusiveTotal: rawTotal, cacheRead: cached)
+            let inputTokens = extractInt(from: segment, key: "\"input_tokens\"")
+            let outputTokens = extractInt(from: segment, key: "\"output_tokens\"")
             let contextWindow = extractInt(from: line, key: "\"model_context_window\"")
             let modelForTurn = state.currentModel ?? (contextWindow == 258400 ? "gpt-5.5" : nil)
 
@@ -201,6 +213,17 @@ final class CodexUsageService: @unchecked Sendable {
                 if let modelForTurn {
                     state.modelTokens[modelForTurn, default: 0] += tokens
                 }
+                // 费用分桶：input_tokens 已含 cached，扣除后按未缓存输入计价；模型名归一化
+                if let model = ModelNormalizer.normalize(modelForTurn) {
+                    state.dailyBuckets[dateKey, default: [:]][model, default: ModelBuckets()].merge(
+                        ModelBuckets(
+                            input: max(0, inputTokens - cached),
+                            output: outputTokens,
+                            cacheRead: cached,
+                            cacheWrite: 0
+                        )
+                    )
+                }
             }
         } else if line.contains("\"type\":\"turn_context\"") {
             if let model = codexModel(fromLine: line) {
@@ -216,6 +239,8 @@ final class CodexUsageService: @unchecked Sendable {
         recentEntries.removeAll(keepingCapacity: true)
         sessionMessagesByDate.removeAll(keepingCapacity: true)
         sessionTokensByDate.removeAll(keepingCapacity: true)
+        dailyModelBuckets.removeAll(keepingCapacity: true)
+        sessionBucketsByDate.removeAll(keepingCapacity: true)
         sessionModels.removeAll(keepingCapacity: true)
 
         for (path, state) in jsonlCache {
@@ -224,10 +249,14 @@ final class CodexUsageService: @unchecked Sendable {
                 dailyData[dateKey]!.messages += state.dailyMessages[dateKey] ?? 0
                 dailyCache[dateKey, default: 0] += state.dailyCached[dateKey] ?? 0
             }
-
             for (hourKey, tokens) in state.hourlyTokens {
                 hourlyData[hourKey, default: HourlyUsage(tokens: 0, messages: 0)].tokens += tokens
                 hourlyData[hourKey]!.messages += state.hourlyMessages[hourKey] ?? 0
+            }
+            for (dateKey, models) in state.dailyBuckets {
+                for (model, b) in models {
+                    dailyModelBuckets[dateKey, default: [:]][model, default: ModelBuckets()].merge(b)
+                }
             }
             recentEntries.append(contentsOf: state.recentEntries)
 
@@ -236,12 +265,34 @@ final class CodexUsageService: @unchecked Sendable {
                 sessionMessagesByDate[dateKey, default: [:]][sessionId, default: 0] += state.dailyMessages[dateKey] ?? 0
                 sessionTokensByDate[dateKey, default: [:]][sessionId, default: 0] += tokens
             }
+            for (dateKey, models) in state.dailyBuckets {
+                for (model, b) in models {
+                    sessionBucketsByDate[dateKey, default: [:]][sessionId, default: [:]][model, default: ModelBuckets()].merge(b)
+                }
+            }
             if let dominant = state.modelTokens.max(by: { $0.value < $1.value })?.key {
                 sessionModels[sessionId] = dominant
             }
         }
 
         recentEntries.sort { $0.timestamp < $1.timestamp }
+    }
+
+    // MARK: - 费用估算
+
+    /// 今日按归一化模型聚合的计费分桶（保留分桶而非金额，价格更新后无需重扫日志）
+    func todayModelBuckets() -> [String: ModelBuckets] {
+        dailyModelBuckets[DateHelper.todayKey()] ?? [:]
+    }
+
+    /// 今日工具级估算费用
+    func todayCost() -> CostEstimate {
+        PricingService.shared.cost(of: todayModelBuckets())
+    }
+
+    /// 今日缓存读 token 总数（dailyCache 累计的 cached_input_tokens；「包含缓存读」展示用）
+    func todayCacheReadTokens() -> Int {
+        dailyCache[DateHelper.todayKey()] ?? 0
     }
 
     private struct FileMetadata {
@@ -334,6 +385,7 @@ final class CodexUsageService: @unchecked Sendable {
         let today = DateHelper.todayKey()
         let sessionMessageCounts = sessionMessagesByDate[today] ?? [:]
         let sessionTokenCounts = sessionTokensByDate[today] ?? [:]
+        let sessionBuckets = sessionBucketsByDate[today] ?? [:]
         var results: [SessionInfo] = []
 
         while sqlite3_step(stmt) == SQLITE_ROW {
@@ -360,6 +412,8 @@ final class CodexUsageService: @unchecked Sendable {
             )
             guard tokens > 0 else { continue }
 
+            let matchedBuckets = sessionBucketsMatching(sessionId, in: sessionBuckets)
+            let sessionCacheRead = matchedBuckets.values.reduce(0) { $0 + $1.cacheRead }
             results.append(SessionInfo(
                 rawId: sessionId,
                 displayName: displayId,
@@ -367,7 +421,9 @@ final class CodexUsageService: @unchecked Sendable {
                 todayTokens: tokens,
                 todayMessages: messages,
                 isActive: true,
-                model: sessionModel(for: sessionId, in: sessionModels)
+                model: sessionModel(for: sessionId, in: sessionModels),
+                todayCost: PricingService.shared.cost(of: matchedBuckets),
+                cacheReadTokens: sessionCacheRead
             ))
         }
 
@@ -404,6 +460,18 @@ final class CodexUsageService: @unchecked Sendable {
             return prefixMatch.value
         }
         return nil
+    }
+
+    /// 按 sessionId 查计费分桶（同样的前缀容错匹配；未命中返回空 → 费用按 $0 处理）
+    private func sessionBucketsMatching(
+        _ sessionId: String,
+        in buckets: [String: [String: ModelBuckets]]
+    ) -> [String: ModelBuckets] {
+        if let exact = buckets[sessionId] { return exact }
+        if let prefixMatch = buckets.first(where: { sessionId.hasPrefix($0.key) || $0.key.hasPrefix(sessionId) }) {
+            return prefixMatch.value
+        }
+        return [:]
     }
 
 }

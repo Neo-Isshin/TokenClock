@@ -8,6 +8,9 @@ let package = Package(
         .executableTarget(
             name: "TokenClock",
             path: "Sources/TokenClock",
+            resources: [
+                .copy("Resources/pricing-snapshot.json"),
+            ],
             swiftSettings: [.unsafeFlags(["-parse-as-library"])]
         ),
         .testTarget(

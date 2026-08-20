@@ -214,9 +214,9 @@ release_tag_for_variant() {
     return
   fi
   case "$1" in
-    glass)  echo "v1.4.4" ;;
-    normal) echo "v1.4.4" ;;
-    linux)  echo "v1.4.4" ;;
+    glass)  echo "v1.4.5" ;;
+    normal) echo "v1.4.5" ;;
+    linux)  echo "v1.4.5" ;;
   esac
 }
 release_base_for_tag() {
@@ -233,8 +233,8 @@ tarball_name() {
 }
 tarball_sha256() {
   case "$1" in
-    glass)  echo "6a8ed5f0bc8ecd9fb53bcf3b56ada9bee442db4bbedd1f0940ef0a2e3e699967" ;;
-    normal) echo "cb4d38be1c095e59e938a800b5e6496979a111c970dbc90dbc7479be0101ce3b" ;;
+    glass)  echo "48c863c20f7d6ad406496818b5b780875fec9a2d4dabb8a5dd63cdd4447f6924" ;;
+    normal) echo "8352ec0e161918afd94ec22f6393c58ea28a4e635962d504f39674c3bbc97e69" ;;
   esac
 }
 
@@ -274,7 +274,7 @@ download_variant() {
   return 0
 }
 
-# Linux x86_64: 下载预编译 AppImage + sidecar SHA256（由 CI 在发版后产出，故不写死在脚本里），
+# Linux x86_64: 下载预编译 AppImage + sidecar SHA256（随本地验收后的发布资产提供，故不写死在脚本里），
 # 校验通过则把 AppImage 路径写入全局 APPIMAGE_PATH 并返回 0；失败返回 1（调用方回退源码编译）。
 APPIMAGE_PATH=""
 download_appimage() {

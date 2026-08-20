@@ -44,6 +44,20 @@ final class ClockInteractionTests: XCTestCase {
         XCTAssertEqual(window.frame.origin.y, 130, accuracy: 0.001)
     }
 
+    func testDefaultWindowPositionKeepsEverySizeInsideVisibleFrame() {
+        let visible = NSRect(x: 0, y: 98, width: 3440, height: 1312)
+        for size in ClockSize.allCases {
+            let origin = ViewModel.defaultWindowPosition(
+                screenFrame: visible,
+                panelSize: NSSize(width: size.panelWidth, height: size.diameter)
+            )
+            XCTAssertGreaterThanOrEqual(origin.x, visible.minX)
+            XCTAssertGreaterThanOrEqual(origin.y, visible.minY)
+            XCTAssertLessThanOrEqual(origin.x + size.panelWidth, visible.maxX)
+            XCTAssertLessThanOrEqual(origin.y + size.diameter, visible.maxY)
+        }
+    }
+
     private func makeWindow(onClick: @escaping () -> Void) -> (NSWindow, ClockInteractionNSView) {
         let window = NSWindow(
             contentRect: NSRect(x: 100, y: 100, width: 240, height: 240),
