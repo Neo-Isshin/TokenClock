@@ -14,34 +14,37 @@ enum WindowsClockTheme: String, CaseIterable {
         if self == .custom { return WindowsCustomTheme.load().asWinTheme }   // 自定义：读编辑器存盘
         var t = win_theme()
         t.hour_len = 0.48; t.minute_len = 0.68; t.second_len = 0.78
+        // 值逐项对齐 macOS ClockFaceTheme（normal 分支），两端同名主题观感一致。
+        // 指针样式码：0=round 1=tapered 2=lance 3=sword（对应 macOS HandStyle）。
         switch self {
         case .classic:
-            // Porcelain — warm glazed ceramic, fine minute track, graphite hands.
-            t.dial_fill = rgb(0.985, 0.976, 0.945); t.dial_rim = rgb(0.72, 0.68, 0.59); t.rim_width = 2.2
+            // macOS classic：冷白瓷盘 + 酒红指针家族，无刻度无数字
+            t.dial_fill = rgb(0.97, 0.97, 0.98); t.dial_rim = gray(0.82); t.rim_width = 6
             t.material_style = 2
             t.hand_style = 0
-            t.hour_color = rgb(0.15, 0.14, 0.13); t.minute_color = rgb(0.23, 0.21, 0.19); t.second_color = rgb(0.82, 0.20, 0.14)
-            t.hour_w = 5.0; t.minute_w = 3.2; t.second_w = 1.35
-            t.cap_outer = rgb(0.36, 0.32, 0.27); t.cap_inner = rgb(0.89, 0.72, 0.43)
-            t.show_ticks = 1; t.tick_color = rgb(0.36, 0.33, 0.29, 0.52); t.major_tick_color = rgb(0.22, 0.20, 0.18)
+            t.hour_color = rgb(0.718, 0.110, 0.110); t.minute_color = rgb(0.898, 0.224, 0.208); t.second_color = rgb(1.0, 0.322, 0.322)
+            t.hour_w = 4.5; t.minute_w = 3.0; t.second_w = 1.5
+            t.cap_outer = gray(0.82); t.cap_inner = rgb(0.898, 0.224, 0.208)
+            t.show_ticks = 1; t.tick_color = clear; t.major_tick_color = clear
             t.show_numbers = 0; t.number_color = clear
             t.has_decoration = 0
-            t.text_primary = rgb(0.17, 0.16, 0.14); t.text_secondary = rgb(0.40, 0.37, 0.32)
+            t.text_primary = rgb(0.18, 0.18, 0.20); t.text_secondary = rgb(0.45, 0.45, 0.48)
 
         case .midnight:
-            // Smoked Glass — near-black glass with cool edge light and a cyan seconds hand.
-            t.dial_fill = rgb(0.055, 0.075, 0.098, 0.96); t.dial_rim = rgb(0.36, 0.48, 0.59, 0.82); t.rim_width = 2.0
+            // macOS midnight：深海军盘 + 青色时分针 + 纯白秒针
+            t.dial_fill = rgb(0.106, 0.157, 0.220); t.dial_rim = rgb(0.165, 0.247, 0.373); t.rim_width = 2.5
             t.material_style = 3
             t.hand_style = 1
-            t.hour_color = rgb(0.89, 0.93, 0.96); t.minute_color = rgb(0.68, 0.77, 0.84); t.second_color = rgb(0.16, 0.78, 0.91)
-            t.hour_w = 5.5; t.minute_w = 3.4; t.second_w = 1.25
-            t.cap_outer = rgb(0.69, 0.82, 0.89); t.cap_inner = rgb(0.16, 0.78, 0.91)
-            t.show_ticks = 1; t.tick_color = rgb(0.66, 0.75, 0.82, 0.42); t.major_tick_color = rgb(0.86, 0.93, 0.97, 0.92)
-            t.show_numbers = 0; t.number_color = clear
+            t.hour_color = rgb(0.149, 0.776, 0.855); t.minute_color = rgb(0.502, 0.871, 0.918); t.second_color = gray(1.0)
+            t.hour_w = 5.5; t.minute_w = 3.5; t.second_w = 1.2
+            t.cap_outer = rgb(0.149, 0.776, 0.855); t.cap_inner = gray(1.0)
+            t.show_ticks = 1; t.tick_color = rgb(0.290, 0.396, 0.502); t.major_tick_color = rgb(0.502, 0.871, 0.918)
+            t.show_numbers = 1; t.number_color = rgb(0.400, 0.533, 0.667)
             t.has_decoration = 0
-            t.text_primary = rgb(0.91, 0.94, 0.96); t.text_secondary = rgb(0.59, 0.68, 0.75)
+            t.text_primary = rgb(0.878, 0.878, 0.878); t.text_secondary = rgb(0.533, 0.600, 0.667)
 
         case .luxe:
+            // macOS luxe：深蓝夜盘 + 香槟金指针 + 洋红秒针
             t.dial_fill = rgb(0.102, 0.102, 0.180); t.dial_rim = rgb(0.176, 0.176, 0.267); t.rim_width = 2
             t.hand_style = 2
             t.hour_color = rgb(1.0, 0.835, 0.310); t.minute_color = rgb(1.0, 0.718, 0.302); t.second_color = rgb(0.941, 0.384, 0.573)
@@ -53,6 +56,7 @@ enum WindowsClockTheme: String, CaseIterable {
             t.text_primary = rgb(0.910, 0.835, 0.639); t.text_secondary = rgb(0.600, 0.533, 0.400)
 
         case .gufeng:
+            // macOS gufeng：宣纸米盘 + 墨色指针 + 朱红秒针 + 中文数字
             t.dial_fill = rgb(0.925, 0.886, 0.812); t.dial_rim = rgb(0.580, 0.400, 0.247); t.rim_width = 3
             t.hand_style = 3
             t.hour_color = rgb(0.200, 0.180, 0.160); t.minute_color = rgb(0.350, 0.280, 0.220); t.second_color = rgb(0.722, 0.184, 0.184)
@@ -64,6 +68,7 @@ enum WindowsClockTheme: String, CaseIterable {
             t.text_primary = rgb(0.250, 0.180, 0.130); t.text_secondary = rgb(0.500, 0.380, 0.280)
 
         case .railgun:
+            // macOS railgun：暖米盘 + 珊瑚粉针 + 电光蓝秒针
             t.dial_fill = rgb(0.918, 0.898, 0.855); t.dial_rim = rgb(0.620, 0.470, 0.380); t.rim_width = 2.5
             t.hand_style = 1
             t.hour_color = rgb(0.820, 0.580, 0.560); t.minute_color = rgb(0.850, 0.650, 0.600); t.second_color = rgb(0.400, 0.620, 0.950)
@@ -75,6 +80,7 @@ enum WindowsClockTheme: String, CaseIterable {
             t.text_primary = rgb(0.500, 0.350, 0.300); t.text_secondary = rgb(0.680, 0.560, 0.480)
 
         case .sky:
+            // macOS sky：晴空蓝盘 + 明黄指针 + 橙秒针 + 太阳云朵装饰
             t.dial_fill = rgb(0.529, 0.745, 0.922); t.dial_rim = rgb(0.420, 0.620, 0.820); t.rim_width = 2.5
             t.hand_style = 1
             t.hour_color = rgb(0.960, 0.878, 0.400); t.minute_color = rgb(0.980, 0.910, 0.520); t.second_color = rgb(1.0, 0.580, 0.200)
@@ -86,19 +92,21 @@ enum WindowsClockTheme: String, CaseIterable {
             t.text_primary = rgb(0.180, 0.340, 0.520); t.text_secondary = rgb(0.380, 0.520, 0.660)
 
         case .glass:
-            // Frost — cool translucent crystal with an icy inner edge and Windows-blue seconds.
+            // macOS glass：墨色时针分针 + 琥珀秒针（玻璃盘体为 Windows 材质渲染，保留浅霜面
+            // 与深色文字保证可读；指针/秒针/中心点与 macOS 完全一致）
             t.dial_fill = rgb(0.91, 0.95, 0.99, 0.92); t.dial_rim = rgb(0.70, 0.82, 0.91, 0.85); t.rim_width = 1.5
             t.material_style = 1
             t.hand_style = 0
-            t.hour_color = rgb(0.12, 0.17, 0.22); t.minute_color = rgb(0.20, 0.28, 0.35); t.second_color = rgb(0.0, 0.47, 0.84)
-            t.hour_w = 4.8; t.minute_w = 3.0; t.second_w = 1.25
-            t.cap_outer = rgb(0.18, 0.25, 0.31); t.cap_inner = rgb(0.74, 0.89, 0.98)
-            t.show_ticks = 1; t.tick_color = rgb(0.18, 0.29, 0.38, 0.38); t.major_tick_color = rgb(0.12, 0.22, 0.30, 0.78)
+            t.hour_color = rgb(0.16, 0.16, 0.18); t.minute_color = rgb(0.16, 0.16, 0.18); t.second_color = rgb(0.90, 0.42, 0.18)
+            t.hour_w = 4.5; t.minute_w = 3.0; t.second_w = 1.5
+            t.cap_outer = rgb(0.16, 0.16, 0.18); t.cap_inner = rgb(0.90, 0.42, 0.18)
+            t.show_ticks = 1; t.tick_color = gray(1.0, 0.7); t.major_tick_color = gray(1.0)
             t.show_numbers = 0; t.number_color = clear
             t.has_decoration = 0
             t.text_primary = rgb(0.11, 0.16, 0.20); t.text_secondary = rgb(0.31, 0.40, 0.47)
 
         case .glacier:
+            // macOS glacier：雪白极简 + 藏蓝刻度数字 + 玫红秒针
             t.dial_fill = gray(0.96); t.dial_rim = clear; t.rim_width = 0
             t.hand_style = 3
             t.hour_color = gray(0.18); t.minute_color = gray(0.35); t.second_color = rgb(0.95, 0.40, 0.55)
@@ -108,6 +116,7 @@ enum WindowsClockTheme: String, CaseIterable {
             t.show_numbers = 1; t.number_color = rgb(0.10, 0.20, 0.42)
             t.has_decoration = 0
             t.text_primary = rgb(0.10, 0.20, 0.42); t.text_secondary = rgb(0.10, 0.20, 0.42, 0.7)
+
         default: break   // .custom 在函数顶部已 early-return
         }
         // 下拉卡片配色（移植自 ClockFaceTheme.dropdownBgColor/Text/Subtext/Border）

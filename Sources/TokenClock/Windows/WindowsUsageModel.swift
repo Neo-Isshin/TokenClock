@@ -49,6 +49,13 @@ final class WindowsUsageModel: @unchecked Sendable {
             // environment/alternate path.
             reloadServicesBeforeNextScan = summary.foundCount > 0
         }
+
+        // 每周自动静默刷新价格目录（与 macOS/Linux 一致）
+        if PricingService.shared.isStale() {
+            DispatchQueue.global(qos: .utility).async {
+                try? await PricingService.shared.refresh()
+            }
+        }
     }
 
     /// 设置面板改了启用工具集后立即生效（tools 过滤 + 下次扫描范围都读此集合）。
@@ -122,7 +129,7 @@ final class WindowsUsageModel: @unchecked Sendable {
         }
         if enabledTools.contains("Claude Code") {
             let usage = claudeCodeService.todayUsage()
-            results["Claude Code"] = snapshot(usage, claudeCodeService.recentUsage(minutes: rateWindowMinutes).tokens, claudeCodeService.currentHourTokens(), claudeCodeService.isActive(), claudeCodeService.todaySessions())
+            results["Claude Code"] = snapshot(usage, claudeCodeService.recentUsage(minutes: rateWindowMinutes).tokens, claudeCodeService.currentHourTokens(), claudeCodeService.isActive(), claudeCodeService.todaySessions(), measurementValue: nil, measurementScope: .today, claudeCodeService.todayCost(), claudeCodeService.todayCacheReadTokens())
         }
         if enabledTools.contains("Gemini CLI") {
             let usage = geminiService.todayUsage()
@@ -130,7 +137,7 @@ final class WindowsUsageModel: @unchecked Sendable {
         }
         if enabledTools.contains("Codex") {
             let usage = codexService.todayUsage()
-            results["Codex"] = snapshot(usage, codexService.recentUsage(minutes: rateWindowMinutes).tokens, codexService.currentHourTokens(), codexService.isActive(), codexService.todaySessions())
+            results["Codex"] = snapshot(usage, codexService.recentUsage(minutes: rateWindowMinutes).tokens, codexService.currentHourTokens(), codexService.isActive(), codexService.todaySessions(), measurementValue: nil, measurementScope: .today, codexService.todayCost(), codexService.todayCacheReadTokens())
         }
         if enabledTools.contains("Hermes") {
             let usage = hermesService.todayUsage()
@@ -199,6 +206,8 @@ final class WindowsUsageModel: @unchecked Sendable {
                 cacheRate: result.cacheRate,
                 recentTokens: result.recent,
                 hourlyTokens: result.hourly,
+                todayCost: result.cost,
+                todayCacheReadTokens: result.cacheRead,
                 sessions: result.sessions
             )
         }
@@ -368,6 +377,10 @@ final class WindowsUsageModel: @unchecked Sendable {
         let hourly: Int
         let active: Bool
         let cacheRate: Double
+        /// 今日估算费用（Claude Code / Codex 分桶计价，其余工具为 .zero）
+        var cost: CostEstimate = .zero
+        /// 今日缓存读 token 数（「包含缓存读」口径展示用）
+        var cacheRead: Int = 0
         let sessions: [SessionInfo]
         let measurementValue: Int?
         let measurementScope: UsageMeasurementScope
@@ -380,7 +393,9 @@ final class WindowsUsageModel: @unchecked Sendable {
         _ active: Bool,
         _ sessions: [SessionInfo],
         measurementValue: Int? = nil,
-        measurementScope: UsageMeasurementScope = .today
+        measurementScope: UsageMeasurementScope = .today,
+        _ cost: CostEstimate = .zero,
+        _ cacheRead: Int = 0
     ) -> ScanSnapshot {
         ScanSnapshot(
             tokens: usage.tokens,
@@ -389,6 +404,8 @@ final class WindowsUsageModel: @unchecked Sendable {
             hourly: hourly,
             active: active,
             cacheRate: usage.cacheRate,
+            cost: cost,
+            cacheRead: cacheRead,
             sessions: sessions,
             measurementValue: measurementValue,
             measurementScope: measurementScope

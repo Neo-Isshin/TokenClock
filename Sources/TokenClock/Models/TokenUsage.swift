@@ -29,6 +29,8 @@ enum UsageMeasurementScope: String, Codable, CaseIterable {
     case today
     case currentSession
     case lifetime
+    /// 仅有官方契约可探测、尚无稳定数值语义的 provider（Windows 供应商目录使用）
+    case contractOnly
 }
 
 struct ToolUsage: Identifiable, Hashable {

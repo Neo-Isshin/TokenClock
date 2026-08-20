@@ -211,7 +211,8 @@ final class WindowsApp: @unchecked Sendable {
         let detailControls = [L.tr("detail.groupBySession"), L.tr("detail.groupByModel"), L.tr("detail.percent")].joined(separator: "\t")
         let detailHeader = [L.tr(groupingMode == .model ? "detail.model" : "detail.instance"),
                             L.tr(showPercentage ? "detail.share" : "detail.todayUsage"),
-                            L.tr("detail.messages"), groupingMode == .session ? L.tr("detail.cacheRate") : ""].joined(separator: "\t")
+                            L.tr("detail.messages"), groupingMode == .session ? L.tr("detail.cacheRate") : "",
+                            L.tr("detail.cost")].joined(separator: "\t")
         let quotaSnapshot = codexQuotaState.snapshot()
         let quotaText = detailsVisible ? quotaOverlay(snapshot: quotaSnapshot) : ""
 
@@ -405,12 +406,14 @@ final class WindowsApp: @unchecked Sendable {
         let value: String
         let messages: String
         let cache: String
+        /// 第 5 列：按 API 牌价折算的今日费用（"—" = 无数据/未计价工具）
+        var cost: String = "—"
         let isChild: Bool
         let expanded: Bool
 
         var encoded: String {
             let kind = isChild ? "C" : (expanded ? "V" : "P")
-            return "\(kind)|\(label)\t\(value)\t\(messages)\t\(cache)"
+            return "\(kind)|\(label)\t\(value)\t\(messages)\t\(cache)\t\(cost)"
         }
     }
 
@@ -476,10 +479,10 @@ final class WindowsApp: @unchecked Sendable {
             for group in groups.prefix(10) {
                 let key = "model:\(group.id)"
                 let open = expandedDetailKeys.contains(key)
-                rows.append(DetailRow(key: key, label: "\(group.emoji) \(group.name)", value: rowValue(group.totalTokens, formatted: group.formattedTokens, grand: grand, pct: pct), messages: "\(group.totalMessages)", cache: "", isChild: false, expanded: open))
+                rows.append(DetailRow(key: key, label: "\(group.emoji) \(group.name)", value: rowValue(group.totalTokens, formatted: group.formattedTokens, grand: grand, pct: pct), messages: "\(group.totalMessages)", cache: "", cost: group.formattedCost, isChild: false, expanded: open))
                 if open {
                     for contribution in group.contributions.prefix(5) {
-                        rows.append(DetailRow(key: nil, label: "\(contribution.emoji) \(contribution.tool)", value: rowValue(contribution.tokens, formatted: TokenFormat.compact(contribution.tokens), grand: grand, pct: pct), messages: "\(contribution.messages)", cache: "", isChild: true, expanded: false))
+                        rows.append(DetailRow(key: nil, label: "\(contribution.emoji) \(contribution.tool)", value: rowValue(contribution.tokens, formatted: TokenFormat.compact(contribution.tokens), grand: grand, pct: pct), messages: "\(contribution.messages)", cache: "", cost: contribution.formattedCost, isChild: true, expanded: false))
                     }
                 }
             }
@@ -488,12 +491,12 @@ final class WindowsApp: @unchecked Sendable {
                 let key = "tool:\(tool.id)"
                 let open = expandedDetailKeys.contains(key)
                 let cache = tool.cacheRate > 0 ? String(format: "%.0f%%", tool.cacheRate * 100) : "—"
-                rows.append(DetailRow(key: key, label: "\(tool.emoji) \(tool.name)", value: rowValue(tool.todayTokens, formatted: tool.formattedTokens, grand: grand, pct: pct), messages: "\(tool.todayMessages)", cache: cache, isChild: false, expanded: open))
+                rows.append(DetailRow(key: key, label: "\(tool.emoji) \(tool.name)", value: rowValue(tool.todayTokens, formatted: tool.formattedTokens, grand: grand, pct: pct), messages: "\(tool.todayMessages)", cache: cache, cost: tool.formattedCost, isChild: false, expanded: open))
                 if open {
                     let sessions = tool.sessions.filter { $0.todayTokens > 0 }.sorted { $0.todayTokens > $1.todayTokens }
                     for session in sessions.prefix(5) {
                         let source = session.source.map { " · \($0)" } ?? ""
-                        rows.append(DetailRow(key: nil, label: "\(session.displayName)\(source)", value: rowValue(session.todayTokens, formatted: session.formattedTokens, grand: grand, pct: pct), messages: "\(session.todayMessages)", cache: "", isChild: true, expanded: false))
+                        rows.append(DetailRow(key: nil, label: "\(session.displayName)\(source)", value: rowValue(session.todayTokens, formatted: session.formattedTokens, grand: grand, pct: pct), messages: "\(session.todayMessages)", cache: "", cost: session.formattedCost, isChild: true, expanded: false))
                     }
                 }
             }
