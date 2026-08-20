@@ -112,12 +112,13 @@ enum DateHelper: Sendable {
 
         var offsetSeconds = 0
         if index < bytes.count {
-            if bytes[index] == 0x5A || bytes[index] == 0x7A {
+            if bytes[index] == 0x5A || bytes[index] == 0x7A { // Z / z
                 index += 1
-            } else if bytes[index] == 0x2B || bytes[index] == 0x2D {
+            } else if bytes[index] == 0x2B || bytes[index] == 0x2D { // + / -
                 let sign = bytes[index] == 0x2B ? 1 : -1
                 index += 1
-                guard index + 1 < bytes.count, let offsetHour = number(index, 2) else { return nil }
+                guard index + 1 < bytes.count,
+                      let offsetHour = number(index, 2) else { return nil }
                 index += 2
                 if index < bytes.count, bytes[index] == 0x3A { index += 1 }
                 guard index + 1 < bytes.count,

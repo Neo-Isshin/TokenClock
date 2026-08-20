@@ -116,8 +116,6 @@ enum JSONLLineReader {
         return Data()
     }
 
-    /// Apple Foundation can accumulate temporary Objective-C objects while a large JSONL file
-    /// is scanned. Windows/Linux have no Objective-C runtime, so this compiles to a direct call.
     @inline(__always)
     private static func withAutoreleasePool(_ body: () -> Void) {
 #if canImport(ObjectiveC)

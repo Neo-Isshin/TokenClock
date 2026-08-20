@@ -46,15 +46,16 @@ enum AppConfig {
         static let cursorPageSize = 200
         /// JSONL 流式读取缓冲（64KB，平衡内存和 IO 效率）
         static let jsonlBufferSize = 65_536
-        /// Codex 只需今天与昨天的 rollout，覆盖跨日长会话并限制首次扫描规模。
+        /// Codex 面板只消费当日与最近数据。保留今天+昨天的 rollout，覆盖跨日长会话，
+        /// 避免冷启动为当前用量反复解析整个历史目录。
         static let codexSessionLookbackDays = 2
         /// Gemini 面板同样只展示当日/最近用量；保留今天+昨天以覆盖跨日会话。
         static let geminiSessionLookbackDays = 2
-        /// Codex 额度按需读取；短缓存避免连续点击反复启动 app-server。
+        /// Codex 额度仅在用户打开额度面板时请求；短缓存避免反复开 app-server。
         static let codexQuotaCacheSeconds: TimeInterval = 60
-        /// app-server 异常时及时回收子进程，避免额度按钮留下常驻后台进程。
+        /// app-server 异常时必须及时回收子进程，不能让详情页点击产生常驻后台任务。
         static let codexQuotaTimeoutSeconds: TimeInterval = 8
-        /// 回退到 rollout 日志时只读取最近文件尾部，避免全量扫描历史记录。
+        /// 本地 rollout 兜底只读取最新文件尾部，不为额度查询重扫完整历史。
         static let codexQuotaFallbackTailBytes = 2_097_152
         static let codexQuotaFallbackFileLimit = 32
         /// "活跃工具" 判定窗口（10 分钟内有调用算活跃）

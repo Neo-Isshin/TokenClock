@@ -269,8 +269,8 @@ final class GeminiUsageService: @unchecked Sendable {
         let input = tokens["input"] as? Int ?? 0
         let output = tokens["output"] as? Int ?? 0
         let cached = tokens["cached"] as? Int ?? 0
-        // Gemini CLI 的 input(promptTokenCount) 已含 cached(cachedContentTokenCount)，
-        // 同 Codex：cached 再加会双计。thought 为推理 token，单列计入（字段名兼容 thought/thoughts）。
+        // Gemini CLI 的 input(promptTokenCount) 已含 cached(cachedContentTokenCount)。
+        // 主用量排除 cached；thought 为独立推理 token（字段名兼容 thought/thoughts）。
         let thought = (tokens["thought"] as? Int) ?? (tokens["thoughts"] as? Int) ?? 0
         let total = TokenAccounting.excludingCacheRead(
             inclusiveInput: input, cacheRead: cached, output: output, additional: [thought]

@@ -206,9 +206,23 @@ ensure_source() {
 
 # ── 4. Obtain the binary (prefer the prebuilt download; fall back to building from source on failure / --build-from-source) ──
 # Prebuilt assets come from the GitHub release (universal: arm64+x86_64); no Xcode, no compilation.
-# When cutting a new release, update RELEASE_TAG and both SHA256 hashes (done by scripts/release.sh).
-RELEASE_TAG="${TOKENCLOCK_RELEASE_TAG:-v1.3.8}"
-RELEASE_URL_BASE="${TOKENCLOCK_RELEASE_BASE:-https://github.com/Neo-Isshin/TokenClock/releases/download/$RELEASE_TAG}"
+# Each independently maintained channel may publish a patch without relabelling the unchanged
+# binaries from the other platforms. TOKENCLOCK_RELEASE_TAG remains a global testing override.
+release_tag_for_variant() {
+  if [ -n "${TOKENCLOCK_RELEASE_TAG:-}" ]; then
+    echo "$TOKENCLOCK_RELEASE_TAG"
+    return
+  fi
+  case "$1" in
+    glass)  echo "v1.4.3" ;;
+    normal) echo "v1.4.3" ;;
+    linux)  echo "v1.4.3" ;;
+  esac
+}
+release_base_for_tag() {
+  local tag="$1"
+  echo "${TOKENCLOCK_RELEASE_BASE:-https://github.com/Neo-Isshin/TokenClock/releases/download/$tag}"
+}
 
 # variant → tarball filename / expected SHA256 (bash 3.2 has no associative arrays, so use case)
 tarball_name() {
@@ -219,8 +233,8 @@ tarball_name() {
 }
 tarball_sha256() {
   case "$1" in
-    glass)  echo "2311dce29a4dd2e8568e5c5ebbaf26b7a161944d3ea07d6cfcea29b1ef67676e" ;;
-    normal) echo "21d4591abb9d32d1b5719b92234e53b5f9a65011c11ce36956e52ecc94a4a0d3" ;;
+    glass)  echo "ae21c79ef62acbda02e153d8e0fb0b926152f2548f1b5e653aa434f0707696d2" ;;
+    normal) echo "2470b37919c5b88402eade8b212b282b030ecb7845c4fe0dc2fc62c5fd187ca5" ;;
   esac
 }
 
@@ -231,12 +245,14 @@ DL_DIR=""
 DOWNLOAD_TMPDIRS=()
 trap '[ "${#DOWNLOAD_TMPDIRS[@]}" -gt 0 ] && rm -rf "${DOWNLOAD_TMPDIRS[@]}" 2>/dev/null; [ -n "${WRAPPER_TMP:-}" ] && rm -f "$WRAPPER_TMP" 2>/dev/null; true' EXIT
 download_variant() {
-  local variant="$1" name expect url tmp got
+  local variant="$1" name expect tag base url tmp got
   name="$(tarball_name "$variant")"
   expect="$(tarball_sha256 "$variant")"
+  tag="$(release_tag_for_variant "$variant")"
+  base="$(release_base_for_tag "$tag")"
   [ -n "$name" ] && [ -n "$expect" ] || return 1
-  url="$RELEASE_URL_BASE/$name"
-  step "Downloading prebuilt binary [$variant] ($RELEASE_TAG)"
+  url="$base/$name"
+  step "Downloading prebuilt binary [$variant] ($tag)"
   tmp="$(mktemp -d 2>/dev/null)" || return 1
   if ! curl -fL --retry 6 --retry-delay 2 --retry-all-errors --connect-timeout 15 -o "$tmp/$name" "$url" 2>/dev/null; then
     say "  ⚠ [$variant] prebuilt download failed ($url) → falling back to source build"
@@ -262,16 +278,18 @@ download_variant() {
 # 校验通过则把 AppImage 路径写入全局 APPIMAGE_PATH 并返回 0；失败返回 1（调用方回退源码编译）。
 APPIMAGE_PATH=""
 download_appimage() {
-  local name="TokenClock-x86_64.AppImage" sha_name url tmp got expect
+  local name="TokenClock-x86_64.AppImage" sha_name tag base url tmp got expect
   sha_name="$name.sha256"
-  url="$RELEASE_URL_BASE/$name"
-  step "Downloading prebuilt AppImage (Linux x86_64 · $RELEASE_TAG)"
+  tag="$(release_tag_for_variant linux)"
+  base="$(release_base_for_tag "$tag")"
+  url="$base/$name"
+  step "Downloading prebuilt AppImage (Linux x86_64 · $tag)"
   tmp="$(mktemp -d 2>/dev/null)" || return 1
   if ! curl -fL --retry 6 --retry-delay 2 --retry-all-errors --connect-timeout 15 -o "$tmp/$name" "$url" 2>/dev/null; then
     say "  ⚠ AppImage 下载失败（$url，可能 CI 尚未构建完成）→ 回退源码编译"
     rm -rf "$tmp"; return 1
   fi
-  if ! curl -fL --retry 6 --retry-delay 2 --retry-all-errors --connect-timeout 15 -o "$tmp/$sha_name" "$RELEASE_URL_BASE/$sha_name" 2>/dev/null; then
+  if ! curl -fL --retry 6 --retry-delay 2 --retry-all-errors --connect-timeout 15 -o "$tmp/$sha_name" "$base/$sha_name" 2>/dev/null; then
     say "  ⚠ AppImage 的 SHA256 sidecar 下载失败 → 回退源码编译"
     rm -rf "$tmp"; return 1
   fi

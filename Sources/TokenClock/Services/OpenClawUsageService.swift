@@ -253,6 +253,7 @@ final class OpenClawUsageService: @unchecked Sendable {
         let output = usage["output"] as? Int ?? 0
         let cacheRead = usage["cacheRead"] as? Int ?? 0
         let cacheWrite = usage["cacheWrite"] as? Int ?? 0
+        // OpenClaw persists input/output/cacheRead/cacheWrite as independent usage fields.
         let tokens = TokenAccounting.separateCacheFields(
             input: input, cacheWrite: cacheWrite, output: output
         )

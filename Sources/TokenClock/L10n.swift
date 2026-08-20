@@ -1,7 +1,4 @@
 import Foundation
-#if os(Windows)
-import Win32Shim     // win_user_locale (GetUserDefaultLocaleName)
-#endif
 
 enum AppLanguage: String, CaseIterable, Identifiable {
     case zhHans = "zh-Hans"
@@ -19,25 +16,17 @@ enum AppLanguage: String, CaseIterable, Identifiable {
     }
 }
 
-private let settingsEnvironmentHint: [AppLanguage: String] = {
-    #if os(Windows)
-    return [.zhHans: "Windows 官方路径变量：OPENCLAW_STATE_DIR、OPENCLAW_HOME（父目录）、CLAUDE_CONFIG_DIR、GEMINI_CLI_HOME（父目录）、CODEX_HOME、HERMES_HOME、OPENCODE_DB、XDG_DATA_HOME、QWEN_HOME、QWEN_RUNTIME_DIR、COPILOT_HOME、COPILOT_OTEL_FILE_EXPORTER_PATH、AIDER_ANALYTICS_LOG。Catalog 中标注的其他变量为 TokenClock 兼容覆盖，详见 README。", .zhHant: "Windows 官方路徑變量：OPENCLAW_STATE_DIR、OPENCLAW_HOME（父目錄）、CLAUDE_CONFIG_DIR、GEMINI_CLI_HOME（父目錄）、CODEX_HOME、HERMES_HOME、OPENCODE_DB、XDG_DATA_HOME、QWEN_HOME、QWEN_RUNTIME_DIR、COPILOT_HOME、COPILOT_OTEL_FILE_EXPORTER_PATH、AIDER_ANALYTICS_LOG。Catalog 中標記的其他變量為 TokenClock 相容覆蓋，詳見 README。", .en: "Official Windows path vars: OPENCLAW_STATE_DIR, OPENCLAW_HOME (parent), CLAUDE_CONFIG_DIR, GEMINI_CLI_HOME (parent), CODEX_HOME, HERMES_HOME, OPENCODE_DB, XDG_DATA_HOME, QWEN_HOME, QWEN_RUNTIME_DIR, COPILOT_HOME, COPILOT_OTEL_FILE_EXPORTER_PATH, AIDER_ANALYTICS_LOG. Other variables marked in the catalog are TokenClock compatibility overrides; see README."]
-    #else
-    // Keep the pre-Windows-port macOS/Linux wording and variable set byte-for-byte.
-    return [.zhHans: "支持环境变量覆盖：OPENCLAW_HOME、CLAUDE_CONFIG_DIR、GEMINI_HOME、CODEX_HOME、HERMES_HOME、OPENCODE_HOME、QWEN_HOME、COPILOT_HOME、GROK_HOME、AIDER_HOME、ANTIGRAVITY_HOME、CLINE_HOME、CONTINUE_HOME、CURSOR_AGENT_HOME", .zhHant: "支持環境變量覆蓋：OPENCLAW_HOME、CLAUDE_CONFIG_DIR、GEMINI_HOME、CODEX_HOME、HERMES_HOME、OPENCODE_HOME、QWEN_HOME、COPILOT_HOME、GROK_HOME、AIDER_HOME、ANTIGRAVITY_HOME、CLINE_HOME、CONTINUE_HOME、CURSOR_AGENT_HOME", .en: "Env vars: OPENCLAW_HOME, CLAUDE_CONFIG_DIR, GEMINI_HOME, CODEX_HOME, HERMES_HOME, OPENCODE_HOME, QWEN_HOME, COPILOT_HOME, GROK_HOME, AIDER_HOME, ANTIGRAVITY_HOME, CLINE_HOME, CONTINUE_HOME, CURSOR_AGENT_HOME"]
-    #endif
-}()
-
 final class L10n: @unchecked Sendable {
     static let shared = L10n()
+    private static let storageKey = SettingsKey.language.rawValue
 
     var language: AppLanguage {
-        didSet { UserDefaults.standard.setString(language.rawValue, for: .language) }
+        didSet { UserDefaults.standard.set(language.rawValue, forKey: Self.storageKey) }
     }
 
     private init() {
         let defaults = UserDefaults.standard
-        if let saved = defaults.string(for: .language),
+        if let saved = defaults.string(forKey: Self.storageKey),
            let lang = AppLanguage(rawValue: saved) {
             // 已有记录（用户手动选择过，或上次自动探测过）→ 沿用
             self.language = lang
@@ -45,7 +34,7 @@ final class L10n: @unchecked Sendable {
             // 首次启动：未记录过语言 → 按系统语言自动探测并落盘（之后以用户手动选择为准）
             let detected = Self.detectSystemLanguage()
             self.language = detected
-            defaults.setString(detected.rawValue, for: .language)
+            defaults.set(detected.rawValue, forKey: Self.storageKey)
         }
     }
 
@@ -55,12 +44,6 @@ final class L10n: @unchecked Sendable {
         // Linux：依次读 LC_ALL / LC_MESSAGES / LANG（形如 zh_CN.UTF-8、zh_TW.UTF-8、en_US.UTF-8）
         let env = ProcessInfo.processInfo.environment
         let tag = env["LC_ALL"] ?? env["LC_MESSAGES"] ?? env["LANG"] ?? ""
-        #elseif os(Windows)
-        // Windows：读用户默认 locale（GetUserDefaultLocaleName，形如 zh-CN、zh-TW、en-US）。
-        // 比 Locale.preferredLanguages（corelibs 上常为空）更可靠。
-        let buf = UnsafeMutablePointer<CChar>.allocate(capacity: 86)
-        defer { buf.deallocate() }
-        let tag = (win_user_locale(buf, 86) > 0) ? String(cString: buf) : ""
         #else
         // macOS / 其他 Apple 平台：取用户首选语言列表第一项（形如 zh-Hans-CN、zh-Hant、en-US）
         let tag = Locale.preferredLanguages.first ?? ""
@@ -93,7 +76,6 @@ final class L10n: @unchecked Sendable {
     private let table: [String: [AppLanguage: String]] = [
         // MARK: Menu
         "menu.clockFace":        [.zhHans: "🎨 表盘",               .zhHant: "🎨 錶盤",              .en: "🎨 Clock Face"],
-        "menu.size":             [.zhHans: "表盘大小",              .zhHant: "錶盤大小",            .en: "Clock Size"],
         "menu.myClockFaces":     [.zhHans: "✏️ 我的表盘",            .zhHant: "✏️ 我的錶盤",           .en: "✏️ My Clock Faces"],
         "menu.api":              [.zhHans: "🔌 API: localhost:%d/api/usage", .zhHant: "🔌 API: localhost:%d/api/usage", .en: "🔌 API: localhost:%d/api/usage"],
         "menu.opacity":          [.zhHans: "透明度",                .zhHant: "透明度",              .en: "Opacity"],
@@ -101,6 +83,9 @@ final class L10n: @unchecked Sendable {
         "menu.temperature":      [.zhHans: "🌡️ 温度",              .zhHant: "🌡️ 溫度",             .en: "🌡️ Temperature"],
         "menu.celsius":          [.zhHans: "摄氏度 °C",            .zhHant: "攝氏度 °C",            .en: "Celsius °C"],
         "menu.fahrenheit":       [.zhHans: "华氏度 °F",            .zhHant: "華氏度 °F",            .en: "Fahrenheit °F"],
+        "menu.usageScope":       [.zhHans: "📊 用量口径",           .zhHant: "📊 用量口徑",           .en: "📊 Usage Scope"],
+        "menu.usageExclCache":   [.zhHans: "排除缓存读（默认）",     .zhHant: "排除緩存讀（預設）",     .en: "Exclude cache reads (default)"],
+        "menu.usageInclCache":   [.zhHans: "包含缓存读",            .zhHant: "包含緩存讀",            .en: "Include cache reads"],
         "menu.city":             [.zhHans: "🌤️ 城市",             .zhHant: "🌤️ 城市",             .en: "🌤️ City"],
         "menu.cityAuto":         [.zhHans: "自动(%@)",             .zhHant: "自動(%@)",             .en: "Auto (%@)"],
         "menu.cityAutoLocating": [.zhHans: "自动(定位中...)",       .zhHant: "自動(定位中...)",       .en: "Auto (locating...)"],
@@ -171,15 +156,20 @@ final class L10n: @unchecked Sendable {
         "detail.groupBySession": [.zhHans: "按会话", .zhHant: "按工作階段", .en: "By Session"],
         "detail.groupByModel":   [.zhHans: "按模型", .zhHant: "按模型",   .en: "By Model"],
         "detail.unknownModel":   [.zhHans: "未知",   .zhHant: "未知",    .en: "Unknown"],
+        "detail.currentSession":    [.zhHans: "当前会话", .zhHant: "目前工作階段", .en: "Current Session"],
+        "detail.statisticsUnavailable": [.zhHans: "暂无统计数据", .zhHant: "暫無統計資料", .en: "No statistics yet"],
+        "menu.size":              [.zhHans: "📐 大小", .zhHant: "📐 大小", .en: "📐 Size"],
         "detail.model":          [.zhHans: "模型",   .zhHant: "模型",    .en: "Model"],
         "detail.percent":        [.zhHans: "按百分比", .zhHant: "按百分比", .en: "By Percent"],
-        "detail.currentSession": [.zhHans: "当前会话", .zhHant: "目前工作階段", .en: "Current session"],
-        "detail.statisticsUnavailable": [.zhHans: "暂不可统计", .zhHant: "暫不可統計", .en: "Unavailable"],
         "detail.share":          [.zhHans: "占比",   .zhHant: "佔比",    .en: "Share"],
+        "detail.cost":           [.zhHans: "费用",   .zhHant: "費用",    .en: "Cost"],
+        "detail.byPercent":      [.zhHans: "按占比", .zhHant: "按佔比",  .en: "By Percent"],
+        "detail.byCost":         [.zhHans: "按费用", .zhHant: "按費用",  .en: "By Cost"],
+        "detail.valueModeHelp":  [.zhHans: "切换 用量+消息数 / 费用+占比 显示", .zhHant: "切換 用量+訊息數 / 費用+佔比 顯示", .en: "Toggle usage+msgs / cost+percent columns"],
         "detail.codexQuota":     [.zhHans: "Codex 额度", .zhHant: "Codex 額度", .en: "Codex Quota"],
         "quota.loading":         [.zhHans: "正在读取 Codex 额度…", .zhHant: "正在讀取 Codex 額度…", .en: "Loading Codex quota…"],
         "quota.unavailable":     [.zhHans: "暂时无法读取额度", .zhHant: "暫時無法讀取額度", .en: "Quota is temporarily unavailable"],
-        "quota.retry":           [.zhHans: "刷新", .zhHant: "重新整理", .en: "Refresh"],
+        "quota.retry":           [.zhHans: "重试", .zhHant: "重試", .en: "Retry"],
         "quota.remaining":       [.zhHans: "%.0f%% 剩余", .zhHant: "%.0f%% 剩餘", .en: "%.0f%% remaining"],
         "quota.weekly":          [.zhHans: "每周额度", .zhHant: "每週額度", .en: "Weekly quota"],
         "quota.days":            [.zhHans: "%d 天额度", .zhHant: "%d 天額度", .en: "%d-day quota"],
@@ -193,6 +183,30 @@ final class L10n: @unchecked Sendable {
         "quota.liveSource":      [.zhHans: "实时", .zhHant: "即時", .en: "Live"],
         "quota.logSource":       [.zhHans: "本地记录", .zhHant: "本機記錄", .en: "Local log"],
         "quota.updated":         [.zhHans: "更新于 %@", .zhHant: "更新於 %@", .en: "Updated %@"],
+
+        // MARK: Pricing（费用估算）
+        "pricing.title":         [.zhHans: "💰 费用估算", .zhHant: "💰 費用估算", .en: "💰 Cost Estimation"],
+        "pricing.note":          [.zhHans: "按 API 牌价将当日 token 消耗折算为美元估算值，订阅额度内的实际用量不产生该费用。",
+                                  .zhHant: "按 API 牌價將當日 token 消耗折算為美元估算值，訂閱額度內的實際用量不產生該費用。",
+                                  .en: "Estimates today's token usage in USD at list prices. Usage inside subscriptions does not incur this cost."],
+        "pricing.refresh":       [.zhHans: "刷新价格目录", .zhHant: "重新整理價格目錄", .en: "Refresh price catalog"],
+        "pricing.refreshing":    [.zhHans: "正在更新…", .zhHant: "正在更新…", .en: "Updating…"],
+        "pricing.refreshFailed": [.zhHans: "刷新失败，请稍后重试", .zhHant: "重新整理失敗，請稍後重試", .en: "Refresh failed, try again later"],
+        "pricing.catalog":       [.zhHans: "目录：%d 个模型 · 数据时点 %@", .zhHant: "目錄：%d 個模型 · 資料時點 %@", .en: "Catalog: %d models · as of %@"],
+        "pricing.unpricedTitle": [.zhHans: "未能计价的模型", .zhHant: "未能計價的模型", .en: "Models without a price"],
+        "pricing.unpricedHint":  [.zhHans: "以下模型在目录中没有单价（多为代理/自定义模型），消耗未计入费用。可在下方添加自定义价格。",
+                                  .zhHant: "以下模型在目錄中沒有單價（多為代理/自訂模型），消耗未計入費用。可在下方添加自訂價格。",
+                                  .en: "These models have no catalog price (proxies / custom models) and are excluded from the estimate. Add custom prices below."],
+        "pricing.customTitle":   [.zhHans: "自定义价格", .zhHant: "自訂價格", .en: "Custom prices"],
+        "pricing.addCustom":     [.zhHans: "添加", .zhHant: "添加", .en: "Add"],
+        "pricing.modelName":     [.zhHans: "模型名", .zhHant: "模型名", .en: "Model name"],
+        "pricing.input":         [.zhHans: "输入", .zhHant: "輸入", .en: "Input"],
+        "pricing.output":        [.zhHans: "输出", .zhHant: "輸出", .en: "Output"],
+        "pricing.cacheRead":     [.zhHans: "缓存读", .zhHant: "緩存讀", .en: "Cache R"],
+        "pricing.cacheWrite":    [.zhHans: "缓存写", .zhHant: "緩存寫", .en: "Cache W"],
+        "pricing.unit":          [.zhHans: "$/百万 tokens", .zhHant: "$/百萬 tokens", .en: "$/M tokens"],
+        "pricing.remove":        [.zhHans: "移除", .zhHant: "移除", .en: "Remove"],
+        "pricing.example":       [.zhHans: "如 glm-5.3", .zhHant: "如 glm-5.3", .en: "e.g. glm-5.3"],
 
         // MARK: Theme picker
         "themePicker.title": [.zhHans: "选择表盘", .zhHant: "選擇錶盤", .en: "Select Clock Face"],
@@ -221,7 +235,7 @@ final class L10n: @unchecked Sendable {
         "settings.search":          [.zhHans: "检索",                      .zhHant: "檢索",                     .en: "Detect"],
         "settings.browse":          [.zhHans: "浏览",                      .zhHant: "瀏覽",                     .en: "Browse"],
         "settings.hint.emptyPath":  [.zhHans: "留空则使用默认路径。修改路径后需重启应用生效。", .zhHant: "留空則使用預設路徑。修改路徑後需重啟應用生效。", .en: "Leave empty for default path. Restart app after changing."],
-        "settings.hint.envVars":    settingsEnvironmentHint,
+        "settings.hint.envVars":    [.zhHans: "支持环境变量覆盖：OPENCLAW_HOME、CLAUDE_CONFIG_DIR、GEMINI_HOME、CODEX_HOME、HERMES_HOME、OPENCODE_HOME、QWEN_HOME、COPILOT_HOME、GROK_HOME、AIDER_HOME、ANTIGRAVITY_HOME、CLINE_HOME、CONTINUE_HOME、CURSOR_AGENT_HOME", .zhHant: "支持環境變量覆蓋：OPENCLAW_HOME、CLAUDE_CONFIG_DIR、GEMINI_HOME、CODEX_HOME、HERMES_HOME、OPENCODE_HOME、QWEN_HOME、COPILOT_HOME、GROK_HOME、AIDER_HOME、ANTIGRAVITY_HOME、CLINE_HOME、CONTINUE_HOME、CURSOR_AGENT_HOME", .en: "Env vars: OPENCLAW_HOME, CLAUDE_CONFIG_DIR, GEMINI_HOME, CODEX_HOME, HERMES_HOME, OPENCODE_HOME, QWEN_HOME, COPILOT_HOME, GROK_HOME, AIDER_HOME, ANTIGRAVITY_HOME, CLINE_HOME, CONTINUE_HOME, CURSOR_AGENT_HOME"],
         "settings.browseOpenClaw":  [.zhHans: "选择 OpenClaw 目录",        .zhHant: "選擇 OpenClaw 目錄",       .en: "Select OpenClaw Directory"],
         "settings.browseClaudeCode":[.zhHans: "选择 Claude Code 目录",      .zhHant: "選擇 Claude Code 目錄",    .en: "Select Claude Code Directory"],
         "settings.browseGemini":    [.zhHans: "选择 Gemini CLI 目录",       .zhHant: "選擇 Gemini CLI 目錄",     .en: "Select Gemini CLI Directory"],
@@ -279,6 +293,7 @@ final class L10n: @unchecked Sendable {
         "editor.handWidthHour": [.zhHans: "时针宽度",    .zhHant: "時針寬度",    .en: "Hour Width"],
         "editor.handWidthMin":  [.zhHans: "分针宽度",    .zhHant: "分針寬度",    .en: "Minute Width"],
         "editor.handWidthSec":  [.zhHans: "秒针宽度",    .zhHant: "秒針寬度",    .en: "Second Width"],
+        "editor.handStyle":     [.zhHans: "指针样式",    .zhHant: "指針樣式",    .en: "Hand Style"],
         "editor.centerOuter":   [.zhHans: "中心外圈",    .zhHant: "中心外圈",    .en: "Center Outer"],
         "editor.centerInner":   [.zhHans: "中心内圈",    .zhHant: "中心內圈",    .en: "Center Inner"],
         "editor.showTicks":     [.zhHans: "显示刻度",    .zhHant: "顯示刻度",    .en: "Show Tick Marks"],
@@ -287,6 +302,8 @@ final class L10n: @unchecked Sendable {
         "editor.tickColor":     [.zhHans: "刻度颜色",    .zhHant: "刻度顏色",    .en: "Tick Color"],
         "editor.majorTickColor":[.zhHans: "主刻度颜色",   .zhHant: "主刻度顏色",   .en: "Major Tick Color"],
         "editor.numberColor":   [.zhHans: "数字颜色",    .zhHant: "數字顏色",    .en: "Number Color"],
+        "editor.numberStyle":   [.zhHans: "数字样式",    .zhHant: "數字樣式",    .en: "Number Style"],
+        "editor.numberFont":    [.zhHans: "数字字体",    .zhHant: "數字字體",    .en: "Number Font"],
         "editor.numArabic":     [.zhHans: "阿拉伯数字",   .zhHant: "阿拉伯數字",   .en: "Arabic"],
         "editor.numChinese":    [.zhHans: "中文数字",     .zhHant: "中文數字",     .en: "Chinese"],
         "editor.fontDefault":   [.zhHans: "默认",        .zhHant: "預設",         .en: "Default"],
@@ -308,13 +325,13 @@ final class L10n: @unchecked Sendable {
         "handStyle.sword":   [.zhHans: "剑形",  .zhHant: "劍形",  .en: "Sword"],
 
         // MARK: Clock face themes
-        "themeName.classic":    [.zhHans: "瓷白",   .zhHant: "瓷白",   .en: "Porcelain"],
-        "themeName.midnight":   [.zhHans: "烟熏玻璃", .zhHant: "煙燻玻璃", .en: "Smoked Glass"],
+        "themeName.classic":    [.zhHans: "经典",   .zhHant: "經典",   .en: "Classic"],
+        "themeName.midnight":   [.zhHans: "深夜",   .zhHant: "深夜",   .en: "Midnight"],
         "themeName.luxe":       [.zhHans: "暗金",   .zhHant: "暗金",   .en: "Luxe"],
         "themeName.gufeng":     [.zhHans: "古风",   .zhHant: "古風",   .en: "Antique"],
         "themeName.railgun":    [.zhHans: "超電磁砲", .zhHant: "超電磁砲", .en: "Railgun"],
         "themeName.sky":        [.zhHans: "天空",   .zhHant: "天空",   .en: "Sky"],
-        "themeName.glass":      [.zhHans: "冰霜玻璃", .zhHant: "冰霜玻璃", .en: "Frost"],
+        "themeName.glass":      [.zhHans: "玻璃",   .zhHant: "玻璃",   .en: "Glass"],
         "themeName.glacier":    [.zhHans: "冰川",   .zhHant: "冰川",   .en: "Glacier"],
         "themeName.custom":     [.zhHans: "自定义", .zhHant: "自訂",   .en: "Custom"],
 
@@ -339,8 +356,6 @@ final class L10n: @unchecked Sendable {
         "pathDetail.official":      [.zhHans: "使用官方默认路径",       .zhHant: "使用官方預設路徑",         .en: "Using official default path"],
         "pathDetail.alternate":     [.zhHans: "从备选路径探测到",       .zhHant: "從備選路徑探測到",         .en: "Detected from alternate path"],
         "pathDetail.notFound":      [.zhHans: "未找到",                 .zhHant: "未找到",                   .en: "Not found"],
-        "pathDetail.existsUnreadable":[.zhHans: "路径存在，但没有解析器可读取的用量数据", .zhHant: "路徑存在，但沒有解析器可讀取的用量資料", .en: "Path exists, but no parser-readable usage data was found"],
         "pathDetail.notFoundDefault":[.zhHans: "未找到有效日志文件，将使用默认路径", .zhHant: "未找到有效日誌文件，將使用預設路徑", .en: "No valid log files found, using default path"],
-        "pathDetail.contractOnly": [.zhHans: "已识别官方数据契约；暂无可安全统计的字段", .zhHant: "已識別官方資料契約；暫無可安全統計的欄位", .en: "Official data contract detected; no safely aggregatable fields yet"],
     ]
 }

@@ -74,7 +74,11 @@ enum SettingsKey: String {
     // MARK: - 下拉面板
     /// 分组模式：0=按会话 1=按模型
     case dropdownGrouping = "TC_dropdownGrouping"
-    /// 用量列是否以「占总数百分比」显示（true=百分比，false=绝对 token）
+    /// 数值列显示模式：0=用量 1=占比 2=费用（DetailValueMode）
+    case dropdownValueMode = "TC_dropdownValueMode"
+    /// 用量口径：token 展示是否包含缓存读（默认 false=排除，与 Codex 官方一致）
+    case usageIncludesCacheRead = "TC_usageIncludesCacheRead"
+    /// 旧版开关：用量列是否以「占总数百分比」显示（迁移到 dropdownValueMode 后弃用，仅读取）
     case dropdownShowPercentage = "TC_dropdownShowPercentage"
 
     // MARK: - 首次启动标记
@@ -82,6 +86,12 @@ enum SettingsKey: String {
 
     // MARK: - 日结历史
     case historyLastSettledDateKey = "TC_historyLastSettledDateKey"
+
+    // MARK: - 费用估算
+    /// 最近一次价格目录成功刷新的 Unix 时间戳
+    case pricingLastRefresh = "TC_pricingLastRefresh"
+    /// 自定义模型价格表（JSON：模型名 → {in,out,cr,cw}，USD/MTok）
+    case customModelPrices = "TC_customModelPrices"
 }
 
 extension UserDefaults {
@@ -169,6 +179,15 @@ extension UserDefaults {
         #else
         stringArray(forKey: key.rawValue)
         #endif
+    }
+
+    /// 类型安全的 double 读写（object==nil 区分「未存」与「存了 0」）
+    func setDouble(_ value: Double, for key: SettingsKey) {
+        set(value, forKey: key.rawValue)
+    }
+    func double(for key: SettingsKey, `default` fallback: Double = 0) -> Double {
+        if object(forKey: key.rawValue) == nil { return fallback }
+        return double(forKey: key.rawValue)
     }
 
     /// 移除 key

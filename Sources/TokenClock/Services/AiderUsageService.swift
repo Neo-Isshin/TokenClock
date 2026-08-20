@@ -16,6 +16,7 @@ final class AiderUsageService: @unchecked Sendable {
 
     init(aiderHome: String? = nil) {
         if let aiderHome {
+            // 传入单个 .jsonl 文件可直连（便携/测试场景）
             analyticsPath = aiderHome.lowercased().hasSuffix(".jsonl")
                 ? aiderHome
                 : aiderHome + "/analytics.jsonl"
@@ -112,12 +113,12 @@ final class AiderUsageService: @unchecked Sendable {
             }
         ) != nil else { return }
 
-        // Prune once per file scan. Filtering after every line becomes quadratic when a busy
-        // analytics log contains thousands of recent events.
+        // 限制 recentEntries 增长，但只在整文件读取完成后过滤一次，避免逐行 O(n²)。
         if recentEntries.count > 64 {
             let cutoff = Date().addingTimeInterval(-AppConfig.Scan.activeThresholdSeconds * 3)
             recentEntries = recentEntries.filter { $0.timestamp >= cutoff }
         }
+
         lastScanTime = Date()
     }
 

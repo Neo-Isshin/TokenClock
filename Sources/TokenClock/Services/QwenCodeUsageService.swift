@@ -188,7 +188,7 @@ final class QwenCodeUsageService: @unchecked Sendable {
             let input = tokens["input"] as? Int ?? 0
             let output = tokens["output"] as? Int ?? 0
             let cached = tokens["cached"] as? Int ?? 0
-            // input(promptTokenCount) 已含 cached → cached 不可再加（双计）。thought 为推理 token。
+            // input(promptTokenCount) 已含 cached，主用量需要扣除。thought 为独立推理 token。
             let thought = (tokens["thought"] as? Int) ?? (tokens["thoughts"] as? Int) ?? 0
             let total = TokenAccounting.excludingCacheRead(
                 inclusiveInput: input, cacheRead: cached, output: output, additional: [thought]
@@ -210,7 +210,7 @@ final class QwenCodeUsageService: @unchecked Sendable {
             let candidates = usage["candidatesTokenCount"] as? Int ?? 0
             let thoughts = usage["thoughtsTokenCount"] as? Int ?? 0
             let cached = usage["cachedContentTokenCount"] as? Int ?? 0
-            // promptTokenCount 已含 cachedContentTokenCount → cached 不可再加（双计）。
+            // promptTokenCount 已含 cachedContentTokenCount，主用量需要扣除。
             let total = TokenAccounting.excludingCacheRead(
                 inclusiveInput: prompt, cacheRead: cached, output: candidates, additional: [thoughts]
             )

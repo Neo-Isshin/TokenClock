@@ -296,7 +296,10 @@ steps table:
 | Algorithm | Total tokens | Today's tokens |
 |-----------|-------------|----------------|
 | Original (wrong fields 2/3/5/9/10) | 12,008,670 | 12,008,670 (all attributed to today) |
-| Corrected (fields 1/2/3/9/10 + metadata ts) | 1,572,822 | 0 (correctly distributed across Jun 12–22) |
+| Earlier corrected parser (fields 1/2/3/9/10 + metadata ts) | 1,572,822 | 0 (correctly distributed across Jun 12–22) |
+
+The primary usage metric now additionally excludes cache-read field 3; the table above is retained
+only as the historical protobuf-field investigation that removed cumulative field 5.
 
 Original algorithm over-counted by **7.64×** due to adding cumulative field 5.
 
@@ -359,4 +362,5 @@ Impl = 实现状态（`*UsageService.swift` 行数；✓tested = 有解析器单
 | Antigravity IDE | ❌ Not persisted | ❌ Not feasible | — | — |
 | Trae CLI | ❌ Not persisted | ❌ Not feasible | — | — |
 
-> **下一步（测试）：** 对 Cline / Continue / OpenCode / Qwen / Grok / Copilot / Aider / Antigravity 等 13 个 service 按 `ClaudeCodeUsageServiceTests` 的模式补解析器单测（fixture + PathConfig.setXxxPath 重定向 + token 公式断言）。
+> **测试状态（2026-08-11）：** 统一计数助手、连续三日的多 provider fixture、字段别名、
+> 增量扫描和大文件 benchmark 均有自动化回归；未提供缓存拆分字段的工具只能按其公开总量计数。

@@ -28,11 +28,21 @@ let linuxSources = [
     "Services/OpenCodeUsageService.swift",
     "Services/PathConfig.swift",
     "Services/PathDetector.swift",
+    "Services/PricingService.swift",
     "Services/QwenCodeUsageService.swift",
+    "Services/TokenAccounting.swift",
     "Services/UsageAggregator.swift",
     "Services/UsageServiceProtocol.swift",
     "Linux/LinuxAPIServer.swift",
     "Linux/LinuxApp.swift",
+    "Linux/LinuxAutostart.swift",
+    "Linux/LinuxClockTheme.swift",
+    "Linux/LinuxCustomTheme.swift",
+    "Linux/LinuxClockRenderer.swift",
+    "Linux/LinuxDetailsPanel.swift",
+    "Linux/LinuxSettingsWindow.swift",
+    "Linux/LinuxThemePicker.swift",
+    "Linux/LinuxWeatherService.swift",
     "Linux/LinuxMain.swift",
     "Linux/LinuxUsageModel.swift",
 ]
@@ -60,7 +70,6 @@ let package = Package(
                 "Models/ClockFaceTheme.swift",
                 "Models/ClockSize.swift",
                 "Models/CustomThemeConfig.swift",
-                "Resources",
                 "Services/LaunchAgentHelper.swift",
                 "Services/UsageAPIServer.swift",
                 "Services/WeatherService.swift",
@@ -69,6 +78,10 @@ let package = Package(
                 "main.swift",
             ],
             sources: linuxSources,
+            resources: [
+                .copy("Resources/glass_disc.png"),
+                .copy("Resources/pricing-snapshot.json"),
+            ],
             swiftSettings: [.unsafeFlags(["-parse-as-library"])]
         ),
     ]
@@ -115,7 +128,10 @@ let package = Package(
                 "Services/LaunchAgentHelper.swift",
                 "Services/UsageAPIServer.swift",
             ],
-            resources: [.copy("Resources/glass_disc.png")],
+            resources: [
+                .copy("Resources/glass_disc.png"),
+                .copy("Resources/pricing-snapshot.json"),
+            ],
             swiftSettings: [.unsafeFlags(["-parse-as-library"])],
             // SwiftPM otherwise emits a console-subsystem PE and Windows opens a black terminal
             // beside the widget. Keep Swift's CRT entry point while marking the product as a GUI.
@@ -140,9 +156,17 @@ let package = Package(
             name: "TokenClock",
             path: "Sources/TokenClock",
             exclude: ["Linux", "Windows"],
-            resources: [.copy("Resources/glass_disc.png")],
+            resources: [
+                .copy("Resources/glass_disc.png"),
+                .copy("Resources/pricing-snapshot.json"),
+            ],
             swiftSettings: [.unsafeFlags(["-parse-as-library"])]
-        )
+        ),
+        .testTarget(
+            name: "TokenClockTests",
+            dependencies: ["TokenClock"],
+            path: "Tests/TokenClockTests"
+        ),
     ]
 )
 #endif

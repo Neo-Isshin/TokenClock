@@ -3,6 +3,12 @@ import SwiftUI
 /// 主内容视图：表盘 + 叠加信息
 struct ClockContentView: View {
     @ObservedObject var viewModel: ViewModel
+    @ObservedObject private var clockTicker: ClockTicker
+
+    init(viewModel: ViewModel) {
+        self.viewModel = viewModel
+        self._clockTicker = ObservedObject(wrappedValue: viewModel.clockTicker)
+    }
 
     var body: some View {
         // 表盘大小随用户设置缩放：d = 直径，s = 相对中档(240)的缩放比。
@@ -70,12 +76,16 @@ struct ClockContentView: View {
                     .font(.system(size: 28 * s))
                     .padding(.trailing, 22 * s)
             }
+
+            // SwiftUI 的 tap 手势会吞掉「窗口背景拖拽」的鼠标序列（normal 版曾因此拖不动表盘）。
+            // 点击/拖动改由 AppKit 层分发：>3pt 位移 = 拖动窗口，否则 = 点击展开详情。
+            ClockInteractionLayer {
+                viewModel.isExpanded.toggle()
+            }
+            .frame(width: d, height: d)
+            .accessibilityHidden(true)
         }
         .frame(width: d, height: d)
-        .contentShape(Rectangle())
-        .onTapGesture {
-            viewModel.isExpanded.toggle()
-        }
         // 无障碍：表盘是纯视觉（指针/emoji/格式化数字），VoiceOver 读不出含义。
         // 收拢成单一元素，朗读「时间 + 今日用量」摘要；保留按钮特性（点按展开）。
         .accessibilityElement(children: .ignore)

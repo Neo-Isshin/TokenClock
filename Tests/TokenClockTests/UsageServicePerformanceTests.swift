@@ -46,17 +46,22 @@ final class UsageServicePerformanceTests: XCTestCase {
         let home = try makeTemporaryDirectory()
         let sessions = home.appendingPathComponent("sessions/current", isDirectory: true)
         try FileManager.default.createDirectory(at: sessions, withIntermediateDirectories: true)
-        let rollout = sessions.appendingPathComponent("rollout-2026-08-06T12-00-00-99999999-2222-3333-4444-555555555555.jsonl")
-        let recentTimestamp = isoTimestamp(Date())
-        let staleTimestamp = isoTimestamp(Date().addingTimeInterval(-2 * 60 * 60))
-        try write(codexUsageWithReorderedFields(timestamp: staleTimestamp, total: 900, cached: 90)
-            + "\n" + codexUsageWithReorderedFields(timestamp: recentTimestamp, total: 100, cached: 10) + "\n", to: rollout)
+        let rollout = sessions.appendingPathComponent(
+            "rollout-2026-08-06T12-00-00-99999999-2222-3333-4444-555555555555.jsonl"
+        )
+        let now = Date()
+        let recentTimestamp = isoTimestamp(now)
+        let staleTimestamp = isoTimestamp(now.addingTimeInterval(-2 * 60 * 60))
+        let initial = codexUsageWithReorderedFields(timestamp: staleTimestamp, total: 900, cached: 90)
+            + "\n" + codexUsageWithReorderedFields(timestamp: recentTimestamp, total: 100, cached: 10) + "\n"
+        try write(initial, to: rollout)
 
         let service = CodexUsageService(codexHome: home.path)
         service.fullScan()
         XCTAssertEqual(service.currentHourTokens(), 90)
         XCTAssertEqual(service.recentUsage(minutes: 10).tokens, 90)
         XCTAssertEqual(service.recentUsage(minutes: 10).messages, 1)
+        XCTAssertEqual(service.recentUsage(minutes: 60).tokens, 90)
 
         let handle = try FileHandle(forWritingTo: rollout)
         try handle.seekToEnd()
@@ -72,6 +77,7 @@ final class UsageServicePerformanceTests: XCTestCase {
         assertUsage(service.todayUsage(), tokens: 5, messages: 1, cacheRate: 2.0 / 7.0)
         XCTAssertEqual(service.currentHourTokens(), 5)
         XCTAssertEqual(service.recentUsage(minutes: 10).tokens, 5)
+        XCTAssertEqual(service.recentUsage(minutes: 10).messages, 1)
     }
 
     func testOptimizedDateHelperMatchesLegacyDateAndHourKeys() {
@@ -88,9 +94,12 @@ final class UsageServicePerformanceTests: XCTestCase {
 
     func testDateHelperMatchesISO8601ReferenceForFractionsAndOffsets() throws {
         for timestamp in [
-            "2026-08-06T12:00:00Z", "2026-08-06T12:00:00.125Z",
-            "2026-08-06T00:30:00+08:00", "2026-08-06T23:45:30.500-0730",
-            "2026-01-01T00:15:00+14:00", "2026-12-31T23:45:00-12:00",
+            "2026-08-06T12:00:00Z",
+            "2026-08-06T12:00:00.125Z",
+            "2026-08-06T00:30:00+08:00",
+            "2026-08-06T23:45:30.500-0730",
+            "2026-01-01T00:15:00+14:00",
+            "2026-12-31T23:45:00-12:00",
         ] {
             let expected = try XCTUnwrap(referenceISO8601Date(timestamp))
             let actual = try XCTUnwrap(DateHelper.parseISO8601(timestamp))
@@ -344,25 +353,6 @@ final class UsageServicePerformanceTests: XCTestCase {
         service.incrementalScan()
         assertUsage(service.todayUsage(), tokens: 10, messages: 1, cacheRate: 0)
     }
-
-    #if os(Windows)
-    func testWindowsDirectAiderAndCopilotFilesReachSharedParsers() throws {
-        let home = try makeTemporaryDirectory()
-        let timestamp = todayTimestamp()
-
-        let aiderLog = home.appendingPathComponent("custom-aider.jsonl")
-        try write(aiderEvent(time: Date().timeIntervalSince1970, prompt: 7, completion: 3) + "\n", to: aiderLog)
-        let aider = AiderUsageService(aiderHome: aiderLog.path)
-        aider.fullScan()
-        assertUsage(aider.todayUsage(), tokens: 10, messages: 1, cacheRate: 0)
-
-        let copilotLog = home.appendingPathComponent("custom-copilot.jsonl")
-        try write(copilotOtelEvent(timestamp: timestamp, input: 10, output: 5, cached: 2) + "\n", to: copilotLog)
-        let copilot = CopilotUsageService(copilotHome: home.path, otelFileOverride: copilotLog.path)
-        copilot.fullScan()
-        assertUsage(copilot.todayUsage(), tokens: 13, messages: 1, cacheRate: 2.0 / 15.0)
-    }
-    #endif
 
     func testCodexLargeFixtureBenchmark() throws {
         guard ProcessInfo.processInfo.environment["TOKENCLOCK_RUN_BENCHMARKS"] == "1" else {

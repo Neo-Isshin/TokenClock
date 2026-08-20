@@ -18,6 +18,11 @@ FROM builder AS tester
 RUN apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
         curl \
+        adwaita-icon-theme \
+        fonts-noto-color-emoji \
+        fonts-noto-cjk \
+        librsvg2-common \
+        shared-mime-info \
         xvfb \
     && rm -rf /var/lib/apt/lists/*
 
@@ -29,10 +34,16 @@ RUN runtime_mirror="$(printf '%s' "${UBUNTU_PORTS_MIRROR}" | sed 's@^https:@http
     && apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
         ca-certificates \
+        adwaita-icon-theme \
+        fonts-noto-color-emoji \
+        fonts-noto-cjk \
         libcurl4 \
         libgtk-3-0 \
+        librsvg2-common \
         libsqlite3-0 \
+        shared-mime-info \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /src/.build/release/TokenClock /usr/local/bin/tokenclock-gui
+COPY --from=builder /src/.build/release/TokenClock_TokenClock.resources /usr/local/bin/TokenClock_TokenClock.resources
 ENTRYPOINT ["/usr/local/bin/tokenclock-gui"]
