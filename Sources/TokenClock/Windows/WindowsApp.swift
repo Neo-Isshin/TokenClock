@@ -1072,8 +1072,8 @@ final class WindowsApp: @unchecked Sendable {
     func handlePricingCmd(id: Int32) {
         guard id == 750, let dlg = pricingDlg else { return }
         let sem = DispatchSemaphore(value: 0)
-        DispatchQueue.global(qos: .userInitiated).async {
-            _ = try? PricingService.shared.refresh()
+        Task.detached(priority: .userInitiated) {
+            _ = try? await PricingService.shared.refresh()
             sem.signal()
         }
         _ = sem.wait(timeout: .now() + 12)
