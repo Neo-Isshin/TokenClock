@@ -84,11 +84,14 @@ final class WindowsApp: @unchecked Sendable {
     fileprivate var aboutDlg: UnsafeMutableRawPointer?
     fileprivate var editingSavedThemeId: String?
     private var settingsDraft: SettingsDraft?
-    private var requestedSettingsSection: SettingsSection?
+    private var expandedSettingsSection: SettingsSection?
+    private var settingsDetectionStatus: String?
     private var pricingDlg: UnsafeMutableRawPointer?
+    private var pricingVisibleRows = 1
+    private var settingsPricingRows: [SettingsPriceRow] = []
     private var requestedCustomSection: CustomSection?
 
-    private enum SettingsSection { case tools, paths, thresholds, pricing, customFace, localAPI }
+    private enum SettingsSection { case autoDetect, tools, paths, thresholds, pricing, customFace, localAPI }
     private enum CustomSection { case colors, geometry }
     private struct SettingsDraft {
         var enabled: Set<String>
@@ -98,6 +101,13 @@ final class WindowsApp: @unchecked Sendable {
         var apiPort: Int
         var rateWindow: Int
         var thresholds: [Int]
+    }
+    private struct SettingsPriceRow {
+        var model: String
+        var input: String
+        var output: String
+        var cacheRead: String
+        var cacheWrite: String
     }
 
     func run() {
@@ -424,9 +434,17 @@ final class WindowsApp: @unchecked Sendable {
     private func buildDetailRows(_ tools: [ToolUsage]) -> [DetailRow] {
         let L = L10n.shared
         if let mock = ProcessInfo.processInfo.environment["TC_MOCK"] {
-            let modelMode = mock == "model" || groupingMode == .model
+            let modelMode = mock == "model" || mock == "emoji" || groupingMode == .model
             let mockProviders = Self.providerEntries.map { ($0.displayName, $0.emoji) }
-            let parents: [(String, String, Int, Int, [(String, Int, Int)])] = mock == "long"
+            let parents: [(String, String, Int, Int, [(String, Int, Int)])] = mock == "emoji"
+                ? [("Kiro CLI", "🟦", 760_000, 76, []),
+                   ("CodeBuddy CLI", "🧩", 690_000, 69, []),
+                   ("glm-5", "🅉", 540_000, 54, []),
+                   ("doubao-pro", "🫘", 430_000, 43, []),
+                   ("llama-4", "🦙", 320_000, 32, []),
+                   ("mistral-large", "🌪️", 210_000, 21, []),
+                   (L.tr("detail.unknownModel"), "❓", 100_000, 10, [])]
+                : mock == "long"
                 ? (1...18).map { index in
                     let provider = mockProviders[(index - 1) % mockProviders.count]
                     return (provider.0, provider.1, 1_000_000 - index * 21_000, 150 - index, [])
@@ -529,7 +547,9 @@ final class WindowsApp: @unchecked Sendable {
     /// 详情面板数值模式（用量+消息数 ↔ 费用+占比），与 macOS DetailValueMode 一致。
     /// 迁移：旧版 dropdownShowPercentage=true 归入 .costPercent。
     private var valueMode: DetailValueMode {
-        if UserDefaults.standard.object(forKey: SettingsKey.dropdownValueMode.rawValue) != nil {
+        // Windows typed setters persist through WindowsPreferences, not Foundation UserDefaults.
+        // Checking the latter made every redraw discard the just-selected cost mode.
+        if WindowsPreferences.shared.object(forKey: SettingsKey.dropdownValueMode.rawValue) != nil {
             return DetailValueMode(rawValue: UserDefaults.standard.int(for: .dropdownValueMode)) ?? .tokens
         }
         return UserDefaults.standard.bool(for: .dropdownShowPercentage) ? .costPercent : .tokens
@@ -542,8 +562,9 @@ final class WindowsApp: @unchecked Sendable {
 
     private enum GroupingMode { case session, model }
     private var groupingMode: GroupingMode {
-        if ProcessInfo.processInfo.environment["TC_GROUPING"] == "model" { return .model }
-        if ProcessInfo.processInfo.environment["TC_GROUPING"] == "session" { return .session }
+        let environment = ProcessInfo.processInfo.environment
+        if environment["TC_GROUPING"] == "model" || environment["TC_MOCK"] == "emoji" { return .model }
+        if environment["TC_GROUPING"] == "session" { return .session }
         return UserDefaults.standard.int(for: .dropdownGrouping) == 1 ? .model : .session
     }
 
@@ -819,7 +840,7 @@ final class WindowsApp: @unchecked Sendable {
         defer { aboutDlg = nil; dlg_destroy(dlg) }
         dlg_add_brand_logo(dlg, 136, 22, 88, 88)
         dlg_add_title(dlg, "TokenClock", 112, 120, 180, 30)
-        dlg_add_static(dlg, "v1.4.3", 154, 154, 90, 22)
+        dlg_add_static(dlg, "v1.4.5", 154, 154, 90, 22)
         dlg_add_sep(dlg, 28, 188, 304)
         dlg_add_static(dlg, "Copyright © 2026 Neo-Isshin", 78, 210, 250, 22)
         dlg_add_static(dlg, L10n.shared.tr("about.license"), 128, 238, 180, 22)
@@ -835,11 +856,12 @@ final class WindowsApp: @unchecked Sendable {
         "https://github.com/Neo-Isshin/TokenClock/issues".withCString { win_open_url($0) }
     }
 
-    /// 520x548 overview mirrors the macOS normal information architecture. Each collapsed row
-    /// opens a focused editor backed by an in-memory draft; only the overview Save commits it.
+    /// The Windows settings surface follows macOS normal's disclosure-group model: every
+    /// section expands in the same scrollable Mica window and edits one in-memory draft.
+    /// Save commits the draft as a unit; Cancel discards it.
     private func openSettings() {
         let names = Self.providerNames
-        var draft = SettingsDraft(
+        settingsDraft = SettingsDraft(
             enabled: WindowsProviderCatalog.enabledDisplayNames(
                 saved: UserDefaults.standard.stringArray(for: .enabledTools)
             ),
@@ -855,76 +877,315 @@ final class WindowsApp: @unchecked Sendable {
                 UserDefaults.standard.int(for: .rateCalm, default: 2_000),
             ]
         )
+        expandedSettingsSection = nil
+        settingsDetectionStatus = nil
+        loadSettingsPricingRows()
 
-        while true {
-            settingsDraft = draft
-            requestedSettingsSection = nil
-            let result = showSettingsOverview(draft)
-            draft = settingsDraft ?? draft
-            if result == 1 { commitSettings(draft); break }
-            guard let section = requestedSettingsSection else { break }
-            switch section {
-            case .tools: editToolSelection(&draft)
-            case .paths: editDataSourcePaths(&draft)
-            case .thresholds: editHeatThresholds(&draft)
-            case .pricing: editCostEstimation()
-            case .customFace: openCustomThemeEditor()
-            case .localAPI: editLocalAPI(&draft)
+        let en = L10n.shared.language == .en
+        guard let dlg = dlg_create(en ? "TokenClock Settings" : "TokenClock 设置", 520, 620) else { return }
+        settingsDlg = dlg
+        renderSettingsAccordion(scrollToExpanded: false)
+        let result = dlg_modal_cb(dlg, settingsCmdCb, nil)
+        if result == 1 {
+            captureExpandedSettings()
+            if let draft = settingsDraft {
+                commitSettingsPricingRows()
+                commitSettings(draft)
             }
         }
+        pricingDlg = nil
+        settingsDlg = nil
+        dlg_destroy(dlg)
         settingsDraft = nil
-        requestedSettingsSection = nil
+        expandedSettingsSection = nil
+        settingsDetectionStatus = nil
+        settingsPricingRows = []
     }
 
-    private func showSettingsOverview(_ draft: SettingsDraft) -> Int32 {
-        let en = L10n.shared.language == .en
-        guard let dlg = dlg_create(en ? "TokenClock Settings" : "TokenClock 设置", 520, 548) else { return 0 }
-        settingsDlg = dlg
-        defer { settingsDlg = nil; dlg_destroy(dlg) }
-        dlg_add_title(dlg, en ? "TokenClock Settings" : "TokenClock 设置", 20, 12, 330, 30)
-        dlg_add_static(dlg, en ? "Overview · select a section to edit" : "概览 · 选择分组进行编辑", 22, 47, 450, 20)
-        dlg_add_sep(dlg, 20, 70, 470)
+    private func settingsSectionHeight(_ section: SettingsSection) -> Int32 {
+        switch section {
+        case .autoDetect: return 94
+        case .tools: return 304
+        case .paths: return 378
+        case .thresholds: return 180
+        case .pricing: return 344
+        case .customFace: return 126
+        case .localAPI: return 104
+        }
+    }
 
+    private func renderSettingsAccordion(scrollToExpanded: Bool) {
+        guard let dlg = settingsDlg, let draft = settingsDraft else { return }
+        let en = L10n.shared.language == .en
         let pricing = PricingService.shared.catalogSummary
         let pricingDesc = en ? "\(pricing.count) models · \(pricing.generatedAt.map { String($0.prefix(10)) } ?? "—")"
                              : "\(pricing.count) 个模型 · \(pricing.generatedAt.map { String($0.prefix(10)) } ?? "—")"
-        let rows: [(Int32, String, String)] = [
-            (700, en ? "Auto Detect" : "自动探测", en ? "Find readable Windows data sources" : "探测 Windows 中实际可读的数据源"),
-            (710, en ? "Tool Selection  ›" : "工具选择  ›", en ? "\(draft.enabled.count) of \(Self.providerNames.count) enabled" : "已启用 \(draft.enabled.count)/\(Self.providerNames.count)"),
-            (711, en ? "Data Source Paths  ›" : "数据源路径  ›", en ? "Review provider-specific Windows paths" : "检查各 provider 的 Windows 专用路径"),
-            (712, en ? "Heat Thresholds  ›" : "热力阈值  ›", en ? "\(draft.rateWindow) min rate window" : "\(draft.rateWindow) 分钟速率窗口"),
-            (715, en ? "Cost Estimation  ›" : "费用估算  ›", pricingDesc),
-            (713, en ? "Custom Clock Face  ›" : "自定义表盘  ›", en ? "Create, save, apply, and delete faces" : "创建、保存、应用与删除表盘"),
-            (714, en ? "Local API  ›" : "本地 API  ›", draft.apiEnabled ? "localhost:\(draft.apiPort)" : (en ? "Disabled" : "已关闭")),
+        let savedFaces = WindowsSavedCustomTheme.loadAll().count
+        let rows: [(SettingsSection, Int32, String, String)] = [
+            (.autoDetect, 700, en ? "Auto Detect" : "自动探测",
+             settingsDetectionStatus ?? (en ? "Find readable Windows data sources" : "探测 Windows 中实际可读的数据源")),
+            (.tools, 710, en ? "Tool Selection" : "工具选择",
+             en ? "\(draft.enabled.count) of \(Self.providerNames.count) enabled" : "已启用 \(draft.enabled.count)/\(Self.providerNames.count)"),
+            (.paths, 711, en ? "Data Source Paths" : "数据源路径",
+             en ? "Review provider-specific Windows paths" : "检查各 provider 的 Windows 专用路径"),
+            (.thresholds, 712, en ? "Heat Thresholds" : "热力阈值",
+             en ? "\(draft.rateWindow) min rate window" : "\(draft.rateWindow) 分钟速率窗口"),
+            (.pricing, 715, en ? "Cost Estimation" : "费用估算", pricingDesc),
+            (.customFace, 713, en ? "Custom Clock Face" : "自定义表盘",
+             en ? "\(savedFaces) saved · create and manage faces" : "已保存 \(savedFaces) 个 · 创建与管理表盘"),
+            (.localAPI, 714, en ? "Local API" : "本地 API",
+             draft.apiEnabled ? "localhost:\(draft.apiPort)" : (en ? "Disabled" : "已关闭")),
         ]
-        for (index, row) in rows.enumerated() {
-            let y = Int32(80 + index * 52)
-            dlg_add_push(dlg, row.0, row.1, 22, y, 205, 36)
-            dlg_add_static(dlg, row.2, 244, y + 4, 240, 28)
-            if index < rows.count - 1 { dlg_add_sep(dlg, 22, y + 43, 462) }
+
+        let expandedHeight = expandedSettingsSection.map(settingsSectionHeight) ?? 0
+        let contentHeight: Int32 = 76 + Int32(rows.count * 56) + expandedHeight + 72
+        dlg_reset_content(dlg, contentHeight)
+        dlg_add_title(dlg, en ? "TokenClock Settings" : "TokenClock 设置", 24, 14, 330, 30)
+        dlg_add_subtitle(dlg, en ? "Expand a section to review and edit it." : "展开一个分组进行查看与编辑。", 24, 48, 450, 20)
+
+        var y: Int32 = 76
+        var expandedHeaderY: Int32 = 0
+        for row in rows {
+            let isExpanded = expandedSettingsSection == row.0
+            dlg_add_disclosure(dlg, row.1, row.2, row.3, 22, y, 466, 48, isExpanded ? 1 : 0)
+            if isExpanded {
+                expandedHeaderY = y
+                y += 56
+                addSettingsSection(row.0, at: y, draft: draft)
+                y += settingsSectionHeight(row.0)
+            } else {
+                y += 56
+            }
         }
-        dlg_add_sep(dlg, 20, 465, 470)
-        dlg_add_push(dlg, 1, en ? "Save" : "保存", 288, 478, 92, 30)
-        dlg_add_push(dlg, 2, en ? "Cancel" : "取消", 392, 478, 92, 30)
-        return dlg_modal_cb(dlg, settingsCmdCb, nil)
+        dlg_add_sep(dlg, 20, y + 4, 470)
+        dlg_add_push(dlg, 1, en ? "Save" : "保存", 288, y + 18, 92, 30)
+        dlg_add_push(dlg, 2, en ? "Cancel" : "取消", 392, y + 18, 92, 30)
+        pricingDlg = expandedSettingsSection == .pricing ? dlg : nil
+        if scrollToExpanded, expandedSettingsSection != nil {
+            // Align the open disclosure at a clean row boundary. Showing half of
+            // the preceding row looks accidental when the content is long.
+            dlg_scroll_to(dlg, max(0, expandedHeaderY - 8))
+        }
+    }
+
+    private func addSettingsSection(_ section: SettingsSection, at y: Int32, draft: SettingsDraft) {
+        guard let dlg = settingsDlg else { return }
+        let en = L10n.shared.language == .en
+        switch section {
+        case .autoDetect:
+            dlg_add_card(dlg, 34, y, 440, 78)
+            _ = dlg_add_static_id(dlg, 702,
+                                  settingsDetectionStatus ?? (en ? "Ready to scan" : "可以开始探测"),
+                                  48, y + 12, 270, 22)
+            dlg_add_subtitle(dlg,
+                             en ? "Checks only documented Windows locations and readable local endpoints."
+                                : "仅检查 Windows 已知路径与可读的本机接口。",
+                             48, y + 36, 284, 34)
+            dlg_add_push(dlg, 701, en ? "Detect now" : "立即探测", 350, y + 24, 108, 30)
+
+        case .tools:
+            dlg_add_card(dlg, 34, y, 440, 238)
+            for (i, name) in Self.providerNames.enumerated() {
+                let col = i / 6, row = i % 6
+                let entry = Self.providerEntries[i]
+                let label = entry.statisticsSupport == .contractOnly
+                    ? "\(name) · \(en ? "No stats" : "仅发现")"
+                    : name
+                dlg_add_check(dlg, 300 + Int32(i), label,
+                              42 + Int32(col * 142), y + 10 + Int32(row * 36),
+                              134, 28, draft.enabled.contains(name) ? 1 : 0)
+            }
+            dlg_add_card(dlg, 34, y + 248, 440, 48)
+            dlg_add_check(dlg, 410,
+                          en ? "Cursor cloud usage (contacts cursor.com)" : "Cursor 云端用量（会访问 cursor.com）",
+                          46, y + 258, 410, 28, draft.cursorCloud ? 1 : 0)
+
+        case .paths:
+            dlg_add_card(dlg, 26, y, 462, 370)
+            for (i, entry) in Self.providerEntries.enumerated() {
+                let col = i / 8, row = i % 8
+                let x = Int32(34 + col * 226), rowY = y + 8 + Int32(row * 44)
+                let label = entry.statisticsSupport == .contractOnly
+                    ? "\(entry.displayName) · \(en ? "discovery only" : "仅发现")"
+                    : entry.displayName
+                dlg_add_static(dlg, label, x, rowY, 214, 19)
+                dlg_add_edit(dlg, 200 + Int32(i), draft.paths[entry.displayName] ?? "",
+                             x, rowY + 18, entry.supportsFolderPicker ? 150 : 216, 23)
+                if entry.supportsFolderPicker {
+                    dlg_add_push(dlg, 600 + Int32(i), en ? "Browse" : "浏览", x + 154, rowY + 18, 62, 23)
+                }
+            }
+
+        case .thresholds:
+            dlg_add_card(dlg, 34, y, 440, 170)
+            dlg_add_static(dlg, en ? "Rate window (minutes)" : "速率窗口（分钟）", 50, y + 16, 174, 22)
+            dlg_add_edit(dlg, 400, "\(draft.rateWindow)", 232, y + 12, 92, 28)
+            let labels = en ? ["Burst", "Hot", "Active", "Calm"] : ["爆发", "高热", "活跃", "平静"]
+            for i in 0..<4 {
+                let rowY = y + 48 + Int32(i * 27)
+                dlg_add_static(dlg, labels[i], 50, rowY + 3, 112, 22)
+                dlg_add_edit(dlg, 401 + Int32(i), "\(draft.thresholds[i])", 174, rowY, 150, 24)
+            }
+
+        case .pricing:
+            addSettingsPricingSection(at: y)
+
+        case .customFace:
+            dlg_add_card(dlg, 34, y, 440, 116)
+            dlg_add_section(dlg, en ? "Design and manage clock faces" : "设计与管理表盘", 50, y + 14, 270, 22)
+            dlg_add_subtitle(dlg,
+                             en ? "Colors, hand geometry, markings, saved faces, apply and delete."
+                                : "编辑颜色、指针几何、刻度，并管理表盘的保存、应用与删除。",
+                             50, y + 42, 280, 48)
+            dlg_add_push(dlg, 716, en ? "Open editor" : "打开编辑器", 344, y + 42, 114, 30)
+
+        case .localAPI:
+            dlg_add_card(dlg, 34, y, 440, 94)
+            dlg_add_check(dlg, 411, en ? "Enable Local API server" : "启用本地 API 服务",
+                          50, y + 18, 246, 28, draft.apiEnabled ? 1 : 0)
+            dlg_add_static(dlg, en ? "Port" : "端口", 302, y + 22, 48, 22)
+            dlg_add_edit(dlg, 412, "\(draft.apiPort)", 350, y + 18, 106, 28)
+            dlg_add_subtitle(dlg,
+                             en ? "Loopback-only usage and history endpoints" : "仅本机可访问的 usage/history 接口",
+                             50, y + 56, 390, 22)
+        }
+    }
+
+    private func addSettingsPricingSection(at y: Int32) {
+        guard let dlg = settingsDlg else { return }
+        let L = L10n.shared, en = L.language == .en
+        let summary = PricingService.shared.catalogSummary
+        dlg_add_card(dlg, 34, y, 440, 82)
+        _ = dlg_add_static_id(dlg, 760, pricingCatalogText(summary), 48, y + 10, 308, 20)
+        dlg_add_push(dlg, 750, en ? "Refresh" : L.tr("pricing.refresh"), 370, y + 8, 90, 28)
+        dlg_add_subtitle(dlg, L.tr("pricing.unit"), 48, y + 34, 180, 18)
+        let unpriced = PricingService.shared.unpricedModels
+        dlg_add_subtitle(dlg,
+                         unpriced.isEmpty ? (en ? "Unpriced models: none" : "未能计价的模型：无")
+                                          : (en ? "Unpriced: \(unpriced.joined(separator: ", "))"
+                                                : "未能计价：\(unpriced.joined(separator: "、"))"),
+                         48, y + 56, 404, 18)
+
+        let tableY = y + 92
+        dlg_add_card(dlg, 34, tableY, 440, 242)
+        dlg_add_section(dlg, L.tr("pricing.customTitle"), 48, tableY + 10, 220, 20)
+        dlg_add_push(dlg, 751, L.tr("pricing.addCustom"), 328, tableY + 6, 132, 28)
+        let colX: [Int32] = [48, 194, 252, 310, 372]
+        let colW: [Int32] = [142, 54, 54, 58, 58]
+        let headers = [L.tr("pricing.modelName"), L.tr("pricing.input"), L.tr("pricing.output"),
+                       en ? "C.Read" : L.tr("pricing.cacheRead"),
+                       en ? "C.Write" : L.tr("pricing.cacheWrite")]
+        for i in 0..<headers.count {
+            dlg_add_subtitle(dlg, headers[i], colX[i], tableY + 34, colW[i], 16)
+        }
+        for i in 0..<5 {
+            let row = i < settingsPricingRows.count ? settingsPricingRows[i]
+                : SettingsPriceRow(model: "", input: "", output: "", cacheRead: "", cacheWrite: "")
+            let rowY = tableY + 54 + Int32(i * 32)
+            let values = [row.model, row.input, row.output, row.cacheRead, row.cacheWrite]
+            for (column, base) in [Int32(800), 810, 820, 830, 840].enumerated() {
+                dlg_add_edit(dlg, base + Int32(i), values[column], colX[column], rowY, colW[column], 24)
+                if i >= pricingVisibleRows { dlg_show_control(dlg, base + Int32(i), 0) }
+            }
+        }
+        dlg_show_control(dlg, 751, pricingVisibleRows < 5 ? 1 : 0)
+    }
+
+    private func settingsEditText(_ dlg: UnsafeMutableRawPointer, _ id: Int32) -> String {
+        let buffer = UnsafeMutablePointer<CChar>.allocate(capacity: 2048)
+        defer { buffer.deallocate() }
+        dlg_edit_get(dlg, id, buffer, 2048)
+        return String(cString: buffer)
+    }
+
+    private func captureExpandedSettings() {
+        guard let dlg = settingsDlg, let section = expandedSettingsSection, var draft = settingsDraft else { return }
+        switch section {
+        case .autoDetect, .customFace:
+            break
+        case .tools:
+            draft.enabled = Set(Self.providerNames.enumerated().compactMap {
+                dlg_check_get(dlg, 300 + Int32($0.offset)) == 1 ? $0.element : nil
+            })
+            draft.cursorCloud = dlg_check_get(dlg, 410) == 1
+        case .paths:
+            for (i, name) in Self.providerNames.enumerated() {
+                draft.paths[name] = settingsEditText(dlg, 200 + Int32(i))
+            }
+        case .thresholds:
+            draft.rateWindow = max(1, Int(settingsEditText(dlg, 400)) ?? draft.rateWindow)
+            for i in 0..<4 {
+                draft.thresholds[i] = max(0, Int(settingsEditText(dlg, 401 + Int32(i))) ?? draft.thresholds[i])
+            }
+            normalizeThresholds(&draft.thresholds)
+        case .pricing:
+            settingsPricingRows = (0..<5).map { i in
+                SettingsPriceRow(model: settingsEditText(dlg, 800 + Int32(i)),
+                                 input: settingsEditText(dlg, 810 + Int32(i)),
+                                 output: settingsEditText(dlg, 820 + Int32(i)),
+                                 cacheRead: settingsEditText(dlg, 830 + Int32(i)),
+                                 cacheWrite: settingsEditText(dlg, 840 + Int32(i)))
+            }
+        case .localAPI:
+            draft.apiEnabled = dlg_check_get(dlg, 411) == 1
+            let port = Int(settingsEditText(dlg, 412)) ?? draft.apiPort
+            if (1024...65535).contains(port) { draft.apiPort = port }
+        }
+        settingsDraft = draft
+    }
+
+    private func loadSettingsPricingRows() {
+        let models = PricingService.shared.customModels
+        settingsPricingRows = (0..<5).map { index in
+            guard index < models.count,
+                  let price = PricingService.shared.customPrice(for: models[index]) else {
+                return SettingsPriceRow(model: "", input: "", output: "", cacheRead: "", cacheWrite: "")
+            }
+            return SettingsPriceRow(model: models[index],
+                                    input: String(format: "%.6g", price.input),
+                                    output: String(format: "%.6g", price.output),
+                                    cacheRead: price.cacheRead == 0 ? "" : String(format: "%.6g", price.cacheRead),
+                                    cacheWrite: price.cacheWrite == 0 ? "" : String(format: "%.6g", price.cacheWrite))
+        }
+        pricingVisibleRows = min(5, max(1, models.count + 1))
+    }
+
+    private func commitSettingsPricingRows() {
+        var seen = Set<String>()
+        for row in settingsPricingRows {
+            let model = row.model.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !model.isEmpty else { continue }
+            seen.insert(model)
+            PricingService.shared.setCustomPrice(
+                model: model,
+                price: ModelPrice(input: Double(row.input) ?? 0,
+                                  output: Double(row.output) ?? 0,
+                                  cacheRead: Double(row.cacheRead) ?? 0,
+                                  cacheWrite: Double(row.cacheWrite) ?? 0)
+            )
+        }
+        for old in PricingService.shared.customModels where !seen.contains(old) {
+            PricingService.shared.setCustomPrice(model: old, price: nil)
+        }
     }
 
     private func editToolSelection(_ draft: inout SettingsDraft) {
         let en = L10n.shared.language == .en
         guard let dlg = dlg_create(en ? "Tool Selection" : "工具选择", 520, 548) else { return }
-        dlg_add_title(dlg, en ? "Tool Selection" : "工具选择", 20, 12, 360, 30)
-        dlg_add_static(dlg, en ? "Only enabled providers participate in scans." : "仅扫描已启用的 provider。", 22, 48, 460, 20)
-        dlg_add_sep(dlg, 20, 72, 470)
+        dlg_add_title(dlg, en ? "Tool Selection" : "工具选择", 24, 14, 360, 30)
+        dlg_add_subtitle(dlg, en ? "Only enabled providers participate in scans." : "仅扫描已启用的 provider。", 24, 49, 460, 20)
+        dlg_add_card(dlg, 20, 76, 468, 264)
         for (i, name) in Self.providerNames.enumerated() {
             let col = i / 6, row = i % 6
             let entry = Self.providerEntries[i]
             let label = entry.statisticsSupport == .contractOnly
                 ? "\(name) · \(en ? "No stats" : "仅发现")"
                 : name
-            dlg_add_check(dlg, 300 + Int32(i), label, 24 + Int32(col * 160), 86 + Int32(row * 42), 150, 28, draft.enabled.contains(name) ? 1 : 0)
+            dlg_add_check(dlg, 300 + Int32(i), label, 24 + Int32(col * 160), 86 + Int32(row * 42), 144, 28, draft.enabled.contains(name) ? 1 : 0)
         }
-        dlg_add_sep(dlg, 20, 344, 470)
-        dlg_add_check(dlg, 410, en ? "Cursor cloud usage (contacts cursor.com)" : "Cursor 云端用量（会访问 cursor.com）", 24, 356, 445, 26, draft.cursorCloud ? 1 : 0)
+        dlg_add_card(dlg, 20, 352, 468, 62)
+        dlg_add_check(dlg, 410, en ? "Cursor cloud usage (contacts cursor.com)" : "Cursor 云端用量（会访问 cursor.com）", 36, 370, 430, 26, draft.cursorCloud ? 1 : 0)
+        dlg_add_sep(dlg, 20, 444, 470)
         dlg_add_push(dlg, 1, en ? "Apply" : "应用", 288, 458, 92, 30)
         dlg_add_push(dlg, 2, en ? "Cancel" : "取消", 392, 458, 92, 30)
         if dlg_modal(dlg) == 1 {
@@ -939,12 +1200,13 @@ final class WindowsApp: @unchecked Sendable {
         guard let dlg = dlg_create(en ? "Data Source Paths" : "数据源路径", 520, 548) else { return }
         settingsDlg = dlg; settingsDraft = draft
         defer { settingsDlg = nil; dlg_destroy(dlg) }
-        dlg_add_title(dlg, en ? "Data Source Paths" : "数据源路径", 20, 10, 350, 30)
-        dlg_add_static(dlg, en ? "Windows paths are kept provider-specific." : "Windows 路径按 provider 独立维护。", 22, 44, 470, 20)
-        let top: Int32 = 70
+        dlg_add_title(dlg, en ? "Data Source Paths" : "数据源路径", 24, 12, 350, 30)
+        dlg_add_subtitle(dlg, en ? "Windows paths remain provider-specific." : "Windows 路径按 provider 独立维护。", 24, 46, 470, 20)
+        dlg_add_card(dlg, 8, 70, 498, 386)
+        let top: Int32 = 78
         for (i, entry) in Self.providerEntries.enumerated() {
             let col = i / 8, row = i % 8
-            let x = Int32(16 + col * 250), y = top + Int32(row * 46)
+            let x = Int32(14 + col * 246), y = top + Int32(row * 46)
             let sourceLabel = entry.statisticsSupport == .contractOnly
                 ? "\(entry.displayName) · \(en ? "discovery only" : "仅发现")"
                 : entry.displayName
@@ -970,12 +1232,14 @@ final class WindowsApp: @unchecked Sendable {
     private func editHeatThresholds(_ draft: inout SettingsDraft) {
         let en = L10n.shared.language == .en
         guard let dlg = dlg_create(en ? "Heat Thresholds" : "热力阈值", 520, 330) else { return }
-        dlg_add_title(dlg, en ? "Heat Thresholds" : "热力阈值", 20, 12, 360, 30)
-        dlg_add_static(dlg, en ? "Rate window (minutes)" : "速率窗口（分钟）", 24, 66, 180, 22); dlg_add_edit(dlg, 400, "\(draft.rateWindow)", 220, 62, 90, 26)
+        dlg_add_title(dlg, en ? "Heat Thresholds" : "热力阈值", 24, 14, 360, 30)
+        dlg_add_subtitle(dlg, en ? "Tune activity levels for the dial status indicator." : "调整表盘状态指示器的活跃度分级。", 24, 49, 460, 20)
+        dlg_add_card(dlg, 20, 78, 468, 158)
+        dlg_add_static(dlg, en ? "Rate window (minutes)" : "速率窗口（分钟）", 36, 92, 180, 22); dlg_add_edit(dlg, 400, "\(draft.rateWindow)", 220, 88, 90, 28)
         let labels = en ? ["Burst", "Hot", "Active", "Calm"] : ["爆发", "高热", "活跃", "平静"]
         for i in 0..<4 {
-            let y = 104 + Int32(i * 36)
-            dlg_add_static(dlg, labels[i], 24, y + 4, 130, 22); dlg_add_edit(dlg, 401 + Int32(i), "\(draft.thresholds[i])", 160, y, 150, 26)
+            let y = 124 + Int32(i * 26)
+            dlg_add_static(dlg, labels[i], 36, y + 4, 112, 22); dlg_add_edit(dlg, 401 + Int32(i), "\(draft.thresholds[i])", 160, y, 150, 24)
         }
         dlg_add_sep(dlg, 20, 250, 470)
         dlg_add_push(dlg, 1, en ? "Apply" : "应用", 288, 264, 92, 30); dlg_add_push(dlg, 2, en ? "Cancel" : "取消", 392, 264, 92, 30)
@@ -995,35 +1259,43 @@ final class WindowsApp: @unchecked Sendable {
         guard let dlg = dlg_create(en ? "Cost Estimation" : "费用估算", 520, 548) else { return }
         pricingDlg = dlg
         defer { pricingDlg = nil; dlg_destroy(dlg) }
-        dlg_add_title(dlg, en ? "Cost Estimation" : "费用估算", 20, 12, 360, 30)
-        dlg_add_static(dlg, L.tr("pricing.note"), 22, 46, 470, 34)
-        dlg_add_sep(dlg, 20, 84, 470)
+        dlg_add_title(dlg, en ? "Cost Estimation" : "费用估算", 24, 14, 360, 30)
+        // The English note wraps to two lines at the native Windows font size.
+        // Reserve the full line height so the separator never cuts through it.
+        dlg_add_subtitle(dlg, L.tr("pricing.note"), 24, 48, 464, 44)
+        dlg_add_card(dlg, 20, 102, 468, 82)
 
         // 目录状态 + 手动刷新
         let summary = PricingService.shared.catalogSummary
-        _ = dlg_add_static_id(dlg, 760, pricingCatalogText(summary), 24, 96, 340, 20)
-        dlg_add_static(dlg, L.tr("pricing.unit"), 24, 118, 200, 18)
-        dlg_add_push(dlg, 750, L.tr("pricing.refresh"), 396, 94, 92, 26)
+        _ = dlg_add_static_id(dlg, 760, pricingCatalogText(summary), 34, 114, 276, 20)
+        dlg_add_subtitle(dlg, L.tr("pricing.unit"), 34, 138, 200, 18)
+        dlg_add_push(dlg, 750, L.tr("pricing.refresh"), 316, 114, 158, 28)
 
         // 未计价模型
         let unpriced = PricingService.shared.unpricedModels
         let unpricedText = unpriced.isEmpty
             ? (en ? "Unpriced models: none" : "未能计价的模型：无")
             : (en ? "Unpriced: \(unpriced.joined(separator: ", "))" : "未能计价：\(unpriced.joined(separator: "、"))")
-        dlg_add_static(dlg, unpricedText, 24, 140, 464, 32)
-        dlg_add_sep(dlg, 20, 176, 470)
+        dlg_add_subtitle(dlg, unpricedText, 34, 158, 438, 20)
 
         // 自定义价格表：5 个可编辑槽位 [模型名 | 输入 | 输出 | 缓存读 | 缓存写]
-        dlg_add_static(dlg, L.tr("pricing.customTitle"), 24, 184, 240, 20)
-        let colX: [Int32] = [24, 180, 240, 300, 362, 424]
-        let colW: [Int32] = [152, 56, 56, 58, 58, 58]
-        let headers = [L.tr("pricing.modelName"), L.tr("pricing.input"), L.tr("pricing.output"), L.tr("pricing.cacheRead"), L.tr("pricing.cacheWrite")]
+        dlg_add_card(dlg, 20, 194, 468, 228)
+        dlg_add_section(dlg, L.tr("pricing.customTitle"), 34, 206, 240, 20)
+        dlg_add_push(dlg, 751, L.tr("pricing.addCustom"), 342, 202, 134, 28)
+        let colX: [Int32] = [34, 190, 250, 310, 372]
+        let colW: [Int32] = [152, 56, 56, 58, 58]
+        let headers = [
+            L.tr("pricing.modelName"), L.tr("pricing.input"), L.tr("pricing.output"),
+            en ? "C.Read" : L.tr("pricing.cacheRead"),
+            en ? "C.Write" : L.tr("pricing.cacheWrite"),
+        ]
         for (c, text) in headers.enumerated() {
-            dlg_add_static(dlg, text, colX[c + 1], 208, colW[c + 1], 16)
+            dlg_add_subtitle(dlg, text, colX[c], 230, colW[c], 16)
         }
         let custom = PricingService.shared.customModels
+        pricingVisibleRows = min(5, max(1, custom.count + 1))
         for i in 0..<5 {
-            let y = Int32(228 + i * 34)
+            let y = Int32(250 + i * 32)
             let prefilled: ModelPrice? = i < custom.count
                 ? PricingService.shared.customPrice(for: custom[i]) : nil
             let modelText = i < custom.count ? custom[i] : ""
@@ -1032,8 +1304,14 @@ final class WindowsApp: @unchecked Sendable {
             dlg_add_edit(dlg, 820 + Int32(i), prefilled.map { String(format: "%.6g", $0.output) } ?? "", colX[2], y, colW[2], 24)
             dlg_add_edit(dlg, 830 + Int32(i), prefilled.flatMap { $0.cacheRead == 0 ? nil : String(format: "%.6g", $0.cacheRead) } ?? "", colX[3], y, colW[3], 24)
             dlg_add_edit(dlg, 840 + Int32(i), prefilled.flatMap { $0.cacheWrite == 0 ? nil : String(format: "%.6g", $0.cacheWrite) } ?? "", colX[4], y, colW[4], 24)
+            if i >= pricingVisibleRows {
+                for base: Int32 in [800, 810, 820, 830, 840] {
+                    dlg_show_control(dlg, base + Int32(i), 0)
+                }
+            }
         }
-        dlg_add_sep(dlg, 20, 404, 470)
+        dlg_show_control(dlg, 751, pricingVisibleRows < 5 ? 1 : 0)
+        dlg_add_sep(dlg, 20, 446, 470)
         dlg_add_push(dlg, 1, en ? "Apply" : "应用", 288, 478, 92, 30)
         dlg_add_push(dlg, 2, en ? "Cancel" : "取消", 392, 478, 92, 30)
         if dlg_modal_cb(dlg, pricingCmdCb, nil) == 1 {
@@ -1070,7 +1348,18 @@ final class WindowsApp: @unchecked Sendable {
 
     /// 刷新按钮：同步等待（带超时），结果直接改写目录状态行。额度恢复后 UI 会随下一轮扫描更新费用。
     func handlePricingCmd(id: Int32) {
-        guard id == 750, let dlg = pricingDlg else { return }
+        guard let dlg = pricingDlg else { return }
+        if id == 751 {
+            guard pricingVisibleRows < 5 else { return }
+            let row = pricingVisibleRows
+            pricingVisibleRows += 1
+            for base: Int32 in [800, 810, 820, 830, 840] {
+                dlg_show_control(dlg, base + Int32(row), 1)
+            }
+            dlg_show_control(dlg, 751, pricingVisibleRows < 5 ? 1 : 0)
+            return
+        }
+        guard id == 750 else { return }
         let sem = DispatchSemaphore(value: 0)
         Task.detached(priority: .userInitiated) {
             _ = try? await PricingService.shared.refresh()
@@ -1084,10 +1373,11 @@ final class WindowsApp: @unchecked Sendable {
     private func editLocalAPI(_ draft: inout SettingsDraft) {
         let en = L10n.shared.language == .en
         guard let dlg = dlg_create(en ? "Local API" : "本地 API", 520, 245) else { return }
-        dlg_add_title(dlg, en ? "Local API" : "本地 API", 20, 12, 360, 30)
-        dlg_add_static(dlg, en ? "Loopback-only usage and history endpoints" : "仅本机可访问的 usage/history 接口", 22, 48, 460, 20)
-        dlg_add_check(dlg, 411, en ? "Enable Local API server" : "启用本地 API 服务", 24, 84, 250, 28, draft.apiEnabled ? 1 : 0)
-        dlg_add_static(dlg, en ? "Port" : "端口", 24, 126, 70, 22); dlg_add_edit(dlg, 412, "\(draft.apiPort)", 100, 122, 110, 27)
+        dlg_add_title(dlg, en ? "Local API" : "本地 API", 24, 14, 360, 30)
+        dlg_add_subtitle(dlg, en ? "Loopback-only usage and history endpoints" : "仅本机可访问的 usage/history 接口", 24, 49, 460, 20)
+        dlg_add_card(dlg, 20, 76, 468, 82)
+        dlg_add_check(dlg, 411, en ? "Enable Local API server" : "启用本地 API 服务", 36, 88, 250, 28, draft.apiEnabled ? 1 : 0)
+        dlg_add_static(dlg, en ? "Port" : "端口", 306, 92, 50, 22); dlg_add_edit(dlg, 412, "\(draft.apiPort)", 358, 88, 108, 28)
         dlg_add_sep(dlg, 20, 164, 470)
         dlg_add_push(dlg, 1, en ? "Apply" : "应用", 288, 178, 92, 30); dlg_add_push(dlg, 2, en ? "Cancel" : "取消", 392, 178, 92, 30)
         if dlg_modal(dlg) == 1 {
@@ -1129,7 +1419,7 @@ final class WindowsApp: @unchecked Sendable {
         scheduleScan(incremental: false); render()
     }
 
-    /// Overview section routing, provider folder browsing, and evidence-backed auto detection.
+    /// Accordion routing, provider folder browsing, and evidence-backed auto detection.
     fileprivate func handleSettingsCmd(_ id: Int32) {
         guard let dlg = settingsDlg else { return }
         if id >= 600 && id < 600 + Int32(Self.providerNames.count) {
@@ -1143,7 +1433,7 @@ final class WindowsApp: @unchecked Sendable {
             if picked == 1 { dlg_set_text(dlg, 200 + Int32(index), String(cString: selected)) }
             return
         }
-        if id == 700 {
+        if id == 701 {
             let summary = PathDetector.runFullDetection(probeLoopbackServices: true)
             if var draft = settingsDraft {
                 for result in summary.results where result.exists {
@@ -1154,19 +1444,36 @@ final class WindowsApp: @unchecked Sendable {
                 }
                 settingsDraft = draft
             }
-            dlg_set_text(dlg, 700, L10n.shared.language == .en ? "Detected \(summary.foundCount)/\(summary.totalCount)" : "已探测 \(summary.foundCount)/\(summary.totalCount)")
+            settingsDetectionStatus = L10n.shared.language == .en
+                ? "Detected \(summary.foundCount)/\(summary.totalCount)"
+                : "已探测 \(summary.foundCount)/\(summary.totalCount)"
+            renderSettingsAccordion(scrollToExpanded: true)
             return
         }
+        if id == 750 || id == 751 {
+            handlePricingCmd(id: id)
+            return
+        }
+        if id == 716 {
+            captureExpandedSettings()
+            openCustomThemeEditor()
+            renderSettingsAccordion(scrollToExpanded: true)
+            return
+        }
+        let section: SettingsSection
         switch id {
-        case 710: requestedSettingsSection = .tools
-        case 711: requestedSettingsSection = .paths
-        case 712: requestedSettingsSection = .thresholds
-        case 715: requestedSettingsSection = .pricing
-        case 713: requestedSettingsSection = .customFace
-        case 714: requestedSettingsSection = .localAPI
+        case 700: section = .autoDetect
+        case 710: section = .tools
+        case 711: section = .paths
+        case 712: section = .thresholds
+        case 715: section = .pricing
+        case 713: section = .customFace
+        case 714: section = .localAPI
         default: return
         }
-        dlg_end(dlg, 0)
+        captureExpandedSettings()
+        expandedSettingsSection = expandedSettingsSection == section ? nil : section
+        renderSettingsAccordion(scrollToExpanded: expandedSettingsSection != nil)
     }
 
     private func pathFor(_ name: String) -> String {
@@ -1246,31 +1553,31 @@ final class WindowsApp: @unchecked Sendable {
         guard let dlg = dlg_create(en ? "Custom Clock Face" : "自定义表盘", 520, 548) else { return (0, name) }
         editorDlg = dlg
         defer { editorDlg = nil; dlg_destroy(dlg) }
-        dlg_add_title(dlg, en ? "Custom Clock Face" : "自定义表盘", 20, 12, 360, 30)
-        dlg_add_static(dlg, en ? "Overview · edit one group at a time" : "概览 · 按分组编辑", 22, 47, 450, 20)
-        dlg_add_sep(dlg, 20, 70, 470)
-        dlg_add_static(dlg, en ? "Name" : "名称", 22, 88, 60, 22)
-        dlg_add_edit(dlg, 540, name, 84, 84, 288, 28)
-        dlg_add_push(dlg, 560, en ? "New" : "新建", 388, 84, 96, 28)
+        dlg_add_title(dlg, en ? "Custom Clock Face" : "自定义表盘", 24, 14, 360, 30)
+        dlg_add_subtitle(dlg, en ? "Create a face that remains native to every dial size." : "创建适用于所有表盘尺寸的自定义样式。", 24, 49, 460, 20)
+        dlg_add_card(dlg, 20, 78, 468, 52)
+        dlg_add_static(dlg, en ? "Name" : "名称", 32, 94, 48, 22)
+        dlg_add_edit(dlg, 540, name, 82, 90, 286, 28)
+        dlg_add_push(dlg, 560, en ? "New" : "新建", 380, 90, 96, 28)
 
-        dlg_add_push(dlg, 570, en ? "Colors  ›" : "颜色  ›", 22, 140, 205, 44)
-        dlg_add_static(dlg, en ? "8 face · 8 overlay/detail colors" : "8 项表盘 · 8 项叠加层/详情颜色", 244, 146, 240, 34)
-        dlg_add_sep(dlg, 22, 196, 462)
-        dlg_add_push(dlg, 571, en ? "Geometry and Markings  ›" : "几何与刻度  ›", 22, 210, 205, 44)
+        dlg_add_nav(dlg, 570, en ? "Colors" : "颜色",
+                    en ? "8 face · 8 overlay and detail colors" : "8 项表盘 · 8 项叠加层与详情颜色",
+                    20, 142, 468, 52)
         let marks = en
             ? "\(handStyleLabel(customCfg.handStyle).replacingOccurrences(of: " ▾", with: "")) hands · \(customCfg.showTicks ? "ticks" : "no ticks")"
             : "\(handStyleLabel(customCfg.handStyle).replacingOccurrences(of: " ▾", with: ""))指针 · \(customCfg.showTicks ? "显示刻度" : "隐藏刻度")"
-        dlg_add_static(dlg, marks, 244, 216, 240, 34)
-        dlg_add_sep(dlg, 22, 266, 462)
-        dlg_add_static(dlg, en ? "SAVED FACES" : "已保存表盘", 22, 284, 150, 20)
-        dlg_add_static(dlg,
+        dlg_add_nav(dlg, 571, en ? "Geometry and Markings" : "几何与刻度", marks,
+                    20, 206, 468, 52)
+        dlg_add_card(dlg, 20, 274, 468, 160)
+        dlg_add_section(dlg, en ? "Saved faces" : "已保存表盘", 34, 290, 180, 20)
+        dlg_add_subtitle(dlg,
                        en ? "\(savedCount) saved · manage apply/delete from My Clock Faces" : "已保存 \(savedCount) 个 · 在“我的表盘”中应用/删除",
-                       22, 312, 462, 42)
-        dlg_add_static(dlg,
+                       34, 320, 430, 36)
+        dlg_add_subtitle(dlg,
                        en ? "Changes remain a draft until Save and Apply." : "所有修改仅在“保存并应用”后写入。",
-                       22, 386, 462, 28)
-        dlg_add_sep(dlg, 20, 465, 470)
-        dlg_add_push(dlg, 1, en ? "Save and Apply" : "保存并应用", 272, 478, 108, 30)
+                       34, 382, 430, 28)
+        dlg_add_sep(dlg, 20, 458, 470)
+        dlg_add_push(dlg, 1, en ? "Save and Apply" : "保存并应用", 248, 478, 132, 30)
         dlg_add_push(dlg, 2, en ? "Cancel" : "取消", 392, 478, 92, 30)
         let result = dlg_modal_cb(dlg, customCmdCb, nil)
         let buffer = UnsafeMutablePointer<CChar>.allocate(capacity: 512); defer { buffer.deallocate() }
@@ -1284,10 +1591,12 @@ final class WindowsApp: @unchecked Sendable {
         guard let dlg = dlg_create(en ? "Custom Colors" : "自定义颜色", 520, 548) else { return }
         editorDlg = dlg
         defer { editorDlg = nil; dlg_destroy(dlg) }
-        dlg_add_title(dlg, en ? "Custom Colors" : "自定义颜色", 20, 12, 360, 30)
-        dlg_add_static(dlg, en ? "Face colors" : "表盘颜色", 22, 48, 180, 20)
-        dlg_add_static(dlg, en ? "Overlay and detail colors" : "叠加层与详情颜色", 264, 48, 220, 20)
-        dlg_add_sep(dlg, 20, 72, 470)
+        dlg_add_title(dlg, en ? "Custom Colors" : "自定义颜色", 24, 14, 360, 30)
+        dlg_add_subtitle(dlg, en ? "Tune dial and detail colors independently." : "分别调整表盘与详情面板的颜色。", 24, 49, 460, 20)
+        dlg_add_card(dlg, 14, 76, 238, 358)
+        dlg_add_card(dlg, 258, 76, 248, 358)
+        dlg_add_section(dlg, en ? "Face colors" : "表盘颜色", 26, 88, 180, 20)
+        dlg_add_section(dlg, en ? "Overlay and detail" : "叠加层与详情", 270, 88, 220, 20)
         let labels = en
             ? ["Dial", "Rim", "Hour", "Minute", "Second", "Cap outer", "Cap inner", "Numbers",
                "Ticks", "Major ticks", "Text", "Subtext", "Panel bg", "Panel text", "Panel subtext", "Panel border"]
@@ -1295,12 +1604,12 @@ final class WindowsApp: @unchecked Sendable {
                "刻度", "主刻度", "文字", "次文字", "面板背景", "面板文字", "面板次文字", "面板边框"]
         for i in 0..<WindowsCustomTheme.colorKeys.count {
             let column = i / 8, row = i % 8
-            let x: Int32 = column == 0 ? 22 : 264
-            let y = Int32(84 + row * 42)
+            let x: Int32 = column == 0 ? 26 : 270
+            let y = Int32(116 + row * 38)
             dlg_add_static(dlg, labels[i], x, y + 5, 92, 22)
             dlg_add_push(dlg, 500 + Int32(i), WindowsCustomTheme.hex(customCfg.colorField(i)), x + 96, y, 132, 28)
         }
-        dlg_add_sep(dlg, 20, 438, 470)
+        dlg_add_sep(dlg, 20, 442, 470)
         dlg_add_push(dlg, 1, en ? "Apply" : "应用", 288, 452, 92, 30)
         dlg_add_push(dlg, 2, en ? "Cancel" : "取消", 392, 452, 92, 30)
         if dlg_modal_cb(dlg, customCmdCb, nil) != 1 { customCfg = original }
@@ -1312,19 +1621,21 @@ final class WindowsApp: @unchecked Sendable {
         guard let dlg = dlg_create(en ? "Geometry and Markings" : "几何与刻度", 520, 430) else { return }
         editorDlg = dlg
         defer { editorDlg = nil; dlg_destroy(dlg) }
-        dlg_add_title(dlg, en ? "Geometry and Markings" : "几何与刻度", 20, 12, 390, 30)
-        dlg_add_static(dlg, en ? "Hands" : "指针", 22, 54, 120, 20)
-        dlg_add_static(dlg, en ? "Hand style" : "指针样式", 22, 84, 112, 22); dlg_add_push(dlg, 520, handStyleLabel(customCfg.handStyle), 142, 80, 138, 28)
-        dlg_add_static(dlg, en ? "Number style" : "数字样式", 294, 84, 100, 22); dlg_add_push(dlg, 553, numberStyleLabel(), 392, 80, 104, 28)
-        dlg_add_static(dlg, en ? "Rim width" : "外环宽度", 22, 124, 112, 22); dlg_add_edit(dlg, 530, formatNumber(customCfg.rimWidth), 142, 120, 82, 28)
-        dlg_add_static(dlg, en ? "Hand widths · H / M / S" : "指针宽度 · 时 / 分 / 秒", 22, 164, 190, 22)
-        dlg_add_edit(dlg, 531, formatNumber(customCfg.hourWidth), 230, 160, 66, 26); dlg_add_edit(dlg, 532, formatNumber(customCfg.minuteWidth), 306, 160, 66, 26); dlg_add_edit(dlg, 533, formatNumber(customCfg.secondWidth), 382, 160, 66, 26)
-        dlg_add_static(dlg, en ? "Hand lengths · H / M / S" : "指针长度 · 时 / 分 / 秒", 22, 204, 190, 22)
-        dlg_add_edit(dlg, 534, formatNumber(customCfg.hourLength), 230, 200, 66, 26); dlg_add_edit(dlg, 535, formatNumber(customCfg.minuteLength), 306, 200, 66, 26); dlg_add_edit(dlg, 536, formatNumber(customCfg.secondLength), 382, 200, 66, 26)
-        dlg_add_sep(dlg, 20, 246, 470)
-        dlg_add_check(dlg, 550, en ? "Show numbers" : "显示数字", 22, 262, 130, 26, customCfg.showNumbers ? 1 : 0)
-        dlg_add_check(dlg, 551, en ? "Tick marks" : "显示刻度", 178, 262, 120, 26, customCfg.showTicks ? 1 : 0)
-        dlg_add_check(dlg, 552, en ? "Sky decoration" : "天空装饰", 322, 262, 150, 26, customCfg.hasDecoration ? 1 : 0)
+        dlg_add_title(dlg, en ? "Geometry and Markings" : "几何与刻度", 24, 14, 390, 30)
+        dlg_add_subtitle(dlg, en ? "Match hand proportions and dial markings." : "调整指针比例与表盘标记。", 24, 49, 460, 20)
+        dlg_add_card(dlg, 20, 78, 468, 178)
+        dlg_add_section(dlg, en ? "Hands and dial" : "指针与表盘", 34, 90, 160, 20)
+        dlg_add_static(dlg, en ? "Hand style" : "指针样式", 34, 122, 100, 22); dlg_add_push(dlg, 520, handStyleLabel(customCfg.handStyle), 142, 116, 138, 28)
+        dlg_add_static(dlg, en ? "Numerals" : "数字样式", 294, 122, 92, 22); dlg_add_push(dlg, 553, numberStyleLabel(), 392, 116, 92, 28)
+        dlg_add_static(dlg, en ? "Rim width" : "外环宽度", 34, 158, 100, 22); dlg_add_edit(dlg, 530, formatNumber(customCfg.rimWidth), 142, 152, 82, 28)
+        dlg_add_static(dlg, en ? "Hand widths · H / M / S" : "指针宽度 · 时 / 分 / 秒", 34, 194, 190, 22)
+        dlg_add_edit(dlg, 531, formatNumber(customCfg.hourWidth), 230, 188, 66, 26); dlg_add_edit(dlg, 532, formatNumber(customCfg.minuteWidth), 306, 188, 66, 26); dlg_add_edit(dlg, 533, formatNumber(customCfg.secondWidth), 382, 188, 66, 26)
+        dlg_add_static(dlg, en ? "Hand lengths · H / M / S" : "指针长度 · 时 / 分 / 秒", 34, 226, 190, 22)
+        dlg_add_edit(dlg, 534, formatNumber(customCfg.hourLength), 230, 220, 66, 26); dlg_add_edit(dlg, 535, formatNumber(customCfg.minuteLength), 306, 220, 66, 26); dlg_add_edit(dlg, 536, formatNumber(customCfg.secondLength), 382, 220, 66, 26)
+        dlg_add_card(dlg, 20, 266, 468, 46)
+        dlg_add_check(dlg, 550, en ? "Show numbers" : "显示数字", 34, 276, 138, 26, customCfg.showNumbers ? 1 : 0)
+        dlg_add_check(dlg, 551, en ? "Tick marks" : "显示刻度", 178, 276, 128, 26, customCfg.showTicks ? 1 : 0)
+        dlg_add_check(dlg, 552, en ? "Sky decoration" : "天空装饰", 316, 276, 160, 26, customCfg.hasDecoration ? 1 : 0)
         dlg_add_sep(dlg, 20, 318, 470)
         dlg_add_push(dlg, 1, en ? "Apply" : "应用", 288, 334, 92, 30); dlg_add_push(dlg, 2, en ? "Cancel" : "取消", 392, 334, 92, 30)
         guard dlg_modal_cb(dlg, customCmdCb, nil) == 1 else { customCfg = original; return }

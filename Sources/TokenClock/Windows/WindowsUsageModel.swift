@@ -242,10 +242,18 @@ final class WindowsUsageModel: @unchecked Sendable {
 
     func usageJSONObject() -> [String: Any] {
         let current = tools
+        var cost = CostEstimate.unavailable
+        for tool in current where tool.todayTokens > 0 { cost.merge(tool.todayCost) }
+        let includesCache = UserDefaults.standard.bool(for: .usageIncludesCacheRead)
         return [
             "timestamp": Self.utcTimestamp(),
             "totalTokens": UsageAggregator.totalTokens(current),
+            "displayTotalTokens": UsageAggregator.totalTokens(current, includingCacheRead: includesCache),
+            "usageIncludesCacheRead": includesCache,
             "totalMessages": UsageAggregator.totalMessages(current),
+            "totalCost": cost.value,
+            "costComplete": cost.complete,
+            "costAvailable": cost.available,
             "rateEmoji": UsageAggregator.rateEmoji(current),
             "windowMinutes": rateWindowMinutes,
             "variant": "normal",
@@ -280,7 +288,11 @@ final class WindowsUsageModel: @unchecked Sendable {
             "statisticsAvailable": runtimeAvailable,
             "statisticsStatus": status,
             "todayTokens": tool.todayTokens,
+            "todayCacheReadTokens": tool.todayCacheReadTokens,
             "todayMessages": tool.todayMessages,
+            "todayCost": tool.todayCost.value,
+            "costComplete": tool.todayCost.complete,
+            "costAvailable": tool.todayCost.available,
             "isActive": tool.isActive,
             "cacheRate": tool.cacheRate,
             "recentTokens": tool.recentTokens,
@@ -293,7 +305,11 @@ final class WindowsUsageModel: @unchecked Sendable {
                     "value": $0.todayTokens,
                     "scope": tool.measurementScope.rawValue,
                     "todayTokens": $0.todayTokens,
+                    "todayCacheReadTokens": $0.cacheReadTokens,
                     "todayMessages": $0.todayMessages,
+                    "todayCost": $0.todayCost.value,
+                    "costComplete": $0.todayCost.complete,
+                    "costAvailable": $0.todayCost.available,
                     "isActive": $0.isActive,
                 ] as [String: Any]
             },
@@ -378,7 +394,7 @@ final class WindowsUsageModel: @unchecked Sendable {
         let active: Bool
         let cacheRate: Double
         /// 今日估算费用（Claude Code / Codex 分桶计价，其余工具为 .zero）
-        var cost: CostEstimate = .zero
+        var cost: CostEstimate = .unavailable
         /// 今日缓存读 token 数（「包含缓存读」口径展示用）
         var cacheRead: Int = 0
         let sessions: [SessionInfo]
@@ -394,7 +410,7 @@ final class WindowsUsageModel: @unchecked Sendable {
         _ sessions: [SessionInfo],
         measurementValue: Int? = nil,
         measurementScope: UsageMeasurementScope = .today,
-        _ cost: CostEstimate = .zero,
+        _ cost: CostEstimate = .unavailable,
         _ cacheRead: Int = 0
     ) -> ScanSnapshot {
         ScanSnapshot(

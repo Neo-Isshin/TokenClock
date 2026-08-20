@@ -113,7 +113,7 @@ struct ModelGroup: Identifiable, Hashable {
     var totalTokens: Int = 0
     var totalMessages: Int = 0
     /// 该模型今日的估算费用（各 session 费用之和；「未知」桶必然查不到价 → 恒为 ≈ 前缀或 0）
-    var totalCost: CostEstimate = .zero
+    var totalCost: CostEstimate = .unavailable
     /// 该模型今日的缓存读 token 数（「包含缓存读」口径用）
     var totalCacheReadTokens: Int = 0
     /// 该模型下每个工具的贡献（按 token 降序）
@@ -121,7 +121,7 @@ struct ModelGroup: Identifiable, Hashable {
 
     var formattedTokens: String { TokenFormat.compact(totalTokens) }
     var formattedCost: String {
-        totalTokens > 0 ? CostFormat.estimate(totalCost) : "—"
+        totalTokens > 0 && totalCost.available ? CostFormat.estimate(totalCost) : "—"
     }
 }
 
@@ -133,11 +133,11 @@ struct ToolContribution: Identifiable, Hashable {
     var tokens: Int = 0
     var messages: Int = 0
     /// 该工具对该模型的今日估算费用
-    var cost: CostEstimate = .zero
+    var cost: CostEstimate = .unavailable
     /// 该工具对该模型的今日缓存读 token 数（「包含缓存读」口径用）
     var cacheReadTokens: Int = 0
 
     var formattedCost: String {
-        tokens > 0 ? CostFormat.estimate(cost) : "—"
+        tokens > 0 && cost.available ? CostFormat.estimate(cost) : "—"
     }
 }

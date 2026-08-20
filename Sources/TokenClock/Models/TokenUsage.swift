@@ -54,7 +54,7 @@ struct ToolUsage: Identifiable, Hashable {
     var hourlyTokens: Int
 
     /// 今日按 API 牌价折算的估算费用（tokens 为 0 时无意义，由 formattedCost 显示「—」）
-    var todayCost: CostEstimate = .zero
+    var todayCost: CostEstimate = .unavailable
 
     /// 今日被排除在主用量之外的缓存读 token 数（「包含缓存读」口径的展示数据源）。
     /// 主用量 todayTokens 不变；含缓存总数 = todayTokens + todayCacheReadTokens。
@@ -73,7 +73,7 @@ struct ToolUsage: Identifiable, Hashable {
 
     /// 格式化的估算费用（如 "$12.34" / "≈$3.20" / "—"）
     var formattedCost: String {
-        todayTokens > 0 ? CostFormat.estimate(todayCost) : "—"
+        todayTokens > 0 && todayCost.available ? CostFormat.estimate(todayCost) : "—"
     }
 
     /// 格式化的消息数
@@ -105,7 +105,7 @@ struct SessionInfo: Identifiable, Hashable {
     var model: String? = nil
 
     /// 该 session 今日的估算费用（按 API 牌价折算）
-    var todayCost: CostEstimate = .zero
+    var todayCost: CostEstimate = .unavailable
 
     /// 该 session 今日的缓存读 token 数（「包含缓存读」口径用）
     var cacheReadTokens: Int = 0
@@ -115,7 +115,7 @@ struct SessionInfo: Identifiable, Hashable {
 
     /// 格式化的估算费用（tokens 为 0 时显示「—」）
     var formattedCost: String {
-        todayTokens > 0 ? CostFormat.estimate(todayCost) : "—"
+        todayTokens > 0 && todayCost.available ? CostFormat.estimate(todayCost) : "—"
     }
 }
 

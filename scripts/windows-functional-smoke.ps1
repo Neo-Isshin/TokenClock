@@ -42,6 +42,13 @@ public static class TCWinTest {
       if(c.ToString()==wanted && p==wantedPid && IsWindowVisible(h)){found=h;return false;} return true;
     }; EnumWindows(cb,IntPtr.Zero); return found;
   }
+  public static IntPtr FindByClassPidAndControl(string wanted,uint wantedPid,int controlId) {
+    IntPtr found=IntPtr.Zero;
+    EnumProc cb=delegate(IntPtr h,IntPtr l) {
+      StringBuilder c=new StringBuilder(256); GetClassName(h,c,256); uint p; GetWindowThreadProcessId(h,out p);
+      if(c.ToString()==wanted && p==wantedPid && IsWindowVisible(h) && GetDlgItem(h,controlId)!=IntPtr.Zero){found=h;return false;} return true;
+    }; EnumWindows(cb,IntPtr.Zero); return found;
+  }
 }
 "@
 
@@ -80,6 +87,12 @@ function Wait-Dialog([string]$Class,[uint32]$TargetPid,[int]$Milliseconds = 8000
     for($i=0; $i -lt [Math]::Ceiling($Milliseconds/100) -and $d -eq [IntPtr]::Zero; $i++) {
         $d=[TCWinTest]::FindByClassAndPid($Class,$TargetPid); if($d -eq [IntPtr]::Zero){Start-Sleep -Milliseconds 100}
     }; $d
+}
+function Wait-DialogControl([string]$Class,[uint32]$TargetPid,[int]$ControlId,[int]$Milliseconds = 8000) {
+    $d=[IntPtr]::Zero
+    for($i=0;$i-lt[Math]::Ceiling($Milliseconds/100)-and$d-eq[IntPtr]::Zero;$i++){
+        $d=[TCWinTest]::FindByClassPidAndControl($Class,$TargetPid,$ControlId);if($d-eq[IntPtr]::Zero){Start-Sleep -Milliseconds 100}
+    };$d
 }
 function Wait-Hidden([IntPtr]$Handle,[int]$Milliseconds = 8000) {
     for($i=0;$i-lt[Math]::Ceiling($Milliseconds/100)-and[TCWinTest]::IsWindowVisible($Handle);$i++){Start-Sleep -Milliseconds 100}
@@ -145,7 +158,25 @@ function Get-Text([IntPtr]$Dialog,[int]$Id) {$s=New-Object Text.StringBuilder 20
 function Set-Text([IntPtr]$Dialog,[int]$Id,[string]$Value) {[void][TCWinTest]::SendMessageText([TCWinTest]::GetDlgItem($Dialog,$Id),0x000C,[IntPtr]::Zero,$Value)}
 function Get-Check([IntPtr]$Dialog,[int]$Id) {[int][TCWinTest]::SendMessage([TCWinTest]::GetDlgItem($Dialog,$Id),0x00F0,[IntPtr]::Zero,[IntPtr]::Zero)}
 function Set-Check([IntPtr]$Dialog,[int]$Id,[int]$Value) {[void][TCWinTest]::SendMessage([TCWinTest]::GetDlgItem($Dialog,$Id),0x00F1,[IntPtr]$Value,[IntPtr]::Zero)}
+function Set-ClipboardRetry([string]$Value,[int]$Attempts=12) {
+  for($i=0;$i-lt$Attempts;$i++) {
+    try {[Windows.Forms.Clipboard]::SetDataObject($Value,$true,3,80);return}
+    catch {if($i-eq$Attempts-1){throw};Start-Sleep -Milliseconds 100}
+  }
+}
+function Get-ClipboardRetry([int]$Attempts=12) {
+  for($i=0;$i-lt$Attempts;$i++) {
+    try {return [Windows.Forms.Clipboard]::GetText()}
+    catch {if($i-eq$Attempts-1){throw};Start-Sleep -Milliseconds 100}
+  }
+}
 function Close-Dialog([IntPtr]$Dialog,[int]$Id) {[void][TCWinTest]::PostMessage($Dialog,0x0111,[IntPtr]$Id,[IntPtr]::Zero);for($i=0;$i-lt80-and[TCWinTest]::IsWindowVisible($Dialog);$i++){Start-Sleep -Milliseconds 100};Start-Sleep -Milliseconds 250}
+function Click-Control([IntPtr]$Dialog,[int]$Id) {
+    $control=[TCWinTest]::GetDlgItem($Dialog,$Id);if($control-eq[IntPtr]::Zero){throw "Control $Id missing"}
+    $rect=New-Object TCWinTest+RECT;[void][TCWinTest]::GetWindowRect($control,[ref]$rect)
+    [void][TCWinTest]::SetForegroundWindow($Dialog);[void][TCWinTest]::SetCursorPos([int](($rect.L+$rect.R)/2),[int](($rect.T+$rect.B)/2))
+    [TCWinTest]::mouse_event(0x0002,0,0,0,[UIntPtr]::Zero);Start-Sleep -Milliseconds 80;[TCWinTest]::mouse_event(0x0004,0,0,0,[UIntPtr]::Zero);Start-Sleep -Milliseconds 180
+}
 function Wait-Control([IntPtr]$Dialog,[int]$Id,[int]$Milliseconds=8000) {
     $c=[IntPtr]::Zero
     for($i=0;$i-lt[Math]::Ceiling($Milliseconds/50)-and$c-eq[IntPtr]::Zero;$i++){$c=[TCWinTest]::GetDlgItem($Dialog,$Id);if($c-eq[IntPtr]::Zero){Start-Sleep -Milliseconds 50}}
@@ -161,9 +192,21 @@ function Open-Custom([IntPtr]$Handle,[uint32]$TargetPid) {
 }
 function Open-Section([IntPtr]$Overview,[uint32]$TargetPid,[int]$CommandId,[int]$ExpectedControl) {
     [void][TCWinTest]::PostMessage($Overview,0x0111,[IntPtr]$CommandId,[IntPtr]::Zero)
-    if(-not(Wait-Hidden $Overview)){throw "Settings/custom overview did not close for section $CommandId"}
+    $control=Wait-Control $Overview $ExpectedControl
+    if($control-eq[IntPtr]::Zero-or-not[TCWinTest]::IsWindowVisible($Overview)){throw "Accordion section $CommandId control $ExpectedControl missing"}
+    Start-Sleep -Milliseconds 150;$Overview
+}
+function Close-Section([IntPtr]$Overview,[int]$CommandId,[int]$ExpectedControl) {
+    [void][TCWinTest]::PostMessage($Overview,0x0111,[IntPtr]$CommandId,[IntPtr]::Zero)
+    for($i=0;$i-lt160-and[TCWinTest]::GetDlgItem($Overview,$ExpectedControl)-ne[IntPtr]::Zero;$i++){Start-Sleep -Milliseconds 50}
+    if([TCWinTest]::GetDlgItem($Overview,$ExpectedControl)-ne[IntPtr]::Zero){throw "Accordion section $CommandId did not collapse"}
+    Start-Sleep -Milliseconds 120;$Overview
+}
+function Open-ChildDialog([IntPtr]$Overview,[uint32]$TargetPid,[int]$CommandId,[int]$ExpectedControl) {
+    [void][TCWinTest]::PostMessage($Overview,0x0111,[IntPtr]$CommandId,[IntPtr]::Zero)
+    if(-not(Wait-Hidden $Overview)){throw "Custom overview did not close for section $CommandId"}
     $d=Wait-Dialog "TCDialog" $TargetPid
-    if($d-eq[IntPtr]::Zero-or(Wait-Control $d $ExpectedControl)-eq[IntPtr]::Zero){throw "Section $CommandId control $ExpectedControl missing"}
+    if($d-eq[IntPtr]::Zero-or(Wait-Control $d $ExpectedControl)-eq[IntPtr]::Zero){throw "Custom section $CommandId control $ExpectedControl missing"}
     Start-Sleep -Milliseconds 150;$d
 }
 function Wait-Overview([uint32]$TargetPid,[int]$ExpectedControl=714) {
@@ -224,6 +267,9 @@ for($toggleRound=1;$toggleRound-le3;$toggleRound++){
   Click-Client $detail ([int]($detail0.width*0.80)) (49+$forecastOffset) ("detail-percentage-off-repeat-$toggleRound") 180
   Click-Client $detail ([int]($detail0.width*0.80)) (49+$forecastOffset) ("detail-percentage-on-repeat-$toggleRound") 180
 }
+$detailSettings=Get-Content -Raw -LiteralPath "$Out\localappdata\TokenClock\settings.json" | ConvertFrom-Json
+$costModePersisted=([int]$detailSettings.TC_dropdownValueMode-eq1)
+if(-not$costModePersisted){[void]$failures.Add("By Cost click did not persist TC_dropdownValueMode=1")}
 Capture "04-detail-model-percent" $detail;Capture "04c-detail-model-percent-after-repeated-switches" $detail
 Click-Client $detail ([int]($detail0.width*0.20)) (49+$forecastOffset) "detail-codex-quota" 700;Capture "04b-detail-codex-quota" $detail
 Click-Client $detail ([int]($detail0.width*0.20)) (49+$forecastOffset) "detail-codex-quota-close" 450
@@ -287,7 +333,7 @@ $opacityComparisons=[ordered]@{
 $opacityAllWholeCard=(@($opacityComparisons.Values|Where-Object{-not$_.wholeCardClearlyChanges}).Count-eq0)
 $opacity100Raw=($opacityCaptures|Where-Object { $_.opacity -eq 100 }|Select-Object -First 1).fluentPropertyRaw
 if($opacity100Raw-ne3){[void]$failures.Add("100% detail did not restore Acrylic property raw=3 (actual $opacity100Raw)")}
-$clipboardBefore="sentinel";[Windows.Forms.Clipboard]::SetText($clipboardBefore);Command $h 100 "api-copy" 250;$clipboardAfter=[Windows.Forms.Clipboard]::GetText()
+$clipboardBefore="sentinel";Set-ClipboardRetry $clipboardBefore;Command $h 100 "api-copy" 250;$clipboardAfter=Get-ClipboardRetry
 if($clipboardAfter-notmatch'/api/usage$'){[void]$failures.Add("API Copy left unexpected clipboard text: $clipboardAfter")}
 $top0=(([TCWinTest]::GetWindowLong($h,-20)-band8)-ne0);Command $h 10 "topmost-toggle"; $top1=(([TCWinTest]::GetWindowLong($h,-20)-band8)-ne0);Command $h 10 "topmost-restore"
 foreach($i in 0..1){Command $h (70+$i) ("temperature-"+$i) 250}
@@ -301,55 +347,97 @@ Command $h 160 "refresh-full" 700;Sample "after-full-refresh"
 $runKey="HKCU:\Software\Microsoft\Windows\CurrentVersion\Run";$run0=(Get-ItemProperty $runKey -Name TokenClock -ErrorAction SilentlyContinue).TokenClock
 Command $h 40 "autostart-toggle" 250;$run1=(Get-ItemProperty $runKey -Name TokenClock -ErrorAction SilentlyContinue).TokenClock;Command $h 40 "autostart-restore" 250;$run2=(Get-ItemProperty $runKey -Name TokenClock -ErrorAction SilentlyContinue).TokenClock
 
-# Settings overview plus each disclosure page. All TokenClock-owned dialogs request Mica;
-# the shell folder picker is only cancelled and is not classified as a TokenClock Fluent surface.
+# One scrollable Mica settings window with seven accordion sections. The shell
+# folder picker is only cancelled and is not classified as a TokenClock surface.
 $d=Open-Settings $h $pidApp;Capture "07-settings-overview" $d;[void](Check-Fluent "settings-overview-mica" $d 1);Sample "settings-open" 1
-[void][TCWinTest]::PostMessage($d,0x0111,[IntPtr]700,[IntPtr]::Zero);Start-Sleep -Milliseconds 1400;$detectLabel=Get-Text $d 700
+Click-Control $d 700;if((Wait-Control $d 701)-eq[IntPtr]::Zero){throw "Real mouse click did not expand Auto Detect"};Capture "07a0-settings-detect" $d
+$detectLabel='';[void][TCWinTest]::PostMessage($d,0x0111,[IntPtr]701,[IntPtr]::Zero)
+for($i=0;$i-lt240-and$detectLabel-notmatch'^Detected \d+/\d+$';$i++){$detectLabel=Get-Text $d 702;if($detectLabel-notmatch'^Detected \d+/\d+$'){Start-Sleep -Milliseconds 50}}
+Capture "07a1-settings-detected" $d
+if($detectLabel-notmatch'^Detected \d+/\d+$'){[void]$failures.Add("Auto Detect accordion status did not update: $detectLabel")}
+$d=Close-Section $d 700 701
 
-$toolDlg=Open-Section $d $pidApp 710 300;[void](Check-Fluent "settings-tools-mica" $toolDlg 1);Capture "07a-settings-tools" $toolDlg
-$checks=@();for($i=0;$i-lt$providerCount;$i++){$checks+=Get-Check $toolDlg (300+$i)}
-for($i=0;$i-lt$providerCount;$i++){Set-Check $toolDlg (300+$i) 0};Set-Check $toolDlg 309 1
-Close-Dialog $toolDlg 1;$d=Wait-Overview $pidApp
+# Cancel applies to the whole in-memory draft, matching the single-window model.
+$d=Open-Section $d $pidApp 712 400;$rate0=Get-Text $d 400;Set-Text $d 400 "77";Close-Dialog $d 2
+$d=Open-Settings $h $pidApp;$d=Open-Section $d $pidApp 712 400;$cancelPassed=((Get-Text $d 400)-eq$rate0);$d=Close-Section $d 712 400
 
-$pathDlg=Open-Section $d $pidApp 711 200;[void](Check-Fluent "settings-paths-mica" $pathDlg 1);Capture "07b-settings-paths" $pathDlg
-$paths=@();$browse=@();for($i=0;$i-lt$providerCount;$i++){$paths+=Get-Text $pathDlg (200+$i);$browse+=([TCWinTest]::GetDlgItem($pathDlg,600+$i).ToInt64())}
-[void][TCWinTest]::PostMessage($pathDlg,0x0111,[IntPtr]600,[IntPtr]::Zero);$picker=Wait-Dialog "#32770" $pidApp 5000
+$d=Open-Section $d $pidApp 710 300;[void](Check-Fluent "settings-tools-mica" $d 1);Capture "07a-settings-tools" $d
+$checks=@();for($i=0;$i-lt$providerCount;$i++){$checks+=Get-Check $d (300+$i)}
+for($i=0;$i-lt$providerCount;$i++){Set-Check $d (300+$i) 0};Set-Check $d 309 1
+$d=Close-Section $d 710 300
+
+$d=Open-Section $d $pidApp 711 200;[void](Check-Fluent "settings-paths-mica" $d 1);Capture "07b-settings-paths" $d
+$pathHeaderBefore=(Window-Rect ([TCWinTest]::GetDlgItem($d,711))).top;$settingsRect=Window-Rect $d
+[void][TCWinTest]::SetForegroundWindow($d);[void][TCWinTest]::SetCursorPos([int](($settingsRect.left+$settingsRect.right)/2),[int](($settingsRect.top+$settingsRect.bottom)/2))
+$wheelDown=[BitConverter]::ToUInt32([BitConverter]::GetBytes([int32]-120),0);[TCWinTest]::mouse_event(0x0800,0,0,$wheelDown,[UIntPtr]::Zero);Start-Sleep -Milliseconds 250
+$pathHeaderAfter=(Window-Rect ([TCWinTest]::GetDlgItem($d,711))).top;Capture "07b2-settings-paths-wheel" $d;$settingsWheelPassed=($pathHeaderAfter-lt$pathHeaderBefore)
+if(-not$settingsWheelPassed){[void]$failures.Add("Real mouse wheel did not scroll the expanded Settings accordion")}
+$paths=@();$browse=@();for($i=0;$i-lt$providerCount;$i++){$paths+=Get-Text $d (200+$i);$browse+=([TCWinTest]::GetDlgItem($d,600+$i).ToInt64())}
+[void][TCWinTest]::PostMessage($d,0x0111,[IntPtr]600,[IntPtr]::Zero);$picker=Wait-Dialog "#32770" $pidApp 5000
 if($picker-ne[IntPtr]::Zero){[void][TCWinTest]::PostMessage($picker,0x0111,[IntPtr]2,[IntPtr]::Zero);[void](Wait-Hidden $picker 5000)}
 $analytics="$Out\fixtures\analytics.jsonl";$now=[DateTimeOffset]::UtcNow.ToUnixTimeSeconds();('{"event":"message_send","time":'+$now+',"properties":{"prompt_tokens":1234,"completion_tokens":4321}}')|Set-Content -LiteralPath $analytics -Encoding ASCII
-Set-Text $pathDlg 209 $analytics
-Close-Dialog $pathDlg 1;$d=Wait-Overview $pidApp
+Set-Text $d 209 $analytics
+$d=Close-Section $d 711 200
 
-$thresholdDlg=Open-Section $d $pidApp 712 400;[void](Check-Fluent "settings-thresholds-mica" $thresholdDlg 1)
-$rate0=Get-Text $thresholdDlg 400;Set-Text $thresholdDlg 400 "77";Close-Dialog $thresholdDlg 2;$d=Wait-Overview $pidApp
-$thresholdDlg=Open-Section $d $pidApp 712 400;$cancelPassed=((Get-Text $thresholdDlg 400)-eq$rate0)
-Set-Text $thresholdDlg 400 "15";Set-Text $thresholdDlg 401 "400";Set-Text $thresholdDlg 402 "300";Set-Text $thresholdDlg 403 "200";Set-Text $thresholdDlg 404 "100"
-$preThresholds=@((Get-Text $thresholdDlg 401),(Get-Text $thresholdDlg 402),(Get-Text $thresholdDlg 403),(Get-Text $thresholdDlg 404));Close-Dialog $thresholdDlg 1;$d=Wait-Overview $pidApp
+$d=Open-Section $d $pidApp 712 400;[void](Check-Fluent "settings-thresholds-mica" $d 1);Capture "07d-settings-thresholds" $d
+Set-Text $d 400 "15";Set-Text $d 401 "400";Set-Text $d 402 "300";Set-Text $d 403 "200";Set-Text $d 404 "100"
+$preThresholds=@((Get-Text $d 401),(Get-Text $d 402),(Get-Text $d 403),(Get-Text $d 404));$d=Close-Section $d 712 400
 
-$apiDlg=Open-Section $d $pidApp 714 411;[void](Check-Fluent "settings-api-mica" $apiDlg 1);Set-Check $apiDlg 411 0;Close-Dialog $apiDlg 1;$d=Wait-Overview $pidApp
+$d=Open-Section $d $pidApp 715 800;[void](Check-Fluent "settings-pricing-mica" $d 1);Capture "07c-settings-pricing" $d
+$pricingCatalogBefore=Get-Text $d 760
+$pricingSecondInitiallyHidden=(-not[TCWinTest]::IsWindowVisible([TCWinTest]::GetDlgItem($d,801)))
+[void][TCWinTest]::PostMessage($d,0x0111,[IntPtr]751,[IntPtr]::Zero);Start-Sleep -Milliseconds 250
+$pricingAddRowPassed=($pricingSecondInitiallyHidden-and[TCWinTest]::IsWindowVisible([TCWinTest]::GetDlgItem($d,801)))
+Capture "07c2-settings-pricing-added-row" $d
+[void][TCWinTest]::PostMessage($d,0x0111,[IntPtr]750,[IntPtr]::Zero);Start-Sleep -Milliseconds 2600
+$pricingCatalogAfter=Get-Text $d 760
+Set-Text $d 800 "smoke-price-model";Set-Text $d 810 "1.25";Set-Text $d 820 "10";Set-Text $d 830 "0.125";Set-Text $d 840 "2"
+$d=Close-Section $d 715 800;$d=Open-Section $d $pidApp 715 800
+$pricingCustomPersisted=((Get-Text $d 800)-eq"smoke-price-model"-and(Get-Text $d 810)-eq"1.25"-and(Get-Text $d 820)-eq"10")
+Set-Text $d 800 "";$d=Close-Section $d 715 800;$d=Open-Section $d $pidApp 715 800
+$pricingCustomRemoved=((Get-Text $d 800)-eq"");$d=Close-Section $d 715 800
+if(-not$pricingCustomPersisted){[void]$failures.Add("Custom model pricing did not persist across accordion collapse/reopen")}
+if(-not$pricingCustomRemoved){[void]$failures.Add("Clearing a custom price row did not persist in the settings draft")}
+if(-not$pricingAddRowPassed){[void]$failures.Add("Add custom price did not reveal the next Fluent row")}
+
+$d=Open-Section $d $pidApp 713 716;Capture "07f-settings-custom" $d;Click-Control $d 716
+$inlineCustom=Wait-DialogControl "TCDialog" $pidApp 540 8000;$inlineCustomPassed=($inlineCustom-ne[IntPtr]::Zero-and$inlineCustom-ne$d)
+if($inlineCustomPassed){Capture "07f2-settings-custom-editor" $inlineCustom;Close-Dialog $inlineCustom 2}else{[void]$failures.Add("Accordion Open editor did not present the custom-face editor")}
+if((Wait-Control $d 716)-eq[IntPtr]::Zero){[void]$failures.Add("Settings accordion did not resume after closing the custom-face editor")}
+$d=Close-Section $d 713 716
+$d=Open-Section $d $pidApp 714 411;[void](Check-Fluent "settings-api-mica" $d 1);Capture "07e-settings-api" $d;Set-Check $d 411 0;$d=Close-Section $d 714 411
 $preSave=[ordered]@{aider=$analytics;rate="15";thresholds=$preThresholds;api=0;enabled=@(for($i=0;$i-lt$providerCount;$i++){if($i-eq9){1}else{0}});providerCount=$providerCount;fileSystemProviderCount=$fileSystemProviderCount;codeBuddyPath=$paths[15]}
 $preSave|ConvertTo-Json -Depth 5|Set-Content -LiteralPath "$Out\settings-before-save.json" -Encoding UTF8
 Close-Dialog $d 1;Start-Sleep -Milliseconds 900
 Copy-Item -LiteralPath "$Out\localappdata\TokenClock\settings.json" -Destination "$Out\settings-after-disable.json" -Force
 $apiDisabled=($null-eq(Api 9988))
 $d=Open-Settings $h $pidApp
-$pathDlg=Open-Section $d $pidApp 711 200;$expandedAider=Get-Text $pathDlg 209;Close-Dialog $pathDlg 2;$d=Wait-Overview $pidApp
-$thresholdDlg=Open-Section $d $pidApp 712 400;$savedRate=Get-Text $thresholdDlg 400;$thresholds=@((Get-Text $thresholdDlg 401),(Get-Text $thresholdDlg 402),(Get-Text $thresholdDlg 403),(Get-Text $thresholdDlg 404));Close-Dialog $thresholdDlg 2;$d=Wait-Overview $pidApp
-$apiDlg=Open-Section $d $pidApp 714 411;Set-Check $apiDlg 411 1;Set-Text $apiDlg 412 "19988";Close-Dialog $apiDlg 1;$d=Wait-Overview $pidApp;Close-Dialog $d 1
+$d=Open-Section $d $pidApp 711 200;$expandedAider=Get-Text $d 209;$d=Close-Section $d 711 200
+$d=Open-Section $d $pidApp 712 400;$savedRate=Get-Text $d 400;$thresholds=@((Get-Text $d 401),(Get-Text $d 402),(Get-Text $d 403),(Get-Text $d 404));$d=Close-Section $d 712 400
+$d=Open-Section $d $pidApp 714 411;Set-Check $d 411 1;Set-Text $d 412 "19988";$d=Close-Section $d 714 411;Close-Dialog $d 1
 $newUsage=Wait-Api 19988 12000;Command $h 160 "refresh-after-path-save" 1000;$newUsage=Wait-Api 19988 5000
 $aiderUsage=$null;if($newUsage){$aiderUsage=$newUsage.tools|Where-Object{$_.name-eq"Aider"}|Select-Object -First 1}
 Sample "after-settings-save"
-$d=Open-Settings $h $pidApp;$apiDlg=Open-Section $d $pidApp 714 411;Set-Text $apiDlg 412 "19989";Close-Dialog $apiDlg 1;$d=Wait-Overview $pidApp;Close-Dialog $d 1;$rebindUsage=Wait-Api 19989 8000;Sample "api-rebind-19989"
-$d=Open-Settings $h $pidApp;$apiDlg=Open-Section $d $pidApp 714 411;Set-Text $apiDlg 412 "19988";Close-Dialog $apiDlg 1;$d=Wait-Overview $pidApp;Close-Dialog $d 1;$newUsage=Wait-Api 19988 8000;Sample "api-rebind-restored"
+$d=Open-Settings $h $pidApp;$d=Open-Section $d $pidApp 714 411;Set-Text $d 412 "19989";$d=Close-Section $d 714 411;Close-Dialog $d 1;$rebindUsage=Wait-Api 19989 8000;Sample "api-rebind-19989"
+$d=Open-Settings $h $pidApp;$d=Open-Section $d $pidApp 714 411;Set-Text $d 412 "19988";$d=Close-Section $d 714 411;Close-Dialog $d 1;$newUsage=Wait-Api 19988 8000;Sample "api-rebind-restored"
+
+# Warm the dialog classes once, then make sure repeatedly opening and cancelling
+# the redesigned overview does not leak GDI objects.
+$d=Open-Settings $h $pidApp;Close-Dialog $d 2;Start-Sleep -Milliseconds 150
+$settingsGdiProcess=Get-Process -Id $process.Id;$settingsGdiProcess.Refresh();$settingsGdiBefore=[TCWinTest]::GetGuiResources($settingsGdiProcess.Handle,0)
+foreach($round in 1..20){$d=Open-Settings $h $pidApp;Close-Dialog $d 2;Start-Sleep -Milliseconds 80}
+$settingsGdiProcess.Refresh();$settingsGdiAfter=[TCWinTest]::GetGuiResources($settingsGdiProcess.Handle,0);$settingsGdiDelta=$settingsGdiAfter-$settingsGdiBefore
+if($settingsGdiDelta-gt2){[void]$failures.Add("Repeated Settings open/cancel GDI delta was $settingsGdiDelta (expected <= 2 after warmup)")}
 
 # Named custom face create/save/apply/delete and editor persistence across overview,
 # colors, and geometry pages.
 $d=Open-Custom $h $pidApp;Capture "08-custom-overview" $d;[void](Check-Fluent "custom-overview-mica" $d 1);Set-Text $d 540 "Smoke Face"
-$colorDlg=Open-Section $d $pidApp 570 500;[void](Check-Fluent "custom-colors-mica" $colorDlg 1);Capture "08a-custom-colors" $colorDlg;Close-Dialog $colorDlg 2;$d=Wait-Overview $pidApp 540
-$geometryDlg=Open-Section $d $pidApp 571 520;[void](Check-Fluent "custom-geometry-mica" $geometryDlg 1);Capture "08b-custom-geometry" $geometryDlg
+$colorDlg=Open-ChildDialog $d $pidApp 570 500;[void](Check-Fluent "custom-colors-mica" $colorDlg 1);Capture "08a-custom-colors" $colorDlg;Close-Dialog $colorDlg 2;$d=Wait-Overview $pidApp 540
+$geometryDlg=Open-ChildDialog $d $pidApp 571 520;[void](Check-Fluent "custom-geometry-mica" $geometryDlg 1);Capture "08b-custom-geometry" $geometryDlg
 Set-Text $geometryDlg 530 "9.5";Set-Text $geometryDlg 531 "7";Set-Check $geometryDlg 550 1;[void][TCWinTest]::PostMessage($geometryDlg,0x0111,[IntPtr]520,[IntPtr]::Zero);Start-Sleep -Milliseconds 200;$handAfter=Get-Text $geometryDlg 520
 Close-Dialog $geometryDlg 1;$d=Wait-Overview $pidApp 540;Close-Dialog $d 1;Start-Sleep -Milliseconds 500;Capture "09-custom-saved" $h
 Command $h 200 "saved-theme-apply" 300;$d=Open-Custom $h $pidApp;$customName=Get-Text $d 540
-$geometryDlg=Open-Section $d $pidApp 571 520;$customRim=Get-Text $geometryDlg 530;$customHour=Get-Text $geometryDlg 531;Close-Dialog $geometryDlg 2;$d=Wait-Overview $pidApp 540;Close-Dialog $d 2
+$geometryDlg=Open-ChildDialog $d $pidApp 571 520;$customRim=Get-Text $geometryDlg 530;$customHour=Get-Text $geometryDlg 531;Close-Dialog $geometryDlg 2;$d=Wait-Overview $pidApp 540;Close-Dialog $d 2
 [void][TCWinTest]::PostMessage($h,0x0111,[IntPtr]240,[IntPtr]::Zero);$deleteConfirm=Wait-Dialog "#32770" $pidApp 5000
 if($deleteConfirm-ne[IntPtr]::Zero){[void][TCWinTest]::PostMessage($deleteConfirm,0x0111,[IntPtr]6,[IntPtr]::Zero);Start-Sleep -Milliseconds 350};Record "saved-theme-delete-confirmed" $h
 Sample "after-custom-theme"
@@ -380,11 +468,11 @@ $result=[ordered]@{
   startup=[ordered]@{windowMs=$startupWindowMs;apiMs=$startupApiMs;apiReady=($null-ne$usage)}
   events=$events;failures=$failures;sizes=$sizes
   drag=[ordered]@{before=$r0;after=$rDrag;moved=($r0.left-ne$rDrag.left-or$r0.top-ne$rDrag.top)}
-  details=[ordered]@{dialWhileOpen=$dialWhileOpen;initial=$detail0;beforeExpand=$beforeExpand;afterExpand=$afterExpand;fixedHeight=($beforeExpand.height-eq$afterExpand.height);closed=$detailClosed;weather=$weatherDetail;forecastVisible=($weatherDetail.height-eq547)}
+  details=[ordered]@{dialWhileOpen=$dialWhileOpen;initial=$detail0;beforeExpand=$beforeExpand;afterExpand=$afterExpand;fixedHeight=($beforeExpand.height-eq$afterExpand.height);closed=$detailClosed;weather=$weatherDetail;forecastVisible=($weatherDetail.height-eq547);costModePersisted=$costModePersisted}
   menu=[ordered]@{clipboard=$clipboardAfter;clipboardPassed=($clipboardAfter-match"/api/usage$");topmostBefore=$top0;topmostAfter=$top1;autostartBefore=$run0;autostartToggled=$run1;autostartRestored=$run2;opacityCaptures=$opacityCaptures;opacityComparisons=$opacityComparisons;opacity100AcrylicRestored=($opacity100Raw-eq3);opacityAssessment=if($opacityAllWholeCard){'all-four-levels-whole-detail-visually-changed'}else{'partial-Windows-material-limitation'}}
   gdiResize=[ordered]@{sequence='Small -> Extra Large -> Medium';rounds=10;before=$gdiCycleBefore;after=$gdiCycleAfter;delta=$gdiCycleDelta;passed=($gdiCycleDelta-le2);samples=$gdiCycles}
   fluent=$fluentChecks
-  settings=[ordered]@{providerCount=$checks.Count;allProviderControls=($checks.Count-eq$providerCount);browseButtonCount=(($browse|Where-Object{$_-ne0}).Count);allBrowseButtons=(($browse|Where-Object{$_-ne0}).Count-eq$fileSystemProviderCount);codeBuddyHasNoBrowse=($browse[15]-eq0);cancelPassed=$cancelPassed;folderPickerFound=($picker-ne[IntPtr]::Zero);detectLabel=$detectLabel;apiDisabled=$apiDisabled;apiNewPort=($null-ne$newUsage);apiRebind=($null-ne$rebindUsage);aiderTokens=if($aiderUsage){$aiderUsage.todayTokens}else{$null};rate=$savedRate;thresholds=$thresholds;expandedAiderPath=$expandedAider}
+  settings=[ordered]@{providerCount=$checks.Count;allProviderControls=($checks.Count-eq$providerCount);browseButtonCount=(($browse|Where-Object{$_-ne0}).Count);allBrowseButtons=(($browse|Where-Object{$_-ne0}).Count-eq$fileSystemProviderCount);codeBuddyHasNoBrowse=($browse[15]-eq0);cancelPassed=$cancelPassed;folderPickerFound=($picker-ne[IntPtr]::Zero);mouseWheelPassed=$settingsWheelPassed;inlineCustomEditorPassed=$inlineCustomPassed;detectLabel=$detectLabel;pricingCatalogBefore=$pricingCatalogBefore;pricingCatalogAfter=$pricingCatalogAfter;pricingRefreshReturned=($pricingCatalogAfter-match"206");pricingAddRowPassed=$pricingAddRowPassed;pricingCustomPersisted=$pricingCustomPersisted;pricingCustomRemoved=$pricingCustomRemoved;gdiReopen=[ordered]@{rounds=20;before=$settingsGdiBefore;after=$settingsGdiAfter;delta=$settingsGdiDelta;passed=($settingsGdiDelta-le2)};apiDisabled=$apiDisabled;apiNewPort=($null-ne$newUsage);apiRebind=($null-ne$rebindUsage);aiderTokens=if($aiderUsage){$aiderUsage.todayTokens}else{$null};rate=$savedRate;thresholds=$thresholds;expandedAiderPath=$expandedAider}
   custom=[ordered]@{name=$customName;rim=$customRim;hourWidth=$customHour;hand=$handAfter;saved=($customName-eq"Smoke Face"-and$customRim-eq"9.5"-and$customHour-eq"7")}
   aboutFound=($about-ne[IntPtr]::Zero);deleteConfirmFound=($deleteConfirm-ne[IntPtr]::Zero);api100Ms=$api100Ms;historyPassed=($null-ne$apiHistory);quitPassed=$quitPassed
   restart=[ordered]@{rect=$restartRect;apiPortPersisted=($null-ne$restartApi)};metrics=$metrics;final=Is-Alive $h

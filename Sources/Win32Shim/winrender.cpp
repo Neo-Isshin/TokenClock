@@ -73,7 +73,8 @@ enum tc_color_icon {
     TC_ICON_BRAIN, TC_ICON_GEM, TC_ICON_MOUNTAIN, TC_ICON_MEDICAL,
     TC_ICON_SLEEP, TC_ICON_BED, TC_ICON_COFFEE, TC_ICON_RUNNER, TC_ICON_FLAME,
     TC_ICON_BURST, TC_ICON_MOON, TC_ICON_WHALE, TC_ICON_SPEAKER,
-    TC_ICON_RECYCLE
+    TC_ICON_RECYCLE, TC_ICON_BLUE_SQUARE, TC_ICON_PUZZLE, TC_ICON_Z,
+    TC_ICON_BEAN, TC_ICON_LLAMA, TC_ICON_TORNADO, TC_ICON_QUESTION
 };
 
 static tc_color_icon color_icon_for(const wchar_t *text) {
@@ -109,7 +110,20 @@ static tc_color_icon color_icon_for(const wchar_t *text) {
     if (wcsstr(text, L"🐋")) return TC_ICON_WHALE;
     if (wcsstr(text, L"🔊")) return TC_ICON_SPEAKER;
     if (wcsstr(text, L"♻")) return TC_ICON_RECYCLE;
+    if (wcsstr(text, L"🟦")) return TC_ICON_BLUE_SQUARE;
+    if (wcsstr(text, L"🧩")) return TC_ICON_PUZZLE;
+    if (wcsstr(text, L"🅉")) return TC_ICON_Z;
+    if (wcsstr(text, L"🫘")) return TC_ICON_BEAN;
+    if (wcsstr(text, L"🦙")) return TC_ICON_LLAMA;
+    if (wcsstr(text, L"🌪")) return TC_ICON_TORNADO;
+    if (wcsstr(text, L"❓")) return TC_ICON_QUESTION;
     return TC_ICON_NONE;
+}
+
+extern "C" int win_color_icon_supported_utf8(const char *text_utf8) {
+    wchar_t text[128];
+    if (to_wide(text_utf8, text, 128) == 0) return 0;
+    return color_icon_for(text) == TC_ICON_NONE ? 0 : 1;
 }
 
 static const wchar_t *text_after_icon(const wchar_t *text) {
@@ -207,6 +221,47 @@ static void draw_color_icon(Gdiplus::Graphics &gfx, tc_color_icon icon,
     case TC_ICON_SPEAKER: { PointF p[]={{-9,-3},{-4,-3},{2,-9},{2,9},{-4,3},{-9,3}}; polygon(p,6,72,133,217); for(int i=0;i<2;i++){ Pen wave(Color(255,72,133,217),(1.5f+i*.2f)*s); gfx.DrawArc(&wave,cx+(2+i*3)*s,cy+(-6-i*2)*s,(8+i*4)*s,(12+i*4)*s,-60,120); } break; }
     case TC_ICON_RECYCLE:
         for(int i=0;i<3;i++){ double a=deg2rad(-90+i*120.0); double b=a+2.0; PointF p[]={{(float)cos(a)*9,(float)sin(a)*9},{(float)cos(b)*7,(float)sin(b)*7},{(float)cos(a+0.7)*4,(float)sin(a+0.7)*4}}; polygon(p,3,48,168,104); } break;
+    case TC_ICON_BLUE_SQUARE: {
+        GraphicsPath tile;
+        tile.AddArc(cx-9*s,cy-9*s,5*s,5*s,180,90); tile.AddArc(cx+4*s,cy-9*s,5*s,5*s,270,90);
+        tile.AddArc(cx+4*s,cy+4*s,5*s,5*s,0,90); tile.AddArc(cx-9*s,cy+4*s,5*s,5*s,90,90); tile.CloseFigure();
+        LinearGradientBrush fill(PointF(cx-8*s,cy-9*s),PointF(cx+8*s,cy+9*s),Color(255,81,165,246),Color(255,34,103,209));
+        gfx.FillPath(&fill,&tile); line(-5,-5,5,-5,167,218,255,1.2f); break;
+    }
+    case TC_ICON_PUZZLE: {
+        SolidBrush fill(Color(255,115,92,208));
+        gfx.FillRectangle(&fill,cx-8*s,cy-7*s,16*s,15*s);
+        ellipse(-3,-11,6,7,115,92,208); ellipse(5,-3,7,6,115,92,208);
+        ellipse(-3,5,6,7,245,247,251); ellipse(-11,-3,7,6,245,247,251);
+        Pen edge(Color(255,76,60,162),1.0f*s); gfx.DrawRectangle(&edge,cx-8*s,cy-7*s,16*s,15*s); break;
+    }
+    case TC_ICON_Z: {
+        SolidBrush fill(Color(255,83,94,204));
+        gfx.FillEllipse(&fill,cx-10*s,cy-10*s,20*s,20*s);
+        line(-5,-5,5,-5,255,255,255,2.2f); line(5,-5,-5,5,255,255,255,2.2f); line(-5,5,5,5,255,255,255,2.2f); break;
+    }
+    case TC_ICON_BEAN: {
+        GraphicsPath bean;
+        bean.StartFigure(); bean.AddBezier(cx-7*s,cy-9*s,cx+5*s,cy-11*s,cx+11*s,cy-2*s,cx+6*s,cy+7*s);
+        bean.AddBezier(cx+3*s,cy+12*s,cx-8*s,cy+9*s,cx-10*s,cy+1*s,cx-7*s,cy-9*s); bean.CloseFigure();
+        SolidBrush fill(Color(255,185,112,72)); gfx.FillPath(&fill,&bean);
+        Pen seam(Color(255,112,66,45),1.3f*s); gfx.DrawBezier(&seam,cx-4*s,cy-7*s,cx+4*s,cy-4*s,cx-1*s,cy+4*s,cx+5*s,cy+7*s); break;
+    }
+    case TC_ICON_LLAMA: {
+        SolidBrush fur(Color(255,224,185,132));
+        gfx.FillEllipse(&fur,cx-7*s,cy-3*s,14*s,12*s); gfx.FillEllipse(&fur,cx+1*s,cy-9*s,8*s,10*s);
+        PointF ears[]={{2,-7},{2,-12},{5,-8},{8,-12},{8,-6}}; polygon(ears,5,196,145,94);
+        line(-4,7,-5,11,119,83,58,1.8f); line(4,7,5,11,119,83,58,1.8f);
+        ellipse(5,-5,1.7f,1.7f,52,43,39); break;
+    }
+    case TC_ICON_TORNADO:
+        line(-9,-8,9,-8,102,132,165,2.2f); line(-7,-4,7,-4,87,119,153,2.1f);
+        line(-5,0,5,0,72,107,143,2.0f); line(-3,4,3,4,63,96,132,1.8f); line(-1,8,1,8,54,85,119,1.6f); break;
+    case TC_ICON_QUESTION:
+        ellipse(-9,-9,18,18,237,79,99);
+        line(-3,-3,-1,-6,255,255,255,2.0f); line(-1,-6,3,-5,255,255,255,2.0f);
+        line(3,-5,3,-1,255,255,255,2.0f); line(3,-1,0,2,255,255,255,2.0f);
+        ellipse(-1,6,2.2f,2.2f,255,255,255); break;
     default: break;
     }
 }

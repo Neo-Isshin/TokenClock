@@ -123,6 +123,13 @@ void  dlg_add_edit(void *dlg, int id, const char *text_utf8, int x, int y, int w
 void  dlg_add_static(void *dlg, const char *text_utf8, int x, int y, int w, int h);
 void *dlg_add_static_id(void *dlg, int id, const char *text_utf8, int x, int y, int w, int h); /* 带 id，可 dlg_set_text 改写 */
 void  dlg_add_title(void *dlg, const char *text_utf8, int x, int y, int w, int h);   /* 大号粗体标题 */
+void  dlg_add_subtitle(void *dlg, const char *text_utf8, int x, int y, int w, int h); /* secondary explanatory text */
+void  dlg_add_section(void *dlg, const char *text_utf8, int x, int y, int w, int h);  /* compact semibold section title */
+void  dlg_add_card(void *dlg, int x, int y, int w, int h);                            /* rounded Fluent surface */
+void  dlg_add_nav(void *dlg, int id, const char *title_utf8, const char *subtitle_utf8,
+                  int x, int y, int w, int h);                                        /* macOS-like settings row */
+void  dlg_add_disclosure(void *dlg, int id, const char *title_utf8, const char *subtitle_utf8,
+                         int x, int y, int w, int h, int expanded);                    /* accordion header */
 void  dlg_add_sep(void *dlg, int x, int y, int w);                                   /* 凹陷横线 */
 void  dlg_add_push(void *dlg, int id, const char *text_utf8, int x, int y, int w, int h);
 void  dlg_add_brand_logo(void *dlg, int x, int y, int w, int h); /* TokenClock clock mark */
@@ -130,6 +137,9 @@ int   dlg_check_get(void *dlg, int id);                 /* 1 if checked */
 void  dlg_set_check(void *dlg, int id, int checked);
 void  dlg_edit_get(void *dlg, int id, char *buf_utf8, int n);   /* read edit text → UTF-8 */
 void  dlg_set_text(void *dlg, int id, const char *text_utf8);   /* set a control's label/text */
+void  dlg_show_control(void *dlg, int id, int show);             /* reveal/hide a pre-created row */
+void  dlg_reset_content(void *dlg, int content_height);          /* rebuild children + scroll extent */
+void  dlg_scroll_to(void *dlg, int y);                            /* scroll to logical content y */
 int   dlg_modal(void *dlg);                             /* blocks; returns 1=OK 0=cancel */
 void  dlg_end(void *dlg, int result);                   /* programmatically finish current modal */
 void  dlg_destroy(void *dlg);                           /* caller destroys after reading child controls */
@@ -221,6 +231,10 @@ void win_render_clock(int w, int h, int hh, int mm, int ss, const win_theme *t, 
 /* Internal bridge used by winshim.c's normal HWND paint path. */
 void win_render_detail_paint(void *hdc, int w, int h);
 void win_detail_present(int show, int dial_height, int main_width, int card_width, int card_height);
+
+/* Non-zero when TokenClock has a native colored vector replacement for the
+ * leading semantic emoji in a UTF-8 label. Used by Windows regression tests. */
+int win_color_icon_supported_utf8(const char *text_utf8);
 
 /* --- outbound HTTP(S) client (implemented in winclient.c, WinHTTP) ---
  * Synchronous and intended for Swift worker queues. Uses NO_PROXY, never follows redirects,

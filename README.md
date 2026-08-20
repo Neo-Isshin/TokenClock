@@ -261,17 +261,9 @@ The default install does **not** create shortcuts or change login autostart. Ava
 - Uninstall preserves `%LOCALAPPDATA%\TokenClock` settings unless `-RemoveUserData` is explicitly supplied.
 - A missing checksum aborts installation. `-AllowUnsigned` is an explicit escape hatch for a package you already trust.
 
-Windows release archives are built with `pwsh scripts/build-windows.ps1 -Zip`; the ZIP contains `TokenClock.exe`, its Swift/VC++ runtime DLLs, and resources. Publishing uses an independent tag on `windows-port`: after the shared release `v1.4.3` exists, tag the corresponding Windows commit as `windows-v1.4.3` and push that tag. The workflow definition and source are then both present in the immutable Windows tag; it maps `windows-v1.4.3` back to the existing `v1.4.3` release and only attaches the ZIP plus checksum. It never creates a Windows-only release or requires Windows source to be merged into main.
+Windows releases are compiled and tested on a real Windows 11 machine, then uploaded with a SHA-256 checksum. GitHub is used only to distribute the verified local package; it is not the release compiler. The ZIP contains `TokenClock.exe`, the matching Swift/VC++ runtime DLLs, and resources.
 
-```bash
-gh release view v1.4.3 --repo Neo-Isshin/TokenClock
-git switch windows-port
-git pull --ff-only origin windows-port
-git tag -a windows-v1.4.3 -m "Windows assets for v1.4.3"
-git push origin windows-v1.4.3
-```
-
-With `-Version latest`, the installer selects the newest stable release that already has both Windows assets, so a newer macOS/Linux release still waiting for its Windows upload is skipped; an explicit `-Version` resolves that exact shared tag (for example `v1.4.3`, not `windows-v1.4.3`). Current distribution is x86_64 only. The executable is not Microsoft Store/MSIX packaged, so Windows reputation warnings may appear until releases are code-signed. Portable ZIP use remains supported, but shortcuts, updates, and uninstall tracking are then the user's responsibility.
+With `-Version latest`, the installer selects the newest stable release that already has both Windows assets, so an incomplete release is skipped. An explicit `-Version` selects that shared version. Current distribution is x86_64 only. The executable is not Microsoft Store/MSIX packaged, so Windows reputation warnings may appear until releases are code-signed. Portable ZIP use remains supported, but shortcuts, updates, and uninstall tracking are then the user's responsibility.
 
 ### Linux normal build
 

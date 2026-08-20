@@ -4,7 +4,7 @@
 # + VC++ 运行时，自包含（Windows 加载器优先搜 exe 目录）。下载即用；cli/install.ps1 提供一键安装。
 #
 # 注意：
-# - 只推送指向 windows-port 提交的 windows-v* tag；workflow 定义和构建源码都来自该不可变 tag。
+# - windows-v* tag 只固定对应源码；正式资产默认在自有 Windows 主机本地构建并上传。
 # - windows-v1.3.8 映射到已存在的共享 release v1.3.8。流程只附加 Windows 资产，不创建 Windows-only release，
 #   避免改变 macOS/Linux 安装器看到的 latest release。
 # - Windows 源码不需要、也不应反向合并到 main/macOS/Linux 分支。
@@ -12,8 +12,6 @@
 name: windows
 
 on:
-  push:
-    tags: ['windows-v*']
   workflow_dispatch:
     inputs:
       release_tag:

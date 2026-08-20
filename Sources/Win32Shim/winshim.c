@@ -542,14 +542,387 @@ int win_user_locale(char *buf, int n) {
 /* --- modal settings dialog --- */
 
 static HWND g_dlg = NULL;
-static int  g_dlg_result = 0;
-static int  g_dlg_done = 0;
 static dlg_on_cmd_t g_dlg_oncmd = NULL;
 static void *g_dlg_cmdctx = NULL;
 static HBRUSH g_dlg_background_brush = NULL;
 static unsigned int g_dlg_background_rgb = 0xffffffffu;
 static HBRUSH g_dlg_edit_brush = NULL;
 static unsigned int g_dlg_edit_rgb = 0xffffffffu;
+
+#define TC_TEXT_ROLE_PROP L"TokenClock.TextRole"
+#define TC_EDIT_INNER_PROP L"TokenClock.EditInner"
+#define TC_DIALOG_VISUAL_PROP L"TokenClock.DialogVisual"
+#define TC_SCROLL_CLIPPED_PROP L"TokenClock.ScrollClipped"
+
+typedef struct {
+    int card_count;
+    RECT cards[32];
+    int scroll_pos;
+    int content_height;
+    int modal_result;
+    int modal_done;
+} dlg_visual_state;
+
+static HFONT dlg_font(void);
+static HFONT dlg_title_font(void);
+static HFONT dlg_section_font(void);
+static HFONT dlg_caption_font(void);
+static HBRUSH dlg_background_brush(HWND hwnd);
+static HBRUSH dlg_edit_brush(HWND hwnd);
+static int dlg_child_on_card(HWND dialog, HWND child);
+
+static unsigned int dlg_blend_rgb(unsigned int base, unsigned int overlay, int overlay_percent) {
+    int keep = 100 - overlay_percent;
+    unsigned int r = (((base >> 16) & 255u) * (unsigned int)keep
+                    + ((overlay >> 16) & 255u) * (unsigned int)overlay_percent) / 100u;
+    unsigned int g = (((base >> 8) & 255u) * (unsigned int)keep
+                    + ((overlay >> 8) & 255u) * (unsigned int)overlay_percent) / 100u;
+    unsigned int b = ((base & 255u) * (unsigned int)keep
+                    + (overlay & 255u) * (unsigned int)overlay_percent) / 100u;
+    return (r << 16) | (g << 8) | b;
+}
+
+static void dlg_fill_round_rect(HDC dc, const RECT *rect, int radius,
+                                unsigned int fill_rgb, unsigned int border_rgb) {
+    HBRUSH fill = CreateSolidBrush(to_cr(fill_rgb));
+    HPEN border = CreatePen(PS_SOLID, 1, to_cr(border_rgb));
+    HGDIOBJ old_brush = SelectObject(dc, fill);
+    HGDIOBJ old_pen = SelectObject(dc, border);
+    RoundRect(dc, rect->left, rect->top, rect->right, rect->bottom, radius, radius);
+    SelectObject(dc, old_brush); SelectObject(dc, old_pen);
+    DeleteObject(fill); DeleteObject(border);
+}
+
+static dlg_visual_state *dlg_visual(HWND dialog, int create) {
+    dlg_visual_state *state = (dlg_visual_state *)GetPropW(dialog, TC_DIALOG_VISUAL_PROP);
+    if (!state && create) {
+        state = (dlg_visual_state *)calloc(1, sizeof(*state));
+        if (state && !SetPropW(dialog, TC_DIALOG_VISUAL_PROP, state)) {
+            free(state); state = NULL;
+        }
+    }
+    return state;
+}
+
+static void dlg_paint_canvas(HWND dialog, HDC dc) {
+    RECT rect; GetClientRect(dialog, &rect);
+    HBRUSH background = CreateSolidBrush(to_cr(win_fluent_color(dialog, WIN_FLUENT_COLOR_BACKGROUND)));
+    FillRect(dc, &rect, background); DeleteObject(background);
+    dlg_visual_state *state = dlg_visual(dialog, 0);
+    if (!state) return;
+    for (int i = 0; i < state->card_count; i++) {
+        RECT card = state->cards[i];
+        OffsetRect(&card, 0, -state->scroll_pos);
+        card.right -= 1; card.bottom -= 1;
+        dlg_fill_round_rect(dc, &card, 16,
+                            win_fluent_color(dialog, WIN_FLUENT_COLOR_SURFACE),
+                            win_fluent_color(dialog, WIN_FLUENT_COLOR_BORDER));
+    }
+}
+
+static void dlg_draw_owner_button(HWND dialog, DRAWITEMSTRUCT *item) {
+    if (!item || item->CtlType != ODT_BUTTON) return;
+    const int primary = item->CtlID == 1;
+    const int pressed = (item->itemState & ODS_SELECTED) != 0;
+    const int disabled = (item->itemState & ODS_DISABLED) != 0;
+    const int hot = (item->itemState & ODS_HOTLIGHT) != 0;
+    unsigned int surface = win_fluent_color(dialog, WIN_FLUENT_COLOR_SURFACE);
+    unsigned int background = win_fluent_color(dialog, WIN_FLUENT_COLOR_BACKGROUND);
+    unsigned int accent = win_fluent_color(dialog, WIN_FLUENT_COLOR_ACCENT);
+    unsigned int border = win_fluent_color(dialog, WIN_FLUENT_COLOR_BORDER);
+    unsigned int text = win_fluent_color(dialog, WIN_FLUENT_COLOR_TEXT);
+
+    HBRUSH clear = CreateSolidBrush(to_cr(primary ? background : surface));
+    FillRect(item->hDC, &item->rcItem, clear); DeleteObject(clear);
+    RECT button = item->rcItem;
+    InflateRect(&button, -1, -1);
+    unsigned int fill = primary ? accent : surface;
+    if (hot) fill = dlg_blend_rgb(fill, accent, primary ? 12 : 8);
+    if (pressed) fill = dlg_blend_rgb(fill, 0x000000u, 12);
+    if (disabled) fill = dlg_blend_rgb(fill, background, 48);
+    dlg_fill_round_rect(item->hDC, &button, 10, fill, primary ? accent : border);
+
+    wchar_t label[256];
+    GetWindowTextW(item->hwndItem, label, ARRAYSIZE(label));
+    SetBkMode(item->hDC, TRANSPARENT);
+    SetTextColor(item->hDC, to_cr(primary ? 0xffffffu : (disabled
+        ? win_fluent_color(dialog, WIN_FLUENT_COLOR_SUBTEXT) : text)));
+    HGDIOBJ old_font = SelectObject(item->hDC, dlg_font());
+    DrawTextW(item->hDC, label, -1, &button,
+              DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX);
+    SelectObject(item->hDC, old_font);
+    if ((item->itemState & ODS_FOCUS) != 0) {
+        RECT focus = button; InflateRect(&focus, -4, -4); DrawFocusRect(item->hDC, &focus);
+    }
+}
+
+typedef struct {
+    wchar_t subtitle[256];
+    int hot;
+    int pressed;
+    int expanded;
+} dlg_nav_state;
+
+#define TC_NAV_SET_EXPANDED (WM_APP + 37)
+
+static LRESULT CALLBACK dlg_nav_proc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
+    dlg_nav_state *state = (dlg_nav_state *)GetWindowLongPtrW(h, GWLP_USERDATA);
+    switch (msg) {
+    case WM_NCCREATE: {
+        CREATESTRUCTW *create = (CREATESTRUCTW *)lp;
+        state = (dlg_nav_state *)calloc(1, sizeof(*state));
+        if (!state) return FALSE;
+        if (create->lpCreateParams) lstrcpynW(state->subtitle, (const wchar_t *)create->lpCreateParams, ARRAYSIZE(state->subtitle));
+        SetWindowLongPtrW(h, GWLP_USERDATA, (LONG_PTR)state);
+        return DefWindowProcW(h, msg, wp, lp);
+    }
+    case WM_NCDESTROY:
+        free(state); SetWindowLongPtrW(h, GWLP_USERDATA, 0); break;
+    case WM_ERASEBKGND: return 1;
+    case WM_MOUSEMOVE:
+        if (state && !state->hot) {
+            state->hot = 1;
+            TRACKMOUSEEVENT track = { sizeof(track), TME_LEAVE, h, 0 };
+            TrackMouseEvent(&track); InvalidateRect(h, NULL, FALSE);
+        }
+        return 0;
+    case WM_MOUSELEAVE:
+        if (state) { state->hot = 0; state->pressed = 0; InvalidateRect(h, NULL, FALSE); }
+        return 0;
+    case WM_LBUTTONDOWN:
+        if (state) { state->pressed = 1; SetCapture(h); SetFocus(h); InvalidateRect(h, NULL, FALSE); }
+        return 0;
+    case WM_LBUTTONUP:
+        if (state && state->pressed) {
+            state->pressed = 0; ReleaseCapture(); InvalidateRect(h, NULL, FALSE);
+            RECT rect; POINT point = { GET_X_LPARAM(lp), GET_Y_LPARAM(lp) }; GetClientRect(h, &rect);
+            if (PtInRect(&rect, point)) SendMessageW(GetParent(h), WM_COMMAND,
+                MAKEWPARAM(GetDlgCtrlID(h), BN_CLICKED), (LPARAM)h);
+        }
+        return 0;
+    case WM_KEYDOWN:
+        if (wp == VK_SPACE || wp == VK_RETURN) {
+            SendMessageW(GetParent(h), WM_COMMAND, MAKEWPARAM(GetDlgCtrlID(h), BN_CLICKED), (LPARAM)h);
+            return 0;
+        }
+        break;
+    case WM_GETDLGCODE: return DLGC_BUTTON | DLGC_WANTCHARS;
+    case TC_NAV_SET_EXPANDED:
+        if (state) { state->expanded = wp ? 1 : 0; InvalidateRect(h, NULL, FALSE); }
+        return 0;
+    case WM_SETFOCUS:
+    case WM_KILLFOCUS: InvalidateRect(h, NULL, FALSE); return 0;
+    case WM_SETTEXT: {
+        LRESULT result = DefWindowProcW(h, msg, wp, lp); InvalidateRect(h, NULL, FALSE); return result;
+    }
+    case WM_PAINT: {
+        PAINTSTRUCT paint; HDC dc = BeginPaint(h, &paint);
+        RECT rect; GetClientRect(h, &rect);
+        HWND dialog = GetParent(h);
+        unsigned int background = win_fluent_color(dialog, WIN_FLUENT_COLOR_BACKGROUND);
+        unsigned int surface = win_fluent_color(dialog, WIN_FLUENT_COLOR_SURFACE);
+        unsigned int accent = win_fluent_color(dialog, WIN_FLUENT_COLOR_ACCENT);
+        unsigned int border = win_fluent_color(dialog, WIN_FLUENT_COLOR_BORDER);
+        if (state && state->hot) surface = dlg_blend_rgb(surface, accent, 7);
+        if (state && state->pressed) surface = dlg_blend_rgb(surface, accent, 13);
+        HBRUSH clear = CreateSolidBrush(to_cr(background)); FillRect(dc, &rect, clear); DeleteObject(clear);
+        RECT card = rect; card.right -= 1; card.bottom -= 1;
+        dlg_fill_round_rect(dc, &card, 16, surface, GetFocus() == h ? accent : border);
+
+        wchar_t title[160]; GetWindowTextW(h, title, ARRAYSIZE(title));
+        SetBkMode(dc, TRANSPARENT);
+        SetTextColor(dc, to_cr(win_fluent_color(dialog, WIN_FLUENT_COLOR_TEXT)));
+        RECT title_rect = { 16, 7, rect.right - 46, 29 };
+        HGDIOBJ old_font = SelectObject(dc, dlg_section_font());
+        DrawTextW(dc, title, -1, &title_rect, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX);
+        SetTextColor(dc, to_cr(win_fluent_color(dialog, WIN_FLUENT_COLOR_SUBTEXT)));
+        SelectObject(dc, dlg_caption_font());
+        RECT subtitle_rect = { 16, 27, rect.right - 46, rect.bottom - 5 };
+        DrawTextW(dc, state ? state->subtitle : L"", -1, &subtitle_rect,
+                  DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX);
+        SelectObject(dc, old_font);
+
+        HPEN chevron = CreatePen(PS_SOLID, 2, to_cr(win_fluent_color(dialog, WIN_FLUENT_COLOR_SUBTEXT)));
+        HGDIOBJ old_pen = SelectObject(dc, chevron);
+        int cx = rect.right - 24, cy = rect.bottom / 2;
+        if (state && state->expanded) {
+            MoveToEx(dc, cx - 5, cy - 2, NULL); LineTo(dc, cx, cy + 3); LineTo(dc, cx + 5, cy - 2);
+        } else {
+            MoveToEx(dc, cx - 3, cy - 5, NULL); LineTo(dc, cx + 2, cy); LineTo(dc, cx - 3, cy + 5);
+        }
+        SelectObject(dc, old_pen); DeleteObject(chevron);
+        if (GetFocus() == h) { RECT focus = card; InflateRect(&focus, -4, -4); DrawFocusRect(dc, &focus); }
+        EndPaint(h, &paint); return 0;
+    }
+    }
+    return DefWindowProcW(h, msg, wp, lp);
+}
+
+typedef struct {
+    int checked;
+    int hot;
+    int pressed;
+} dlg_check_state;
+
+static LRESULT CALLBACK dlg_check_proc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
+    dlg_check_state *state = (dlg_check_state *)GetWindowLongPtrW(h, GWLP_USERDATA);
+    switch (msg) {
+    case WM_NCCREATE: {
+        CREATESTRUCTW *create = (CREATESTRUCTW *)lp;
+        state = (dlg_check_state *)calloc(1, sizeof(*state));
+        if (!state) return FALSE;
+        state->checked = (int)(INT_PTR)create->lpCreateParams ? 1 : 0;
+        SetWindowLongPtrW(h, GWLP_USERDATA, (LONG_PTR)state);
+        return DefWindowProcW(h, msg, wp, lp);
+    }
+    case WM_NCDESTROY:
+        free(state); SetWindowLongPtrW(h, GWLP_USERDATA, 0); break;
+    case BM_GETCHECK: return state && state->checked ? BST_CHECKED : BST_UNCHECKED;
+    case BM_SETCHECK:
+        if (state) { state->checked = wp == BST_CHECKED ? 1 : 0; InvalidateRect(h, NULL, FALSE); }
+        return 0;
+    case WM_ERASEBKGND: return 1;
+    case WM_MOUSEMOVE:
+        if (state && !state->hot) {
+            state->hot = 1; TRACKMOUSEEVENT track = { sizeof(track), TME_LEAVE, h, 0 };
+            TrackMouseEvent(&track); InvalidateRect(h, NULL, FALSE);
+        }
+        return 0;
+    case WM_MOUSELEAVE:
+        if (state) { state->hot = 0; state->pressed = 0; InvalidateRect(h, NULL, FALSE); }
+        return 0;
+    case WM_LBUTTONDOWN:
+        if (state && IsWindowEnabled(h)) { state->pressed = 1; SetCapture(h); SetFocus(h); InvalidateRect(h, NULL, FALSE); }
+        return 0;
+    case WM_LBUTTONUP:
+        if (state && state->pressed) {
+            state->pressed = 0; ReleaseCapture();
+            RECT rect; POINT point = { GET_X_LPARAM(lp), GET_Y_LPARAM(lp) }; GetClientRect(h, &rect);
+            if (PtInRect(&rect, point)) {
+                state->checked = !state->checked;
+                SendMessageW(GetParent(h), WM_COMMAND, MAKEWPARAM(GetDlgCtrlID(h), BN_CLICKED), (LPARAM)h);
+            }
+            InvalidateRect(h, NULL, FALSE);
+        }
+        return 0;
+    case WM_KEYDOWN:
+        if ((wp == VK_SPACE || wp == VK_RETURN) && state && IsWindowEnabled(h)) {
+            state->checked = !state->checked; InvalidateRect(h, NULL, FALSE);
+            SendMessageW(GetParent(h), WM_COMMAND, MAKEWPARAM(GetDlgCtrlID(h), BN_CLICKED), (LPARAM)h);
+            return 0;
+        }
+        break;
+    case WM_GETDLGCODE: return DLGC_BUTTON | DLGC_WANTCHARS;
+    case WM_SETFOCUS:
+    case WM_KILLFOCUS:
+    case WM_ENABLE: InvalidateRect(h, NULL, FALSE); return 0;
+    case WM_SETTEXT: {
+        LRESULT result = DefWindowProcW(h, msg, wp, lp); InvalidateRect(h, NULL, FALSE); return result;
+    }
+    case WM_PAINT: {
+        PAINTSTRUCT paint; HDC dc = BeginPaint(h, &paint);
+        RECT rect; GetClientRect(h, &rect); HWND dialog = GetParent(h);
+        unsigned int canvas = win_fluent_color(dialog, dlg_child_on_card(dialog, h)
+            ? WIN_FLUENT_COLOR_SURFACE : WIN_FLUENT_COLOR_BACKGROUND);
+        HBRUSH clear = CreateSolidBrush(to_cr(canvas)); FillRect(dc, &rect, clear); DeleteObject(clear);
+        int box_size = 16, box_y = max(1, (rect.bottom - box_size) / 2);
+        RECT box = { 2, box_y, 2 + box_size, box_y + box_size };
+        unsigned int accent = win_fluent_color(dialog, WIN_FLUENT_COLOR_ACCENT);
+        unsigned int border = win_fluent_color(dialog, WIN_FLUENT_COLOR_BORDER);
+        unsigned int fill = state && state->checked ? accent : canvas;
+        if (state && state->hot && !state->checked) fill = dlg_blend_rgb(canvas, accent, 8);
+        dlg_fill_round_rect(dc, &box, 6, fill, state && state->checked ? accent : border);
+        if (state && state->checked) {
+            HPEN check = CreatePen(PS_SOLID, 2, RGB(255, 255, 255)); HGDIOBJ old_pen = SelectObject(dc, check);
+            MoveToEx(dc, 6, box_y + 8, NULL); LineTo(dc, 9, box_y + 11); LineTo(dc, 15, box_y + 5);
+            SelectObject(dc, old_pen); DeleteObject(check);
+        }
+        wchar_t label[256]; GetWindowTextW(h, label, ARRAYSIZE(label));
+        SetBkMode(dc, TRANSPARENT);
+        SetTextColor(dc, to_cr(IsWindowEnabled(h) ? win_fluent_color(dialog, WIN_FLUENT_COLOR_TEXT)
+                                                   : win_fluent_color(dialog, WIN_FLUENT_COLOR_SUBTEXT)));
+        HGDIOBJ old_font = SelectObject(dc, dlg_font());
+        RECT text_rect = { 26, 0, rect.right, rect.bottom };
+        DrawTextW(dc, label, -1, &text_rect, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX);
+        SelectObject(dc, old_font);
+        if (GetFocus() == h) { RECT focus = rect; InflateRect(&focus, -1, -2); DrawFocusRect(dc, &focus); }
+        EndPaint(h, &paint); return 0;
+    }
+    }
+    return DefWindowProcW(h, msg, wp, lp);
+}
+
+static HWND dlg_edit_inner(HWND frame) {
+    return (HWND)GetPropW(frame, TC_EDIT_INNER_PROP);
+}
+
+static LRESULT CALLBACK dlg_edit_frame_proc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
+    HWND edit = dlg_edit_inner(h);
+    switch (msg) {
+    case WM_ERASEBKGND: return 1;
+    case WM_SIZE:
+        if (edit) MoveWindow(edit, 8, 3, max(1, LOWORD(lp) - 16), max(1, HIWORD(lp) - 6), TRUE);
+        {
+            HRGN region = CreateRoundRectRgn(0, 0, LOWORD(lp) + 1, HIWORD(lp) + 1, 10, 10);
+            SetWindowRgn(h, region, TRUE);
+        }
+        return 0;
+    case WM_SETFOCUS: if (edit) SetFocus(edit); return 0;
+    case WM_LBUTTONDOWN: if (edit) SetFocus(edit); return 0;
+    case WM_GETTEXT: return edit ? SendMessageW(edit, msg, wp, lp) : 0;
+    case WM_GETTEXTLENGTH: return edit ? SendMessageW(edit, msg, wp, lp) : 0;
+    case WM_SETTEXT: return edit ? SendMessageW(edit, msg, wp, lp) : FALSE;
+    case WM_SETFONT: if (edit) SendMessageW(edit, msg, wp, lp); return 0;
+    case WM_ENABLE: if (edit) EnableWindow(edit, (BOOL)wp); InvalidateRect(h, NULL, TRUE); return 0;
+    case WM_COMMAND:
+        if (HIWORD(wp) == EN_SETFOCUS || HIWORD(wp) == EN_KILLFOCUS) InvalidateRect(h, NULL, FALSE);
+        return 0;
+    case WM_CTLCOLOREDIT: {
+        HDC dc = (HDC)wp;
+        SetTextColor(dc, to_cr(win_fluent_color(GetParent(h), WIN_FLUENT_COLOR_TEXT)));
+        SetBkColor(dc, to_cr(win_fluent_color(GetParent(h), WIN_FLUENT_COLOR_SURFACE)));
+        return (LRESULT)dlg_edit_brush(GetParent(h));
+    }
+    case WM_PAINT: {
+        PAINTSTRUCT paint; HDC dc = BeginPaint(h, &paint);
+        RECT rect; GetClientRect(h, &rect); rect.right -= 1; rect.bottom -= 1;
+        HWND dialog = GetParent(h);
+        dlg_fill_round_rect(dc, &rect, 10,
+                            win_fluent_color(dialog, WIN_FLUENT_COLOR_SURFACE),
+                            edit && GetFocus() == edit ? win_fluent_color(dialog, WIN_FLUENT_COLOR_ACCENT)
+                                                       : win_fluent_color(dialog, WIN_FLUENT_COLOR_BORDER));
+        EndPaint(h, &paint); return 0;
+    }
+    case WM_NCDESTROY: RemovePropW(h, TC_EDIT_INNER_PROP); break;
+    }
+    return DefWindowProcW(h, msg, wp, lp);
+}
+
+static LRESULT CALLBACK dlg_separator_proc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
+    (void)lp;
+    if (msg == WM_ERASEBKGND) return 1;
+    if (msg == WM_PAINT) {
+        PAINTSTRUCT paint; HDC dc = BeginPaint(h, &paint);
+        RECT rect; GetClientRect(h, &rect);
+        HPEN pen = CreatePen(PS_SOLID, 1, to_cr(win_fluent_color(GetParent(h), WIN_FLUENT_COLOR_BORDER)));
+        HGDIOBJ old = SelectObject(dc, pen); int y = (rect.bottom - rect.top) / 2;
+        MoveToEx(dc, 0, y, NULL); LineTo(dc, rect.right, y); SelectObject(dc, old); DeleteObject(pen);
+        EndPaint(h, &paint); return 0;
+    }
+    return DefWindowProcW(h, msg, wp, lp);
+}
+
+static void dlg_register_fluent_controls(void) {
+    static int registered = 0;
+    if (registered) return;
+    WNDCLASSEXW wc = {0}; wc.cbSize = sizeof(wc); wc.hInstance = GetModuleHandleW(NULL);
+    wc.hCursor = LoadCursorW(NULL, IDC_ARROW); wc.hbrBackground = NULL;
+    wc.lpfnWndProc = dlg_nav_proc; wc.lpszClassName = L"TCDialogNav"; RegisterClassExW(&wc);
+    wc.lpfnWndProc = dlg_edit_frame_proc; wc.lpszClassName = L"TCEditFrame"; RegisterClassExW(&wc);
+    wc.lpfnWndProc = dlg_check_proc; wc.lpszClassName = L"TCDialogCheck"; RegisterClassExW(&wc);
+    wc.lpfnWndProc = dlg_separator_proc; wc.lpszClassName = L"TCDialogSeparator"; RegisterClassExW(&wc);
+    registered = 1;
+}
 
 static HBRUSH dlg_background_brush(HWND hwnd) {
     unsigned int rgb = win_fluent_color(hwnd, WIN_FLUENT_COLOR_BACKGROUND);
@@ -571,6 +944,73 @@ static HBRUSH dlg_edit_brush(HWND hwnd) {
     return g_dlg_edit_brush;
 }
 
+static int dlg_child_on_card(HWND dialog, HWND child) {
+    RECT child_rect;
+    if (!IsWindow(child) || !GetWindowRect(child, &child_rect)) return 0;
+    POINT center = { (child_rect.left + child_rect.right) / 2,
+                     (child_rect.top + child_rect.bottom) / 2 };
+    ScreenToClient(dialog, &center);
+    dlg_visual_state *state = dlg_visual(dialog, 0);
+    if (state) {
+        for (int i = 0; i < state->card_count; i++) {
+            RECT card = state->cards[i];
+            OffsetRect(&card, 0, -state->scroll_pos);
+            if (PtInRect(&card, center)) return 1;
+        }
+    }
+    return 0;
+}
+
+static int dlg_max_scroll(HWND dialog, dlg_visual_state *state) {
+    if (!state) return 0;
+    RECT client; GetClientRect(dialog, &client);
+    return max(0, state->content_height - (client.bottom - client.top));
+}
+
+static void dlg_apply_scroll(HWND dialog, int requested) {
+    dlg_visual_state *state = dlg_visual(dialog, 0);
+    if (!state) return;
+    const int next = min(dlg_max_scroll(dialog, state), max(0, requested));
+    if (next == state->scroll_pos) return;
+    const int delta = state->scroll_pos - next;
+    state->scroll_pos = next;
+    SetScrollPos(dialog, SB_VERT, next, TRUE);
+    for (HWND child = GetWindow(dialog, GW_CHILD); IsWindow(child); ) {
+        HWND following = GetWindow(child, GW_HWNDNEXT);
+        RECT rect; GetWindowRect(child, &rect);
+        POINT origin = { rect.left, rect.top }; ScreenToClient(dialog, &origin);
+        SetWindowPos(child, NULL, origin.x, origin.y + delta, 0, 0,
+                     SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+        RECT moved; GetWindowRect(child, &moved);
+        POINT moved_origin = { moved.left, moved.top }; ScreenToClient(dialog, &moved_origin);
+        if (moved_origin.y < 0) {
+            if (IsWindowVisible(child)) {
+                SetPropW(child, TC_SCROLL_CLIPPED_PROP, (HANDLE)(INT_PTR)1);
+                ShowWindow(child, SW_HIDE);
+            }
+        } else if (GetPropW(child, TC_SCROLL_CLIPPED_PROP)) {
+            RemovePropW(child, TC_SCROLL_CLIPPED_PROP);
+            ShowWindow(child, SW_SHOWNA);
+        }
+        InvalidateRect(child, NULL, TRUE);
+        child = following;
+    }
+    InvalidateRect(dialog, NULL, TRUE);
+    UpdateWindow(dialog);
+}
+
+static void dlg_update_scroll_info(HWND dialog) {
+    dlg_visual_state *state = dlg_visual(dialog, 0);
+    if (!state) return;
+    RECT client; GetClientRect(dialog, &client);
+    SCROLLINFO info = { sizeof(info), SIF_PAGE | SIF_RANGE | SIF_POS, 0,
+                        max(0, state->content_height - 1),
+                        (UINT)max(1, client.bottom - client.top), state->scroll_pos, 0 };
+    SetScrollInfo(dialog, SB_VERT, &info, TRUE);
+    if (state->scroll_pos > dlg_max_scroll(dialog, state))
+        dlg_apply_scroll(dialog, dlg_max_scroll(dialog, state));
+}
+
 static BOOL CALLBACK dlg_invalidate_child(HWND child, LPARAM erase) {
     win_fluent_theme_child(child);
     InvalidateRect(child, NULL, erase ? TRUE : FALSE);
@@ -582,8 +1022,39 @@ static LRESULT CALLBACK dlg_proc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
     case WM_CREATE:
         win_fluent_apply(h, WIN_FLUENT_MICA);
         return 0;
+    case WM_SIZE:
+        dlg_update_scroll_info(h);
+        return 0;
+    case WM_VSCROLL: {
+        dlg_visual_state *state = dlg_visual(h, 0);
+        if (!state) break;
+        SCROLLINFO info = {0};
+        info.cbSize = sizeof(info);
+        info.fMask = SIF_ALL;
+        GetScrollInfo(h, SB_VERT, &info);
+        int next = state->scroll_pos;
+        switch (LOWORD(wp)) {
+        case SB_LINEUP: next -= 36; break;
+        case SB_LINEDOWN: next += 36; break;
+        case SB_PAGEUP: next -= (int)info.nPage; break;
+        case SB_PAGEDOWN: next += (int)info.nPage; break;
+        case SB_THUMBPOSITION:
+        case SB_THUMBTRACK: next = info.nTrackPos; break;
+        case SB_TOP: next = 0; break;
+        case SB_BOTTOM: next = dlg_max_scroll(h, state); break;
+        default: return 0;
+        }
+        dlg_apply_scroll(h, next);
+        return 0;
+    }
+    case WM_MOUSEWHEEL: {
+        dlg_visual_state *state = dlg_visual(h, 0);
+        if (!state || dlg_max_scroll(h, state) == 0) break;
+        const int notches = GET_WHEEL_DELTA_WPARAM(wp) / WHEEL_DELTA;
+        dlg_apply_scroll(h, state->scroll_pos - notches * 72);
+        return 0;
+    }
     case WM_ERASEBKGND: {
-        RECT rect; GetClientRect(h, &rect);
         /* A successful DWM backdrop attribute does not guarantee that an
          * ordinary GDI client surface is transparent.  In particular, the
          * common-controls v6 dialog surface can remain opaque white while
@@ -591,30 +1062,35 @@ static LRESULT CALLBACK dlg_proc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
          * coherent Fluent canvas ourselves; Mica remains active for the
          * non-client frame/title bar and the dialog is readable on every
          * compositor/theme combination. */
-        FillRect((HDC)wp, &rect, dlg_background_brush(h));
+        dlg_paint_canvas(h, (HDC)wp);
         return 1;
     }
     case WM_PAINT: {
         PAINTSTRUCT paint;
         HDC dc = BeginPaint(h, &paint);
-        FillRect(dc, &paint.rcPaint, dlg_background_brush(h));
+        dlg_paint_canvas(h, dc);
         EndPaint(h, &paint);
         return 0;
     }
     case WM_CTLCOLORSTATIC: {
         HDC dc = (HDC)wp;
-        unsigned int rgb = win_fluent_color(h, WIN_FLUENT_COLOR_TEXT);
+        HWND child = (HWND)lp;
+        int role = (int)(INT_PTR)GetPropW(child, TC_TEXT_ROLE_PROP);
+        int on_card = dlg_child_on_card(h, child);
+        unsigned int rgb = win_fluent_color(h, role == 1
+            ? WIN_FLUENT_COLOR_SUBTEXT : WIN_FLUENT_COLOR_TEXT);
         SetTextColor(dc, to_cr(rgb));
-        SetBkColor(dc, to_cr(win_fluent_color(h, WIN_FLUENT_COLOR_BACKGROUND)));
+        SetBkColor(dc, to_cr(win_fluent_color(h, on_card
+            ? WIN_FLUENT_COLOR_SURFACE : WIN_FLUENT_COLOR_BACKGROUND)));
         SetBkMode(dc, TRANSPARENT);
-        return (LRESULT)dlg_background_brush(h);
+        return (LRESULT)(on_card ? dlg_edit_brush(h) : dlg_background_brush(h));
     }
     case WM_CTLCOLORBTN: {
         HDC dc = (HDC)wp;
         SetTextColor(dc, to_cr(win_fluent_color(h, WIN_FLUENT_COLOR_TEXT)));
-        SetBkColor(dc, to_cr(win_fluent_color(h, WIN_FLUENT_COLOR_BACKGROUND)));
+        SetBkColor(dc, to_cr(win_fluent_color(h, WIN_FLUENT_COLOR_SURFACE)));
         SetBkMode(dc, TRANSPARENT);
-        return (LRESULT)dlg_background_brush(h);
+        return (LRESULT)dlg_edit_brush(h);
     }
     case WM_CTLCOLOREDIT: {
         HDC dc = (HDC)wp;
@@ -622,6 +1098,11 @@ static LRESULT CALLBACK dlg_proc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
         SetBkColor(dc, to_cr(win_fluent_color(h, WIN_FLUENT_COLOR_SURFACE)));
         return (LRESULT)dlg_edit_brush(h);
     }
+    case WM_DRAWITEM:
+        if ((DRAWITEMSTRUCT *)lp && ((DRAWITEMSTRUCT *)lp)->CtlType == ODT_BUTTON) {
+            dlg_draw_owner_button(h, (DRAWITEMSTRUCT *)lp); return TRUE;
+        }
+        break;
     case WM_SETTINGCHANGE:
     case WM_SYSCOLORCHANGE:
     case WM_THEMECHANGED:
@@ -632,13 +1113,21 @@ static LRESULT CALLBACK dlg_proc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
     case WM_COMMAND:
         /* Keep the HWND and its child controls alive until Swift has read their
          * values after dlg_modal returns.  The caller owns final destruction. */
-        if (LOWORD(wp) == 1) { g_dlg_result = 1; g_dlg_done = 1; ShowWindow(h, SW_HIDE); return 0; }  /* OK */
-        if (LOWORD(wp) == 2) { g_dlg_result = 0; g_dlg_done = 1; ShowWindow(h, SW_HIDE); return 0; }  /* Cancel */
+        if (LOWORD(wp) == 1 || LOWORD(wp) == 2) {
+            dlg_visual_state *state = dlg_visual(h, 1);
+            if (state) { state->modal_result = LOWORD(wp) == 1 ? 1 : 0; state->modal_done = 1; }
+            ShowWindow(h, SW_HIDE); return 0;
+        }
         if (g_dlg_oncmd) g_dlg_oncmd(g_dlg_cmdctx, (int)LOWORD(wp));   /* 其余按钮 → 回调 */
         return 0;
     case WM_CLOSE:
-        g_dlg_result = 0; g_dlg_done = 1; ShowWindow(h, SW_HIDE); return 0;
+        {
+            dlg_visual_state *state = dlg_visual(h, 1);
+            if (state) { state->modal_result = 0; state->modal_done = 1; }
+            ShowWindow(h, SW_HIDE); return 0;
+        }
     case WM_NCDESTROY:
+        free((dlg_visual_state *)RemovePropW(h, TC_DIALOG_VISUAL_PROP));
         win_fluent_forget(h);
         break;
     }
@@ -661,13 +1150,34 @@ static HFONT dlg_title_font(void) {
     return f;
 }
 
-static HWND dlg_child(HWND dlg, const wchar_t *cls, DWORD style, int id,
-                      const wchar_t *text, int x, int y, int w, int h) {
-    HWND c = CreateWindowExW(0, cls, text, WS_CHILD | WS_VISIBLE | style, x, y, w, h,
+static HFONT dlg_section_font(void) {
+    static HFONT f = NULL;
+    if (!f) f = CreateFontW(-16, 0, 0, 0, FW_SEMIBOLD, 0, 0, 0, DEFAULT_CHARSET,
+                            OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
+                            DEFAULT_PITCH | FF_SWISS, L"Segoe UI Variable Text");
+    return f;
+}
+
+static HFONT dlg_caption_font(void) {
+    static HFONT f = NULL;
+    if (!f) f = CreateFontW(-14, 0, 0, 0, FW_NORMAL, 0, 0, 0, DEFAULT_CHARSET,
+                            OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
+                            DEFAULT_PITCH | FF_SWISS, L"Segoe UI Variable Text");
+    return f;
+}
+
+static HWND dlg_child_ex(HWND dlg, DWORD ex_style, const wchar_t *cls, DWORD style, int id,
+                         const wchar_t *text, int x, int y, int w, int h) {
+    HWND c = CreateWindowExW(ex_style, cls, text, WS_CHILD | WS_VISIBLE | style, x, y, w, h,
                              (HWND)dlg, (HMENU)(LONG_PTR)id, GetModuleHandleW(NULL), NULL);
     SendMessageW(c, WM_SETFONT, (WPARAM)dlg_font(), TRUE);
     win_fluent_theme_child(c);
     return c;
+}
+
+static HWND dlg_child(HWND dlg, const wchar_t *cls, DWORD style, int id,
+                      const wchar_t *text, int x, int y, int w, int h) {
+    return dlg_child_ex(dlg, 0, cls, style, id, text, x, y, w, h);
 }
 
 void *dlg_create(const char *title_utf8, int w, int h) {
@@ -679,14 +1189,19 @@ void *dlg_create(const char *title_utf8, int w, int h) {
         wc.hbrBackground = NULL; wc.lpszClassName = L"TCDialog";
         RegisterClassExW(&wc); registered = 1;
     }
+    dlg_register_fluent_controls();
     wchar_t title[256];
     if (to_wide(title_utf8, title, 256) == 0) title[0] = 0;
     int sw = GetSystemMetrics(SM_CXSCREEN), sh = GetSystemMetrics(SM_CYSCREEN);
+    HWND owner = IsWindow(g_dlg) && IsWindowVisible(g_dlg)
+        ? g_dlg : (IsWindow(g_hwnd) ? g_hwnd : NULL);
     HWND hwnd = CreateWindowExW(WS_EX_DLGMODALFRAME, L"TCDialog", title,
                                 WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_CLIPCHILDREN,
                                 (sw - w) / 2, (sh - h) / 2, w, h,
-                                IsWindow(g_hwnd) ? g_hwnd : NULL, NULL, GetModuleHandleW(NULL), NULL);
-    g_dlg = hwnd; g_dlg_done = 0; g_dlg_result = 0;
+                                owner, NULL, GetModuleHandleW(NULL), NULL);
+    g_dlg = hwnd;
+    dlg_visual_state *state = dlg_visual(hwnd, 1);
+    if (state) { state->modal_done = 0; state->modal_result = 0; }
     ShowWindow(hwnd, SW_SHOWNORMAL);
     UpdateWindow(hwnd);
     return hwnd;
@@ -694,13 +1209,23 @@ void *dlg_create(const char *title_utf8, int w, int h) {
 
 void dlg_add_check(void *dlg, int id, const char *text_utf8, int x, int y, int w, int h, int checked) {
     wchar_t t[256]; if (to_wide(text_utf8, t, 256) == 0) t[0] = 0;
-    HWND c = dlg_child((HWND)dlg, L"BUTTON", BS_AUTOCHECKBOX, id, t, x, y, w, h);
-    SendMessageW(c, BM_SETCHECK, checked ? BST_CHECKED : BST_UNCHECKED, 0);
+    CreateWindowExW(0, L"TCDialogCheck", t, WS_CHILD | WS_VISIBLE | WS_TABSTOP,
+                    x, y, w, h, (HWND)dlg, (HMENU)(LONG_PTR)id,
+                    GetModuleHandleW(NULL), (void *)(INT_PTR)(checked ? 1 : 0));
 }
 
 void dlg_add_edit(void *dlg, int id, const char *text_utf8, int x, int y, int w, int h) {
     wchar_t t[1024]; if (to_wide(text_utf8, t, 1024) == 0) t[0] = 0;
-    dlg_child((HWND)dlg, L"EDIT", ES_AUTOHSCROLL | WS_BORDER, id, t, x, y, w, h);
+    HWND frame = CreateWindowExW(0, L"TCEditFrame", L"", WS_CHILD | WS_VISIBLE | WS_TABSTOP,
+                                  x, y, w, h, (HWND)dlg, (HMENU)(LONG_PTR)id,
+                                  GetModuleHandleW(NULL), NULL);
+    HWND edit = CreateWindowExW(0, L"EDIT", t, WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
+                                 8, 3, max(1, w - 16), max(1, h - 6), frame,
+                                 (HMENU)(LONG_PTR)1, GetModuleHandleW(NULL), NULL);
+    SetPropW(frame, TC_EDIT_INNER_PROP, edit);
+    SendMessageW(edit, WM_SETFONT, (WPARAM)dlg_font(), TRUE);
+    win_fluent_theme_child(edit);
+    SendMessageW(frame, WM_SIZE, 0, MAKELPARAM(w, h));
 }
 
 void dlg_add_static(void *dlg, const char *text_utf8, int x, int y, int w, int h) {
@@ -720,13 +1245,54 @@ void dlg_add_title(void *dlg, const char *text_utf8, int x, int y, int w, int h)
     SendMessageW(c, WM_SETFONT, (WPARAM)dlg_title_font(), TRUE);
 }
 
+void dlg_add_subtitle(void *dlg, const char *text_utf8, int x, int y, int w, int h) {
+    wchar_t t[512]; if (to_wide(text_utf8, t, 512) == 0) t[0] = 0;
+    HWND c = dlg_child((HWND)dlg, L"STATIC", SS_LEFT, 0, t, x, y, w, h);
+    SetPropW(c, TC_TEXT_ROLE_PROP, (HANDLE)(INT_PTR)1);
+    SendMessageW(c, WM_SETFONT, (WPARAM)dlg_caption_font(), TRUE);
+}
+
+void dlg_add_section(void *dlg, const char *text_utf8, int x, int y, int w, int h) {
+    wchar_t t[256]; if (to_wide(text_utf8, t, 256) == 0) t[0] = 0;
+    HWND c = dlg_child((HWND)dlg, L"STATIC", SS_LEFT, 0, t, x, y, w, h);
+    SetPropW(c, TC_TEXT_ROLE_PROP, (HANDLE)(INT_PTR)2);
+    SendMessageW(c, WM_SETFONT, (WPARAM)dlg_section_font(), TRUE);
+}
+
+void dlg_add_card(void *dlg, int x, int y, int w, int h) {
+    HWND dialog = (HWND)dlg;
+    dlg_visual_state *state = dlg_visual(dialog, 1);
+    if (!state || state->card_count >= (int)ARRAYSIZE(state->cards)) return;
+    RECT card = { x, y, x + w, y + h };
+    state->cards[state->card_count++] = card;
+    InvalidateRect(dialog, &card, TRUE);
+}
+
+void dlg_add_nav(void *dlg, int id, const char *title_utf8, const char *subtitle_utf8,
+                 int x, int y, int w, int h) {
+    wchar_t title[256], subtitle[512];
+    if (to_wide(title_utf8, title, 256) == 0) title[0] = 0;
+    if (to_wide(subtitle_utf8, subtitle, 512) == 0) subtitle[0] = 0;
+    CreateWindowExW(0, L"TCDialogNav", title, WS_CHILD | WS_VISIBLE | WS_TABSTOP,
+                    x, y, w, h, (HWND)dlg, (HMENU)(LONG_PTR)id,
+                    GetModuleHandleW(NULL), subtitle);
+}
+
+void dlg_add_disclosure(void *dlg, int id, const char *title_utf8, const char *subtitle_utf8,
+                        int x, int y, int w, int h, int expanded) {
+    dlg_add_nav(dlg, id, title_utf8, subtitle_utf8, x, y, w, h);
+    HWND control = GetDlgItem((HWND)dlg, id);
+    if (IsWindow(control)) SendMessageW(control, TC_NAV_SET_EXPANDED, expanded ? 1 : 0, 0);
+}
+
 void dlg_add_sep(void *dlg, int x, int y, int w) {
-    dlg_child((HWND)dlg, L"STATIC", SS_ETCHEDHORZ, 0, L"", x, y, w, 1);
+    CreateWindowExW(WS_EX_TRANSPARENT, L"TCDialogSeparator", L"", WS_CHILD | WS_VISIBLE | WS_DISABLED,
+                    x, y, w, 1, (HWND)dlg, NULL, GetModuleHandleW(NULL), NULL);
 }
 
 void dlg_add_push(void *dlg, int id, const char *text_utf8, int x, int y, int w, int h) {
     wchar_t t[256]; if (to_wide(text_utf8, t, 256) == 0) t[0] = 0;
-    dlg_child((HWND)dlg, L"BUTTON", BS_PUSHBUTTON, id, t, x, y, w, h);
+    dlg_child((HWND)dlg, L"BUTTON", BS_OWNERDRAW | WS_TABSTOP, id, t, x, y, w, h);
 }
 
 static LRESULT CALLBACK brand_logo_proc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
@@ -789,30 +1355,34 @@ void dlg_edit_get(void *dlg, int id, char *buf_utf8, int n) {
 
 int dlg_modal(void *dlg) {
     HWND hwnd = (HWND)dlg;
+    dlg_visual_state *state = dlg_visual(hwnd, 1);
+    if (!state) return 0;
+    state->modal_done = 0;
+    state->modal_result = 0;
     HWND owner = GetWindow(hwnd, GW_OWNER);
     if (IsWindow(owner)) EnableWindow(owner, FALSE);
     SetForegroundWindow(hwnd);
     SetFocus(hwnd);
     MSG msg;
     while (GetMessageW(&msg, NULL, 0, 0) > 0) {
-        if (g_dlg_done) break;
+        if (state->modal_done) break;
         if (IsWindow(hwnd) && IsDialogMessageW(hwnd, &msg)) continue;
         TranslateMessage(&msg);
         DispatchMessageW(&msg);
-        if (g_dlg_done) break;
+        if (state->modal_done) break;
     }
     if (IsWindow(owner)) {
         EnableWindow(owner, TRUE);
         SetForegroundWindow(owner);
     }
-    return g_dlg_result;
+    return state->modal_result;
 }
 
 void dlg_end(void *dlg, int result) {
     HWND hwnd = (HWND)dlg;
     if (!IsWindow(hwnd)) return;
-    g_dlg_result = result ? 1 : 0;
-    g_dlg_done = 1;
+    dlg_visual_state *state = dlg_visual(hwnd, 1);
+    if (state) { state->modal_result = result ? 1 : 0; state->modal_done = 1; }
     ShowWindow(hwnd, SW_HIDE);
 }
 
@@ -828,12 +1398,45 @@ void dlg_set_text(void *dlg, int id, const char *text_utf8) {
     SetDlgItemTextW((HWND)dlg, id, w);
 }
 
+void dlg_show_control(void *dlg, int id, int show) {
+    HWND control = GetDlgItem((HWND)dlg, id);
+    if (IsWindow(control)) ShowWindow(control, show ? SW_SHOW : SW_HIDE);
+}
+
+void dlg_reset_content(void *dlg, int content_height) {
+    HWND dialog = (HWND)dlg;
+    if (!IsWindow(dialog)) return;
+    HWND child;
+    while ((child = GetWindow(dialog, GW_CHILD)) != NULL) DestroyWindow(child);
+    dlg_visual_state *state = dlg_visual(dialog, 1);
+    if (!state) return;
+    state->card_count = 0;
+    state->scroll_pos = 0;
+    state->content_height = max(1, content_height);
+    RECT client; GetClientRect(dialog, &client);
+    LONG_PTR style = GetWindowLongPtrW(dialog, GWL_STYLE);
+    if (state->content_height > client.bottom - client.top) style |= WS_VSCROLL;
+    else style &= ~((LONG_PTR)WS_VSCROLL);
+    SetWindowLongPtrW(dialog, GWL_STYLE, style);
+    SetWindowPos(dialog, NULL, 0, 0, 0, 0,
+                 SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
+    dlg_update_scroll_info(dialog);
+    InvalidateRect(dialog, NULL, TRUE);
+}
+
+void dlg_scroll_to(void *dlg, int y) {
+    HWND dialog = (HWND)dlg;
+    if (IsWindow(dialog)) dlg_apply_scroll(dialog, y);
+}
+
 int dlg_modal_cb(void *dlg, dlg_on_cmd_t on_cmd, void *ctx) {
+    dlg_on_cmd_t previous_oncmd = g_dlg_oncmd;
+    void *previous_ctx = g_dlg_cmdctx;
     g_dlg_oncmd = on_cmd;
     g_dlg_cmdctx = ctx;
     int r = dlg_modal(dlg);
-    g_dlg_oncmd = NULL;
-    g_dlg_cmdctx = NULL;
+    g_dlg_oncmd = previous_oncmd;
+    g_dlg_cmdctx = previous_ctx;
     return r;
 }
 

@@ -260,17 +260,9 @@ Windows 11 上，详情面板和表盘选择器使用 Acrylic 毛玻璃，设置
 - 卸载默认保留 `%LOCALAPPDATA%\TokenClock` 设置；仅 `-RemoveUserData` 会一并删除。
 - release 缺少校验文件时默认中止；`-AllowUnsigned` 仅用于用户明确确认可信的本地/自定义包。
 
-Windows release 包通过 `pwsh scripts/build-windows.ps1 -Zip` 生成，包含 `TokenClock.exe`、Swift/VC++ 运行时 DLL 和资源。发布时使用指向 `windows-port` 的独立 tag：共享 release `v1.4.3` 已存在后，把对应 Windows 提交标记为 `windows-v1.4.3` 并推送。这样 workflow 定义和源码都存在于不可变的 Windows tag 中；workflow 会把 `windows-v1.4.3` 映射回已存在的 `v1.4.3` release，只附加 ZIP 和校验文件。它不会创建 Windows-only release，也不需要把 Windows 源码合并进 main。
+Windows 新版会在真实 Windows 11 机器上完成编译和测试，再连同 SHA-256 校验文件上传。GitHub 只用于分发已经验证的本地产物，不作为正式编译环境。ZIP 内包含 `TokenClock.exe`、与编译器匹配的 Swift/VC++ 运行时 DLL 和资源。
 
-```bash
-gh release view v1.4.3 --repo Neo-Isshin/TokenClock
-git switch windows-port
-git pull --ff-only origin windows-port
-git tag -a windows-v1.4.3 -m "Windows assets for v1.4.3"
-git push origin windows-v1.4.3
-```
-
-使用 `-Version latest` 时，安装器会选择最新且已同时包含 Windows ZIP 和 SHA-256 的稳定 release；若更新的 macOS/Linux release 仍在等待 Windows 资产，会先跳过它。显式 `-Version` 则严格解析共享 tag（例如 `v1.4.3`，而不是 `windows-v1.4.3`）。当前发行包仅提供 x86_64。由于尚非 Microsoft Store/MSIX 包且可能未签名，Windows 信誉保护可能弹出提示。也可直接使用便携 ZIP，但快捷方式、更新与卸载需自行管理。
+使用 `-Version latest` 时，安装器会选择最新且已同时包含 Windows ZIP 和 SHA-256 的稳定 release，自动跳过产物尚未齐全的版本；显式 `-Version` 则选择对应的共享版本。当前发行包仅提供 x86_64。由于尚非 Microsoft Store/MSIX 包且可能未签名，Windows 信誉保护可能弹出提示。也可直接使用便携 ZIP，但快捷方式、更新与卸载需自行管理。
 
 ### Linux normal 版
 
