@@ -6,6 +6,14 @@ import CoreLocation
 import FoundationNetworking   // swift-corelibs 在 Linux 把 URLSession 拆到独立模块
 #endif
 
+/// 逐小时预报（3小时间隔）
+struct HourlyForecast: Sendable {
+    let time: String
+    let tempC: Int
+    let emoji: String
+    let description: String
+}
+
 #if os(Windows)
 /// Windows only needs the shared parser. Network I/O lives in WindowsWeather and WinHTTP, so
 /// no URLSession symbol (and therefore no FoundationNetworking.dll) enters the executable.
@@ -15,14 +23,6 @@ enum WeatherService {
     }
 }
 #else
-/// 逐小时预报（3小时间隔）
-struct HourlyForecast: Sendable {
-    let time: String
-    let tempC: Int
-    let emoji: String
-    let description: String
-}
-
 /// 天气服务：自动定位统一使用公网 IP，不请求系统位置权限
 /// 使用 JSON 格式解析，支持 weatherCode 精确映射 + 逐小时预报
 @MainActor
