@@ -1,16 +1,9 @@
-# 在 tag 推送时为 Linux x86_64 构建 AppImage 并附加到对应 release。
-#
-# 流程：release.sh（Mac）构建 macOS 双变体 + 建 release + 推 tag → 本 workflow 被 tag 触发 →
-# 在 swift:6.0-jammy 容器（glibc 2.35，覆盖 2022+ 发行版）里 checkout normal（含 Linux 源码）
-# → 跑 scripts/build-appimage.sh → 把 TokenClock-x86_64.AppImage + .sha256 附加到该 release。
-# 与 release.sh 之间是异步的（AppImage 约在发版后 5–10 分钟出现）；softprops/action-gh-release
-# 的 create-or-update 语义避免「release 还没建好」的竞态。
+# Linux 云端构建仅保留为显式手动兜底。正式 AppImage 在自有 Debian 主机本地
+# 构建并验收后上传到 release；推送共享版本 tag 不再自动触发 GitHub 编译。
 name: linux-appimage
 
 on:
-  push:
-    tags: ['v*']
-  workflow_dispatch:       # 允许手动触发，便于在不打 tag 时验证
+  workflow_dispatch:       # 仅在确有需要时手动触发
     inputs:
       release_tag:
         description: 'Existing shared release tag, for example v1.4.4 (empty = use ref name)'

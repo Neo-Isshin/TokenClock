@@ -247,8 +247,10 @@ final class ViewModel: ObservableObject {
         }
     }
 
-    @objc private func handlePricingUpdate() {
-        updateMockData()
+    @objc nonisolated private func handlePricingUpdate() {
+        Task { @MainActor [weak self] in
+            self?.updateMockData()
+        }
     }
 
     // MARK: - 首次启动路径探测
@@ -444,14 +446,14 @@ final class ViewModel: ObservableObject {
 
     /// 今日全部已启用工具的估算费用（按 API 牌价折算；未计价模型记 0 并触发 ≈ 前缀）
     var totalCost: CostEstimate {
-        var result = CostEstimate.zero
+        var result = CostEstimate.unavailable
         guard !isInitialLoading else { return result }
-        for tool in visibleTools { result.merge(tool.todayCost) }
+        for tool in visibleTools where tool.todayTokens > 0 { result.merge(tool.todayCost) }
         return result
     }
 
     var totalCostFormatted: String {
-        UsageAggregator.totalTokens(visibleTools) > 0 ? CostFormat.estimate(totalCost) : "—"
+        UsageAggregator.totalTokens(visibleTools) > 0 && totalCost.available ? CostFormat.estimate(totalCost) : "—"
     }
 
     /// 当前口径下所有可见工具的 token 总数（表盘/占比分母共用）
@@ -851,7 +853,7 @@ final class ViewModel: ObservableObject {
         let active: Bool
         let cacheRate: Double
         /// 今日估算费用（暂只有 Claude Code / Codex 提供分桶计费，其余工具为 .zero）
-        var cost: CostEstimate = .zero
+        var cost: CostEstimate = .unavailable
         /// 今日缓存读 token 数（「包含缓存读」口径展示用）
         var cacheRead: Int = 0
         let sessions: [SessionInfo]
@@ -883,7 +885,7 @@ final class ViewModel: ObservableObject {
         UserDefaults.standard.set(CGFloat(point.y), forKey: "\(SettingsKey.windowPosition.rawValue)Y")
     }
 
-    static func loadWindowPosition(screenSize: NSSize) -> NSPoint {
+    static func loadWindowPosition(screenFrame: NSRect, panelSize: NSSize) -> NSPoint {
         // 用 object(forKey:)==nil 区分"从未保存"与"保存为 0"，
         // 否则用户把窗口拖到屏幕左下角(x≈0,y≈0)会被误判为未保存而弹回右上角。
         let xKey = "\(SettingsKey.windowPosition.rawValue)X"
@@ -895,8 +897,17 @@ final class ViewModel: ObservableObject {
             let y = UserDefaults.standard.double(forKey: yKey)
             return NSPoint(x: x, y: y)
         }
-        // 默认右上角
-        return NSPoint(x: screenSize.width - 220, y: screenSize.height - 260)
+        return defaultWindowPosition(screenFrame: screenFrame, panelSize: panelSize)
+    }
+
+    /// Place a fresh install fully inside the visible frame with an even edge margin.
+    /// The previous fixed `width - 220` offset put 60–180 points of every current size off-screen.
+    static func defaultWindowPosition(screenFrame: NSRect, panelSize: NSSize) -> NSPoint {
+        let margin: CGFloat = 20
+        return NSPoint(
+            x: max(screenFrame.minX + margin, screenFrame.maxX - panelSize.width - margin),
+            y: max(screenFrame.minY + margin, screenFrame.maxY - panelSize.height - margin)
+        )
     }
 
     // MARK: - 清理

@@ -51,7 +51,10 @@ final class FloatingPanel: NSPanel {
 
         // 默认位置
         if let screen = NSScreen.main {
-            let pos = ViewModel.loadWindowPosition(screenSize: screen.visibleFrame.size)
+            let pos = ViewModel.loadWindowPosition(
+                screenFrame: screen.visibleFrame,
+                panelSize: NSSize(width: Self.panelWidth, height: Self.collapsedHeight)
+            )
             let frameOrigin = NSPoint(x: pos.x, y: pos.y)
             self.setFrameOrigin(frameOrigin)
         }

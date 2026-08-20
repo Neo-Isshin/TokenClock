@@ -51,10 +51,21 @@ struct ModelBuckets: Sendable {
 struct CostEstimate: Sendable, Hashable {
     var value: Double = 0
     var complete: Bool = true
+    /// false 表示该工具尚未提供可靠的模型计费分桶，不能把 0 误报成 $0.00。
+    var available: Bool = true
 
-    static let zero = CostEstimate(value: 0, complete: true)
+    static let zero = CostEstimate(value: 0, complete: true, available: true)
+    static let unavailable = CostEstimate(value: 0, complete: false, available: false)
 
     mutating func merge(_ other: CostEstimate) {
+        guard other.available else {
+            if available { complete = false }
+            return
+        }
+        if !available {
+            self = other
+            return
+        }
         value += other.value
         complete = complete && other.complete
     }
@@ -64,6 +75,7 @@ struct CostEstimate: Sendable, Hashable {
 /// 不完整覆盖时加「≈」前缀；无数据（tokens 为 0）由调用方显示「—」。
 enum CostFormat {
     static func estimate(_ e: CostEstimate) -> String {
+        guard e.available else { return "—" }
         let body: String
         if e.value < 0.005 && e.value > 0 {
             body = "<$0.01"
@@ -79,9 +91,9 @@ enum CostFormat {
 
 /// 模型价格目录服务：三层查询（用户自定义 > 在线刷新缓存 > 内置快照）。
 ///
-/// - 内置快照：Resources/pricing-snapshot.json，随发版更新（CI 每周自动 PR）。
+/// - 内置快照：Resources/pricing-snapshot.json，随发版更新。
 /// - 刷新缓存：Application Support/TokenClock/pricing-catalog.json，内容格式与快照一致，
-///   拉取自本仓库 main 分支的 raw 地址（与内置格式永远同构，坏数据不会破坏解析）。
+///   拉取自 TokenClock 自有 GitHub 仓库的共享目录（与内置格式同构，坏数据不会替换缓存）。
 /// - 自定义价格：UserDefaults JSON，优先级最高，覆盖代理/自定义模型（如 glm-5.3）。
 ///
 /// 目录查询发生在后台扫描线程，价格编辑/刷新发生在主线程 —— 用锁保护可变状态。
@@ -91,9 +103,9 @@ final class PricingService: @unchecked Sendable {
     /// 目录刷新后广播（ViewModel 收到后增量重扫，30 秒内的下一轮扫描也会自然重算）
     static let catalogUpdatedNotification = Notification.Name("PricingCatalogUpdated")
 
-    /// 刷新源：本仓库 main 分支的快照 raw 地址（由 CI 每周更新）
+    /// 四个平台共享的刷新源。暂由稳定 normal 分支托管；后续可由仓库自动更新任务维护。
     private static let refreshURL = URL(string:
-        "https://raw.githubusercontent.com/Neo-Isshin/TokenClock/main/Sources/TokenClock/Resources/pricing-snapshot.json")!
+        "https://raw.githubusercontent.com/Neo-Isshin/TokenClock/normal/Sources/TokenClock/Resources/pricing-snapshot.json")!
 
     private var catalog: [String: ModelPrice] = [:]
     /// 带路由前缀的 key（如 dashscope/glm-5.2）→ 后缀索引；后缀唯一才收录，歧义即弃用
@@ -138,17 +150,21 @@ final class PricingService: @unchecked Sendable {
 
     /// 按模型分桶计费。任一模型无价 → 该模型金额计 0 且 complete=false。
     func cost(of buckets: [String: ModelBuckets]) -> CostEstimate {
-        var result = CostEstimate.zero
+        guard !buckets.isEmpty else { return .zero }
+        var result = CostEstimate.unavailable
+        var hasUnpricedModel = false
         for (model, b) in buckets {
             guard let p = price(forModel: model) else {
-                result.complete = false
+                hasUnpricedModel = true
                 continue
             }
-            result.value += (Double(b.input) * p.input
+            let value = (Double(b.input) * p.input
                 + Double(b.output) * p.output
                 + Double(b.cacheRead) * p.cacheRead
                 + Double(b.cacheWrite) * p.cacheWrite) / 1_000_000
+            result.merge(CostEstimate(value: value, complete: true, available: true))
         }
+        if hasUnpricedModel, result.available { result.complete = false }
         return result
     }
 
@@ -169,12 +185,18 @@ final class PricingService: @unchecked Sendable {
     // MARK: - 自定义价格
 
     func setCustomPrice(model: String, price: ModelPrice?) {
+        let normalized = ModelNormalizer.normalize(model) ?? model.trimmingCharacters(in: .whitespaces)
         lock.lock()
         if let price {
             customPrices[model] = price
+            // A model becomes priced immediately after a custom override is saved. Keeping it in
+            // the warning set makes Settings claim that the just-saved model is still unpriced.
+            unpriced.remove(model)
+            unpriced.remove(normalized)
         } else {
             customPrices.removeValue(forKey: model)
             unpriced.remove(model)
+            unpriced.remove(normalized)
         }
         lock.unlock()
         saveCustomPrices()
@@ -200,10 +222,18 @@ final class PricingService: @unchecked Sendable {
 
     /// 拉取远端快照写入缓存并重建目录。失败抛错（调用方决定是否提示）。
     func refresh() async throws {
-        let (data, _) = try await URLSession.shared.data(from: Self.refreshURL)
+        let (data, response) = try await URLSession.shared.data(from: Self.refreshURL)
+        guard let http = response as? HTTPURLResponse,
+              (200..<300).contains(http.statusCode) else {
+            throw PricingError.badResponse
+        }
         guard (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] != nil else {
             throw PricingError.badResponse
         }
+        try FileManager.default.createDirectory(
+            at: Self.cacheURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
         try data.write(to: Self.cacheURL)
         guard applyRefreshedCatalog() else { throw PricingError.badResponse }
 

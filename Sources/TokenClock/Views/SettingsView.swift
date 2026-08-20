@@ -249,6 +249,9 @@ struct SettingsView: View {
                     savePaths()
                     saveRateSettings()
                     saveCustomTheme()
+                    // TextField.onSubmit is not guaranteed to run when the user clicks Done.
+                    // Persist every valid row explicitly so normal mouse-driven use cannot lose it.
+                    persistAllCustomRows()
                     onDone?()
                 }
                 .buttonStyle(.borderedProminent)

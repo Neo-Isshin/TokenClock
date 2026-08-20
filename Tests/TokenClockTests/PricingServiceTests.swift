@@ -47,6 +47,7 @@ final class PricingServiceTests: XCTestCase {
         var buckets = ModelBuckets(input: 500_000, output: 0)
         var result = PricingService.shared.cost(of: ["definitely-not-a-real-model-xyz": buckets])
         XCTAssertFalse(result.complete, "查不到价的模型应把估算标记为不完整")
+        XCTAssertFalse(result.available, "只有未计价模型时不能把未知金额误报成约 $0.00")
         XCTAssertEqual(result.value, 0, accuracy: 0.0001, "未计价模型金额不计入")
 
         // 叠加一个有价模型：金额只含已知部分
@@ -58,10 +59,21 @@ final class PricingServiceTests: XCTestCase {
             "priced-companion": buckets,
         ])
         XCTAssertFalse(result.complete)
+        XCTAssertTrue(result.available, "有已计价模型时应展示已知部分，并以不完整标记提示")
         XCTAssertEqual(result.value, 2.0, accuracy: 0.0001, "只应计入 priced-companion 的 $2")
 
         // 未计价模型应进入待补列表（供设置页提示）
         XCTAssertTrue(PricingService.shared.unpricedModels.contains("definitely-not-a-real-model-xyz"))
+
+        PricingService.shared.setCustomPrice(
+            model: "definitely-not-a-real-model-xyz",
+            price: ModelPrice(input: 1, output: 2)
+        )
+        defer { PricingService.shared.setCustomPrice(model: "definitely-not-a-real-model-xyz", price: nil) }
+        XCTAssertFalse(
+            PricingService.shared.unpricedModels.contains("definitely-not-a-real-model-xyz"),
+            "保存自定义价后，未计价警告应立即消失"
+        )
     }
 
     /// 自定义价优先级高于目录（覆盖代理模型场景）
@@ -77,6 +89,7 @@ final class PricingServiceTests: XCTestCase {
 
     /// 费用格式化档位
     func testCostFormat() {
+        XCTAssertEqual(CostFormat.estimate(.unavailable), "—")
         XCTAssertEqual(CostFormat.estimate(CostEstimate(value: 0, complete: true)), "$0.00")
         XCTAssertEqual(CostFormat.estimate(CostEstimate(value: 0.004, complete: true)), "<$0.01")
         XCTAssertEqual(CostFormat.estimate(CostEstimate(value: 12.345, complete: true)), "$12.35")
@@ -93,8 +106,24 @@ final class PricingServiceTests: XCTestCase {
         // billed = 400×$1.25/M + 600×$0.125/M + 400×$10/M
         let buckets = ModelBuckets(input: 400, output: 400, cacheRead: 600)
         let result = PricingService.shared.cost(of: ["codex-test-model": buckets])
-        let expected: Double = (400 * 1.25 + 600 * 0.125 + 400 * 10) / 1_000_000
+        let inputCost = 400.0 * 1.25
+        let cacheReadCost = 600.0 * 0.125
+        let outputCost = 400.0 * 10.0
+        let expected = (inputCost + cacheReadCost + outputCost) / 1_000_000.0
         XCTAssertEqual(result.value, expected, accuracy: 0.000001)
+    }
+
+    /// Opt-in integration: exercises each platform's real network stack against the catalog
+    /// hosted in TokenClock's own GitHub repository. Kept opt-in so ordinary test runs remain
+    /// deterministic and offline-friendly.
+    func testOnlineRefreshFromTokenClockRepository() async throws {
+        guard ProcessInfo.processInfo.environment["TOKENCLOCK_RUN_PRICING_NETWORK_TESTS"] == "1" else {
+            throw XCTSkip("Set TOKENCLOCK_RUN_PRICING_NETWORK_TESTS=1 to test the live catalog")
+        }
+        try await PricingService.shared.refresh()
+        XCTAssertNotNil(PricingService.shared.lastRefresh)
+        XCTAssertGreaterThan(PricingService.shared.catalogSummary.count, 100)
+        XCTAssertNotNil(PricingService.shared.price(forModel: "gpt-5-codex"))
     }
 
     /// 端到端：扫本机真实日志，验证扫描层 → 分桶 → 计费全链路出数。

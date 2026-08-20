@@ -161,7 +161,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     nonisolated func applicationWillTerminate(_ notification: Notification) {
-        Task { @MainActor in
+        // AppKit delivers this callback on the main thread. A detached MainActor Task can be
+        // discarded as the process exits, which previously lost the final window position.
+        MainActor.assumeIsolated {
             // 先停 ViewModel 定时器（含 historyTimer），再处理其余清理
             viewModel?.shutdown()
             UsageAPIServer.shared.stop()

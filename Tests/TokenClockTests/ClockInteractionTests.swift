@@ -5,6 +5,19 @@ import XCTest
 
 @MainActor
 final class ClockInteractionTests: XCTestCase {
+    func testDefaultWindowPositionKeepsEverySizeInsideVisibleFrame() {
+        let screen = NSRect(x: 0, y: 98, width: 3440, height: 1312)
+        for size in ClockSize.allCases {
+            let panel = NSSize(width: size.panelWidth, height: size.diameter)
+            let origin = ViewModel.defaultWindowPosition(screenFrame: screen, panelSize: panel)
+            let frame = NSRect(origin: origin, size: panel)
+            XCTAssertGreaterThanOrEqual(frame.minX, screen.minX)
+            XCTAssertGreaterThanOrEqual(frame.minY, screen.minY)
+            XCTAssertLessThanOrEqual(frame.maxX, screen.maxX)
+            XCTAssertLessThanOrEqual(frame.maxY, screen.maxY)
+        }
+    }
+
     func testStationaryClickTogglesWithoutMovingWindow() throws {
         var clickCount = 0
         let (window, view) = makeWindow { clickCount += 1 }

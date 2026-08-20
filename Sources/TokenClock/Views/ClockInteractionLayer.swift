@@ -46,6 +46,22 @@ final class ClockInteractionNSView: NSView {
 
     override func mouseDown(with event: NSEvent) {
         guard let window else { return }
+
+        // Production mouse events carry the real window number. Let AppKit own that tracking
+        // sequence: performDrag survives SwiftUI/runtime changes and nonactivating NSPanel quirks
+        // better than rebuilding the window drag from mouseDragged callbacks.
+        if event.windowNumber != 0 {
+            let startMouse = NSEvent.mouseLocation
+            window.performDrag(with: event)
+            let endMouse = NSEvent.mouseLocation
+            if max(abs(endMouse.x - startMouse.x), abs(endMouse.y - startMouse.y)) <= 3 {
+                onClick()
+            }
+            resetDragState()
+            return
+        }
+
+        // Synthetic windowNumber=0 events are retained for deterministic unit tests.
         dragStartMouse = screenPoint(for: event, in: window)
         dragStartOrigin = window.frame.origin
         isDragging = false
@@ -62,9 +78,7 @@ final class ClockInteractionNSView: NSView {
         if !isDragging {
             onClick()
         }
-        dragStartMouse = nil
-        dragStartOrigin = nil
-        isDragging = false
+        resetDragState()
     }
 
     override func rightMouseDown(with event: NSEvent) {
@@ -91,5 +105,11 @@ final class ClockInteractionNSView: NSView {
 
     private func screenPoint(for event: NSEvent, in window: NSWindow) -> NSPoint {
         window.convertPoint(toScreen: event.locationInWindow)
+    }
+
+    private func resetDragState() {
+        dragStartMouse = nil
+        dragStartOrigin = nil
+        isDragging = false
     }
 }
