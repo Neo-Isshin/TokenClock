@@ -20,6 +20,7 @@ let linuxSources = [
     "Services/GrokUsageService.swift",
     "Services/HermesUsageService.swift",
     "Services/HistoryStore.swift",
+    "Services/JSONLLineReader.swift",
     "Services/MockUsageService.swift",
     "Services/ModelEmoji.swift",
     "Services/ModelNormalizer.swift",
