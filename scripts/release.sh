@@ -220,7 +220,7 @@ step "对比 install.sh 旧 pin"
 gc checkout "$BR_GLASS" --quiet
 OLD_NORMAL="$(grep -oE 'normal\) echo "[a-f0-9]{64}"' cli/install.sh | grep -oE '[a-f0-9]{64}')"
 OLD_GLASS="$(grep -oE 'glass\)  echo "[a-f0-9]{64}"' cli/install.sh | grep -oE '[a-f0-9]{64}')"
-OLD_TAG="$(grep -oE 'RELEASE_TAG="\$\{TOKENCLOCK_RELEASE_TAG:-v[0-9.]+' cli/install.sh | grep -oE 'v[0-9.]+')"
+OLD_TAG="$(grep -oE 'echo "v[0-9]+\.[0-9]+\.[0-9]+"' cli/install.sh | head -1 | grep -oE 'v[0-9.]+')"
 
 info "旧: tag=$OLD_TAG  normal=${OLD_NORMAL:0:12}…  glass=${OLD_GLASS:0:12}…"
 info "新: tag=$VERSION  normal=${SHA_NORMAL:-（沿用）}  glass=${SHA_GLASS:-（沿用）}"
@@ -265,8 +265,8 @@ fi
 step "更新 install.sh / cli/tokenclock（编辑于 ${BR_GLASS}）"
 gc checkout "$BR_GLASS" --quiet
 
-# RELEASE_TAG（文件内唯一形如 :-vX.Y.Z} 的片段）
-perl -pi -e 's/(:-)v[0-9]+\.[0-9]+\.[0-9]+\}/${1}'"${VERSION}"'}/' cli/install.sh
+# RELEASE_TAG：v1.4.3 起 install.sh 改为 release_tag_for_variant() 的 glass/normal/linux 三行 echo "vX.Y.Z"
+perl -pi -e 's/(\)\s*echo ")v[0-9]+\.[0-9]+\.[0-9]+(")/${1}'"${VERSION}"'${2}/g' cli/install.sh
 # glass SHA（glass)  echo "<hex>"）
 perl -pi -e 's/(glass\)\s+echo ")[a-f0-9]{64}(")/${1}'"$NEW_GLASS"'${2}/' cli/install.sh
 # normal SHA（normal) echo "<hex>"）
@@ -278,7 +278,7 @@ bash -n cli/install.sh || die "install.sh 语法错误"
 bash -n cli/tokenclock || die "tokenclock 语法错误"
 
 # 回读校验
-read_tag="$(grep -oE 'RELEASE_TAG="\$\{TOKENCLOCK_RELEASE_TAG:-v[0-9.]+' cli/install.sh | grep -oE 'v[0-9.]+')"
+read_tag="$(grep -oE 'echo "v[0-9]+\.[0-9]+\.[0-9]+"' cli/install.sh | head -1 | grep -oE 'v[0-9.]+')"
 read_normal="$(grep -oE 'normal\) echo "[a-f0-9]{64}"' cli/install.sh | grep -oE '[a-f0-9]{64}')"
 read_glass="$(grep -oE 'glass\)  echo "[a-f0-9]{64}"' cli/install.sh | grep -oE '[a-f0-9]{64}')"
 read_cli="$(grep -oE 'CLI_VERSION="[0-9.]+"' cli/tokenclock | grep -oE '[0-9.]+')"
