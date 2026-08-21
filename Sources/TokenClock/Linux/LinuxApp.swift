@@ -13,6 +13,7 @@ final class LinuxApp: @unchecked Sendable {
     private var detailsPanel: LinuxDetailsPanel?
     private var themePicker: LinuxThemePicker?
     private var settingsWindow: LinuxSettingsWindow?
+    private var overviewWindow: LinuxUsageOverviewWindow?
     private var themeItems: [LinuxClockTheme: UnsafeMutablePointer<GtkWidget>] = [:]
     private var sizeItems: [LinuxClockSize: UnsafeMutablePointer<GtkWidget>] = [:]
     private var opacityItems: [Int: UnsafeMutablePointer<GtkWidget>] = [:]
@@ -162,6 +163,7 @@ final class LinuxApp: @unchecked Sendable {
         detailsPanel?.setOpacity(windowOpacity)
         themePicker = LinuxThemePicker(parent: createdWindow, owner: self)
         settingsWindow = LinuxSettingsWindow(parent: createdWindow, owner: self, model: model)
+        overviewWindow = LinuxUsageOverviewWindow(parent: createdWindow, model: model)
         buildContextMenu()
 
         gtk_widget_show_all(createdWindow)
@@ -169,6 +171,9 @@ final class LinuxApp: @unchecked Sendable {
         detailsPanel?.hide()
         tc_gtk_shape_circle(createdWindow, diameter)
         refreshUI()
+        if ProcessInfo.processInfo.environment["TC_OVERVIEW"] != nil {
+            overviewWindow?.show()
+        }
     }
 
     private func buildContextMenu() {
@@ -331,6 +336,7 @@ final class LinuxApp: @unchecked Sendable {
 
         gtk_menu_shell_append(tc_gtk_menu_shell(root), gtk_separator_menu_item_new())
         appendMenuItem(localized(zh: "查看详情", en: "Show Details"), name: "details", to: root)
+        appendMenuItem(L10n.shared.tr("menu.overview"), name: "overview", to: root)
         appendMenuItem(localized(zh: "刷新数据", en: "Refresh Usage"), name: "refresh", to: root)
         gtk_menu_shell_append(tc_gtk_menu_shell(root), gtk_separator_menu_item_new())
         appendMenuItem(L10n.shared.tr("menu.settings"), name: "settings", to: root)
@@ -496,6 +502,7 @@ final class LinuxApp: @unchecked Sendable {
             print("[TokenClock] Copied \(endpoint)")
         case "always-on-top": toggleAlwaysOnTop()
         case "details": toggleDetails()
+        case "overview": overviewWindow?.show()
         case "refresh": scheduleScan(incremental: true)
         case "settings": showSettings()
         case "launch-at-login": toggleAutostart()
@@ -631,6 +638,7 @@ final class LinuxApp: @unchecked Sendable {
         updateDetailsPanel()
         themePicker?.refreshLanguage()
         settingsWindow?.refreshLanguage()
+        overviewWindow?.refreshLanguage()
         rebuildContextMenu()
         refreshClock()
     }

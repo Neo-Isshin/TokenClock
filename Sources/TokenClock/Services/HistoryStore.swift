@@ -18,8 +18,8 @@ final class HistoryStore: @unchecked Sendable {
     private static let SQLITE_TRANSIENT = unsafeBitCast(
         OpaquePointer(bitPattern: -1), to: sqlite3_destructor_type.self)
 
-    init() {
-        let path = Self.dbPath()
+    init(path overridePath: URL? = nil) {
+        let path = overridePath ?? Self.dbPath()
         try? FileManager.default.createDirectory(
             at: path.deletingLastPathComponent(),
             withIntermediateDirectories: true
@@ -41,32 +41,45 @@ final class HistoryStore: @unchecked Sendable {
                 is_active     INTEGER NOT NULL DEFAULT 0,
                 settled_at    TEXT NOT NULL,
                 sessions_json TEXT NOT NULL DEFAULT '[]',
+                cache_read_tokens INTEGER NOT NULL DEFAULT -1,
+                cost_value    REAL NOT NULL DEFAULT 0,
+                cost_complete INTEGER NOT NULL DEFAULT 0,
+                cost_available INTEGER NOT NULL DEFAULT 0,
                 PRIMARY KEY (date_key, tool_name)
             );
             CREATE INDEX IF NOT EXISTS idx_date ON daily_snapshots(date_key);
         """, nil, nil, nil)
         // 旧库迁移：CREATE TABLE IF NOT EXISTS 不会给已存在的表补列，
         // 探测 sessions_json 缺失则 ALTER ADD COLUMN（DEFAULT '[]' 让旧行 session 为空）。
-        migrateSessionsColumnIfNeeded()
+        migrateColumnsIfNeeded()
     }
 
     // MARK: - 迁移 / session 编解码
 
     /// 旧库 daily_snapshots 无 sessions_json 列时补列（幂等：已有则跳过，避免 duplicate column）。
-    private func migrateSessionsColumnIfNeeded() {
+    private func migrateColumnsIfNeeded() {
         guard let db = db else { return }
         var probe: OpaquePointer?
         guard sqlite3_prepare_v2(db, "PRAGMA table_info(daily_snapshots)", -1, &probe, nil) == SQLITE_OK else { return }
-        defer { sqlite3_finalize(probe) }
-        var hasCol = false
+        var columns: Set<String> = []
         while sqlite3_step(probe) == SQLITE_ROW {
-            if let p = sqlite3_column_text(probe, 1), String(cString: p) == "sessions_json" {
-                hasCol = true
-                break
-            }
+            if let p = sqlite3_column_text(probe, 1) { columns.insert(String(cString: p)) }
         }
-        if !hasCol {
+        sqlite3_finalize(probe)
+        if !columns.contains("sessions_json") {
             sqlite3_exec(db, "ALTER TABLE daily_snapshots ADD COLUMN sessions_json TEXT NOT NULL DEFAULT '[]'", nil, nil, nil)
+        }
+        if !columns.contains("cache_read_tokens") {
+            sqlite3_exec(db, "ALTER TABLE daily_snapshots ADD COLUMN cache_read_tokens INTEGER NOT NULL DEFAULT -1", nil, nil, nil)
+        }
+        if !columns.contains("cost_value") {
+            sqlite3_exec(db, "ALTER TABLE daily_snapshots ADD COLUMN cost_value REAL NOT NULL DEFAULT 0", nil, nil, nil)
+        }
+        if !columns.contains("cost_complete") {
+            sqlite3_exec(db, "ALTER TABLE daily_snapshots ADD COLUMN cost_complete INTEGER NOT NULL DEFAULT 0", nil, nil, nil)
+        }
+        if !columns.contains("cost_available") {
+            sqlite3_exec(db, "ALTER TABLE daily_snapshots ADD COLUMN cost_available INTEGER NOT NULL DEFAULT 0", nil, nil, nil)
         }
     }
 
@@ -74,9 +87,17 @@ final class HistoryStore: @unchecked Sendable {
     static func encodeSessions(_ sessions: [SessionSnapshot]) -> String {
         guard !sessions.isEmpty else { return "[]" }
         let arr: [[String: Any]] = sessions.map {
-            ["id": $0.id, "displayName": $0.displayName,
-             "tokens": $0.tokens, "messages": $0.messages,
-             "isActive": $0.isActive] as [String: Any]
+            var value: [String: Any] = [
+                "id": $0.id, "displayName": $0.displayName,
+                "tokens": $0.tokens, "messages": $0.messages,
+                "isActive": $0.isActive,
+                "costValue": $0.cost.value,
+                "costComplete": $0.cost.complete,
+                "costAvailable": $0.cost.available,
+            ]
+            if let model = $0.model { value["model"] = model }
+            if let cacheReadTokens = $0.cacheReadTokens { value["cacheReadTokens"] = cacheReadTokens }
+            return value
         }
         guard let data = try? JSONSerialization.data(withJSONObject: arr, options: []),
               let str = String(data: data, encoding: .utf8) else { return "[]" }
@@ -94,8 +115,18 @@ final class HistoryStore: @unchecked Sendable {
                   let tokens = (d["tokens"] as? NSNumber)?.intValue,
                   let messages = (d["messages"] as? NSNumber)?.intValue else { return nil }
             let isActive = d["isActive"] as? Bool ?? false
+            let model = d["model"] as? String
+            let hasCost = d["costAvailable"] != nil || d["costValue"] != nil
+            let cost = hasCost ? CostEstimate(
+                value: (d["costValue"] as? NSNumber)?.doubleValue ?? 0,
+                complete: d["costComplete"] as? Bool ?? false,
+                available: d["costAvailable"] as? Bool ?? false
+            ) : .unavailable
+            let cacheReadTokens = (d["cacheReadTokens"] as? NSNumber)?.intValue
             return DaySnapshot.Tool.Session(id: id, displayName: displayName,
-                                            tokens: tokens, messages: messages, isActive: isActive)
+                                            tokens: tokens, messages: messages, isActive: isActive,
+                                            model: model, cost: cost,
+                                            cacheReadTokens: cacheReadTokens)
         }
     }
 
@@ -142,8 +173,9 @@ final class HistoryStore: @unchecked Sendable {
             var ins: OpaquePointer?
             guard sqlite3_prepare_v2(db, """
                 INSERT INTO daily_snapshots
-                  (date_key, tool_name, tokens, messages, cache_rate, is_active, settled_at, sessions_json)
-                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+                  (date_key, tool_name, tokens, messages, cache_rate, is_active, settled_at,
+                   sessions_json, cache_read_tokens, cost_value, cost_complete, cost_available)
+                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
             """, -1, &ins, nil) == SQLITE_OK else {
                 return
             }
@@ -160,6 +192,10 @@ final class HistoryStore: @unchecked Sendable {
                 sqlite3_bind_int(ins, 6, s.isActive ? 1 : 0)
                 sqlite3_bind_text(ins, 7, now, -1, Self.SQLITE_TRANSIENT)
                 sqlite3_bind_text(ins, 8, Self.encodeSessions(s.sessions), -1, Self.SQLITE_TRANSIENT)
+                sqlite3_bind_int64(ins, 9, Int64(s.cacheReadTokens ?? -1))
+                sqlite3_bind_double(ins, 10, s.cost.value)
+                sqlite3_bind_int(ins, 11, s.cost.complete ? 1 : 0)
+                sqlite3_bind_int(ins, 12, s.cost.available ? 1 : 0)
                 if sqlite3_step(ins) != SQLITE_DONE {
                     print("[HistoryStore] insert failed for \(s.name): \(String(cString: sqlite3_errmsg(db)))")
                 }
@@ -170,22 +206,42 @@ final class HistoryStore: @unchecked Sendable {
     /// 查询过去 N 天(返回数据库里实际存在的 date_key,缺数据日由 caller 补 0)
     /// 返回按 date_key 降序的 [DaySnapshot]
     func queryRecent(days: Int) -> [DaySnapshot] {
+        query(whereClause: """
+            WHERE date_key IN (
+              SELECT DISTINCT date_key FROM daily_snapshots
+              ORDER BY date_key DESC LIMIT ?1
+            )
+            """, bind: { statement in
+                sqlite3_bind_int(statement, 1, Int32(max(1, days)))
+            })
+    }
+
+    /// 按闭区间查询，date_key 使用 YYYY-MM-DD，可直接按字典序比较。
+    func query(from startDateKey: String, through endDateKey: String) -> [DaySnapshot] {
+        query(whereClause: "WHERE date_key >= ?1 AND date_key <= ?2", bind: { statement in
+            sqlite3_bind_text(statement, 1, startDateKey, -1, Self.SQLITE_TRANSIENT)
+            sqlite3_bind_text(statement, 2, endDateKey, -1, Self.SQLITE_TRANSIENT)
+        })
+    }
+
+    private func query(
+        whereClause: String,
+        bind: (OpaquePointer?) -> Void
+    ) -> [DaySnapshot] {
         ioQueue.sync {
             guard let db = db else { return [] }
             var stmt: OpaquePointer?
             // 取最近 N 个不同 date_key 下的所有 (tool, tokens, messages, cacheRate, isActive) 行
             let sql = """
-                SELECT date_key, tool_name, tokens, messages, cache_rate, is_active, sessions_json
+                SELECT date_key, tool_name, tokens, messages, cache_rate, is_active, sessions_json,
+                       cache_read_tokens, cost_value, cost_complete, cost_available
                 FROM daily_snapshots
-                WHERE date_key IN (
-                  SELECT DISTINCT date_key FROM daily_snapshots
-                  ORDER BY date_key DESC LIMIT ?1
-                )
+                \(whereClause)
                 ORDER BY date_key DESC, tool_name ASC
             """
             guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return [] }
             defer { sqlite3_finalize(stmt) }
-            sqlite3_bind_int(stmt, 1, Int32(days))
+            bind(stmt)
 
             struct Row {
                 let name: String
@@ -194,6 +250,8 @@ final class HistoryStore: @unchecked Sendable {
                 let cacheRate: Double
                 let isActive: Bool
                 let sessions: [DaySnapshot.Tool.Session]
+                let cacheReadTokens: Int?
+                let cost: CostEstimate
             }
             var byDate: [String: [Row]] = [:]
             while sqlite3_step(stmt) == SQLITE_ROW {
@@ -204,16 +262,25 @@ final class HistoryStore: @unchecked Sendable {
                 let cacheRate = sqlite3_column_double(stmt, 4)
                 let isActive = sqlite3_column_int(stmt, 5) != 0
                 let sessionsJSON = sqlite3_column_text(stmt, 6).map { String(cString: $0) } ?? "[]"
+                let rawCacheRead = Int(sqlite3_column_int64(stmt, 7))
+                let cost = CostEstimate(
+                    value: sqlite3_column_double(stmt, 8),
+                    complete: sqlite3_column_int(stmt, 9) != 0,
+                    available: sqlite3_column_int(stmt, 10) != 0
+                )
                 byDate[dateKey, default: []].append(
                     Row(name: name, tokens: tokens, messages: messages,
                         cacheRate: cacheRate, isActive: isActive,
-                        sessions: Self.decodeSessions(sessionsJSON))
+                        sessions: Self.decodeSessions(sessionsJSON),
+                        cacheReadTokens: rawCacheRead >= 0 ? rawCacheRead : nil,
+                        cost: cost)
                 )
             }
             return byDate.map { (date, rows) -> DaySnapshot in
                 let tools = rows.map { r in
                     DaySnapshot.Tool(name: r.name, tokens: r.tokens, messages: r.messages,
                                       cacheRate: r.cacheRate, isActive: r.isActive,
+                                      cost: r.cost, cacheReadTokens: r.cacheReadTokens,
                                       sessions: r.sessions)
                 }
                 return DaySnapshot(
@@ -239,6 +306,8 @@ struct DaySnapshot {
         let messages: Int
         let cacheRate: Double
         let isActive: Bool
+        let cost: CostEstimate
+        let cacheReadTokens: Int?
         let sessions: [Session]
 
         struct Session {
@@ -247,6 +316,9 @@ struct DaySnapshot {
             let tokens: Int
             let messages: Int
             let isActive: Bool
+            let model: String?
+            let cost: CostEstimate
+            let cacheReadTokens: Int?
         }
     }
 }

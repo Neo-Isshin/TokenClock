@@ -291,17 +291,27 @@ final class LinuxUsageModel: @unchecked Sendable {
                         "tokens": tool.tokens,
                         "messages": tool.messages,
                         "cacheRate": tool.cacheRate,
+                        "cost": tool.cost.value,
+                        "costComplete": tool.cost.complete,
+                        "costAvailable": tool.cost.available,
                         "isActive": tool.isActive,
                     ]
+                    if let cache = tool.cacheReadTokens { value["cacheReadTokens"] = cache }
                     if includeSessions {
-                        value["sessions"] = tool.sessions.map {
-                            [
-                                "id": $0.id,
-                                "displayName": $0.displayName,
-                                "tokens": $0.tokens,
-                                "messages": $0.messages,
-                                "isActive": $0.isActive,
-                            ] as [String: Any]
+                        value["sessions"] = tool.sessions.map { session -> [String: Any] in
+                            var result: [String: Any] = [
+                                "id": session.id,
+                                "displayName": session.displayName,
+                                "tokens": session.tokens,
+                                "messages": session.messages,
+                                "cost": session.cost.value,
+                                "costComplete": session.cost.complete,
+                                "costAvailable": session.cost.available,
+                                "isActive": session.isActive,
+                            ]
+                            if let model = session.model { result["model"] = model }
+                            if let cache = session.cacheReadTokens { result["cacheReadTokens"] = cache }
+                            return result
                         }
                     }
                     return value
@@ -345,6 +355,10 @@ final class LinuxUsageModel: @unchecked Sendable {
         )
     }
 
+    func persistCurrentUsage() {
+        persistToday(tools)
+    }
+
     private func persistToday(_ tools: [ToolUsage]) {
         let snapshots = tools.map { tool in
             ToolSnapshot(
@@ -353,13 +367,18 @@ final class LinuxUsageModel: @unchecked Sendable {
                 messages: tool.todayMessages,
                 cacheRate: tool.cacheRate,
                 isActive: tool.isActive,
+                cost: tool.todayCost,
+                cacheReadTokens: tool.todayCacheReadTokens,
                 sessions: tool.sessions.map {
                     SessionSnapshot(
                         id: $0.rawId,
                         displayName: $0.displayName,
                         tokens: $0.todayTokens,
                         messages: $0.todayMessages,
-                        isActive: $0.isActive
+                        isActive: $0.isActive,
+                        model: $0.model,
+                        cost: $0.todayCost,
+                        cacheReadTokens: $0.cacheReadTokens
                     )
                 }
             )
