@@ -230,13 +230,25 @@ final class UsageAPIServer: @unchecked Sendable {
                             "tokens": t.tokens,
                             "messages": t.messages,
                             "cacheRate": t.cacheRate,
+                            "cost": t.cost.value,
+                            "costComplete": t.cost.complete,
+                            "costAvailable": t.cost.available,
                             "isActive": t.isActive,
                         ]
+                        if let cache = t.cacheReadTokens { dict["cacheReadTokens"] = cache }
                         if includeSessions {
                             dict["sessions"] = t.sessions.map { s -> [String: Any] in
-                                ["id": s.id, "displayName": s.displayName,
-                                 "tokens": s.tokens, "messages": s.messages,
-                                 "isActive": s.isActive]
+                                var value: [String: Any] = [
+                                    "id": s.id, "displayName": s.displayName,
+                                    "tokens": s.tokens, "messages": s.messages,
+                                    "cost": s.cost.value,
+                                    "costComplete": s.cost.complete,
+                                    "costAvailable": s.cost.available,
+                                    "isActive": s.isActive,
+                                ]
+                                if let model = s.model { value["model"] = model }
+                                if let cache = s.cacheReadTokens { value["cacheReadTokens"] = cache }
+                                return value
                             }
                         }
                         return dict

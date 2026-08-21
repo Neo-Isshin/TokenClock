@@ -14,6 +14,23 @@ struct SessionSnapshot: Sendable {
     let tokens: Int
     let messages: Int
     let isActive: Bool
+    let model: String?
+    let cost: CostEstimate
+    /// nil 表示旧历史没有保存精确缓存读数，聚合时只能由 cacheRate 估算。
+    let cacheReadTokens: Int?
+
+    init(id: String, displayName: String, tokens: Int, messages: Int,
+         isActive: Bool, model: String? = nil,
+         cost: CostEstimate = .unavailable, cacheReadTokens: Int? = nil) {
+        self.id = id
+        self.displayName = displayName
+        self.tokens = tokens
+        self.messages = messages
+        self.isActive = isActive
+        self.model = model
+        self.cost = cost
+        self.cacheReadTokens = cacheReadTokens
+    }
 }
 
 /// 单个工具的日结快照：每天 00:01 抓 viewModel.tools 写入 history.sqlite
@@ -23,6 +40,9 @@ struct ToolSnapshot: Sendable {
     let messages: Int
     let cacheRate: Double
     let isActive: Bool
+    let cost: CostEstimate
+    /// nil = 旧记录；新记录必须写入精确值（即使为 0）。
+    let cacheReadTokens: Int?
     /// 当日各 session 明细（默认空 → 旧构造调用不破坏）
     let sessions: [SessionSnapshot]
 
@@ -30,12 +50,16 @@ struct ToolSnapshot: Sendable {
     /// 调用仍合法（省略 sessions）。显式化可避免带闭包参数时 memberwise init 的类型推断误报。
     init(name: String, tokens: Int, messages: Int,
          cacheRate: Double, isActive: Bool,
+         cost: CostEstimate = .unavailable,
+         cacheReadTokens: Int? = nil,
          sessions: [SessionSnapshot] = []) {
         self.name = name
         self.tokens = tokens
         self.messages = messages
         self.cacheRate = cacheRate
         self.isActive = isActive
+        self.cost = cost
+        self.cacheReadTokens = cacheReadTokens
         self.sessions = sessions
     }
 }

@@ -72,6 +72,11 @@ final class ClockInteractionNSView: NSView {
     }
 
     override func mouseUp(with event: NSEvent) {
+        // `performDrag(with:)` owns the complete production tracking sequence. Newer AppKit
+        // runtimes can still deliver its trailing mouseUp to this view after mouseDown returns.
+        // With no synthetic press state that event is already handled and must not toggle again.
+        guard dragStartMouse != nil, dragStartOrigin != nil else { return }
+
         // A very fast gesture may contain no intermediate dragged event. Inspect the final
         // pointer position before deciding whether this was a click.
         updateDrag(with: event)
