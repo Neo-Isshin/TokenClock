@@ -8,6 +8,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var dropdownPanel: DropdownPanel!
     private var viewModel: ViewModel!
     private var settingsWindow: NSWindow?
+    private var overviewWindow: NSWindow?
     private var aboutWindow: NSWindow?
     private var themePickerPanel: NSPanel?
     private var themePickerEventMonitor: Any?
@@ -300,6 +301,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let apiItem = NSMenuItem(title: L10n.shared.tr("menu.api", Int(AppDelegate.resolveAPIServerPort())),
                                  action: #selector(copyAPIEndpoint(_:)), keyEquivalent: "")
         menu.addItem(apiItem)
+        menu.addItem(NSMenuItem(title: tr("menu.overview"),
+                                action: #selector(openUsageOverview(_:)), keyEquivalent: ""))
         menu.addItem(.separator())
 
         let opacityMenu = NSMenu()
@@ -726,6 +729,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         viewModel.language = lang
         setupRightClickMenu()
         settingsWindow?.title = L10n.shared.tr("settings.title")
+        overviewWindow?.title = L10n.shared.tr("overview.title")
     }
 
     @objc private func setUsageExcludesCache(_ sender: NSMenuItem) {
@@ -740,6 +744,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     @objc private func openSettings(_ sender: NSMenuItem) {
         showSettingsWindow()
+    }
+
+    @objc private func openUsageOverview(_ sender: NSMenuItem) {
+        showUsageOverviewWindow()
     }
 
     @objc private func copyAPIEndpoint(_ sender: NSMenuItem) {
@@ -786,6 +794,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     // MARK: - 设置窗口
+
+    private func showUsageOverviewWindow() {
+        NSApp.activate(ignoringOtherApps: true)
+        viewModel.persistCurrentUsage()
+        if let window = overviewWindow {
+            window.level = .floating
+            window.makeKeyAndOrderFront(nil)
+            return
+        }
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 840, height: 640),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable],
+            backing: .buffered, defer: false
+        )
+        window.title = L10n.shared.tr("overview.title")
+        window.minSize = NSSize(width: 780, height: 560)
+        window.isReleasedWhenClosed = false
+        window.delegate = self
+        window.contentView = NSHostingView(rootView: UsageOverviewView())
+        window.level = .floating
+        window.center()
+        window.makeKeyAndOrderFront(nil)
+        overviewWindow = window
+    }
 
     private func showSettingsWindow() {
         // 时钟面板是非激活的 floating 窗；打开设置时必须显式激活 app，否则前台仍是
@@ -905,6 +937,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         Task { @MainActor in
             if let window = closingWindow, window == settingsWindow {
                 settingsWindow = nil
+            } else if let window = closingWindow, window == overviewWindow {
+                overviewWindow = nil
             }
         }
     }

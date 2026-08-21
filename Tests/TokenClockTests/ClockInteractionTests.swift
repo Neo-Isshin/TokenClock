@@ -17,6 +17,15 @@ final class ClockInteractionTests: XCTestCase {
         XCTAssertEqual(window.frame.origin, origin)
     }
 
+    func testUnpairedMouseUpAfterNativeTrackingDoesNotToggleAgain() throws {
+        var clickCount = 0
+        let (_, view) = makeWindow { clickCount += 1 }
+
+        view.mouseUp(with: try event(.leftMouseUp, at: NSPoint(x: 120, y: 120)))
+
+        XCTAssertEqual(clickCount, 0)
+    }
+
     func testDragMovesWindowWithoutToggling() throws {
         var clickCount = 0
         let (window, view) = makeWindow { clickCount += 1 }

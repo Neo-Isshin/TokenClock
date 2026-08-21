@@ -728,23 +728,19 @@ final class ViewModel: ObservableObject {
         print("[History] 下次日结: \(DateHelper.dateKey(from: next)) 00:01 (\(intervalMin) 分钟后)")
     }
 
-    /// 抓当前 viewModel.tools 快照,落盘为"昨天"
+    /// 前一天已经由每次扫描持续覆盖到最新值；午夜只确保新一天已有记录。
     private func performDailySettlement() {
-        let cal = Calendar.current
-        guard let yesterday = cal.date(byAdding: .day, value: -1, to: Date()) else { return }
-        let dateKey = DateHelper.dateKey(from: yesterday)
+        persistCurrentUsage()
+    }
 
-        // 注:ViewModel 内部有自己的 nested ToolSnapshot 私有 struct
-        // (L576 附近,14 个 service 的扫描结果用),字段不同。
-        // 这里用 module-level 的 UsageServiceProtocol.ToolSnapshot(HistoryStore 需要),
-        // 走全限定避免命名冲突。
+    func persistCurrentUsage(synchronously: Bool = true) {
+        let dateKey = DateHelper.todayKey()
         let snapshots: [TokenClock.ToolSnapshot] = tools.map { tool in
-            // 提取为显式类型局部变量：避免把带闭包的 map 表达式内联进 memberwise init 参数
-            // 触发 Swift 类型推断误报（曾报 extra argument 'sessions'）。
             let sessions: [SessionSnapshot] = tool.sessions.map {
                 SessionSnapshot(id: $0.rawId, displayName: $0.displayName,
                                 tokens: $0.todayTokens, messages: $0.todayMessages,
-                                isActive: $0.isActive)
+                                isActive: $0.isActive, model: $0.model,
+                                cost: $0.todayCost, cacheReadTokens: $0.cacheReadTokens)
             }
             return TokenClock.ToolSnapshot(
                 name: tool.name,
@@ -752,13 +748,24 @@ final class ViewModel: ObservableObject {
                 messages: tool.todayMessages,
                 cacheRate: tool.cacheRate,
                 isActive: tool.isActive,
+                cost: tool.todayCost,
+                cacheReadTokens: tool.todayCacheReadTokens,
                 sessions: sessions
             )
         }
-        HistoryStore.shared.upsertDay(dateKey: dateKey, snapshots: snapshots)
-        UserDefaults.standard.setString(dateKey, for: .historyLastSettledDateKey)
-        let totalTokens = snapshots.reduce(0) { $0 + $1.tokens }
-        print("[History] 落盘 \(dateKey): \(snapshots.count) 工具,\(totalTokens) tokens")
+        if synchronously {
+            HistoryStore.shared.upsertDay(dateKey: dateKey, snapshots: snapshots)
+            UserDefaults.standard.setString(dateKey, for: .historyLastSettledDateKey)
+            let totalTokens = snapshots.reduce(0) { $0 + $1.tokens }
+            print("[History] 落盘 \(dateKey): \(snapshots.count) 工具,\(totalTokens) tokens")
+        } else {
+            Task.detached(priority: .utility) {
+                HistoryStore.shared.upsertDay(dateKey: dateKey, snapshots: snapshots)
+                UserDefaults.standard.setString(dateKey, for: .historyLastSettledDateKey)
+                let totalTokens = snapshots.reduce(0) { $0 + $1.tokens }
+                print("[History] 落盘 \(dateKey): \(snapshots.count) 工具,\(totalTokens) tokens")
+            }
+        }
     }
 
     /// 启动时检查上次结算日;按用户决定"漏了就漏了",不补打
@@ -905,6 +912,7 @@ final class ViewModel: ObservableObject {
                 }
                 // 首次真实数据已就绪，退出加载态
                 self.isInitialLoading = false
+                self.persistCurrentUsage(synchronously: false)
                 // 扫描全部完成（含主线程应用快照），释放重入守卫，允许下一次调度
                 self.isScanning = false
             }
