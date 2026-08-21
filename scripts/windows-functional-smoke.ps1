@@ -347,6 +347,23 @@ Command $h 160 "refresh-full" 700;Sample "after-full-refresh"
 $runKey="HKCU:\Software\Microsoft\Windows\CurrentVersion\Run";$run0=(Get-ItemProperty $runKey -Name TokenClock -ErrorAction SilentlyContinue).TokenClock
 Command $h 40 "autostart-toggle" 250;$run1=(Get-ItemProperty $runKey -Name TokenClock -ErrorAction SilentlyContinue).TokenClock;Command $h 40 "autostart-restore" 250;$run2=(Get-ItemProperty $runKey -Name TokenClock -ErrorAction SilentlyContinue).TokenClock
 
+# Usage Overview: exercise both groupings and every time selector, including custom dates.
+[void][TCWinTest]::PostMessage($h,0x0111,[IntPtr]110,[IntPtr]::Zero)
+$overview=Wait-DialogControl "TCDialog" $pidApp 900
+if($overview-eq[IntPtr]::Zero){throw "Usage Overview did not open"}
+[void](Check-Fluent "usage-overview-mica" $overview 1);Capture "06c-usage-overview-week-tool" $overview
+[void][TCWinTest]::PostMessage($overview,0x0111,[IntPtr]901,[IntPtr]::Zero);Start-Sleep -Milliseconds 300;Record "overview-last-30-days" $h
+[void][TCWinTest]::PostMessage($overview,0x0111,[IntPtr]904,[IntPtr]::Zero);Start-Sleep -Milliseconds 300;Record "overview-by-model" $h
+[void][TCWinTest]::PostMessage($overview,0x0111,[IntPtr]902,[IntPtr]::Zero)
+if((Wait-Control $overview 912)-eq[IntPtr]::Zero-or(Wait-Control $overview 913)-eq[IntPtr]::Zero){throw "Usage Overview custom date controls missing"}
+Set-Text $overview 912 (Get-Date).AddDays(-12).ToString('yyyy-MM-dd');Set-Text $overview 913 (Get-Date).AddDays(-2).ToString('yyyy-MM-dd')
+[void][TCWinTest]::PostMessage($overview,0x0111,[IntPtr]914,[IntPtr]::Zero);Start-Sleep -Milliseconds 350
+$overviewCustomPassed=((Get-Text $overview 912)-eq(Get-Date).AddDays(-12).ToString('yyyy-MM-dd'))
+Capture "06d-usage-overview-custom-model" $overview;Record "overview-custom-range" $h
+[void][TCWinTest]::PostMessage($overview,0x0111,[IntPtr]903,[IntPtr]::Zero);Start-Sleep -Milliseconds 250;Record "overview-by-tool" $h
+Close-Dialog $overview 2
+$overviewClosed=(-not [TCWinTest]::IsWindowVisible($overview));Record "overview-close" $h
+
 # One scrollable Mica settings window with seven accordion sections. The shell
 # folder picker is only cancelled and is not classified as a TokenClock surface.
 $d=Open-Settings $h $pidApp;Capture "07-settings-overview" $d;[void](Check-Fluent "settings-overview-mica" $d 1);Sample "settings-open" 1
@@ -470,6 +487,7 @@ $result=[ordered]@{
   drag=[ordered]@{before=$r0;after=$rDrag;moved=($r0.left-ne$rDrag.left-or$r0.top-ne$rDrag.top)}
   details=[ordered]@{dialWhileOpen=$dialWhileOpen;initial=$detail0;beforeExpand=$beforeExpand;afterExpand=$afterExpand;fixedHeight=($beforeExpand.height-eq$afterExpand.height);closed=$detailClosed;weather=$weatherDetail;forecastVisible=($weatherDetail.height-eq547);costModePersisted=$costModePersisted}
   menu=[ordered]@{clipboard=$clipboardAfter;clipboardPassed=($clipboardAfter-match"/api/usage$");topmostBefore=$top0;topmostAfter=$top1;autostartBefore=$run0;autostartToggled=$run1;autostartRestored=$run2;opacityCaptures=$opacityCaptures;opacityComparisons=$opacityComparisons;opacity100AcrylicRestored=($opacity100Raw-eq3);opacityAssessment=if($opacityAllWholeCard){'all-four-levels-whole-detail-visually-changed'}else{'partial-Windows-material-limitation'}}
+  overview=[ordered]@{opened=($overview-ne[IntPtr]::Zero);customRangePassed=$overviewCustomPassed;closed=$overviewClosed;groupings=@('tool','model');periods=@('last7','last30','custom')}
   gdiResize=[ordered]@{sequence='Small -> Extra Large -> Medium';rounds=10;before=$gdiCycleBefore;after=$gdiCycleAfter;delta=$gdiCycleDelta;passed=($gdiCycleDelta-le2);samples=$gdiCycles}
   fluent=$fluentChecks
   settings=[ordered]@{providerCount=$checks.Count;allProviderControls=($checks.Count-eq$providerCount);browseButtonCount=(($browse|Where-Object{$_-ne0}).Count);allBrowseButtons=(($browse|Where-Object{$_-ne0}).Count-eq$fileSystemProviderCount);codeBuddyHasNoBrowse=($browse[15]-eq0);cancelPassed=$cancelPassed;folderPickerFound=($picker-ne[IntPtr]::Zero);mouseWheelPassed=$settingsWheelPassed;inlineCustomEditorPassed=$inlineCustomPassed;detectLabel=$detectLabel;pricingCatalogBefore=$pricingCatalogBefore;pricingCatalogAfter=$pricingCatalogAfter;pricingRefreshReturned=($pricingCatalogAfter-match"206");pricingAddRowPassed=$pricingAddRowPassed;pricingCustomPersisted=$pricingCustomPersisted;pricingCustomRemoved=$pricingCustomRemoved;gdiReopen=[ordered]@{rounds=20;before=$settingsGdiBefore;after=$settingsGdiAfter;delta=$settingsGdiDelta;passed=($settingsGdiDelta-le2)};apiDisabled=$apiDisabled;apiNewPort=($null-ne$newUsage);apiRebind=($null-ne$rebindUsage);aiderTokens=if($aiderUsage){$aiderUsage.todayTokens}else{$null};rate=$savedRate;thresholds=$thresholds;expandedAiderPath=$expandedAider}

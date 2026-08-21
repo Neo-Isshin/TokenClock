@@ -48,6 +48,7 @@ final class WindowsApp: @unchecked Sendable {
     private let cmdCityBase: Int32 = 80    // + 索引 → cities[i]
     private let cmdTzBase: Int32 = 90      // + 索引 → timezones[i]
     private let cmdApi: Int32 = 100         // copy endpoint (same action as macOS normal)
+    private let cmdOverview: Int32 = 110
     private let cmdSettings: Int32 = 120
     private let cmdThemePicker: Int32 = 125
     private let cmdEditCustom: Int32 = 140
@@ -81,6 +82,7 @@ final class WindowsApp: @unchecked Sendable {
     fileprivate var customCfg = WindowsCustomTheme()   // 自定义主题编辑器在用的配置
     fileprivate var editorDlg: UnsafeMutableRawPointer?
     fileprivate var settingsDlg: UnsafeMutableRawPointer?
+    fileprivate var overviewDlg: UnsafeMutableRawPointer?
     fileprivate var aboutDlg: UnsafeMutableRawPointer?
     fileprivate var editingSavedThemeId: String?
     private var settingsDraft: SettingsDraft?
@@ -90,6 +92,12 @@ final class WindowsApp: @unchecked Sendable {
     private var pricingVisibleRows = 1
     private var settingsPricingRows: [SettingsPriceRow] = []
     private var requestedCustomSection: CustomSection?
+
+    private enum OverviewPeriod { case week, month, custom }
+    private var overviewPeriod: OverviewPeriod = .week
+    private var overviewGrouping: UsageOverviewGrouping = .tool
+    private var overviewCustomStart = Calendar.current.date(byAdding: .day, value: -6, to: Date()) ?? Date()
+    private var overviewCustomEnd = Date()
 
     private enum SettingsSection { case autoDetect, tools, paths, thresholds, pricing, customFace, localAPI }
     private enum CustomSection { case colors, geometry }
@@ -158,6 +166,7 @@ final class WindowsApp: @unchecked Sendable {
         // 调试/截图钩子（正常流程不经此）：TC_DETAIL 启动即展开；TC_SETTINGS 启动即开设置对话框。
         if ProcessInfo.processInfo.environment["TC_DETAIL"] != nil { detailsVisible = true }
         if ProcessInfo.processInfo.environment["TC_SETTINGS"] != nil { openSettings() }
+        if ProcessInfo.processInfo.environment["TC_OVERVIEW"] != nil { openUsageOverview() }
         if ProcessInfo.processInfo.environment["TC_CUSTOM"] != nil { openCustomThemeEditor() }
 
         _ = win_run(&cb)
@@ -688,6 +697,7 @@ final class WindowsApp: @unchecked Sendable {
             addSubmenu(menu, L.tr("menu.size"), sm)
         }
         addMenuItem(menu, cmdApi, L.tr("menu.api", Int(apiPort)), false)
+        addMenuItem(menu, cmdOverview, L.tr("menu.overview"), false)
         addSeparator(menu)
         if let om = menu_create() {
             for (index, percent) in Self.opacityLevels.enumerated() {
@@ -762,6 +772,7 @@ final class WindowsApp: @unchecked Sendable {
         case cmdLaunch:     setLaunchAtLogin(!launchAtLogin)
         case cmdAbout:      showAbout()
         case cmdSettings:   openSettings()
+        case cmdOverview:   openUsageOverview()
         case cmdThemePicker: openThemePicker()
         case cmdEditCustom: openCustomThemeEditor()
         case cmdTempC:      setUseFahrenheit(false)
@@ -854,6 +865,165 @@ final class WindowsApp: @unchecked Sendable {
     fileprivate func handleAboutCmd(_ id: Int32) {
         guard id == 800 else { return }
         "https://github.com/Neo-Isshin/TokenClock/issues".withCString { win_open_url($0) }
+    }
+
+    // MARK: - 用量总览
+
+    private func openUsageOverview() {
+        model.persistCurrentUsage()
+        guard let dlg = dlg_create(L10n.shared.tr("overview.title"), 820, 680) else { return }
+        overviewDlg = dlg
+        renderUsageOverview(scrollToTop: true)
+        _ = dlg_modal_cb(dlg, overviewCmdCb, nil)
+        overviewDlg = nil
+        dlg_destroy(dlg)
+    }
+
+    fileprivate func handleOverviewCmd(_ id: Int32) {
+        switch id {
+        case 900: overviewPeriod = .week
+        case 901: overviewPeriod = .month
+        case 902: overviewPeriod = .custom
+        case 903: overviewGrouping = .tool
+        case 904: overviewGrouping = .model
+        case 914:
+            guard let dlg = overviewDlg else { return }
+            if let value = parseOverviewDate(settingsEditText(dlg, 912)) { overviewCustomStart = value }
+            if let value = parseOverviewDate(settingsEditText(dlg, 913)) { overviewCustomEnd = min(Date(), value) }
+        default: return
+        }
+        renderUsageOverview(scrollToTop: false)
+    }
+
+    private func renderUsageOverview(scrollToTop: Bool) {
+        guard let dlg = overviewDlg else { return }
+        let dates = overviewDates
+        let data = UsageOverviewBuilder.load(
+            startDate: dates.0, endDate: dates.1, grouping: overviewGrouping
+        )
+        let dayRows = min(30, data.days.count)
+        let rowCount = max(1, data.rows.count)
+        let customHeight: Int32 = overviewPeriod == .custom ? 46 : 0
+        let contentHeight = Int32(330 + dayRows * 26 + rowCount * 30) + customHeight
+        dlg_reset_content(dlg, contentHeight)
+
+        dlg_add_title(dlg, L10n.shared.tr("overview.title"), 24, 14, 260, 30)
+        dlg_add_subtitle(dlg, "\(overviewDisplayDate(dates.0)) – \(overviewDisplayDate(dates.1))", 24, 46, 280, 20)
+        dlg_add_push(dlg, 900, overviewPeriod == .week ? "✓  \(L10n.shared.tr("overview.last7Days"))" : L10n.shared.tr("overview.last7Days"), 390, 18, 116, 30)
+        dlg_add_push(dlg, 901, overviewPeriod == .month ? "✓  \(L10n.shared.tr("overview.last30Days"))" : L10n.shared.tr("overview.last30Days"), 512, 18, 126, 30)
+        dlg_add_push(dlg, 902, overviewPeriod == .custom ? "✓  \(L10n.shared.tr("overview.custom"))" : L10n.shared.tr("overview.custom"), 644, 18, 118, 30)
+        dlg_add_push(dlg, 903, overviewGrouping == .tool ? "✓  \(L10n.shared.tr("overview.byTool"))" : L10n.shared.tr("overview.byTool"), 606, 54, 88, 28)
+        dlg_add_push(dlg, 904, overviewGrouping == .model ? "✓  \(L10n.shared.tr("overview.byModel"))" : L10n.shared.tr("overview.byModel"), 700, 54, 88, 28)
+
+        var y: Int32 = 92
+        if overviewPeriod == .custom {
+            dlg_add_static(dlg, L10n.shared.tr("overview.from"), 380, y + 3, 28, 22)
+            dlg_add_edit(dlg, 912, DateHelper.dateKey(from: overviewCustomStart), 410, y, 112, 26)
+            dlg_add_static(dlg, L10n.shared.tr("overview.to"), 530, y + 3, 24, 22)
+            dlg_add_edit(dlg, 913, DateHelper.dateKey(from: overviewCustomEnd), 556, y, 112, 26)
+            dlg_add_push(dlg, 914, L10n.shared.tr("settings.done"), 678, y, 84, 27)
+            y += 42
+        }
+
+        appendOverviewMetricCard(dlg, x: 22, y: y, width: 184, title: L10n.shared.tr("overview.tokens"), value: TokenFormat.compact(data.summary.tokens))
+        appendOverviewMetricCard(dlg, x: 214, y: y, width: 184, title: L10n.shared.tr("overview.messages"), value: overviewNumber(data.summary.messages))
+        appendOverviewMetricCard(dlg, x: 406, y: y, width: 184, title: L10n.shared.tr("overview.cost"), value: CostFormat.estimate(data.summary.cost))
+        appendOverviewMetricCard(dlg, x: 598, y: y, width: 184, title: L10n.shared.tr("overview.averageCache"), value: String(format: "%@%.1f%%", data.summary.cacheIsExact ? "" : "≈", data.summary.averageCacheRate * 100))
+        y += 86
+
+        dlg_add_section(dlg, L10n.shared.tr("overview.daily"), 24, y, 200, 24)
+        y += 28
+        dlg_add_card(dlg, 22, y, 760, Int32(dayRows * 26 + 18))
+        let visibleDays = Array(data.days.suffix(30))
+        let maxTokens = max(1, visibleDays.map(\.metrics.tokens).max() ?? 1)
+        for (index, day) in visibleDays.enumerated() {
+            let rowY = y + 8 + Int32(index * 26)
+            dlg_add_static(dlg, String(day.dateKey.suffix(5)), 34, rowY, 52, 20)
+            dlg_add_static(dlg, overviewBar(day.metrics.tokens, maximum: maxTokens), 90, rowY, 566, 20)
+            dlg_add_static(dlg, TokenFormat.compact(day.metrics.tokens), 676, rowY, 88, 20)
+        }
+        y += Int32(dayRows * 26 + 32)
+
+        dlg_add_section(dlg, L10n.shared.tr("overview.breakdown"), 24, y, 200, 24)
+        y += 28
+        let listHeight = Int32(34 + rowCount * 30)
+        dlg_add_card(dlg, 22, y, 760, listHeight)
+        appendOverviewColumns(dlg, y: y + 7, name: L10n.shared.tr("overview.name"), tokens: L10n.shared.tr("overview.tokens"), messages: L10n.shared.tr("overview.messages"), cost: L10n.shared.tr("overview.cost"), cache: L10n.shared.tr("overview.averageCache"))
+        if data.rows.isEmpty {
+            dlg_add_subtitle(dlg, L10n.shared.tr("overview.noData"), 42, y + 38, 700, 24)
+        }
+        for (index, row) in data.rows.enumerated() {
+            let rowY = y + 34 + Int32(index * 30)
+            let name = row.name == "Unknown" ? L10n.shared.tr("detail.unknownModel") : row.name
+            appendOverviewColumns(
+                dlg, y: rowY, name: "\(row.emoji)  \(name)",
+                tokens: TokenFormat.compact(row.metrics.tokens),
+                messages: overviewNumber(row.metrics.messages),
+                cost: CostFormat.estimate(row.metrics.cost),
+                cache: String(format: "%@%.1f%%", row.metrics.cacheIsExact ? "" : "≈", row.metrics.averageCacheRate * 100)
+            )
+        }
+        y += listHeight + 12
+
+        var notes: [String] = []
+        if data.containsLegacyCacheEstimate { notes.append(L10n.shared.tr("overview.estimatedCache")) }
+        if data.containsUnavailableCost { notes.append(L10n.shared.tr("overview.partialCost")) }
+        if data.containsUnknownModel { notes.append(L10n.shared.tr("overview.unknownModel")) }
+        if !notes.isEmpty { dlg_add_subtitle(dlg, "ⓘ  " + notes.joined(separator: "   ·   "), 24, y, 650, 32) }
+        dlg_add_push(dlg, 2, L10n.shared.tr("about.close"), 694, y, 88, 30)
+        if scrollToTop { dlg_scroll_to(dlg, 0) }
+    }
+
+    private func appendOverviewMetricCard(
+        _ dlg: UnsafeMutableRawPointer, x: Int32, y: Int32, width: Int32,
+        title: String, value: String
+    ) {
+        dlg_add_card(dlg, x, y, width, 72)
+        dlg_add_subtitle(dlg, title, x + 14, y + 10, width - 28, 20)
+        dlg_add_title(dlg, value, x + 14, y + 32, width - 28, 26)
+    }
+
+    private func appendOverviewColumns(
+        _ dlg: UnsafeMutableRawPointer, y: Int32,
+        name: String, tokens: String, messages: String, cost: String, cache: String
+    ) {
+        dlg_add_static(dlg, name, 36, y, 294, 22)
+        dlg_add_static(dlg, tokens, 340, y, 102, 22)
+        dlg_add_static(dlg, messages, 452, y, 84, 22)
+        dlg_add_static(dlg, cost, 548, y, 94, 22)
+        dlg_add_static(dlg, cache, 654, y, 106, 22)
+    }
+
+    private var overviewDates: (Date, Date) {
+        let end = Calendar.current.startOfDay(for: overviewPeriod == .custom ? overviewCustomEnd : Date())
+        let start: Date
+        switch overviewPeriod {
+        case .week: start = Calendar.current.date(byAdding: .day, value: -6, to: end) ?? end
+        case .month: start = Calendar.current.date(byAdding: .day, value: -29, to: end) ?? end
+        case .custom: start = Calendar.current.startOfDay(for: overviewCustomStart)
+        }
+        return (min(start, end), max(start, end))
+    }
+
+    private func parseOverviewDate(_ value: String) -> Date? {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter.date(from: value)
+    }
+
+    private func overviewDisplayDate(_ date: Date) -> String {
+        DateFormatter.localizedString(from: date, dateStyle: .medium, timeStyle: .none)
+    }
+
+    private func overviewNumber(_ value: Int) -> String {
+        let formatter = NumberFormatter(); formatter.numberStyle = .decimal
+        return formatter.string(from: NSNumber(value: value)) ?? "\(value)"
+    }
+
+    private func overviewBar(_ value: Int, maximum: Int) -> String {
+        let filled = value > 0 ? max(1, Int((Double(value) / Double(maximum) * 42).rounded())) : 0
+        return String(repeating: "━", count: filled)
     }
 
     /// The Windows settings surface follows macOS normal's disclosure-group model: every
@@ -1938,6 +2108,9 @@ private let customCmdCb: @convention(c) (UnsafeMutableRawPointer?, Int32) -> Voi
 }
 private let settingsCmdCb: @convention(c) (UnsafeMutableRawPointer?, Int32) -> Void = { _, id in
     WindowsApp.shared.handleSettingsCmd(id)
+}
+private let overviewCmdCb: @convention(c) (UnsafeMutableRawPointer?, Int32) -> Void = { _, id in
+    WindowsApp.shared.handleOverviewCmd(id)
 }
 private let pricingCmdCb: @convention(c) (UnsafeMutableRawPointer?, Int32) -> Void = { _, id in
     WindowsApp.shared.handlePricingCmd(id: id)
