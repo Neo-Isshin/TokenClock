@@ -271,8 +271,18 @@ $detailSettings=Get-Content -Raw -LiteralPath "$Out\localappdata\TokenClock\sett
 $costModePersisted=([int]$detailSettings.TC_dropdownValueMode-eq1)
 if(-not$costModePersisted){[void]$failures.Add("By Cost click did not persist TC_dropdownValueMode=1")}
 Capture "04-detail-model-percent" $detail;Capture "04c-detail-model-percent-after-repeated-switches" $detail
-Click-Client $detail ([int]($detail0.width*0.20)) (49+$forecastOffset) "detail-codex-quota" 700;Capture "04b-detail-codex-quota" $detail
-Click-Client $detail ([int]($detail0.width*0.20)) (49+$forecastOffset) "detail-codex-quota-close" 450
+# The first launcher row now contains Model Detect on the left and a modal
+# Subscription Quota window on the right. Exercise both launch surfaces and
+# close the modal through its own Close command so it cannot be mistaken for
+# Settings later (both native windows intentionally share the TCDialog class).
+Click-Client $detail ([int]($detail0.width*0.20)) (49+$forecastOffset) "detail-model-detect-placeholder" 300
+Click-Client $detail ([int]($detail0.width*0.80)) (49+$forecastOffset) "detail-subscription-quota" 700
+$quotaDialog=Wait-DialogControl "TCDialog" $pidApp 982 8000
+if($quotaDialog-eq[IntPtr]::Zero){throw "Subscription Quota window did not open"}
+Capture "04b-detail-subscription-quota" $quotaDialog
+[void][TCWinTest]::PostMessage($quotaDialog,0x0111,[IntPtr]982,[IntPtr]::Zero)
+if(-not(Wait-Hidden $quotaDialog)){throw "Subscription Quota window did not close"}
+Record "detail-subscription-quota-close" $h
 $beforeExpand=Window-Rect $detail;Click-Client $detail ([int]($beforeExpand.width/2)) (101+$forecastOffset) "detail-expand-first-row" 650;$afterExpand=Window-Rect $detail;Capture "05-detail-expanded" $detail
 [void][TCWinTest]::PostMessage($detail,0x020A,[IntPtr](-120-shl16),[IntPtr]::Zero);Start-Sleep -Milliseconds 500;Record "detail-scroll" $h;Capture "05b-detail-scrolled" $detail;Sample "detail-expanded"
 Click-Client $h ([int]((Window-Rect $h).width/2)) 100 "left-click-detail-close" 450
