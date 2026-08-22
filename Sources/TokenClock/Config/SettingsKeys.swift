@@ -71,6 +71,14 @@ enum SettingsKey: String {
     /// 0=跟随主题 1=白 2=黑 3=自定义
     case dialTextMode = "TC_dialTextMode"
     case dialTextColor = "TC_dialTextColor"
+    /// Liquid Glass 私有材质配方：2=标准、13=清透、8=磨砂。
+    case glassVariant = "TC_GLASS_VARIANT"
+    /// 折射表盘下层毛玻璃底板透明度（0…1）。
+    case glassBackingAlpha = "TC_GLASS_BACK_ALPHA"
+    /// 保留旧版折射强度设置键，避免升级后遗失用户设置。
+    case glassLensing = "TC_GLASS_LENSING"
+    /// Liquid Glass 自定义底色；空值表示随壁纸自适应。
+    case glassTint = "TC_GLASS_TINT"
     /// 下拉详情面板主文字色 #RRGGBB（空=跟随主题）
     case dropdownTextColor = "TC_dropdownTextColor"
     /// Linux/Windows 详情面板快捷对比色预设；不覆盖用户自定义颜色。

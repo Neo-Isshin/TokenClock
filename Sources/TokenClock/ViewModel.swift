@@ -913,7 +913,7 @@ final class ViewModel: ObservableObject {
             }
             if enabled.contains("Gemini CLI") {
                 let u = self.geminiService.todayUsage()
-                results["Gemini CLI"] = ToolSnapshot(tokens: u.tokens, messages: u.messages, recent: self.geminiService.recentUsage(minutes: rateWindow).tokens, hourly: self.geminiService.currentHourTokens(), active: self.geminiService.isActive(), cacheRate: u.cacheRate, cost: .zero, sessions: self.geminiService.todaySessions())
+                results["Gemini CLI"] = ToolSnapshot(tokens: u.tokens, messages: u.messages, recent: self.geminiService.recentUsage(minutes: rateWindow).tokens, hourly: self.geminiService.currentHourTokens(), active: self.geminiService.isActive(), cacheRate: u.cacheRate, sessions: self.geminiService.todaySessions())
             }
             if enabled.contains("Codex") {
                 let u = self.codexService.todayUsage()
