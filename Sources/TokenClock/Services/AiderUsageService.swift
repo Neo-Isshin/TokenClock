@@ -12,10 +12,21 @@ final class AiderUsageService: @unchecked Sendable {
     private var lastScanTime: Date = .distantPast
 
     private let fm = FileManager.default
-    private let aiderHome: String
+    private let analyticsPath: String
 
     init(aiderHome: String? = nil) {
-        self.aiderHome = aiderHome ?? PathConfig.aiderHome()
+        if let aiderHome {
+            // 传入单个 .jsonl 文件可直连（便携/测试场景）
+            analyticsPath = aiderHome.lowercased().hasSuffix(".jsonl")
+                ? aiderHome
+                : aiderHome + "/analytics.jsonl"
+        } else {
+            #if os(Windows)
+            analyticsPath = PathConfig.aiderAnalyticsPath()
+            #else
+            analyticsPath = PathConfig.aiderHome() + "/analytics.jsonl"
+            #endif
+        }
     }
 
     func fullScan() {
@@ -50,10 +61,6 @@ final class AiderUsageService: @unchecked Sendable {
     }
 
     // MARK: - 内部
-
-    private var analyticsPath: String {
-        aiderHome + "/analytics.jsonl"
-    }
 
     private func scanAnalyticsFile() {
         let path = analyticsPath

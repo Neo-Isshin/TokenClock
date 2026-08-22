@@ -1,6 +1,6 @@
 import Foundation
-#if canImport(FoundationNetworking)
-import FoundationNetworking
+#if canImport(FoundationNetworking) && !os(Windows)
+import FoundationNetworking   // Linux；Windows 走 WinHTTP 原生桥，禁止引入本 DLL
 #endif
 
 /// 单个模型的单价，单位 USD / 百万 tokens（与 pricing-snapshot.json 的 `_meta.unit` 一致）。
@@ -51,7 +51,6 @@ struct ModelBuckets: Sendable {
 struct CostEstimate: Sendable, Hashable {
     var value: Double = 0
     var complete: Bool = true
-    /// false 表示该工具尚未提供可靠的模型计费分桶，不能把 0 误报成 $0.00。
     var available: Bool = true
 
     static let zero = CostEstimate(value: 0, complete: true, available: true)
@@ -202,8 +201,6 @@ final class PricingService: @unchecked Sendable {
         lock.lock()
         if let price {
             customPrices[model] = price
-            // A model becomes priced immediately after a custom override is saved. Keeping it in
-            // the warning set makes Settings claim that the just-saved model is still unpriced.
             unpriced.remove(model)
             unpriced.remove(normalized)
         } else {
@@ -235,11 +232,26 @@ final class PricingService: @unchecked Sendable {
 
     /// 拉取远端快照写入缓存并重建目录。失败抛错（调用方决定是否提示）。
     func refresh() async throws {
-        let (data, response) = try await URLSession.shared.data(from: Self.refreshURL)
+        let data: Data
+        #if os(Windows)
+        // Windows 构建不链接 FoundationNetworking.dll：走 WinHTTP 同步桥
+        // （调用方在 Task.detached 里，阻塞无碍；与 WindowsWeather 同一模式）。
+        let response = try WindowsNativeHTTP.request(
+            url: Self.refreshURL.absoluteString,
+            connectTimeout: 10, sendTimeout: 10, receiveTimeout: 30
+        )
+        guard (200..<300).contains(response.statusCode) else {
+            throw PricingError.badResponse
+        }
+        data = response.body
+        #else
+        let (fetched, response) = try await URLSession.shared.data(from: Self.refreshURL)
         guard let http = response as? HTTPURLResponse,
               (200..<300).contains(http.statusCode) else {
             throw PricingError.badResponse
         }
+        data = fetched
+        #endif
         guard (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] != nil else {
             throw PricingError.badResponse
         }

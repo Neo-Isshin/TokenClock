@@ -16,11 +16,31 @@ enum TokenFormat {
     }
 }
 /// 单个工具的 token 使用数据
+/// Unit published by the upstream provider contract. TokenClock keeps this attached to every
+/// value so credits/requests can never leak into token totals or cross-unit percentages.
+enum UsageMeasurementUnit: String, Codable, CaseIterable {
+    case tokens
+    case credits
+    case requests
+}
+
+enum UsageMeasurementScope: String, Codable, CaseIterable {
+    case today
+    case currentSession
+    case lifetime
+    /// 仅有官方契约可探测、尚无稳定数值语义的 provider（Windows 供应商目录使用）
+    case contractOnly
+}
+
 struct ToolUsage: Identifiable, Hashable {
     var id: String { name }
     let name: String
     let abbreviation: String
     let emoji: String
+    var measurementUnit: UsageMeasurementUnit = .tokens
+    var measurementScope: UsageMeasurementScope = .today
+    /// Non-today providers keep their honest value here while legacy `todayTokens` stays zero.
+    var measurementValue: Int? = nil
     var todayTokens: Int
     var todayMessages: Int
     var isActive: Bool
@@ -41,6 +61,11 @@ struct ToolUsage: Identifiable, Hashable {
 
     /// 今日活跃的 session/agent 列表（用于展开展示）
     var sessions: [SessionInfo] = []
+
+    /// 计量值（tokens/credits/requests 的统一出口；today 口径回退 todayTokens）
+    var value: Int { measurementValue ?? todayTokens }
+    var recentValue: Int { measurementScope == .today ? recentTokens : 0 }
+    var hourlyValue: Int { measurementScope == .today ? hourlyTokens : 0 }
 
     /// 格式化的 token 数（如 "847.2K" / "1.23B"）
     var formattedTokens: String { TokenFormat.compact(todayTokens) }

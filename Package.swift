@@ -84,6 +84,7 @@ let package = Package(
                 "Services/WeatherService.swift",
                 "ViewModel.swift",
                 "Views",
+                "Windows",
                 "main.swift",
             ],
             sources: linuxSources,
@@ -100,6 +101,67 @@ let package = Package(
         ),
     ]
 )
+#elseif os(Windows)
+// Windows 原生（Win32）normal 版：Win32Shim（C 互操作）+ CSQLite（vendor amalgamation）+ 共享数据层 + Windows/ UI。
+let package = Package(
+    name: "TokenClock",
+    targets: [
+        .target(
+            name: "CSQLite",
+            path: "Sources/CSQLiteWin",
+            publicHeadersPath: "."
+        ),
+        .target(
+            name: "Win32Shim",
+            path: "Sources/Win32Shim",
+            linkerSettings: [
+                .linkedLibrary("User32"),
+                .linkedLibrary("Shell32"),
+                .linkedLibrary("Gdi32"),
+                .linkedLibrary("gdiplus"),
+                .linkedLibrary("Advapi32"),
+                .linkedLibrary("Ws2_32"),
+                .linkedLibrary("Winhttp"),
+                .linkedLibrary("Comdlg32"),   // ChooseColor（自定义主题取色器）
+                .linkedLibrary("Ole32"),      // SHBrowseForFolder 返回的 PIDL 释放
+            ]
+        ),
+        .executableTarget(
+            name: "TokenClock",
+            dependencies: ["CSQLite", "Win32Shim"],
+            path: "Sources/TokenClock",
+            exclude: [
+                "AppDelegate.swift",
+                "FloatingPanel.swift",
+                "ViewModel.swift",
+                "main.swift",
+                "Views",
+                "Linux",
+                "Models/ClockFaceTheme.swift",
+                "Models/ClockSize.swift",
+                "Models/CustomThemeConfig.swift",
+                "Services/LaunchAgentHelper.swift",
+                "Services/UsageAPIServer.swift",
+            ],
+            resources: [
+                .copy("Resources/glass_disc.png"),
+                .copy("Resources/pricing-snapshot.json"),
+            ],
+            swiftSettings: [.unsafeFlags(["-parse-as-library"])],
+            // SwiftPM otherwise emits a console-subsystem PE and Windows opens a black terminal
+            // beside the widget. Keep Swift's CRT entry point while marking the product as a GUI.
+            linkerSettings: [.unsafeFlags([
+                "-Xlinker", "/SUBSYSTEM:WINDOWS",
+                "-Xlinker", "/ENTRY:mainCRTStartup",
+            ])]
+        ),
+        .testTarget(
+            name: "TokenClockTests",
+            dependencies: ["TokenClock"],
+            path: "Tests/TokenClockTests"
+        ),
+    ]
+)
 #else
 let package = Package(
     name: "TokenClock",
@@ -108,7 +170,7 @@ let package = Package(
         .executableTarget(
             name: "TokenClock",
             path: "Sources/TokenClock",
-            exclude: ["Linux"],
+            exclude: ["Linux", "Windows"],
             resources: [
                 .copy("Resources/glass_disc.png"),
                 .copy("Resources/pricing-snapshot.json"),

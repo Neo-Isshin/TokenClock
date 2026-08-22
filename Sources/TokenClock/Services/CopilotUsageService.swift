@@ -17,9 +17,16 @@ final class CopilotUsageService: @unchecked Sendable {
 
     private let fm = FileManager.default
     private let copilotHome: String
+    #if os(Windows)
+    private let otelFileOverride: String?
+    #endif
 
-    init(copilotHome: String? = nil) {
+    init(copilotHome: String? = nil, otelFileOverride: String? = nil) {
         self.copilotHome = copilotHome ?? PathConfig.copilotHome()
+        #if os(Windows)
+        self.otelFileOverride = otelFileOverride
+            ?? (copilotHome == nil ? PathConfig.copilotOtelFileOverride() : nil)
+        #endif
     }
 
     func fullScan() {
@@ -63,14 +70,27 @@ final class CopilotUsageService: @unchecked Sendable {
 
     private func scanAllFiles() {
         var livePaths = Set<String>()
+        #if os(Windows)
+        // 测试/便携部署可用单个 .jsonl 文件直连，跳过目录扫描
+        let directPath = otelFileOverride.map { ($0 as NSString).standardizingPath }
+        if let directPath, directPath.lowercased().hasSuffix(".jsonl") {
+            var isFile: ObjCBool = false
+            if fm.fileExists(atPath: directPath, isDirectory: &isFile), !isFile.boolValue {
+                livePaths.insert(directPath)
+                processJSONLFile(directPath, parser: parseOtelEvent)
+            }
+        }
+        #endif
+
         var isDir: ObjCBool = false
-#if os(Linux)
+        #if os(Linux)
         if let directFile = PathConfig.copilotOtelFile(),
            fm.fileExists(atPath: directFile, isDirectory: &isDir), !isDir.boolValue {
             livePaths.insert(directFile)
             processJSONLFile(directFile, parser: parseOtelEvent)
         }
-#endif
+        #endif
+
         let otelDir = copilotHome + "/otel"
         if fm.fileExists(atPath: otelDir, isDirectory: &isDir), isDir.boolValue,
            let files = try? fm.contentsOfDirectory(atPath: otelDir) {
@@ -162,6 +182,8 @@ final class CopilotUsageService: @unchecked Sendable {
         let output = attrs["gen_ai.usage.output_tokens"] as? Int ?? 0
         let cacheRead = attrs["gen_ai.usage.cache_read.input_tokens"] as? Int ?? 0
         _ = attrs["gen_ai.usage.cache_creation.input_tokens"] as? Int ?? 0
+        // OTel input_tokens includes both cache-read and cache-creation tokens. Cache creation is
+        // fresh work, so subtract only the read portion.
         let total = TokenAccounting.excludingCacheRead(
             inclusiveInput: input, cacheRead: cacheRead, output: output
         )
@@ -184,6 +206,8 @@ final class CopilotUsageService: @unchecked Sendable {
         let output = usage["outputTokens"] as? Int ?? 0
         let cacheRead = usage["cacheReadTokens"] as? Int ?? 0
         _ = usage["cacheWriteTokens"] as? Int ?? 0
+        // GitHub documents assistant.usage inputTokens as the input total. Treat cacheReadTokens
+        // as its cached subset; cacheWriteTokens remains fresh input already included in input.
         let total = TokenAccounting.excludingCacheRead(
             inclusiveInput: input, cacheRead: cacheRead, output: output
         )

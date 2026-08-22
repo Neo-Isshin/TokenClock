@@ -55,9 +55,13 @@ enum SettingsKey: String {
     case clinePath = "TC_clinePath"
     case continuePath = "TC_continuePath"
     case cursorAgentPath = "TC_cursorAgentPath"
+    case kiroSessionsPath = "TC_kiroSessionsPath"
+    case codeBuddyEndpoint = "TC_codeBuddyEndpoint"
 
     // MARK: - 窗口位置（历史命名，无 TC_ 前缀，保持兼容）
     case windowPosition = "TokenClockWindowPosition"
+    case windowsWindowX = "TCWinWindowX"
+    case windowsWindowY = "TCWinWindowY"
 
     // MARK: - 启动持久化设置（窗口透明度 / 城市 / 时区 / 华氏度）
     case windowOpacity = "TC_windowOpacity"
@@ -100,49 +104,96 @@ enum SettingsKey: String {
 extension UserDefaults {
     /// 类型安全的 bool 读写
     func setBool(_ value: Bool, for key: SettingsKey) {
+        #if os(Windows)
+        WindowsPreferences.shared.set(value, forKey: key.rawValue)
+        #else
         set(value, forKey: key.rawValue)
+        #endif
     }
     func bool(for key: SettingsKey, `default` fallback: Bool = false) -> Bool {
+        #if os(Windows)
+        if WindowsPreferences.shared.object(forKey: key.rawValue) == nil { return fallback }
+        return WindowsPreferences.shared.bool(forKey: key.rawValue)
+        #else
         if object(forKey: key.rawValue) == nil { return fallback }
         return bool(forKey: key.rawValue)
+        #endif
     }
 
     /// 类型安全的 int 读写
     func setInt(_ value: Int, for key: SettingsKey) {
+        #if os(Windows)
+        WindowsPreferences.shared.set(value, forKey: key.rawValue)
+        #else
         set(value, forKey: key.rawValue)
+        #endif
     }
     func int(for key: SettingsKey, `default` fallback: Int = 0) -> Int {
+        #if os(Windows)
+        if WindowsPreferences.shared.object(forKey: key.rawValue) == nil { return fallback }
+        return WindowsPreferences.shared.integer(forKey: key.rawValue)
+        #else
         if object(forKey: key.rawValue) == nil { return fallback }
         return integer(forKey: key.rawValue)
+        #endif
     }
 
     /// 类型安全的 string 读写
     func setString(_ value: String?, for key: SettingsKey) {
+        #if os(Windows)
+        WindowsPreferences.shared.set(value, forKey: key.rawValue)
+        #else
         set(value, forKey: key.rawValue)
+        #endif
     }
     func string(for key: SettingsKey) -> String? {
+        #if os(Windows)
+        return WindowsPreferences.shared.string(forKey: key.rawValue)
+        #else
         string(forKey: key.rawValue)
+        #endif
     }
 
     /// 类型安全的 stringArray 读写
     func setStringArray(_ value: [String], for key: SettingsKey) {
+        #if os(Windows)
+        WindowsPreferences.shared.set(value, forKey: key.rawValue)
+        #else
         set(value, forKey: key.rawValue)
+        #endif
     }
     func stringArray(for key: SettingsKey) -> [String]? {
+        #if os(Windows)
+        return WindowsPreferences.shared.stringArray(forKey: key.rawValue)
+        #else
         stringArray(forKey: key.rawValue)
+        #endif
     }
 
     /// 类型安全的 double 读写（object==nil 区分「未存」与「存了 0」）
     func setDouble(_ value: Double, for key: SettingsKey) {
+        #if os(Windows)
+        WindowsPreferences.shared.set(value, forKey: key.rawValue)
+        #else
         set(value, forKey: key.rawValue)
+        #endif
     }
     func double(for key: SettingsKey, `default` fallback: Double = 0) -> Double {
+        #if os(Windows)
+        if WindowsPreferences.shared.object(forKey: key.rawValue) == nil { return fallback }
+        return WindowsPreferences.shared.double(forKey: key.rawValue)
+        #else
         if object(forKey: key.rawValue) == nil { return fallback }
         return double(forKey: key.rawValue)
+        #endif
     }
 
     /// 移除 key
     func remove(_ key: SettingsKey) {
+        #if os(Windows)
+        WindowsPreferences.shared.removeObject(forKey: key.rawValue)
+        #else
         removeObject(forKey: key.rawValue)
+        #endif
     }
 }
