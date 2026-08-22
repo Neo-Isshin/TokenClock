@@ -1084,7 +1084,10 @@ void win_render_clock(int w, int h, int hh, int mm, int ss, const win_theme *t, 
                 gfx.DrawPath(&bp, &card);
             }
 
-            Gdiplus::FontFamily famD(L"Segoe UI");
+            // Windows 11's variable UI face has materially better small-size spacing and
+            // weight interpolation than legacy Segoe UI.  The supported Windows baseline is
+            // Windows 11, so use the native Variable Text family throughout the detail card.
+            Gdiplus::FontFamily famD(L"Segoe UI Variable Text");
             Gdiplus::FontFamily famEmoji(L"Segoe UI Emoji");
             Gdiplus::StringFormat sfL; sfL.SetAlignment(Gdiplus::StringAlignmentNear);  sfL.SetLineAlignment(Gdiplus::StringAlignmentCenter);
             Gdiplus::StringFormat sfR; sfR.SetAlignment(Gdiplus::StringAlignmentFar);   sfR.SetLineAlignment(Gdiplus::StringAlignmentCenter);
@@ -1159,57 +1162,159 @@ void win_render_clock(int w, int h, int hh, int mm, int ss, const win_theme *t, 
             }
 
             const double contentTop = cardTop + forecastH;
-            // [By Session | By Model] segmented control.
-            const double controlLeft = cardLeft + 12.0 * S, controlTop = contentTop + 8.0 * S;
-            const double controlW = cardW - 24.0 * S, controlH = 26.0 * S, halfW = controlW / 2.0;
-            Gdiplus::GraphicsPath controlPath; roundedPath(controlPath, controlLeft, controlTop, controlW, controlH, 8.0 * S);
-            Gdiplus::SolidBrush controlBg(cr(alpha(t->dd_text, 18))); gfx.FillPath(&controlBg, &controlPath);
-            Gdiplus::GraphicsPath selectedPath;
-            roundedPath(selectedPath, controlLeft + (ov->detail_grouping ? halfW : 0), controlTop + 2.0 * S,
-                        halfW, controlH - 4.0 * S, 6.0 * S);
-            Gdiplus::SolidBrush selectedBg(cr(alpha(t->dd_text, 36))); gfx.FillPath(&selectedBg, &selectedPath);
-            wchar_t controls[256];
-            if (to_wide(ov->detail_controls, controls, 256) > 0) {
-                wchar_t *parts[3]; splitTabs(controls, parts, 3);
-                Gdiplus::Font fControl(&famD, (float)(10.0 * S), Gdiplus::FontStyleRegular, Gdiplus::UnitPixel);
-                Gdiplus::SolidBrush controlText(cr(t->dd_text));
+            const double controlLeft = cardLeft + 12.0 * S;
+            const double controlW = cardW - 24.0 * S, halfW = controlW / 2.0;
+            wchar_t controls[768];
+            if (to_wide(ov->detail_controls, controls, 768) > 0) {
+                wchar_t *parts[11]; splitTabs(controls, parts, 11);
+                Gdiplus::Font fLauncher(&famD, (float)(11.2 * S), Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
+                Gdiplus::Font fControl(&famD, (float)(10.2 * S), Gdiplus::FontStyleRegular, Gdiplus::UnitPixel);
+                Gdiplus::Font fControlSelected(&famD, (float)(10.2 * S), Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
+                Gdiplus::Font fCompact(&famD, (float)(9.2 * S), Gdiplus::FontStyleRegular, Gdiplus::UnitPixel);
+                Gdiplus::Font fCompactSelected(&famD, (float)(9.2 * S), Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
+                Gdiplus::SolidBrush mainBrush(cr(t->dd_text)), subBrush(cr(t->dd_subtext));
+
+                // Row 1: two visually stronger window launchers.
+                const double launcherTop = contentTop + 8.0 * S, launcherH = 49.0 * S;
                 for (int i = 0; i < 2; i++) {
-                    Gdiplus::RectF rect((Gdiplus::REAL)(controlLeft + i * halfW), (Gdiplus::REAL)controlTop,
-                                       (Gdiplus::REAL)halfW, (Gdiplus::REAL)controlH);
-                    gfx.DrawString(parts[i], -1, &fControl, rect, &sfC2, &controlText);
+                    const double x = controlLeft + i * halfW + (i ? 3.0 * S : 0);
+                    const double w = halfW - 3.0 * S;
+                    Gdiplus::GraphicsPath card; roundedPath(card, x, launcherTop, w, launcherH, 10.0 * S);
+                    Gdiplus::SolidBrush bg(cr(alpha(t->dd_text, i == 0 ? 12 : 20))); gfx.FillPath(&bg, &card);
+                    Gdiplus::Pen border(cr(alpha(t->dd_text, i == 0 ? 24 : 46)), (Gdiplus::REAL)(0.7 * S)); gfx.DrawPath(&border, &card);
+                    const float iconX = (float)(x + 17.0 * S);
+                    const float iconY = (float)(launcherTop + launcherH / 2.0);
+                    Gdiplus::Color iconColor = cr(i == 0 ? t->dd_subtext : t->dd_text);
+                    Gdiplus::Pen iconPen(iconColor, (Gdiplus::REAL)(1.25 * S));
+                    iconPen.SetStartCap(Gdiplus::LineCapRound);
+                    iconPen.SetEndCap(Gdiplus::LineCapRound);
+                    if (i == 0) {
+                        gfx.DrawEllipse(&iconPen, iconX - (float)(6.0 * S), iconY - (float)(6.0 * S),
+                                        (float)(12.0 * S), (float)(12.0 * S));
+                        gfx.DrawEllipse(&iconPen, iconX - (float)(2.0 * S), iconY - (float)(2.0 * S),
+                                        (float)(4.0 * S), (float)(4.0 * S));
+                        gfx.DrawLine(&iconPen, iconX, iconY - (float)(8.0 * S), iconX, iconY - (float)(5.0 * S));
+                    } else {
+                        gfx.DrawArc(&iconPen, iconX - (float)(7.0 * S), iconY - (float)(7.0 * S),
+                                    (float)(14.0 * S), (float)(14.0 * S), 205, 270);
+                        gfx.DrawLine(&iconPen, iconX, iconY, iconX + (float)(3.8 * S), iconY - (float)(4.5 * S));
+                        Gdiplus::SolidBrush hub(iconColor);
+                        gfx.FillEllipse(&hub, iconX - (float)(1.5 * S), iconY - (float)(1.5 * S),
+                                       (float)(3.0 * S), (float)(3.0 * S));
+                    }
+
+                    const float affordanceX = (float)(x + w - 14.0 * S);
+                    if (i == 0) {
+                        Gdiplus::Pen lockPen(iconColor, (Gdiplus::REAL)(1.05 * S));
+                        gfx.DrawArc(&lockPen, affordanceX - (float)(3.0 * S), iconY - (float)(5.5 * S),
+                                    (float)(6.0 * S), (float)(7.0 * S), 180, 180);
+                        gfx.DrawRectangle(&lockPen, affordanceX - (float)(4.0 * S), iconY - (float)(1.5 * S),
+                                          (float)(8.0 * S), (float)(6.5 * S));
+                    } else {
+                        gfx.DrawLine(&iconPen, affordanceX - (float)(3.0 * S), iconY + (float)(3.0 * S),
+                                     affordanceX + (float)(3.0 * S), iconY - (float)(3.0 * S));
+                        gfx.DrawLine(&iconPen, affordanceX, iconY - (float)(3.0 * S),
+                                     affordanceX + (float)(3.0 * S), iconY - (float)(3.0 * S));
+                        gfx.DrawLine(&iconPen, affordanceX + (float)(3.0 * S), iconY - (float)(3.0 * S),
+                                     affordanceX + (float)(3.0 * S), iconY);
+                    }
+
+                    Gdiplus::RectF titleRect((Gdiplus::REAL)(x + 31.0 * S), (Gdiplus::REAL)(launcherTop + 5.0 * S),
+                                             (Gdiplus::REAL)(w - 50.0 * S), (Gdiplus::REAL)(39.0 * S));
+                    gfx.DrawString(parts[i * 2], -1, &fLauncher, titleRect, &sfL, i == 0 ? &subBrush : &mainBrush);
                 }
 
-                // Quota and Percent chips share the second control row, matching macOS.
-                const double chipW = 104.0 * S, chipH = 22.0 * S, chipTop = contentTop + 38.0 * S;
-                const double chipLeft = cardRight - 12.0 * S - chipW;
-                Gdiplus::GraphicsPath chip; roundedPath(chip, chipLeft, chipTop, chipW, chipH, chipH / 2.0);
-                Gdiplus::SolidBrush chipBg(cr(alpha(t->dd_text, ov->detail_percentage ? 46 : 20))); gfx.FillPath(&chipBg, &chip);
-                Gdiplus::Pen chipBorder(cr(alpha(t->dd_text, ov->detail_percentage ? 82 : 38)), (Gdiplus::REAL)(0.7 * S)); gfx.DrawPath(&chipBorder, &chip);
-                Gdiplus::RectF chipRect((Gdiplus::REAL)chipLeft, (Gdiplus::REAL)chipTop, (Gdiplus::REAL)chipW, (Gdiplus::REAL)chipH);
-                gfx.DrawString(parts[2], -1, &fControl, chipRect, &sfC2, &controlText);
+                // Row 2: grouping segmented control.
+                const double segmentTop = contentTop + 65.0 * S, segmentH = 26.0 * S;
+                Gdiplus::GraphicsPath segment; roundedPath(segment, controlLeft, segmentTop, controlW, segmentH, 8.0 * S);
+                Gdiplus::SolidBrush segmentBg(cr(alpha(t->dd_text, 18))); gfx.FillPath(&segmentBg, &segment);
+                Gdiplus::GraphicsPath selected;
+                roundedPath(selected, controlLeft + (ov->detail_grouping ? halfW : 0), segmentTop + 2.0 * S,
+                            halfW, segmentH - 4.0 * S, 6.0 * S);
+                Gdiplus::SolidBrush selectedBg(cr(alpha(t->dd_text, 36))); gfx.FillPath(&selectedBg, &selected);
+                for (int i = 0; i < 2; i++) {
+                    Gdiplus::RectF rect((Gdiplus::REAL)(controlLeft + i * halfW), (Gdiplus::REAL)segmentTop,
+                                       (Gdiplus::REAL)halfW, (Gdiplus::REAL)segmentH);
+                    Gdiplus::Font *controlFont = ov->detail_grouping == i ? &fControlSelected : &fControl;
+                    gfx.DrawString(parts[4 + i], -1, controlFont, rect, &sfC2, &mainBrush);
+                }
 
-                const double quotaLeft = cardLeft + 12.0 * S;
-                Gdiplus::GraphicsPath quotaChip; roundedPath(quotaChip, quotaLeft, chipTop, chipW, chipH, chipH / 2.0);
-                Gdiplus::SolidBrush quotaBg(cr(alpha(t->dd_text, ov->detail_quota_visible ? 46 : 20))); gfx.FillPath(&quotaBg, &quotaChip);
-                Gdiplus::Pen quotaBorder(cr(alpha(t->dd_text, ov->detail_quota_visible ? 82 : 38)), (Gdiplus::REAL)(0.7 * S)); gfx.DrawPath(&quotaBorder, &quotaChip);
-                wchar_t quotaLabel[96];
-                if (to_wide(ov->quota_label, quotaLabel, 96) > 0) {
-                    Gdiplus::RectF quotaRect((Gdiplus::REAL)quotaLeft, (Gdiplus::REAL)chipTop, (Gdiplus::REAL)chipW, (Gdiplus::REAL)chipH);
-                    gfx.DrawString(quotaLabel, -1, &fControl, quotaRect, &sfC2, &controlText);
+                // Row 3: cache scope, current text colour, compact history launcher, value toggle.
+                const double compactTop = contentTop + 97.0 * S, compactH = 38.0 * S;
+                const double compactLeft = cardLeft + 6.0 * S;
+                const double compactSlots[4] = {67.0 * S, 61.0 * S, 87.0 * S, 93.0 * S};
+                double compactOffset = 0;
+                for (int i = 0; i < 4; i++) {
+                    const double x = compactLeft + compactOffset + 1.5 * S;
+                    const double w = compactSlots[i] - 3.0 * S;
+                    compactOffset += compactSlots[i];
+                    Gdiplus::GraphicsPath chip; roundedPath(chip, x, compactTop, w, compactH, compactH / 2.0);
+                    const bool selectedValue = (i == 0 && ov->detail_includes_cache)
+                        || (i == 3 && ov->detail_percentage);
+                    Gdiplus::SolidBrush bg(cr(alpha(t->dd_text, selectedValue ? 44 : 18))); gfx.FillPath(&bg, &chip);
+                    Gdiplus::Pen border(cr(alpha(t->dd_text, selectedValue ? 76 : 34)), (Gdiplus::REAL)(0.6 * S)); gfx.DrawPath(&border, &chip);
+                    const int titleIndex = i < 3 ? 6 + i : 10;
+                    const double leadingW = 15.0 * S;
+                    const double trailingW = 0;
+                    Gdiplus::RectF titleRect((Gdiplus::REAL)(x + 3.0 * S + leadingW), (Gdiplus::REAL)(compactTop + 3.0 * S),
+                                             (Gdiplus::REAL)(w - 6.0 * S - leadingW - trailingW), (Gdiplus::REAL)(31.0 * S));
+                    Gdiplus::Font *compactFont = selectedValue ? &fCompactSelected : &fCompact;
+                    gfx.DrawString(parts[titleIndex], -1, compactFont, titleRect, &sfC2, &mainBrush);
+                    const float glyphX = (float)(x + 9.5 * S);
+                    const float glyphY = (float)(compactTop + compactH / 2.0);
+                    Gdiplus::Color glyphColor = cr(selectedValue ? t->dd_text : t->dd_subtext);
+                    Gdiplus::Pen glyphPen(glyphColor, (Gdiplus::REAL)(1.05 * S));
+                    glyphPen.SetStartCap(Gdiplus::LineCapRound);
+                    glyphPen.SetEndCap(Gdiplus::LineCapRound);
+                    if (i == 0) {
+                        gfx.DrawEllipse(&glyphPen, glyphX - (float)(5.0 * S), glyphY - (float)(5.0 * S),
+                                        (float)(10.0 * S), (float)(4.0 * S));
+                        gfx.DrawLine(&glyphPen, glyphX - (float)(5.0 * S), glyphY - (float)(3.0 * S),
+                                     glyphX - (float)(5.0 * S), glyphY + (float)(4.0 * S));
+                        gfx.DrawLine(&glyphPen, glyphX + (float)(5.0 * S), glyphY - (float)(3.0 * S),
+                                     glyphX + (float)(5.0 * S), glyphY + (float)(4.0 * S));
+                        gfx.DrawArc(&glyphPen, glyphX - (float)(5.0 * S), glyphY + (float)(1.0 * S),
+                                    (float)(10.0 * S), (float)(5.0 * S), 0, 180);
+                        gfx.DrawArc(&glyphPen, glyphX - (float)(5.0 * S), glyphY - (float)(1.0 * S),
+                                    (float)(10.0 * S), (float)(5.0 * S), 0, 180);
+                    } else if (i == 1) {
+                        const float dotSize = (float)(8.0 * S);
+                        const float dotX = glyphX - dotSize / 2.0f;
+                        const float dotY = (float)(compactTop + (compactH - 8.0 * S) / 2.0);
+                        Gdiplus::SolidBrush dot(cr(t->dd_text));
+                        Gdiplus::Pen dotBorder(cr(alpha(t->dd_border, 185)), (Gdiplus::REAL)(0.8 * S));
+                        gfx.FillEllipse(&dot, dotX, dotY, dotSize, dotSize);
+                        gfx.DrawEllipse(&dotBorder, dotX, dotY, dotSize, dotSize);
+                    } else if (i == 2) {
+                        gfx.DrawEllipse(&glyphPen, glyphX - (float)(5.5 * S), glyphY - (float)(5.5 * S),
+                                        (float)(11.0 * S), (float)(11.0 * S));
+                        gfx.DrawLine(&glyphPen, glyphX, glyphY, glyphX, glyphY - (float)(3.5 * S));
+                        gfx.DrawLine(&glyphPen, glyphX, glyphY, glyphX + (float)(3.0 * S), glyphY + (float)(1.5 * S));
+                    } else {
+                        gfx.DrawEllipse(&glyphPen, glyphX - (float)(5.8 * S), glyphY - (float)(5.8 * S),
+                                        (float)(11.6 * S), (float)(11.6 * S));
+                        Gdiplus::RectF currencyRect(glyphX - (float)(5.5 * S), glyphY - (float)(6.5 * S),
+                                                    (float)(11.0 * S), (float)(13.0 * S));
+                        gfx.DrawString(L"$", -1, &fCompactSelected, currencyRect, &sfC2, &mainBrush);
+                    }
                 }
             }
 
             if (ov->detail_quota_visible) {
-                // Typed quota rows supplied by the shared CodexQuotaSnapshot presenter:
-                // H\ttitle\trefresh; B\tname\twindow\tremaining\treset\tpercent;
-                // M\tmetadata; S\tsource/update; E\tmessage\tretry.
-                const double panelTop = contentTop + 72.0 * S;
+                // Typed rows supplied by the shared Codex + Claude quota presenter:
+                // H\ttitle\trefresh; P\tprovider; B\twindow\tremaining-label\tpercent-text
+                //   \treset-relative\tpercent-value\treset-absolute;
+                // M\tmetadata; S\tsource/update; E/L\tmessage.
+                const double panelTop = contentTop + 86.0 * S;
                 wchar_t quota[4096];
                 if (to_wide(ov->quota_text, quota, 4096) > 0) {
                     Gdiplus::Font fQuotaTitle(&famD, (float)(12.0 * S), Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
                     Gdiplus::Font fQuota(&famD, (float)(10.0 * S), Gdiplus::FontStyleRegular, Gdiplus::UnitPixel);
                     Gdiplus::Font fQuotaBold(&famD, (float)(11.0 * S), Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
+                    Gdiplus::Font fQuotaPercent(&famD, (float)(16.0 * S), Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
+                    Gdiplus::Font fQuotaCaption(&famD, (float)(8.5 * S), Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
                     Gdiplus::SolidBrush mainBrush(cr(t->dd_text)), subBrush(cr(t->dd_subtext));
+                    Gdiplus::SolidBrush quotaPercentBrush(cr(0xffffffffu));
                     double quotaY = panelTop;
                     wchar_t *line = quota;
                     while (*line && quotaY < cardTop + cardH - 24.0 * S) {
@@ -1224,29 +1329,51 @@ void win_render_clock(int w, int h, int hh, int mm, int ss, const win_theme *t, 
                             gfx.DrawString(fields[1], -1, &fQuotaTitle, titleRect, &sfL, &mainBrush);
                             gfx.DrawString(fields[2], -1, &fQuota, refreshRect, &sfR, &subBrush);
                             quotaY += 30.0 * S;
+                        } else if (kind == L'P') {
+                            Gdiplus::RectF providerRect((Gdiplus::REAL)(cardLeft + 16.0 * S), (Gdiplus::REAL)quotaY,
+                                                        (Gdiplus::REAL)(cardW - 32.0 * S), (Gdiplus::REAL)(22.0 * S));
+                            tc_color_icon providerIcon = color_icon_for(fields[1]);
+                            if (providerIcon != TC_ICON_NONE) {
+                                draw_color_icon(gfx, providerIcon, providerRect.X + (float)(9.0 * S),
+                                                providerRect.Y + providerRect.Height / 2.0f, (float)(18.0 * S));
+                                providerRect.X += (Gdiplus::REAL)(23.0 * S);
+                                providerRect.Width -= (Gdiplus::REAL)(23.0 * S);
+                                gfx.DrawString(text_after_icon(fields[1]), -1, &fQuotaBold, providerRect, &sfL, &mainBrush);
+                            } else {
+                                gfx.DrawString(fields[1], -1, &fQuotaBold, providerRect, &sfL, &mainBrush);
+                            }
+                            quotaY += 26.0 * S;
                         } else if (kind == L'B') {
-                            const double boxH = 78.0 * S;
+                            const double boxH = 88.0 * S;
                             Gdiplus::GraphicsPath box; roundedPath(box, cardLeft + 12.0 * S, quotaY,
-                                                                  cardW - 24.0 * S, boxH, 9.0 * S);
-                            Gdiplus::SolidBrush boxBg(cr(alpha(t->dd_text, 15))); gfx.FillPath(&boxBg, &box);
-                            Gdiplus::RectF nameRect((Gdiplus::REAL)(cardLeft + 22.0 * S), (Gdiplus::REAL)(quotaY + 7.0 * S),
-                                                   (Gdiplus::REAL)(cardW - 130.0 * S), (Gdiplus::REAL)(18.0 * S));
-                            Gdiplus::RectF remainRect((Gdiplus::REAL)(cardRight - 104.0 * S), (Gdiplus::REAL)(quotaY + 7.0 * S),
-                                                     (Gdiplus::REAL)(82.0 * S), (Gdiplus::REAL)(18.0 * S));
+                                                                  cardW - 24.0 * S, boxH, 11.0 * S);
+                            Gdiplus::SolidBrush boxBg(cr(alpha(t->dd_text, 19))); gfx.FillPath(&boxBg, &box);
+                            Gdiplus::Pen boxBorder(cr(alpha(t->dd_text, 36)), (Gdiplus::REAL)(0.6 * S));
+                            gfx.DrawPath(&boxBorder, &box);
+                            Gdiplus::RectF nameRect((Gdiplus::REAL)(cardLeft + 24.0 * S), (Gdiplus::REAL)(quotaY + 9.0 * S),
+                                                   (Gdiplus::REAL)(cardW - 150.0 * S), (Gdiplus::REAL)(22.0 * S));
+                            Gdiplus::RectF remainRect((Gdiplus::REAL)(cardRight - 104.0 * S), (Gdiplus::REAL)(quotaY + 3.0 * S),
+                                                     (Gdiplus::REAL)(80.0 * S), (Gdiplus::REAL)(22.0 * S));
+                            Gdiplus::RectF captionRect((Gdiplus::REAL)(cardRight - 104.0 * S), (Gdiplus::REAL)(quotaY + 22.0 * S),
+                                                      (Gdiplus::REAL)(80.0 * S), (Gdiplus::REAL)(13.0 * S));
                             gfx.DrawString(fields[1], -1, &fQuotaBold, nameRect, &sfL, &mainBrush);
-                            gfx.DrawString(fields[3], -1, &fQuotaBold, remainRect, &sfR, &mainBrush);
+                            gfx.DrawString(fields[3], -1, &fQuotaPercent, remainRect, &sfR, &quotaPercentBrush);
+                            gfx.DrawString(fields[2], -1, &fQuotaCaption, captionRect, &sfR, &subBrush);
                             double percent = max(0.0, min(100.0, _wtof(fields[5])));
-                            const double barX = cardLeft + 22.0 * S, barY = quotaY + 31.0 * S, barW = cardW - 44.0 * S;
-                            Gdiplus::GraphicsPath bar; roundedPath(bar, barX, barY, barW, 7.0 * S, 3.5 * S);
+                            const double barX = cardLeft + 24.0 * S, barY = quotaY + 38.0 * S, barW = cardW - 48.0 * S;
+                            Gdiplus::GraphicsPath bar; roundedPath(bar, barX, barY, barW, 8.0 * S, 4.0 * S);
                             Gdiplus::SolidBrush barBg(cr(alpha(t->dd_text, 22))); gfx.FillPath(&barBg, &bar);
                             if (percent > 0.1) {
-                                Gdiplus::GraphicsPath fill; roundedPath(fill, barX, barY, max(7.0 * S, barW * percent / 100.0), 7.0 * S, 3.5 * S);
-                                unsigned int accent = percent < 20 ? 0xffe05252u : (percent < 45 ? 0xffd59a33u : 0xff4aae73u);
+                                Gdiplus::GraphicsPath fill; roundedPath(fill, barX, barY, max(8.0 * S, barW * percent / 100.0), 8.0 * S, 4.0 * S);
+                                unsigned int accent = percent <= 15 ? 0xffe05252u : (percent <= 35 ? 0xffd59a33u : 0xff4aae73u);
                                 Gdiplus::SolidBrush fillBrush(cr(accent)); gfx.FillPath(&fillBrush, &fill);
                             }
-                            Gdiplus::RectF resetRect((Gdiplus::REAL)(cardLeft + 22.0 * S), (Gdiplus::REAL)(quotaY + 44.0 * S),
-                                                    (Gdiplus::REAL)(cardW - 44.0 * S), (Gdiplus::REAL)(24.0 * S));
-                            gfx.DrawString(fields[4], -1, &fQuota, resetRect, &sfL, &subBrush);
+                            Gdiplus::RectF resetRect((Gdiplus::REAL)(cardLeft + 24.0 * S), (Gdiplus::REAL)(quotaY + 55.0 * S),
+                                                    (Gdiplus::REAL)(cardW * 0.52), (Gdiplus::REAL)(22.0 * S));
+                            Gdiplus::RectF absoluteRect((Gdiplus::REAL)(cardLeft + cardW * 0.48), (Gdiplus::REAL)(quotaY + 55.0 * S),
+                                                       (Gdiplus::REAL)(cardW * 0.44 - 20.0 * S), (Gdiplus::REAL)(22.0 * S));
+                            gfx.DrawString(fields[4], -1, &fQuotaBold, resetRect, &sfL, &subBrush);
+                            gfx.DrawString(fields[6], -1, &fQuotaCaption, absoluteRect, &sfR, &subBrush);
                             quotaY += boxH + 8.0 * S;
                         } else if (kind == L'M') {
                             Gdiplus::RectF meta((Gdiplus::REAL)(cardLeft + 16.0 * S), (Gdiplus::REAL)quotaY,
@@ -1280,7 +1407,7 @@ void win_render_clock(int w, int h, int hh, int mm, int ss, const win_theme *t, 
                 wchar_t *parts[4]; splitTabs(header, parts, 4);
                 Gdiplus::Font fHeader(&famD, (float)(9.0 * S), Gdiplus::FontStyleRegular, Gdiplus::UnitPixel);
                 Gdiplus::SolidBrush headerBrush(cr(t->dd_subtext));
-                double headerTop = contentTop + 64.0 * S;
+                double headerTop = contentTop + 141.0 * S;
                 Gdiplus::RectF lr((Gdiplus::REAL)labelX, (Gdiplus::REAL)headerTop, (Gdiplus::REAL)(usageX - labelX), (Gdiplus::REAL)(22.0 * S));
                 gfx.DrawString(parts[0], -1, &fHeader, lr, &sfL, &headerBrush);
                 Gdiplus::RectF ur((Gdiplus::REAL)usageX, (Gdiplus::REAL)headerTop, (Gdiplus::REAL)usageW, (Gdiplus::REAL)(22.0 * S));
@@ -1295,7 +1422,7 @@ void win_render_clock(int w, int h, int hh, int mm, int ss, const win_theme *t, 
             Gdiplus::Font fChild(&famD, (float)(10.0 * S), Gdiplus::FontStyleRegular, Gdiplus::UnitPixel);
             Gdiplus::Font fParentEmoji(&famEmoji, (float)(11.0 * S), Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
             Gdiplus::Font fChildEmoji(&famEmoji, (float)(10.0 * S), Gdiplus::FontStyleRegular, Gdiplus::UnitPixel);
-            double y = contentTop + 86.0 * S;
+            double y = contentTop + 163.0 * S;
             wchar_t *line = wb;
             while (*line) {
                 wchar_t *nl = wcschr(line, L'\n');

@@ -114,8 +114,9 @@ final class CodexQuotaServiceTests: XCTestCase {
 
         let snapshot = try XCTUnwrap(CodexQuotaService.decodeAppServerResponse(Data(response.utf8)))
 
-        XCTAssertEqual(snapshot.buckets.map(\.id), ["codex:secondary", "codex:primary", "spark:primary"])
-        XCTAssertEqual(snapshot.buckets.map(\.remainingPercent), [60, 85, 90])
+        XCTAssertEqual(snapshot.buckets.map(\.id), ["codex:secondary", "codex:primary"])
+        XCTAssertEqual(snapshot.buckets.map(\.remainingPercent), [60, 85])
+        XCTAssertFalse(snapshot.buckets.contains { $0.name.localizedCaseInsensitiveContains("spark") })
     }
 
     func testBuildsPlatformSpecificCodexExecutableCandidates() {

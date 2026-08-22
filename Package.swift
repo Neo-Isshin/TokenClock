@@ -24,6 +24,7 @@ let linuxSources = [
     "Services/MockUsageService.swift",
     "Services/ModelEmoji.swift",
     "Services/ModelNormalizer.swift",
+    "Services/IPGeolocation.swift",
     "Services/OpenClawUsageService.swift",
     "Services/OpenCodeUsageService.swift",
     "Services/PathConfig.swift",

@@ -181,6 +181,23 @@ int win_native_http_request(const char *url_utf8,
         goto cleanup;
     }
 
+    /* Antigravity exposes its authenticated quota RPC over a self-signed HTTPS
+       loopback endpoint. Relax certificate checks only for localhost; public
+       HTTPS requests retain normal WinHTTP validation. */
+    if (parts.nScheme == INTERNET_SCHEME_HTTPS &&
+        (_wcsicmp(host, L"127.0.0.1") == 0 || _wcsicmp(host, L"localhost") == 0 ||
+         _wcsicmp(host, L"::1") == 0)) {
+        DWORD security_flags = SECURITY_FLAG_IGNORE_UNKNOWN_CA |
+                               SECURITY_FLAG_IGNORE_CERT_CN_INVALID |
+                               SECURITY_FLAG_IGNORE_CERT_DATE_INVALID |
+                               SECURITY_FLAG_IGNORE_CERT_WRONG_USAGE;
+        if (!WinHttpSetOption(request, WINHTTP_OPTION_SECURITY_FLAGS,
+                              &security_flags, sizeof(security_flags))) {
+            error = GetLastError();
+            goto cleanup;
+        }
+    }
+
     disable_flags = WINHTTP_DISABLE_COOKIES | WINHTTP_DISABLE_REDIRECTS |
                     WINHTTP_DISABLE_AUTHENTICATION;
     if (!WinHttpSetOption(request, WINHTTP_OPTION_DISABLE_FEATURE,

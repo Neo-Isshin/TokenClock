@@ -31,6 +31,7 @@ final class AntigravityUsageService: @unchecked Sendable {
     private(set) var dailyData: [String: DayUsage] = [:]
     private(set) var hourlyData: [String: HourlyUsage] = [:]
     private(set) var dailyCache: [String: Int] = [:]
+    private var dailyModelBuckets: [String: [String: ModelBuckets]] = [:]
     private var recentEntries: [RecentEntry] = []
     private var seenTrackingIds: Set<String> = []
     private var lastScanTime: Date = .distantPast
@@ -44,6 +45,7 @@ final class AntigravityUsageService: @unchecked Sendable {
     func fullScan() {
         dailyData.removeAll(); hourlyData.removeAll()
         dailyCache.removeAll(); recentEntries = []
+        dailyModelBuckets.removeAll()
         seenTrackingIds = []
         lastScanTime = .distantPast
         scanAllDatabases()
@@ -77,6 +79,18 @@ final class AntigravityUsageService: @unchecked Sendable {
         return recentEntries.contains { $0.timestamp >= cutoff }
     }
 
+    func todayModelBuckets() -> [String: ModelBuckets] {
+        dailyModelBuckets[DateHelper.todayKey()] ?? [:]
+    }
+
+    func todayCost() -> CostEstimate {
+        PricingService.shared.cost(of: todayModelBuckets())
+    }
+
+    func todayCacheReadTokens() -> Int {
+        dailyCache[DateHelper.todayKey()] ?? 0
+    }
+
     // MARK: - 内部
 
     private func scanAllDatabases() {
@@ -106,6 +120,7 @@ final class AntigravityUsageService: @unchecked Sendable {
         var db: OpaquePointer?
         guard sqlite3_open(dbPath, &db) == SQLITE_OK else { return }
         defer { sqlite3_close(db) }
+        let model = sessionModel(db: db)
 
         // 同时取 step_payload（token telemetry）和 metadata（时间戳）
         let query = "SELECT step_payload, metadata FROM steps WHERE step_payload IS NOT NULL"
@@ -129,7 +144,7 @@ final class AntigravityUsageService: @unchecked Sendable {
                 }
             }
 
-            processStepPayload(stepPayload, timestamp: timestamp)
+            processStepPayload(stepPayload, timestamp: timestamp, model: model)
         }
     }
 
@@ -146,7 +161,7 @@ final class AntigravityUsageService: @unchecked Sendable {
         return Date(timeIntervalSince1970: TimeInterval(secs))
     }
 
-    private func processStepPayload(_ data: Data, timestamp: Date?) {
+    private func processStepPayload(_ data: Data, timestamp: Date?, model: String) {
         guard let outer = parseProtobufFields(data) else { return }
         // field 5: step wrapper
         guard let f5Field = outer.first(where: { $0.field == 5 && $0.wireType == 2 }),
@@ -197,6 +212,13 @@ final class AntigravityUsageService: @unchecked Sendable {
             }
 
             dailyCache[dateKey, default: 0] += cacheTokens
+            dailyModelBuckets[dateKey, default: [:]][model, default: ModelBuckets()].merge(
+                ModelBuckets(
+                    input: inputTokens,
+                    output: outputTokens + thoughtTokens + toolTokens,
+                    cacheRead: cacheTokens
+                )
+            )
             recentEntries.append(RecentEntry(timestamp: date, tokens: total))
             // L4: 限制 recentEntries 增长，只保留 active 窗口 3 倍内的条目
             if recentEntries.count > 64 {
@@ -285,22 +307,59 @@ final class AntigravityUsageService: @unchecked Sendable {
         return nil
     }
 
-    /// 提取会话的模型名（如 "gemini-3.7-flash"）。Antigravity 只跑 Gemini 系模型，
-    /// 「按模型」视图以 gemini 名称统一展示；能取到具体 ID 时用 ID。
-    /// 模型 ID 以明文存在 gen_metadata / executor_metadata 的 protobuf blob 里
-    /// （字段位分别为 19 / 28），但结构化解析器遇未知 wire type 会提前终止扫不到——
-    /// 这里直接对 blob 做字节级子串扫描，取出现次数最多者；均取不到时回退 "gemini"。
+    /// Antigravity executor metadata wire path:
+    /// root.field 10 -> runtime.field 1 -> config.field 28 (selected model identifier).
+    /// This is shared by CLI, IDE and the main app databases.
+    func decodeModelFromExecutorMetadata(_ data: Data) -> String? {
+        guard let root = parseProtobufFields(data) else { return nil }
+        for runtimeField in root where runtimeField.field == 10 && runtimeField.wireType == 2 {
+            guard let runtimeData = runtimeField.value as? Data,
+                  let runtime = parseProtobufFields(runtimeData) else { continue }
+            for configField in runtime where configField.field == 1 && configField.wireType == 2 {
+                guard let configData = configField.value as? Data,
+                      let config = parseProtobufFields(configData) else { continue }
+                for modelField in config where modelField.field == 28 && modelField.wireType == 2 {
+                    guard let bytes = modelField.value as? Data,
+                          let raw = String(data: bytes, encoding: .utf8),
+                          let model = ModelNormalizer.normalize(raw) else { continue }
+                    return model
+                }
+            }
+        }
+        return nil
+    }
+
+    /// Prefer the precise protobuf field. The byte scan remains a compatibility fallback for
+    /// older Antigravity database revisions; the generic `gemini` fallback prevents valid
+    /// Antigravity traffic from being mislabeled as Unknown.
     private func sessionModel(db: OpaquePointer?) -> String {
+        var stmt: OpaquePointer?
+        if sqlite3_prepare_v2(
+            db, "SELECT data FROM executor_metadata WHERE data IS NOT NULL ORDER BY idx", -1, &stmt, nil
+        ) == SQLITE_OK {
+            defer { sqlite3_finalize(stmt) }
+            while sqlite3_step(stmt) == SQLITE_ROW {
+                guard let pointer = sqlite3_column_blob(stmt, 0) else { continue }
+                let length = sqlite3_column_bytes(stmt, 0)
+                guard length > 0 else { continue }
+                if let model = decodeModelFromExecutorMetadata(
+                    Data(bytes: pointer, count: Int(length))
+                ) {
+                    return model
+                }
+            }
+        }
+
         let candidates = ["SELECT data FROM gen_metadata", "SELECT data FROM executor_metadata"]
         for sql in candidates {
             var counts: [String: Int] = [:]
-            var stmt: OpaquePointer?
-            guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { continue }
-            defer { sqlite3_finalize(stmt) }
-            while sqlite3_step(stmt) == SQLITE_ROW {
-                guard let ptr = sqlite3_column_blob(stmt, 0),
-                      sqlite3_column_bytes(stmt, 0) > 0 else { continue }
-                let data = Data(bytes: ptr, count: Int(sqlite3_column_bytes(stmt, 0)))
+            var fallbackStatement: OpaquePointer?
+            guard sqlite3_prepare_v2(db, sql, -1, &fallbackStatement, nil) == SQLITE_OK else { continue }
+            defer { sqlite3_finalize(fallbackStatement) }
+            while sqlite3_step(fallbackStatement) == SQLITE_ROW {
+                guard let ptr = sqlite3_column_blob(fallbackStatement, 0),
+                      sqlite3_column_bytes(fallbackStatement, 0) > 0 else { continue }
+                let data = Data(bytes: ptr, count: Int(sqlite3_column_bytes(fallbackStatement, 0)))
                 // 宽松解码（无效字节替换为 U+FFFD，不影响 ASCII 模型名的匹配）
                 let text = String(decoding: data, as: UTF8.self)
                 let range = NSRange(text.startIndex..., in: text)
@@ -342,6 +401,8 @@ final class AntigravityUsageService: @unchecked Sendable {
 
                 var sessionTokens = 0
                 var sessionMsgs = 0
+                var sessionBuckets = ModelBuckets()
+                let model = sessionModel(db: db)
                 // 同时取 step_payload（telemetry）和 metadata（时间戳）
                 let query = "SELECT step_payload, metadata FROM steps WHERE step_payload IS NOT NULL"
                 var stmt: OpaquePointer?
@@ -376,7 +437,7 @@ final class AntigravityUsageService: @unchecked Sendable {
                         // 字段映射与 processStepPayload 保持一致（已校准）
                         let inputT = varintValue(tel, field: 1)
                         let outputT = varintValue(tel, field: 2)
-                        _ = varintValue(tel, field: 3) // cache read: diagnostic only
+                        let cacheT = varintValue(tel, field: 3)
                         let thoughtT = varintValue(tel, field: 9)
                         let toolT = varintValue(tel, field: 10)
                         let total = TokenAccounting.separateCacheFields(
@@ -385,6 +446,11 @@ final class AntigravityUsageService: @unchecked Sendable {
                         guard total > 0 else { continue }
                         sessionTokens += total
                         sessionMsgs += 1
+                        sessionBuckets.merge(ModelBuckets(
+                            input: inputT,
+                            output: outputT + thoughtT + toolT,
+                            cacheRead: cacheT
+                        ))
                     }
                 }
 
@@ -393,8 +459,9 @@ final class AntigravityUsageService: @unchecked Sendable {
                 results.append(SessionInfo(
                     rawId: sessionId, displayName: SessionIdDisplay.format(sessionId), detail: nil,
                     todayTokens: sessionTokens, todayMessages: sessionMsgs, isActive: true,
-                    source: Self.sourceLabel(for: convDir),
-                    model: sessionModel(db: db)
+                    source: Self.sourceLabel(for: convDir), model: model,
+                    todayCost: PricingService.shared.cost(of: [model: sessionBuckets]),
+                    cacheReadTokens: sessionBuckets.cacheRead
                 ))
             }
         }

@@ -1,5 +1,5 @@
 {
-  "_meta": {"generatedAt": "2026-08-19T09:26:21Z", "unit": "USD/MTok", "source": "BerriAI/litellm model_prices_and_context_window.json", "models": 206},
+  "_meta": {"generatedAt": "2026-08-21T11:30:00Z", "unit": "USD/MTok", "source": "BerriAI/litellm + official provider pricing", "models": 208},
   "models": {
     "chatgpt-4o-latest": {"in": 5.0, "out": 15.0, "p": "openai"},
     "claude-3-7-sonnet-20250219": {"in": 3.0, "out": 15.0, "cr": 0.3, "cw": 3.75, "p": "anthropic"},
@@ -177,6 +177,8 @@
     "minimax/MiniMax-M2.1-lightning": {"in": 0.3, "out": 2.4, "cr": 0.03, "cw": 0.375, "p": "minimax"},
     "minimax/MiniMax-M2.5": {"in": 0.3, "out": 1.2, "cr": 0.03, "cw": 0.375, "p": "minimax"},
     "minimax/MiniMax-M2.5-lightning": {"in": 0.3, "out": 2.4, "cr": 0.03, "cw": 0.375, "p": "minimax"},
+    "minimax/MiniMax-M2.7": {"in": 0.3, "out": 1.2, "cr": 0.06, "cw": 0.375, "p": "minimax"},
+    "minimax/MiniMax-M2.7-highspeed": {"in": 0.6, "out": 2.4, "cr": 0.06, "cw": 0.375, "p": "minimax"},
     "minimax/MiniMax-M3": {"in": 0.3, "out": 1.2, "cr": 0.06, "p": "minimax"},
     "o1": {"in": 15.0, "out": 60.0, "cr": 7.5, "p": "openai"},
     "o1-2024-12-17": {"in": 15.0, "out": 60.0, "cr": 7.5, "p": "openai"},

@@ -13,13 +13,58 @@ private final class WeatherRequestState: @unchecked Sendable {
     func isLatest(_ value: Int) -> Bool { lock.withLock { generation == value } }
 }
 
+private struct WindowsWeatherCache: Codable {
+    struct Slot: Codable {
+        let time: String
+        let tempC: Int
+        let emoji: String
+        let description: String
+    }
+
+    let cityKey: String
+    let savedAt: TimeInterval
+    let emoji: String
+    let temperature: Int
+    let cityName: String
+    let forecast: [Slot]
+
+    init(cityKey: String, info: WeatherInfo) {
+        self.cityKey = cityKey
+        savedAt = Date().timeIntervalSince1970
+        emoji = info.emoji
+        temperature = info.temperature
+        cityName = info.cityName
+        forecast = info.forecast.map {
+            Slot(time: $0.time, tempC: $0.tempC, emoji: $0.emoji, description: $0.description)
+        }
+    }
+
+    var weather: WeatherInfo {
+        WeatherInfo(
+            emoji: emoji,
+            temperature: temperature,
+            cityName: cityName,
+            forecast: forecast.map {
+                HourlyForecast(time: $0.time, tempC: $0.tempC, emoji: $0.emoji, description: $0.description)
+            }
+        )
+    }
+}
+
 enum WindowsWeather {
     private static let requestState = WeatherRequestState()
+    private static let cacheKey = "TC_windowsWeatherCacheV1"
+    private static let cacheLifetime: TimeInterval = 6 * 60 * 60
 
-    /// 触发一次后台抓取。city 为空或 "auto" ⇒ IP 自动定位（IPIP→wttr.in）；否则按城市名走 wttr.in。
+    /// 触发一次后台抓取。city 为空或 "auto" ⇒ IP 自动定位；否则按城市名走 wttr.in。
     /// 完成后 post `.weatherUpdated`。
     static func refresh(forCity city: String = "auto") {
         let generation = requestState.begin()
+        log("refresh start city=\(normalizedCityKey(city))")
+        if let cached = cachedWeather(for: city) {
+            log("cache hit city=\(cached.cityName)")
+            NotificationCenter.default.post(name: .weatherUpdated, object: cached)
+        }
         DispatchQueue.global(qos: .utility).async {
             if ProcessInfo.processInfo.environment["TC_WEATHER_MOCK"] != nil {
                 let displayCity = city.caseInsensitiveCompare("auto") == .orderedSame ? "Seattle" : city
@@ -42,40 +87,48 @@ enum WindowsWeather {
             // Rapid city/unit menu changes may leave several URL requests in flight. Only the
             // latest request is allowed to update the face, otherwise a slower old city wins.
             if let info, requestState.isLatest(generation) {
+                save(info, for: city)
+                log("refresh success city=\(info.cityName) forecast=\(info.forecast.count)")
                 NotificationCenter.default.post(name: .weatherUpdated, object: info)
+            } else if requestState.isLatest(generation) {
+                log("refresh failed city=\(normalizedCityKey(city))")
             }
         }
     }
 
     private static func fetch() -> WeatherInfo? {
-        // 先 IPIP.net IP 定位（国内服务，绕过代理）
-        if let city = lookupCity(), !city.isEmpty {
-            if let info = weather(city: city) { return info }
+        if let location = lookupLocation(),
+           let info = weather(location: location) {
+            return info
         }
-        // 回退 wttr.in 自动定位（按 IP 自动识别城市）
         return weatherAuto()
     }
 
-    /// IPIP.net 返回「当前 IP：x  来自于：中国 省 市 运营商」，取市名。
-    private static func lookupCity() -> String? {
-        guard let data = httpGet(URL(string: AppConfig.API.ipLookup)),
-              let text = String(data: data, encoding: .utf8) else { return nil }
-        let comps = text.components(separatedBy: "来自于：")
-        guard comps.count >= 2 else { return nil }
-        let parts = comps[1].trimmingCharacters(in: .whitespacesAndNewlines)
-            .components(separatedBy: .whitespaces)
-            .map { $0.trimmingCharacters(in: .whitespaces) }
-            .filter { !$0.isEmpty }
-        guard parts.count >= 3 else { return nil }
-        var city = parts[2]
-        for s in ["省", "市", "自治区"] { city = city.replacingOccurrences(of: s, with: "") }
-        return city.isEmpty ? nil : city
+    private static func lookupLocation() -> IPWeatherLocation? {
+        let publicIP = IPGeolocation.publicIP(
+            from: httpGet(URL(string: AppConfig.API.ipLookup))
+        )
+        guard let url = IPGeolocation.endpoint(
+            publicIP: publicIP,
+            language: L10n.shared.language
+        ) else { return nil }
+        return IPGeolocation.location(from: httpGet(url))
     }
 
     private static func weather(city: String) -> WeatherInfo? {
         let enc = city.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? city
         guard let url = URL(string: "\(AppConfig.API.weatherBase)/\(enc)?format=j1&m") else { return nil }
         return httpGet(url).map { WeatherService.parseJSON(data: $0, fallbackCity: city) }
+    }
+
+    private static func weather(location: IPWeatherLocation) -> WeatherInfo? {
+        let coordinates = "\(location.latitude)+\(location.longitude)"
+        guard let url = URL(string: "\(AppConfig.API.weatherBase)/\(coordinates)?format=j1&m") else {
+            return nil
+        }
+        return httpGet(url).map {
+            WeatherService.parseJSON(data: $0, fallbackCity: location.city)
+        }
     }
 
     private static func weatherAuto() -> WeatherInfo? {
@@ -93,9 +146,9 @@ enum WindowsWeather {
                     "Accept": "application/json, text/plain;q=0.9",
                     "User-Agent": AppConfig.HTTP.userAgent,
                 ],
-                connectTimeout: 8,
-                sendTimeout: 8,
-                receiveTimeout: 8,
+                connectTimeout: 10,
+                sendTimeout: 10,
+                receiveTimeout: 30,
                 maximumResponseBytes: 2 * 1024 * 1024
             )
             guard response.statusCode == 200 else {
@@ -111,6 +164,30 @@ enum WindowsWeather {
 
     /// 错误日志（GUI 子系统无控制台，print 无输出）→ 写到 %LOCALAPPDATA%\TokenClock\weather.log，便于排查。
     private static let logPath = (ProcessInfo.processInfo.environment["LOCALAPPDATA"].map { $0 + "\\TokenClock" } ?? "C:\\TokenClock")
+
+    private static func normalizedCityKey(_ city: String) -> String {
+        let value = city.trimmingCharacters(in: .whitespacesAndNewlines)
+        return value.isEmpty ? "auto" : value.lowercased()
+    }
+
+    private static func cachedWeather(for city: String) -> WeatherInfo? {
+        guard let data = UserDefaults.standard.data(forKey: cacheKey),
+              let cache = try? JSONDecoder().decode(WindowsWeatherCache.self, from: data),
+              cache.cityKey == normalizedCityKey(city),
+              Date().timeIntervalSince1970 - cache.savedAt <= cacheLifetime,
+              !cache.cityName.isEmpty else { return nil }
+        return cache.weather
+    }
+
+    private static func save(_ info: WeatherInfo, for city: String) {
+        guard !info.cityName.isEmpty,
+              let data = try? JSONEncoder().encode(
+                WindowsWeatherCache(cityKey: normalizedCityKey(city), info: info)
+              ) else { return }
+        UserDefaults.standard.set(data, forKey: cacheKey)
+        UserDefaults.standard.synchronize()
+    }
+
     private static func log(_ msg: String) {
         let dir = URL(fileURLWithPath: logPath)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)

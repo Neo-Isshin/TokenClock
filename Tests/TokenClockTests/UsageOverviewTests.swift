@@ -42,6 +42,26 @@ final class UsageOverviewTests: XCTestCase {
         XCTAssertEqual(data.rows.map(\.name), ["Codex", "OpenCode"])
     }
 
+    func testIncludeCacheChangesDisplayedTotalsAndBreakdownOrder() {
+        let snapshots = [day("2026-08-20", tools: [
+            tool("Codex", tokens: 100, messages: 1, cache: 0, cost: .unavailable),
+            tool("Claude Code", tokens: 50, messages: 1, cache: 200, cost: .unavailable),
+        ])]
+        let normal = UsageOverviewBuilder.make(
+            startDate: date("2026-08-20"), endDate: date("2026-08-20"),
+            snapshots: snapshots, grouping: .tool
+        )
+        let includingCache = UsageOverviewBuilder.make(
+            startDate: date("2026-08-20"), endDate: date("2026-08-20"),
+            snapshots: snapshots, grouping: .tool, includingCacheRead: true
+        )
+
+        XCTAssertEqual(normal.summary.displayedTokens(includingCacheRead: false), 150)
+        XCTAssertEqual(includingCache.summary.displayedTokens(includingCacheRead: true), 350)
+        XCTAssertEqual(normal.rows.map(\.name), ["Codex", "Claude Code"])
+        XCTAssertEqual(includingCache.rows.map(\.name), ["Claude Code", "Codex"])
+    }
+
     func testModelOverviewKeepsUnattributedResidualInUnknown() {
         let sessions = [
             DaySnapshot.Tool.Session(

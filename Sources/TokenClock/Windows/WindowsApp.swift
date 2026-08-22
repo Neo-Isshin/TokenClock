@@ -34,6 +34,46 @@ final class WindowsApp: @unchecked Sendable {
         }
     }
 
+    /// Claude's snapshot is a distinct type from Codex's snapshot, so keep a separate locked
+    /// container while preserving the same non-blocking UI-thread contract.
+    private final class ClaudeQuotaStateBox: @unchecked Sendable {
+        private let lock = NSLock()
+        private var value = ClaudeQuotaSnapshot.idle
+
+        func snapshot() -> ClaudeQuotaSnapshot {
+            lock.lock(); defer { lock.unlock() }
+            return value
+        }
+
+        func begin(force: Bool) -> Bool {
+            lock.lock(); defer { lock.unlock() }
+            guard value.status != .loading else { return false }
+            guard force || value.status == .idle || value.isStale else { return false }
+            value = .loading(previous: value)
+            return true
+        }
+
+        func finish(_ snapshot: ClaudeQuotaSnapshot) {
+            lock.lock(); value = snapshot; lock.unlock()
+        }
+    }
+
+    private final class ProviderQuotaStateBox: @unchecked Sendable {
+        private let lock = NSLock()
+        private var value: ProviderQuotaSnapshot
+        init(source: String) { value = .idle(source: source) }
+        func snapshot() -> ProviderQuotaSnapshot { lock.withLock { value } }
+        func begin(force: Bool) -> Bool {
+            lock.withLock {
+                guard value.status != .loading else { return false }
+                guard force || value.status == .idle || value.isStale else { return false }
+                value = .loading(previous: value)
+                return true
+            }
+        }
+        func finish(_ snapshot: ProviderQuotaSnapshot) { lock.withLock { value = snapshot } }
+    }
+
     // MARK: - 命令 ID
     private let cmdQuit: Int32 = 1
     private let cmdTopmost: Int32 = 10
@@ -44,7 +84,6 @@ final class WindowsApp: @unchecked Sendable {
     private let cmdAbout: Int32 = 50
     private let cmdThemeBase: Int32 = 60   // + 索引 → WindowsClockTheme.allCases[i]
     private let cmdTempC: Int32 = 70, cmdTempF: Int32 = 71
-    private let cmdScopeExcl: Int32 = 72, cmdScopeIncl: Int32 = 73
     private let cmdCityBase: Int32 = 80    // + 索引 → cities[i]
     private let cmdTzBase: Int32 = 90      // + 索引 → timezones[i]
     private let cmdApi: Int32 = 100         // copy endpoint (same action as macOS normal)
@@ -66,6 +105,7 @@ final class WindowsApp: @unchecked Sendable {
     fileprivate var api: WindowsAPIServer?
     private var didStartup = false
     private var weatherObserver: NSObjectProtocol?
+    private let weatherLock = NSLock()
     private var weatherString = ""           // 由 .weatherUpdated 通知更新，render 时叠到盘面顶部
     private var weatherInfo: WeatherInfo?     // 展开详情时复用 macOS normal 的当前天气与 12 小时趋势
     private var scanCount: Int = 0           // 天气刷新节流（每 20 次扫描≈10 分钟刷新一次）
@@ -76,13 +116,19 @@ final class WindowsApp: @unchecked Sendable {
     private var renderedDetailRows: [DetailRow] = []
     private var detailScrollRow = 0
     private var detailTotalRows = 0
-    private var showsCodexQuota = false
     private let codexQuotaService = CodexQuotaService()
     private let codexQuotaState = QuotaStateBox()
+    private let claudeQuotaService = ClaudeQuotaService()
+    private let claudeQuotaState = ClaudeQuotaStateBox()
+    private let antigravityQuotaService = AntigravityQuotaService()
+    private let antigravityQuotaState = ProviderQuotaStateBox(source: "Antigravity local service")
+    private let cursorQuotaService = CursorQuotaService()
+    private let cursorQuotaState = ProviderQuotaStateBox(source: "Cursor dashboard")
     fileprivate var customCfg = WindowsCustomTheme()   // 自定义主题编辑器在用的配置
     fileprivate var editorDlg: UnsafeMutableRawPointer?
     fileprivate var settingsDlg: UnsafeMutableRawPointer?
     fileprivate var overviewDlg: UnsafeMutableRawPointer?
+    fileprivate var quotaDlg: UnsafeMutableRawPointer?
     fileprivate var aboutDlg: UnsafeMutableRawPointer?
     fileprivate var editingSavedThemeId: String?
     private var settingsDraft: SettingsDraft?
@@ -96,6 +142,7 @@ final class WindowsApp: @unchecked Sendable {
     private enum OverviewPeriod { case week, month, custom }
     private var overviewPeriod: OverviewPeriod = .week
     private var overviewGrouping: UsageOverviewGrouping = .tool
+    private var overviewIncludesCacheRead = false
     private var overviewCustomStart = Calendar.current.date(byAdding: .day, value: -6, to: Date()) ?? Date()
     private var overviewCustomEnd = Date()
 
@@ -185,10 +232,12 @@ final class WindowsApp: @unchecked Sendable {
     }
 
     private func updateWeather(_ info: WeatherInfo) {
-        weatherInfo = info
         let f = UserDefaults.standard.bool(for: .useFahrenheit)
         let temp = f ? Int(Double(info.temperature) * 9.0 / 5.0 + 32.0) : info.temperature
-        weatherString = "\(info.emoji) \(temp)°\(f ? "F" : "C")"
+        weatherLock.withLock {
+            weatherInfo = info
+            weatherString = "\(info.emoji) \(temp)°\(f ? "F" : "C")"
+        }
     }
 
     /// 渲染一帧：忠实 classic 表盘 + 叠加真实用量（日期 / 天气 / token 计数 / 消息数 / 活跃工具）。
@@ -214,30 +263,38 @@ final class WindowsApp: @unchecked Sendable {
         let dialImagePath = selectedTheme == .glass
             ? (Bundle.module.url(forResource: "glass_disc", withExtension: "png")?.path ?? "")
             : ""
-        let weather = weatherString
-
-        let forecast = detailsVisible ? forecastOverlay() : (summary: "", slots: "", visible: false)
+        let weatherSnapshot = weatherLock.withLock { (weatherString, weatherInfo) }
+        let weather = weatherSnapshot.0
+        let forecast = detailsVisible
+            ? forecastOverlay(weatherInfo: weatherSnapshot.1)
+            : (summary: "", slots: "", visible: false)
 
         // 固定高详情卡只渲染当前可见页；滚轮改变起始行。展开父项不会再改变窗口高度，
         // 也不会推动表盘。天气趋势占 76pt 时少显示两行，剩余行可继续滚动查看。
         let allDetailRows = detailsVisible ? buildDetailRows(tools) : []
         detailTotalRows = allDetailRows.count
-        let visibleRowCapacity = forecast.visible ? 11 : 14
+        let visibleRowCapacity = forecast.visible ? 8 : 11
         let maxScroll = max(0, allDetailRows.count - visibleRowCapacity)
         detailScrollRow = min(maxScroll, max(0, detailScrollRow))
         let visibleDetailRows = Array(allDetailRows.dropFirst(detailScrollRow).prefix(visibleRowCapacity))
         renderedDetailRows = visibleDetailRows
         let detailText = visibleDetailRows.map(\.encoded).joined(separator: "\n")
         let L = L10n.shared
-        let modeLabel = "\(L.tr("detail.byCost")) / \(L.tr("detail.byPercent"))"
-        let detailControls = [L.tr("detail.groupBySession"), L.tr("detail.groupByModel"), modeLabel].joined(separator: "\t")
+        let modeLabel = valueMode == .tokens
+            ? "\(L.tr("detail.byCost"))\n\(L.tr("detail.byPercent"))"
+            : "\(L.tr("detail.byPercent"))\n\(L.tr("detail.todayUsage"))"
+        let detailControls = [
+            "\(L.tr("detail.modelDetectLine1"))\n\(L.tr("detail.modelDetectLine2"))", "",
+            "\(L.tr("detail.subscriptionQuotaLine1"))\n\(L.tr("detail.subscriptionQuotaLine2"))", "",
+            L.tr("detail.groupBySession"), L.tr("detail.groupByModel"),
+            "\(L.tr("detail.cacheDataLine1"))\n\(L.tr("detail.cacheDataLine2"))",
+            "\(L.tr("detail.textColorLine1"))\n\(L.tr("detail.textColorLine2"))",
+            "\(L.tr("detail.historyUsageLine1"))\n\(L.tr("detail.historyUsageLine2"))", "", modeLabel,
+        ].joined(separator: "\t")
         let detailHeader = [L.tr(groupingMode == .model ? "detail.model" : "detail.instance"),
                             L.tr(valueMode == .tokens ? "detail.todayUsage" : "detail.cost"),
                             L.tr(valueMode == .tokens ? "detail.messages" : "detail.share"),
                             groupingMode == .session ? L.tr("detail.cacheRate") : ""].joined(separator: "\t")
-        let quotaSnapshot = codexQuotaState.snapshot()
-        let quotaText = detailsVisible ? quotaOverlay(snapshot: quotaSnapshot) : ""
-
         // The dial remains a compact per-pixel-alpha layered HWND. Win32Shim presents the
         // fixed 320×547 detail card in a separate non-layered Desktop Acrylic sibling, so
         // expanding never turns the round widget back into a tall rectangular host.
@@ -251,7 +308,7 @@ final class WindowsApp: @unchecked Sendable {
         var wt = selectedTheme.winTheme
         Self.withCStrings([date, weather, todayLabel, tokens, messages, tool1, tool2, rate, dialImagePath,
                            detailText, detailControls, detailHeader, forecast.summary, forecast.slots,
-                           L.tr("detail.codexQuota"), quotaText]) { ptrs in
+                           "", ""]) { ptrs in
             var ov = win_overlay()
             ov.date = ptrs[0]
             ov.weather = ptrs[1]
@@ -271,10 +328,12 @@ final class WindowsApp: @unchecked Sendable {
             ov.quota_text = ptrs[15]
             ov.detail_grouping = groupingMode == .model ? 1 : 0
             ov.detail_percentage = valueMode == .costPercent ? 1 : 0
+            ov.detail_includes_cache = usageIncludesCache ? 1 : 0
             ov.detail_visible = detailsVisible ? 1 : 0
-            ov.detail_quota_visible = showsCodexQuota ? 1 : 0
+            ov.detail_quota_visible = 0
             ov.clock_diameter = dialHeight
             ov.detail_card_width = 320
+            applyQuickContrast(to: &wt)
             win_render_clock(currentHostWidth, currentHeight,
                              Int32(comps.hour ?? 0), Int32(comps.minute ?? 0), Int32(comps.second ?? 0),
                              &wt, &ov)
@@ -302,7 +361,7 @@ final class WindowsApp: @unchecked Sendable {
     /// Encode the same current 3-hour slot plus the next three slots used by
     /// DetailDropdownView on macOS. The renderer owns only presentation, so the selection and
     /// Fahrenheit conversion stay here with the shared weather model.
-    private func forecastOverlay() -> (summary: String, slots: String, visible: Bool) {
+    private func forecastOverlay(weatherInfo: WeatherInfo?) -> (summary: String, slots: String, visible: Bool) {
         guard let weatherInfo, !weatherInfo.cityName.isEmpty else { return ("", "", false) }
         let f = useFahrenheit
         func converted(_ c: Int) -> Int { f ? Int(Double(c) * 9.0 / 5.0 + 32.0) : c }
@@ -331,49 +390,53 @@ final class WindowsApp: @unchecked Sendable {
         return (summary, slots, true)
     }
 
-    /// Converts the shared quota model to a compact renderer protocol. Data acquisition and
-    /// decoding stay in CodexQuotaService; this function contains presentation only.
-    private func quotaOverlay(snapshot: CodexQuotaSnapshot) -> String {
+    /// Converts both subscription quota models to the compact renderer protocol. The panel is
+    /// deliberately capped at the two primary windows per provider so it fits the fixed detail
+    /// card without changing the widget layout.
+    private func quotaOverlay(codex: CodexQuotaSnapshot, claude: ClaudeQuotaSnapshot) -> String {
         let L = L10n.shared
-        var lines = ["H\t\(L.tr("detail.codexQuota"))\t↻ \(L.tr("quota.retry"))"]
-        if snapshot.status == .loading && snapshot.buckets.isEmpty {
-            lines.append("L\t\(L.tr("quota.loading"))")
-            return lines.joined(separator: "\n")
-        }
-        if snapshot.status == .idle || snapshot.status == .unavailable {
-            lines.append("E\t\(L.tr("quota.unavailable"))\t\(L.tr("quota.retry"))")
-            return lines.joined(separator: "\n")
-        }
-
-        for bucket in snapshot.buckets.prefix(3) {
-            let window = quotaWindowLabel(minutes: bucket.windowMinutes)
-            let title = bucket.name == "Codex" ? window : "\(bucket.name) · \(window)"
-            let remaining = L.tr("quota.remaining", bucket.remainingPercent)
-            let reset = bucket.resetsAt.map(quotaResetLabel) ?? "—"
-            lines.append("B\t\(quotaField(title))\t\(quotaField(window))\t\(quotaField(remaining))\t\(quotaField(reset))\t\(String(format: "%.1f", bucket.remainingPercent))")
-        }
-
-        var meta: [String] = []
-        if let plan = snapshot.planType, !plan.isEmpty {
-            meta.append(L.tr("quota.plan", displayPlan(plan)))
-        }
-        if snapshot.hasUnlimitedCredits {
-            meta.append(L.tr("quota.unlimited"))
-        } else if let balance = snapshot.creditBalance, balance != "0" {
-            meta.append(L.tr("quota.creditBalance", balance))
-        }
-        if snapshot.resetCreditCount > 0 {
-            meta.append(L.tr("quota.resetCredits", snapshot.resetCreditCount))
-        }
-        if !meta.isEmpty { lines.append("M\t\(quotaField(meta.joined(separator: "  ·  ")))") }
-
-        let source = L.tr(snapshot.source == .appServer ? "quota.liveSource" : "quota.logSource")
-        if let refreshed = snapshot.refreshedAt {
-            lines.append("S\t● \(source)  ·  \(L.tr("quota.updated", quotaUpdatedLabel(refreshed)))")
-        } else {
-            lines.append("S\t● \(source)")
-        }
+        var lines = ["H\t\(L.tr("quota.subscriptions"))\t↻ \(L.tr("quota.retry"))"]
+        let codexPlan = codex.planType.map { " · \(displayPlan($0))" } ?? ""
+        lines.append("P\t🤖 Codex\(codexPlan)")
+        appendQuotaProvider(
+            status: codex.status, buckets: codex.buckets,
+            loading: L.tr("quota.loadingCodex"), unavailable: L.tr("quota.codexUnavailable"),
+            to: &lines
+        )
+        let claudePlan = claude.planType.map { " · \(displayPlan($0))" } ?? ""
+        lines.append("P\t✳️ Claude Code\(claudePlan)")
+        appendQuotaProvider(
+            status: claude.status, buckets: claude.buckets,
+            loading: L.tr("quota.loadingClaude"), unavailable: L.tr("quota.claudeUnavailable"),
+            to: &lines
+        )
         return lines.joined(separator: "\n")
+    }
+
+    private func appendQuotaProvider(
+        status: CodexQuotaStatus, buckets: [CodexQuotaBucket], loading: String,
+        unavailable: String, to lines: inout [String]
+    ) {
+        if status == .loading && buckets.isEmpty {
+            lines.append("L\t\(quotaField(loading))")
+            return
+        }
+        guard status == .available, !buckets.isEmpty else {
+            lines.append("E\t\(quotaField(unavailable))")
+            return
+        }
+        for bucket in buckets.prefix(2) {
+            let window = quotaWindowLabel(minutes: bucket.windowMinutes)
+            let reset = bucket.resetsAt.map(quotaResetLabels)
+            lines.append(
+                "B\t\(quotaField(window))"
+                    + "\t\(quotaField(L10n.shared.tr("quota.remainingLabel")))"
+                    + "\t\(String(format: "%.0f%%", bucket.remainingPercent))"
+                    + "\t\(quotaField(reset?.relative ?? "—"))"
+                    + "\t\(String(format: "%.1f", bucket.remainingPercent))"
+                    + "\t\(quotaField(reset?.absolute ?? ""))"
+            )
+        }
     }
 
     private func quotaField(_ text: String) -> String {
@@ -388,7 +451,7 @@ final class WindowsApp: @unchecked Sendable {
         return L.tr("quota.minutes", minutes)
     }
 
-    private func quotaResetLabel(_ date: Date) -> String {
+    private func quotaResetLabels(_ date: Date) -> (relative: String, absolute: String) {
         let seconds = max(0, date.timeIntervalSinceNow)
         let relative: String
         if seconds >= 86_400 {
@@ -398,8 +461,11 @@ final class WindowsApp: @unchecked Sendable {
         }
         let formatter = DateFormatter()
         formatter.locale = L10n.shared.language == .en ? Locale(identifier: "en_US") : Locale(identifier: "zh_CN")
-        formatter.dateFormat = L10n.shared.language == .en ? "MMM d, HH:mm" : "M月d日 HH:mm"
-        return L10n.shared.tr("quota.resets", relative, formatter.string(from: date))
+        formatter.dateFormat = L10n.shared.language == .en ? "MMM d · h:mm a" : "M月d日 · HH:mm"
+        return (
+            L10n.shared.tr("quota.resetsRelative", relative),
+            formatter.string(from: date)
+        )
     }
 
     private func quotaUpdatedLabel(_ date: Date) -> String {
@@ -413,12 +479,61 @@ final class WindowsApp: @unchecked Sendable {
         raw.split(separator: "_").map { $0.prefix(1).uppercased() + $0.dropFirst() }.joined(separator: " ")
     }
 
-    private func refreshCodexQuota(force: Bool) {
-        guard codexQuotaState.begin(force: force) else { return }
-        let service = codexQuotaService
-        let state = codexQuotaState
-        DispatchQueue.global(qos: .userInitiated).async {
-            state.finish(service.fetch())
+    private var quickContrastPreset: Int {
+        UserDefaults.standard.int(for: .quickContrastPreset, default: 0)
+    }
+
+    private func cycleQuickContrast() {
+        let next = quickContrastPreset >= 3 ? 1 : quickContrastPreset + 1
+        UserDefaults.standard.setInt(next, for: .quickContrastPreset)
+    }
+
+    private func applyQuickContrast(to theme: inout win_theme) {
+        let primary: UInt32
+        let secondary: UInt32
+        switch quickContrastPreset {
+        case 1: primary = 0xFFFFFFFF; secondary = 0xB8FFFFFF
+        case 2: primary = 0xFF000000; secondary = 0xB8000000
+        case 3: primary = 0xFFFFD60A; secondary = 0xB8FFD60A
+        default: return
+        }
+        theme.number_color = primary
+        theme.text_primary = primary
+        theme.text_secondary = secondary
+        theme.dd_text = primary
+        theme.dd_subtext = secondary
+    }
+
+    private func refreshSubscriptionQuotas(force: Bool) {
+        if codexQuotaState.begin(force: force) {
+            let service = codexQuotaService
+            let state = codexQuotaState
+            DispatchQueue.global(qos: .userInitiated).async {
+                state.finish(service.fetch())
+                if let dialog = WindowsApp.shared.quotaDlg { dlg_post_command(dialog, 980) }
+            }
+        }
+        if claudeQuotaState.begin(force: force) {
+            let service = claudeQuotaService
+            let state = claudeQuotaState
+            DispatchQueue.global(qos: .userInitiated).async {
+                state.finish(service.fetch())
+                if let dialog = WindowsApp.shared.quotaDlg { dlg_post_command(dialog, 980) }
+            }
+        }
+        if antigravityQuotaState.begin(force: force) {
+            let service = antigravityQuotaService, state = antigravityQuotaState
+            DispatchQueue.global(qos: .userInitiated).async {
+                state.finish(service.fetch())
+                if let dialog = WindowsApp.shared.quotaDlg { dlg_post_command(dialog, 980) }
+            }
+        }
+        if cursorQuotaState.begin(force: force) {
+            let service = cursorQuotaService, state = cursorQuotaState
+            DispatchQueue.global(qos: .userInitiated).async {
+                state.finish(service.fetch())
+                if let dialog = WindowsApp.shared.quotaDlg { dlg_post_command(dialog, 980) }
+            }
         }
     }
 
@@ -566,7 +681,7 @@ final class WindowsApp: @unchecked Sendable {
     private func setValueMode(_ mode: DetailValueMode) {
         UserDefaults.standard.setInt(mode.rawValue, for: .dropdownValueMode)
     }
-    /// 用量口径：token 展示是否包含缓存读（右键菜单切换，与 macOS 一致；默认排除）
+    /// 用量口径：token 展示是否包含缓存读（详情快捷按钮切换；默认排除）
     private var usageIncludesCache: Bool { UserDefaults.standard.bool(for: .usageIncludesCacheRead) }
 
     private enum GroupingMode { case session, model }
@@ -614,31 +729,41 @@ final class WindowsApp: @unchecked Sendable {
         let localX = Double(x) - cardX
         guard localX >= 0, localX < detailCardWidth else { return }
         let localY = Double(y - dialHeight) - 14.0
-        let forecastHeight = (weatherInfo?.cityName.isEmpty == false) ? 76.0 : 0.0
+        let forecastHeight = weatherLock.withLock { weatherInfo?.cityName.isEmpty == false } ? 76.0 : 0.0
         let controlsY = localY - forecastHeight
-        if controlsY >= 8, controlsY < 34 {
+        if controlsY >= 8, controlsY < 57 {
+            if localX >= detailCardWidth / 2.0 { openSubscriptionQuota() }
+            return
+        } else if controlsY >= 65, controlsY < 91 {
             let requested: GroupingMode = localX < detailCardWidth / 2.0 ? .session : .model
             UserDefaults.standard.setInt(requested == .model ? 1 : 0, for: .dropdownGrouping)
             expandedDetailKeys.removeAll()
             detailScrollRow = 0
             render()
-        } else if controlsY >= 38, controlsY < 60 {
-            if localX < detailCardWidth / 2.0 {
-                showsCodexQuota.toggle()
-                detailScrollRow = 0
-                if showsCodexQuota { refreshCodexQuota(force: false) }
+        } else if controlsY >= 97, controlsY < 136 {
+            let compactX = min(307, max(0, localX - 6.0))
+            let item: Int
+            if compactX < 67 {
+                item = 0
+            } else if compactX < 128 {
+                item = 1
+            } else if compactX < 215 {
+                item = 2
+            } else {
+                item = 3
+            }
+            if item == 0 {
+                UserDefaults.standard.setBool(!usageIncludesCache, for: .usageIncludesCacheRead)
+            } else if item == 1 {
+                cycleQuickContrast()
+            } else if item == 2 {
+                openUsageOverview()
             } else {
                 setValueMode(valueMode.next)
             }
             render()
-        } else if showsCodexQuota, controlsY >= 68, controlsY < 112,
-                  localX > detailCardWidth - 116.0 {
-            refreshCodexQuota(force: true)
-            render()
-        } else if showsCodexQuota {
-            return
-        } else if controlsY >= 86 {
-            let index = Int((controlsY - 86) / 30)
+        } else if controlsY >= 163 {
+            let index = Int((controlsY - 163) / 30)
             guard renderedDetailRows.indices.contains(index), let key = renderedDetailRows[index].key else { return }
             if expandedDetailKeys.contains(key) { expandedDetailKeys.remove(key) }
             else { expandedDetailKeys.insert(key) }
@@ -647,8 +772,8 @@ final class WindowsApp: @unchecked Sendable {
     }
 
     func scroll(delta: Int32) {
-        guard detailsVisible, !showsCodexQuota, detailTotalRows > 0 else { return }
-        let forecastRows = (weatherInfo?.cityName.isEmpty == false) ? 11 : 14
+        guard detailsVisible, detailTotalRows > 0 else { return }
+        let forecastRows = weatherLock.withLock { weatherInfo?.cityName.isEmpty == false } ? 8 : 11
         let maxScroll = max(0, detailTotalRows - forecastRows)
         let direction = delta < 0 ? 1 : -1
         detailScrollRow = min(maxScroll, max(0, detailScrollRow + direction * 3))
@@ -660,7 +785,7 @@ final class WindowsApp: @unchecked Sendable {
         guard now.timeIntervalSince(lastTrayToggle) > 0.35 else { return }
         lastTrayToggle = now
         detailsVisible.toggle()
-        if !detailsVisible { showsCodexQuota = false; detailScrollRow = 0 }
+        if !detailsVisible { detailScrollRow = 0 }
         render()
     }
 
@@ -697,7 +822,6 @@ final class WindowsApp: @unchecked Sendable {
             addSubmenu(menu, L.tr("menu.size"), sm)
         }
         addMenuItem(menu, cmdApi, L.tr("menu.api", Int(apiPort)), false)
-        addMenuItem(menu, cmdOverview, L.tr("menu.overview"), false)
         addSeparator(menu)
         if let om = menu_create() {
             for (index, percent) in Self.opacityLevels.enumerated() {
@@ -715,12 +839,6 @@ final class WindowsApp: @unchecked Sendable {
             addMenuItem(um, cmdTempC, L.tr("menu.celsius"), !useFahrenheit)
             addMenuItem(um, cmdTempF, L.tr("menu.fahrenheit"), useFahrenheit)
             addSubmenu(menu, L.tr("menu.temperature"), um)
-        }
-        // 用量口径：token 展示是否包含缓存读（费用估算始终按分桶全量计价，不受影响）
-        if let gm = menu_create() {
-            addMenuItem(gm, cmdScopeExcl, L.tr("menu.usageExclCache"), !usageIncludesCache)
-            addMenuItem(gm, cmdScopeIncl, L.tr("menu.usageInclCache"), usageIncludesCache)
-            addSubmenu(menu, L.tr("menu.usageScope"), gm)
         }
         // 城市（Auto=IP 定位 + 6 预置）
         if let cm = menu_create() {
@@ -777,8 +895,6 @@ final class WindowsApp: @unchecked Sendable {
         case cmdEditCustom: openCustomThemeEditor()
         case cmdTempC:      setUseFahrenheit(false)
         case cmdTempF:      setUseFahrenheit(true)
-        case cmdScopeExcl:  UserDefaults.standard.setBool(false, for: .usageIncludesCacheRead)
-        case cmdScopeIncl:  UserDefaults.standard.setBool(true, for: .usageIncludesCacheRead)
         case cmdApi:        copyAPIEndpoint()
         case cmdRefresh:
             scheduleScan(incremental: false)
@@ -841,6 +957,7 @@ final class WindowsApp: @unchecked Sendable {
 
     private func setLang(_ lang: AppLanguage) {
         L10n.shared.language = lang          // didSet 落盘；dateFmt 为实例计算属性，下一帧即生效
+        WindowsWeather.refresh(forCity: selectedCity)
         render()
     }
 
@@ -869,6 +986,88 @@ final class WindowsApp: @unchecked Sendable {
 
     // MARK: - 用量总览
 
+    private func openSubscriptionQuota() {
+        guard quotaDlg == nil,
+              let dialog = dlg_create(L10n.shared.tr("quota.windowTitle"), 470, 700) else { return }
+        quotaDlg = dialog
+        refreshSubscriptionQuotas(force: false)
+        rebuildSubscriptionQuotaDialog()
+        _ = dlg_modal_cb(dialog, quotaCmdCb, nil)
+        quotaDlg = nil
+        dlg_destroy(dialog)
+    }
+
+    fileprivate func handleQuotaCmd(_ id: Int32) {
+        switch id {
+        case 980: rebuildSubscriptionQuotaDialog()
+        case 981:
+            refreshSubscriptionQuotas(force: true)
+            rebuildSubscriptionQuotaDialog()
+        case 982:
+            if let dialog = quotaDlg { dlg_end(dialog, 0) }
+        default: break
+        }
+    }
+
+    private func rebuildSubscriptionQuotaDialog() {
+        guard let dialog = quotaDlg else { return }
+        let codex = codexQuotaState.snapshot(), claude = claudeQuotaState.snapshot()
+        let antigravity = antigravityQuotaState.snapshot(), cursor = cursorQuotaState.snapshot()
+        let estimatedBuckets = codex.buckets.count + claude.buckets.count
+            + antigravity.groups.reduce(0) { $0 + $1.buckets.count }
+            + cursor.groups.reduce(0) { $0 + $1.buckets.count }
+        let contentHeight = max(680, 230 + estimatedBuckets * 82)
+        dlg_reset_content(dialog, Int32(contentHeight))
+        dlg_add_title(dialog, L10n.shared.tr("quota.windowTitle"), 24, 16, 270, 30)
+        dlg_add_subtitle(dialog, L10n.shared.tr("quota.windowSubtitle"), 24, 47, 390, 22)
+        dlg_add_push(dialog, 981, L10n.shared.tr("quota.retry"), 338, 16, 98, 30)
+        var y: Int32 = 82
+        y = appendQuotaDialogProvider(dialog, title: "🤖 Codex", plan: codex.planType,
+            status: codex.status, buckets: codex.buckets,
+            unavailable: L10n.shared.tr("quota.codexUnavailable"), y: y)
+        y = appendQuotaDialogProvider(dialog, title: "✳️ Claude Code", plan: claude.planType,
+            status: claude.status, buckets: claude.buckets,
+            unavailable: L10n.shared.tr("quota.claudeUnavailable"), y: y)
+        y = appendQuotaDialogProvider(dialog, title: "🛸 Antigravity", plan: antigravity.planType,
+            status: antigravity.status, buckets: antigravity.groups.flatMap(\.buckets),
+            unavailable: L10n.shared.tr("quota.antigravityUnavailable"), y: y)
+        y = appendQuotaDialogProvider(dialog, title: "🖱️ Cursor", plan: cursor.planType,
+            status: cursor.status, buckets: cursor.groups.flatMap(\.buckets),
+            unavailable: L10n.shared.tr("quota.cursorUnavailable"), y: y)
+        dlg_add_push(dialog, 982, L10n.shared.language == .en ? "Close" : "关闭", 336, y + 8, 100, 30)
+    }
+
+    private func appendQuotaDialogProvider(
+        _ dialog: UnsafeMutableRawPointer, title: String, plan: String?,
+        status: CodexQuotaStatus, buckets: [CodexQuotaBucket], unavailable: String, y: Int32
+    ) -> Int32 {
+        var cursorY = y
+        let planText = plan.map { " · \(displayPlan($0))" } ?? ""
+        dlg_add_section(dialog, title + planText, 28, cursorY, 390, 22)
+        cursorY += 28
+        if buckets.isEmpty {
+            dlg_add_card(dialog, 22, cursorY, 414, 66)
+            let message = status == .loading ? L10n.shared.tr("quota.loadingProvider", title) : unavailable
+            dlg_add_subtitle(dialog, message, 36, cursorY + 11, 380, 44)
+            return cursorY + 80
+        }
+        for bucket in buckets {
+            dlg_add_card(dialog, 22, cursorY, 414, 72)
+            let label = bucket.name.isEmpty ? quotaWindowLabel(minutes: bucket.windowMinutes) : bucket.name
+            let percent = String(format: "%.0f%% %@", bucket.remainingPercent, L10n.shared.tr("quota.remainingLabel"))
+            dlg_add_static(dialog, label, 36, cursorY + 8, 230, 20)
+            dlg_add_static(dialog, percent, 302, cursorY + 8, 114, 20)
+            dlg_add_progress(dialog, 36, cursorY + 32, 380, 8,
+                             Int32(bucket.remainingPercent.rounded()))
+            if let reset = bucket.resetsAt {
+                let labels = quotaResetLabels(reset)
+                dlg_add_subtitle(dialog, "\(labels.relative) · \(labels.absolute)", 36, cursorY + 49, 370, 17)
+            }
+            cursorY += 80
+        }
+        return cursorY + 4
+    }
+
     private func openUsageOverview() {
         model.persistCurrentUsage()
         guard let dlg = dlg_create(L10n.shared.tr("overview.title"), 820, 680) else { return }
@@ -886,6 +1085,7 @@ final class WindowsApp: @unchecked Sendable {
         case 902: overviewPeriod = .custom
         case 903: overviewGrouping = .tool
         case 904: overviewGrouping = .model
+        case 905: overviewIncludesCacheRead.toggle()
         case 914:
             guard let dlg = overviewDlg else { return }
             if let value = parseOverviewDate(settingsEditText(dlg, 912)) { overviewCustomStart = value }
@@ -899,7 +1099,14 @@ final class WindowsApp: @unchecked Sendable {
         guard let dlg = overviewDlg else { return }
         let dates = overviewDates
         let data = UsageOverviewBuilder.load(
-            startDate: dates.0, endDate: dates.1, grouping: overviewGrouping
+            startDate: dates.0, endDate: dates.1, grouping: overviewGrouping,
+            includingCacheRead: overviewIncludesCacheRead
+        )
+        let tokenTitle = L10n.shared.tr(
+            overviewIncludesCacheRead ? "overview.tokensWithCache" : "overview.tokens"
+        )
+        let tokenHeader = L10n.shared.tr(
+            overviewIncludesCacheRead ? "overview.tokensWithCacheShort" : "overview.tokens"
         )
         let dayRows = min(30, data.days.count)
         let rowCount = max(1, data.rows.count)
@@ -914,6 +1121,7 @@ final class WindowsApp: @unchecked Sendable {
         dlg_add_push(dlg, 902, overviewPeriod == .custom ? "✓  \(L10n.shared.tr("overview.custom"))" : L10n.shared.tr("overview.custom"), 644, 18, 118, 30)
         dlg_add_push(dlg, 903, overviewGrouping == .tool ? "✓  \(L10n.shared.tr("overview.byTool"))" : L10n.shared.tr("overview.byTool"), 606, 54, 88, 28)
         dlg_add_push(dlg, 904, overviewGrouping == .model ? "✓  \(L10n.shared.tr("overview.byModel"))" : L10n.shared.tr("overview.byModel"), 700, 54, 88, 28)
+        dlg_add_push(dlg, 905, overviewIncludesCacheRead ? "✓  \(L10n.shared.tr("overview.includeCache"))" : L10n.shared.tr("overview.includeCache"), 474, 54, 126, 28)
 
         var y: Int32 = 92
         if overviewPeriod == .custom {
@@ -925,7 +1133,7 @@ final class WindowsApp: @unchecked Sendable {
             y += 42
         }
 
-        appendOverviewMetricCard(dlg, x: 22, y: y, width: 184, title: L10n.shared.tr("overview.tokens"), value: TokenFormat.compact(data.summary.tokens))
+        appendOverviewMetricCard(dlg, x: 22, y: y, width: 184, title: tokenTitle, value: TokenFormat.compact(data.summary.displayedTokens(includingCacheRead: overviewIncludesCacheRead)))
         appendOverviewMetricCard(dlg, x: 214, y: y, width: 184, title: L10n.shared.tr("overview.messages"), value: overviewNumber(data.summary.messages))
         appendOverviewMetricCard(dlg, x: 406, y: y, width: 184, title: L10n.shared.tr("overview.cost"), value: CostFormat.estimate(data.summary.cost))
         appendOverviewMetricCard(dlg, x: 598, y: y, width: 184, title: L10n.shared.tr("overview.averageCache"), value: String(format: "%@%.1f%%", data.summary.cacheIsExact ? "" : "≈", data.summary.averageCacheRate * 100))
@@ -935,12 +1143,13 @@ final class WindowsApp: @unchecked Sendable {
         y += 28
         dlg_add_card(dlg, 22, y, 760, Int32(dayRows * 26 + 18))
         let visibleDays = Array(data.days.suffix(30))
-        let maxTokens = max(1, visibleDays.map(\.metrics.tokens).max() ?? 1)
+        let maxTokens = max(1, visibleDays.map { $0.metrics.displayedTokens(includingCacheRead: overviewIncludesCacheRead) }.max() ?? 1)
         for (index, day) in visibleDays.enumerated() {
             let rowY = y + 8 + Int32(index * 26)
+            let tokens = day.metrics.displayedTokens(includingCacheRead: overviewIncludesCacheRead)
             dlg_add_static(dlg, String(day.dateKey.suffix(5)), 34, rowY, 52, 20)
-            dlg_add_static(dlg, overviewBar(day.metrics.tokens, maximum: maxTokens), 90, rowY, 566, 20)
-            dlg_add_static(dlg, TokenFormat.compact(day.metrics.tokens), 676, rowY, 88, 20)
+            dlg_add_static(dlg, overviewBar(tokens, maximum: maxTokens), 90, rowY, 566, 20)
+            dlg_add_static(dlg, TokenFormat.compact(tokens), 676, rowY, 88, 20)
         }
         y += Int32(dayRows * 26 + 32)
 
@@ -948,7 +1157,7 @@ final class WindowsApp: @unchecked Sendable {
         y += 28
         let listHeight = Int32(34 + rowCount * 30)
         dlg_add_card(dlg, 22, y, 760, listHeight)
-        appendOverviewColumns(dlg, y: y + 7, name: L10n.shared.tr("overview.name"), tokens: L10n.shared.tr("overview.tokens"), messages: L10n.shared.tr("overview.messages"), cost: L10n.shared.tr("overview.cost"), cache: L10n.shared.tr("overview.averageCache"))
+        appendOverviewColumns(dlg, y: y + 7, name: L10n.shared.tr("overview.name"), tokens: tokenHeader, messages: L10n.shared.tr("overview.messages"), cost: L10n.shared.tr("overview.cost"), cache: L10n.shared.tr("overview.averageCache"))
         if data.rows.isEmpty {
             dlg_add_subtitle(dlg, L10n.shared.tr("overview.noData"), 42, y + 38, 700, 24)
         }
@@ -957,7 +1166,7 @@ final class WindowsApp: @unchecked Sendable {
             let name = row.name == "Unknown" ? L10n.shared.tr("detail.unknownModel") : row.name
             appendOverviewColumns(
                 dlg, y: rowY, name: "\(row.emoji)  \(name)",
-                tokens: TokenFormat.compact(row.metrics.tokens),
+                tokens: TokenFormat.compact(row.metrics.displayedTokens(includingCacheRead: overviewIncludesCacheRead)),
                 messages: overviewNumber(row.metrics.messages),
                 cost: CostFormat.estimate(row.metrics.cost),
                 cache: String(format: "%@%.1f%%", row.metrics.cacheIsExact ? "" : "≈", row.metrics.averageCacheRate * 100)
@@ -1702,6 +1911,9 @@ final class WindowsApp: @unchecked Sendable {
         guard shouldSave else { return }
 
         customCfg.save()
+        // A saved custom face contains explicit dial/detail colors. It is the latest
+        // user color decision and therefore supersedes any quick-contrast preset.
+        UserDefaults.standard.remove(.quickContrastPreset)
         let proposed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         let finalName = proposed.isEmpty ? (en ? "Custom Face" : "自定义表盘") : proposed
         var themes = WindowsSavedCustomTheme.loadAll()
@@ -2111,6 +2323,9 @@ private let settingsCmdCb: @convention(c) (UnsafeMutableRawPointer?, Int32) -> V
 }
 private let overviewCmdCb: @convention(c) (UnsafeMutableRawPointer?, Int32) -> Void = { _, id in
     WindowsApp.shared.handleOverviewCmd(id)
+}
+private let quotaCmdCb: @convention(c) (UnsafeMutableRawPointer?, Int32) -> Void = { _, id in
+    WindowsApp.shared.handleQuotaCmd(id)
 }
 private let pricingCmdCb: @convention(c) (UnsafeMutableRawPointer?, Int32) -> Void = { _, id in
     WindowsApp.shared.handlePricingCmd(id: id)

@@ -125,7 +125,7 @@ final class WindowsUsageModel: @unchecked Sendable {
         var results: [String: ScanSnapshot] = [:]
         if enabledTools.contains("OpenClaw") {
             let usage = openclawService.todayUsage()
-            results["OpenClaw"] = snapshot(usage, openclawService.recentUsage(minutes: rateWindowMinutes).tokens, openclawService.currentHourTokens(), openclawService.isActive(), openclawService.todaySessions())
+            results["OpenClaw"] = snapshot(usage, openclawService.recentUsage(minutes: rateWindowMinutes).tokens, openclawService.currentHourTokens(), openclawService.isActive(), openclawService.todaySessions(), measurementValue: nil, measurementScope: .today, openclawService.todayCost(), openclawService.todayCacheReadTokens())
         }
         if enabledTools.contains("Claude Code") {
             let usage = claudeCodeService.todayUsage()
@@ -165,7 +165,7 @@ final class WindowsUsageModel: @unchecked Sendable {
         }
         if enabledTools.contains("Antigravity") {
             let usage = antigravityService.todayUsage()
-            results["Antigravity"] = snapshot(usage, antigravityService.recentUsage(minutes: rateWindowMinutes).tokens, antigravityService.currentHourTokens(), antigravityService.isActive(), antigravityService.todaySessions())
+            results["Antigravity"] = snapshot(usage, antigravityService.recentUsage(minutes: rateWindowMinutes).tokens, antigravityService.currentHourTokens(), antigravityService.isActive(), antigravityService.todaySessions(), measurementValue: nil, measurementScope: .today, antigravityService.todayCost(), antigravityService.todayCacheReadTokens())
         }
         if enabledTools.contains("Cline") {
             let usage = clineService.todayUsage()

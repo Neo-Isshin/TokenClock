@@ -308,7 +308,7 @@ final class CodexQuotaService: @unchecked Sendable {
         }
 
         var buckets: [CodexQuotaBucket] = []
-        for (groupID, group) in groups {
+        for (groupID, group) in groups where !isSparkQuotaGroup(groupID, group: group) {
             let baseName = (group["limitName"] as? String).flatMap { $0.isEmpty ? nil : $0 }
                 ?? (groupID == "codex" ? "Codex" : groupID)
             for key in ["primary", "secondary"] {
@@ -420,6 +420,15 @@ final class CodexQuotaService: @unchecked Sendable {
         if let number = value as? NSNumber { return number.doubleValue }
         if let string = value as? String { return Double(string) }
         return nil
+    }
+
+    /// Spark is a separate short-window allowance rather than the user's main Codex
+    /// subscription quota. Keeping it in the compact panel made the Codex section noisy
+    /// and could be mistaken for another weekly allowance.
+    private static func isSparkQuotaGroup(_ id: String, group: [String: Any]) -> Bool {
+        let name = group["limitName"] as? String ?? ""
+        return id.localizedCaseInsensitiveContains("spark")
+            || name.localizedCaseInsensitiveContains("spark")
     }
 
     private static func integer(_ value: Any?) -> Int? {

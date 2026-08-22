@@ -912,6 +912,52 @@ static LRESULT CALLBACK dlg_separator_proc(HWND h, UINT msg, WPARAM wp, LPARAM l
     return DefWindowProcW(h, msg, wp, lp);
 }
 
+typedef struct {
+    int percent;
+} dlg_progress_state;
+
+static LRESULT CALLBACK dlg_progress_proc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
+    (void)wp;
+    dlg_progress_state *state = (dlg_progress_state *)GetWindowLongPtrW(h, GWLP_USERDATA);
+    switch (msg) {
+    case WM_NCCREATE: {
+        CREATESTRUCTW *create = (CREATESTRUCTW *)lp;
+        state = (dlg_progress_state *)calloc(1, sizeof(*state));
+        if (!state) return FALSE;
+        state->percent = max(0, min(100, (int)(INT_PTR)create->lpCreateParams));
+        SetWindowLongPtrW(h, GWLP_USERDATA, (LONG_PTR)state);
+        return DefWindowProcW(h, msg, wp, lp);
+    }
+    case WM_NCDESTROY:
+        free(state); SetWindowLongPtrW(h, GWLP_USERDATA, 0); break;
+    case WM_ERASEBKGND: return 1;
+    case WM_PAINT: {
+        PAINTSTRUCT paint; HDC dc = BeginPaint(h, &paint);
+        RECT rect; GetClientRect(h, &rect);
+        HWND dialog = GetParent(h);
+        unsigned int canvas = win_fluent_color(dialog, WIN_FLUENT_COLOR_SURFACE);
+        HBRUSH clear = CreateSolidBrush(to_cr(canvas)); FillRect(dc, &rect, clear); DeleteObject(clear);
+        RECT trough = rect; trough.right -= 1; trough.bottom -= 1;
+        unsigned int track = dlg_blend_rgb(
+            canvas, win_fluent_color(dialog, WIN_FLUENT_COLOR_TEXT), 10
+        );
+        dlg_fill_round_rect(dc, &trough, max(2, rect.bottom), track, track);
+        if (state && state->percent > 0) {
+            RECT fill = trough;
+            fill.right = max(
+                fill.left + min(4, trough.right - trough.left),
+                fill.left + (trough.right - trough.left) * state->percent / 100
+            );
+            unsigned int accent = state->percent <= 15 ? 0xef4b4bu
+                                : state->percent <= 35 ? 0xf0a32fu : 0x3ac56cu;
+            dlg_fill_round_rect(dc, &fill, max(2, rect.bottom), accent, accent);
+        }
+        EndPaint(h, &paint); return 0;
+    }
+    }
+    return DefWindowProcW(h, msg, wp, lp);
+}
+
 static void dlg_register_fluent_controls(void) {
     static int registered = 0;
     if (registered) return;
@@ -921,6 +967,7 @@ static void dlg_register_fluent_controls(void) {
     wc.lpfnWndProc = dlg_edit_frame_proc; wc.lpszClassName = L"TCEditFrame"; RegisterClassExW(&wc);
     wc.lpfnWndProc = dlg_check_proc; wc.lpszClassName = L"TCDialogCheck"; RegisterClassExW(&wc);
     wc.lpfnWndProc = dlg_separator_proc; wc.lpszClassName = L"TCDialogSeparator"; RegisterClassExW(&wc);
+    wc.lpfnWndProc = dlg_progress_proc; wc.lpszClassName = L"TCDialogProgress"; RegisterClassExW(&wc);
     registered = 1;
 }
 
@@ -1268,6 +1315,12 @@ void dlg_add_card(void *dlg, int x, int y, int w, int h) {
     InvalidateRect(dialog, &card, TRUE);
 }
 
+void dlg_add_progress(void *dlg, int x, int y, int w, int h, int percent) {
+    CreateWindowExW(0, L"TCDialogProgress", L"", WS_CHILD | WS_VISIBLE,
+                    x, y, w, h, (HWND)dlg, NULL, GetModuleHandleW(NULL),
+                    (void *)(INT_PTR)max(0, min(100, percent)));
+}
+
 void dlg_add_nav(void *dlg, int id, const char *title_utf8, const char *subtitle_utf8,
                  int x, int y, int w, int h) {
     wchar_t title[256], subtitle[512];
@@ -1390,6 +1443,11 @@ void dlg_destroy(void *dlg) {
     HWND hwnd = (HWND)dlg;
     if (IsWindow(hwnd)) DestroyWindow(hwnd);
     if (g_dlg == hwnd) g_dlg = NULL;
+}
+
+void dlg_post_command(void *dlg, int id) {
+    HWND hwnd = (HWND)dlg;
+    if (IsWindow(hwnd)) PostMessageW(hwnd, WM_COMMAND, MAKEWPARAM(id, BN_CLICKED), 0);
 }
 
 void dlg_set_text(void *dlg, int id, const char *text_utf8) {

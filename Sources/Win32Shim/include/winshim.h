@@ -126,6 +126,7 @@ void  dlg_add_title(void *dlg, const char *text_utf8, int x, int y, int w, int h
 void  dlg_add_subtitle(void *dlg, const char *text_utf8, int x, int y, int w, int h); /* secondary explanatory text */
 void  dlg_add_section(void *dlg, const char *text_utf8, int x, int y, int w, int h);  /* compact semibold section title */
 void  dlg_add_card(void *dlg, int x, int y, int w, int h);                            /* rounded Fluent surface */
+void  dlg_add_progress(void *dlg, int x, int y, int w, int h, int percent);             /* red/orange/green quota bar */
 void  dlg_add_nav(void *dlg, int id, const char *title_utf8, const char *subtitle_utf8,
                   int x, int y, int w, int h);                                        /* macOS-like settings row */
 void  dlg_add_disclosure(void *dlg, int id, const char *title_utf8, const char *subtitle_utf8,
@@ -143,6 +144,7 @@ void  dlg_scroll_to(void *dlg, int y);                            /* scroll to l
 int   dlg_modal(void *dlg);                             /* blocks; returns 1=OK 0=cancel */
 void  dlg_end(void *dlg, int result);                   /* programmatically finish current modal */
 void  dlg_destroy(void *dlg);                           /* caller destroys after reading child controls */
+void  dlg_post_command(void *dlg, int id);              /* worker-safe: queue a command on dialog UI thread */
 typedef void (*dlg_on_cmd_t)(void *ctx, int id);
 int   dlg_modal_cb(void *dlg, dlg_on_cmd_t on_cmd, void *ctx);  /* 同 dlg_modal，非 OK/Cancel 的按钮点击回调 on_cmd */
 
@@ -218,6 +220,7 @@ typedef struct {
     const char *quota_text;       /* quota panel: typed tab-separated rows */
     int detail_grouping;         /* 0 session / 1 model */
     int detail_percentage;       /* 0 absolute / 1 percent */
+    int detail_includes_cache;   /* 0 fresh tokens / 1 include cache reads */
     int detail_visible;          /* explicit; never infer visibility from row text */
     int detail_quota_visible;    /* 1 shows quota panel in place of the usage rows */
     int clock_diameter;          /* face diameter; independent from expanded host width */

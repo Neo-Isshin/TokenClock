@@ -114,15 +114,24 @@ final class PricingService: @unchecked Sendable {
     private var unpriced: Set<String> = []
     private let lock = NSLock()
 
+    /// Defensive pricing aliases for historical callers that may still supply a harness
+    /// inference suffix. ModelNormalizer also removes these suffixes for display/grouping.
+    private static let pricingAliases: [String: String] = [
+        "gemini-3.7-flash-low": "gemini-3.7-flash",
+        "gemini-3.7-flash-medium": "gemini-3.7-flash",
+        "gemini-3.7-flash-high": "gemini-3.7-flash",
+    ]
+
     /// 最近一次成功刷新时间；nil = 从未刷新过
     private(set) var lastRefresh: Date?
 
     private init() {
         loadCustomPrices()
-        // 刷新缓存（若存在）优先于内置快照
-        if !loadCatalog(from: Self.cacheURL) {
-            loadBundledCatalog()
-        }
+        // Keep the bundled catalog as a guaranteed baseline, then overlay the online cache.
+        // A previously downloaded cache can lag behind a new app release and must not hide
+        // provider prices added to the newer bundle.
+        loadBundledCatalog()
+        _ = loadCatalog(from: Self.cacheURL, merging: true)
         let ts = UserDefaults.standard.double(for: .pricingLastRefresh)
         if ts > 0 { lastRefresh = Date(timeIntervalSince1970: ts) }
     }
@@ -140,9 +149,13 @@ final class PricingService: @unchecked Sendable {
         // 2. 目录精确命中（一方模型是无前缀规范名，与归一化结果直接对齐）
         if let p = catalog[name] { return p }
         if let p = catalog[raw] { return p }
-        // 3. 路由前缀索引：dashscope/glm-5.2 ← glm-5.2
+        // 3. Harness-only inference-level suffixes → official billable model ID. A custom
+        // override on the official ID still wins over the built-in/online catalog.
+        if let alias = Self.pricingAliases[name],
+           let p = customPrices[alias] ?? catalog[alias] { return p }
+        // 4. 路由前缀索引：dashscope/glm-5.2 ← glm-5.2
         if let key = suffixIndex[name], let p = catalog[key] { return p }
-        // 4. 未命中记账
+        // 5. 未命中记账
         unpriced.insert(name)
         return nil
     }
@@ -258,7 +271,11 @@ final class PricingService: @unchecked Sendable {
     /// 同步上下文里持锁重建目录（Swift 6 禁止在 async 函数里直接 NSLock）
     private func applyRefreshedCatalog() -> Bool {
         lock.lock(); defer { lock.unlock() }
-        return loadCatalog(from: Self.cacheURL)
+        catalog.removeAll(keepingCapacity: true)
+        suffixIndex.removeAll(keepingCapacity: true)
+        generatedAt = nil
+        loadBundledCatalog()
+        return loadCatalog(from: Self.cacheURL, merging: true)
     }
 
     private func recordRefresh(_ stamp: Date) {
@@ -279,17 +296,21 @@ final class PricingService: @unchecked Sendable {
 
     /// 解析快照/缓存 JSON 填充 catalog。调用方需持锁。
     @discardableResult
-    private func loadCatalog(from url: URL) -> Bool {
+    private func loadCatalog(from url: URL, merging: Bool = false) -> Bool {
         guard let data = try? Data(contentsOf: url),
               let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let models = obj["models"] as? [String: [String: Any]] else { return false }
-        var next: [String: ModelPrice] = [:]
+        var next: [String: ModelPrice] = merging ? catalog : [:]
         var index: [String: String] = [:]
         var suffixSeen = Set<String>()
         for (key, entry) in models {
             guard let p = ModelPrice(entry: entry) else { continue }
             next[key] = p
-            guard key.contains("/") else { continue }
+        }
+        guard !next.isEmpty else { return false }
+
+        // Rebuild from the merged result so suffix ambiguity is detected across both sources.
+        for key in next.keys where key.contains("/") {
             let suffix = String(key.split(separator: "/", maxSplits: 1).last ?? "")
             if suffixSeen.contains(suffix) {
                 index.removeValue(forKey: suffix) // 歧义后缀弃用
@@ -298,10 +319,13 @@ final class PricingService: @unchecked Sendable {
                 suffixSeen.insert(suffix)
             }
         }
-        guard !next.isEmpty else { return false }
         catalog = next
         suffixIndex = index
-        generatedAt = (obj["_meta"] as? [String: Any])?["generatedAt"] as? String
+        let incomingGeneratedAt = (obj["_meta"] as? [String: Any])?["generatedAt"] as? String
+        if !merging || generatedAt == nil
+            || (incomingGeneratedAt.map { $0 > (generatedAt ?? "") } ?? false) {
+            generatedAt = incomingGeneratedAt
+        }
         return true
     }
 
