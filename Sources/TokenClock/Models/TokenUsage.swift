@@ -15,7 +15,6 @@ enum TokenFormat {
         return "\(tokens)"
     }
 }
-
 /// 单个工具的 token 使用数据
 struct ToolUsage: Identifiable, Hashable {
     var id: String { name }

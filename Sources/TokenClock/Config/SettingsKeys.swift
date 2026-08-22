@@ -69,6 +69,8 @@ enum SettingsKey: String {
     case dialTextColor = "TC_dialTextColor"
     /// 下拉详情面板主文字色 #RRGGBB（空=跟随主题）
     case dropdownTextColor = "TC_dropdownTextColor"
+    /// Linux/Windows 详情面板快捷对比色预设；不覆盖用户自定义颜色。
+    case quickContrastPreset = "TC_quickContrastPreset"
     /// Cursor 用量是否从云端获取（关闭则不向 cursor.com 发凭证请求）
     case cursorCloudFetchEnabled = "TC_cursorCloudFetchEnabled"
 

@@ -100,7 +100,7 @@ struct LinuxSavedCustomTheme: Codable, Equatable, Sendable {
 
 final class LinuxCustomThemeStore: @unchecked Sendable {
     static let shared = LinuxCustomThemeStore()
-    private let lock = NSLock()
+    private let lock = NSRecursiveLock()
     private var storedConfig: LinuxCustomThemeConfig
     private var storedThemes: [LinuxSavedCustomTheme]
 
@@ -122,6 +122,20 @@ final class LinuxCustomThemeStore: @unchecked Sendable {
     var themes: [LinuxSavedCustomTheme] {
         lock.lock(); defer { lock.unlock() }
         return storedThemes
+    }
+
+    /// Renders a saved face without changing the active draft or persisted defaults.
+    /// GTK preview drawing is synchronous; the recursive lock lets `.custom`
+    /// properties read the temporary config while excluding other readers.
+    func withPreviewConfig<T>(_ config: LinuxCustomThemeConfig, _ body: () -> T) -> T {
+        lock.lock()
+        let previous = storedConfig
+        storedConfig = config
+        defer {
+            storedConfig = previous
+            lock.unlock()
+        }
+        return body()
     }
 
     @discardableResult

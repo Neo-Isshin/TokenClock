@@ -48,9 +48,20 @@ final class LinuxSettingsWindow: @unchecked Sendable {
     private var customHandButtons: [String: UnsafeMutablePointer<GtkWidget>] = [:]
     private var customNumberStyleButtons: [String: UnsafeMutablePointer<GtkWidget>] = [:]
     private var customFontButtons: [String: UnsafeMutablePointer<GtkWidget>] = [:]
+    private var sectionRevealers: [String: UnsafeMutablePointer<GtkWidget>] = [:]
+    private var sectionButtons: [String: UnsafeMutablePointer<GtkWidget>] = [:]
+    private var sectionTitles: [String: String] = [:]
+    private var expandedSections: Set<String> = []
     private var selectedCustomHandStyle = "round"
     private var selectedCustomNumberStyle = "arabic"
     private var selectedCustomFont = "rounded"
+    private var pricingModelEntry: UnsafeMutablePointer<GtkWidget>?
+    private var pricingInputEntry: UnsafeMutablePointer<GtkWidget>?
+    private var pricingOutputEntry: UnsafeMutablePointer<GtkWidget>?
+    private var pricingCacheReadEntry: UnsafeMutablePointer<GtkWidget>?
+    private var pricingCacheWriteEntry: UnsafeMutablePointer<GtkWidget>?
+    private var pricingRemoveModels: [String: String] = [:]
+    private var pricingRefreshInFlight = false
 
     private lazy var opaque = Unmanaged.passUnretained(self).toOpaque()
 
@@ -65,6 +76,11 @@ final class LinuxSettingsWindow: @unchecked Sendable {
         loadValues()
         guard let window else { return }
         gtk_widget_show_all(window)
+        // A GtkRevealer still contributes its hidden child's natural width. Re-assert the
+        // user-facing fixed geometry after realization so long hints/custom editors cannot make
+        // the collapsed overview wider than the macOS-normal settings panel.
+        gtk_window_resize(tc_gtk_window(window), 520, 548)
+        syncDisclosureStates()
         gtk_window_present(tc_gtk_window(window))
     }
 
@@ -82,6 +98,10 @@ final class LinuxSettingsWindow: @unchecked Sendable {
 
     fileprivate func handleAction(widget: UnsafeMutablePointer<GtkWidget>) {
         let name = String(cString: tc_gtk_widget_name(widget))
+        if name.hasPrefix("settings:section:") {
+            toggleDisclosure(String(name.dropFirst("settings:section:".count)))
+            return
+        }
         if name.hasPrefix("settings:browse:") {
             browse(service: String(name.dropFirst("settings:browse:".count)))
             return
@@ -121,11 +141,21 @@ final class LinuxSettingsWindow: @unchecked Sendable {
             show()
             return
         }
+        if name.hasPrefix("settings:pricing-remove:"),
+           let model = pricingRemoveModels[name] {
+            PricingService.shared.setCustomPrice(model: model, price: nil)
+            owner?.pricingCatalogDidChange()
+            refreshLanguage()
+            show()
+            return
+        }
         switch name {
         case "settings:detect": runDetection()
         case "settings:clock-face": owner?.openThemePickerFromSettings()
         case "settings:custom-save": saveCustomTheme()
         case "settings:custom-reset": resetCustomTheme()
+        case "settings:pricing-save": saveCustomPrice()
+        case "settings:pricing-refresh": refreshPricingCatalog()
         case "settings:save": saveAndClose()
         case "settings:cancel": hide()
         default: break
@@ -135,23 +165,57 @@ final class LinuxSettingsWindow: @unchecked Sendable {
     private func buildWindow(parent: UnsafeMutablePointer<GtkWidget>) {
         guard let createdWindow = gtk_window_new(GTK_WINDOW_TOPLEVEL),
               let root = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0),
-              let notebook = gtk_notebook_new() else { return }
+              let scroll = gtk_scrolled_window_new(nil, nil),
+              let content = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8) else { return }
         window = createdWindow
         gtk_window_set_title(tc_gtk_window(createdWindow), L10n.shared.tr("settings.title"))
-        gtk_window_set_default_size(tc_gtk_window(createdWindow), 600, 600)
-        gtk_window_set_resizable(tc_gtk_window(createdWindow), 1)
+        gtk_window_set_default_size(tc_gtk_window(createdWindow), 520, 548)
+        gtk_window_set_resizable(tc_gtk_window(createdWindow), 0)
         gtk_window_set_transient_for(tc_gtk_window(createdWindow), tc_gtk_window(parent))
         gtk_window_set_position(tc_gtk_window(createdWindow), GTK_WIN_POS_CENTER_ON_PARENT)
         gtk_window_set_keep_above(tc_gtk_window(createdWindow), 1)
         _ = tc_gtk_hide_on_delete(createdWindow)
         gtk_container_add(tc_gtk_container(createdWindow), root)
 
-        appendPage(generalPage(), title: localized(zh: "常规", en: "General"), to: notebook)
-        appendPage(toolsPage(), title: localized(zh: "工具", en: "Tools"), to: notebook)
-        appendPage(pathsPage(), title: localized(zh: "路径", en: "Paths"), to: notebook)
-        appendPage(usagePage(), title: localized(zh: "速率", en: "Usage"), to: notebook)
-        appendPage(themesPage(), title: localized(zh: "表盘", en: "Faces"), to: notebook)
-        gtk_box_pack_start(tc_gtk_box(root), notebook, 1, 1, 0)
+        gtk_scrolled_window_set_policy(
+            tc_gtk_scrolled_window(scroll), GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC
+        )
+        gtk_container_set_border_width(tc_gtk_container(content), 14)
+        gtk_container_add(tc_gtk_container(scroll), content)
+        gtk_box_pack_start(tc_gtk_box(root), scroll, 1, 1, 0)
+
+        let title = gtk_label_new(L10n.shared.tr("settings.title"))
+        gtk_label_set_xalign(tc_gtk_label(title), 0)
+        tc_gtk_add_class(title, "tokenclock-settings-title")
+        gtk_box_pack_start(tc_gtk_box(content), title, 0, 0, 2)
+        if let overview = overviewPage() {
+            tc_gtk_add_class(overview, "tokenclock-settings-overview")
+            gtk_box_pack_start(tc_gtk_box(content), overview, 0, 0, 0)
+        }
+        appendDisclosure(
+            key: "api", title: localized(zh: "本地 API", en: "Local API"),
+            page: localAPIPage(), to: content
+        )
+        appendDisclosure(
+            key: "tools", title: L10n.shared.tr("settings.toolSelection"),
+            page: toolsPage(), to: content
+        )
+        appendDisclosure(
+            key: "paths", title: L10n.shared.tr("settings.dataPaths"),
+            page: pathsPage(), to: content
+        )
+        appendDisclosure(
+            key: "usage", title: L10n.shared.tr("rate.title"),
+            page: usagePage(), to: content
+        )
+        appendDisclosure(
+            key: "pricing", title: L10n.shared.tr("pricing.title"),
+            page: pricingPage(), to: content
+        )
+        appendDisclosure(
+            key: "themes", title: localized(zh: "表盘与自定义", en: "Clock Faces & Custom"),
+            page: themesPage(), to: content
+        )
 
         let footer = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8)
         gtk_container_set_border_width(tc_gtk_container(footer), 12)
@@ -160,19 +224,28 @@ final class LinuxSettingsWindow: @unchecked Sendable {
         gtk_box_pack_start(tc_gtk_box(footer), spacer, 1, 1, 0)
         appendButton(localized(zh: "取消", en: "Cancel"), name: "settings:cancel", to: footer)
         appendButton(L10n.shared.tr("settings.done"), name: "settings:save", to: footer)
-        gtk_box_pack_start(tc_gtk_box(root), footer, 0, 0, 0)
+        gtk_box_pack_end(tc_gtk_box(root), footer, 0, 0, 0)
 
         tc_gtk_apply_css("""
+        .tokenclock-settings-title { font-size: 20px; font-weight: 700; padding: 2px 3px 7px; }
         .tokenclock-settings-section { font-size: 14px; font-weight: 700; }
         .tokenclock-settings-hint { color: rgba(110, 110, 110, 0.95); font-size: 11px; }
         .tokenclock-settings-row { padding: 5px; }
+        .tokenclock-settings-overview {
+            background: rgba(120, 120, 120, 0.055); border-radius: 10px; padding: 10px;
+        }
+        .tokenclock-settings-disclosure {
+            background: rgba(120, 120, 120, 0.06);
+            border: 1px solid rgba(120, 120, 120, 0.16);
+            border-radius: 9px; padding: 9px 11px; font-weight: 600;
+        }
+        .tokenclock-settings-disclosure:hover { background: rgba(73, 132, 255, 0.10); }
         """)
         loadValues()
     }
 
-    private func generalPage() -> UnsafeMutablePointer<GtkWidget>? {
-        let page = verticalPage()
-        appendSection(localized(zh: "本地 API", en: "Local API"), to: page)
+    private func localAPIPage() -> UnsafeMutablePointer<GtkWidget>? {
+        let page = verticalPage(border: 12)
         apiEnabledButton = gtk_check_button_new_with_label(
             localized(zh: "启用本地只读 API 服务", en: "Enable local read-only API server")
         )
@@ -188,24 +261,31 @@ final class LinuxSettingsWindow: @unchecked Sendable {
         tc_gtk_add_class(endpoint, "tokenclock-settings-hint")
         gtk_box_pack_start(tc_gtk_box(portRow), endpoint, 0, 0, 0)
         gtk_box_pack_start(tc_gtk_box(page), portRow, 0, 0, 0)
+        return page
+    }
 
-        appendSection(L10n.shared.tr("settings.autoDetect"), to: page)
+    private func overviewPage() -> UnsafeMutablePointer<GtkWidget>? {
+        let page = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6)
+        gtk_container_set_border_width(tc_gtk_container(page), 4)
         let detectRow = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8)
+        let detectTitle = gtk_label_new(L10n.shared.tr("settings.autoDetect"))
+        gtk_label_set_xalign(tc_gtk_label(detectTitle), 0)
+        tc_gtk_add_class(detectTitle, "tokenclock-settings-section")
+        gtk_box_pack_start(tc_gtk_box(detectRow), detectTitle, 1, 1, 0)
         appendButton(L10n.shared.tr("settings.redetect"), name: "settings:detect", to: detectRow)
+        gtk_box_pack_start(tc_gtk_box(page), detectRow, 0, 0, 0)
         detectionLabel = gtk_label_new("")
         gtk_label_set_xalign(tc_gtk_label(detectionLabel), 0)
-        gtk_label_set_line_wrap(tc_gtk_label(detectionLabel), 1)
         gtk_widget_set_hexpand(detectionLabel, 1)
         tc_gtk_add_class(detectionLabel, "tokenclock-settings-hint")
-        gtk_box_pack_start(tc_gtk_box(detectRow), detectionLabel, 1, 1, 0)
-        gtk_box_pack_start(tc_gtk_box(page), detectRow, 0, 0, 0)
+        gtk_box_pack_start(tc_gtk_box(page), detectionLabel, 0, 0, 0)
 
-        appendSection(localized(zh: "网络数据", en: "Network Data"), to: page)
         cursorCloudButton = gtk_check_button_new_with_label(L10n.shared.tr("dataFetch.cursorCloud"))
         gtk_box_pack_start(tc_gtk_box(page), cursorCloudButton, 0, 0, 0)
         let cursorHint = gtk_label_new(L10n.shared.tr("dataFetch.cursorCloudHint"))
         gtk_label_set_xalign(tc_gtk_label(cursorHint), 0)
-        gtk_label_set_line_wrap(tc_gtk_label(cursorHint), 1)
+        gtk_label_set_ellipsize(tc_gtk_label(cursorHint), PANGO_ELLIPSIZE_END)
+        gtk_label_set_max_width_chars(tc_gtk_label(cursorHint), 58)
         tc_gtk_add_class(cursorHint, "tokenclock-settings-hint")
         gtk_box_pack_start(tc_gtk_box(page), cursorHint, 0, 0, 0)
         return page
@@ -238,9 +318,7 @@ final class LinuxSettingsWindow: @unchecked Sendable {
     }
 
     private func pathsPage() -> UnsafeMutablePointer<GtkWidget>? {
-        guard let scroll = gtk_scrolled_window_new(nil, nil),
-              let page = verticalPage() else { return nil }
-        gtk_scrolled_window_set_policy(tc_gtk_scrolled_window(scroll), GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC)
+        guard let page = verticalPage() else { return nil }
         appendSection(L10n.shared.tr("settings.dataPaths"), to: page)
         for option in Self.toolOptions {
             let row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8)
@@ -265,8 +343,7 @@ final class LinuxSettingsWindow: @unchecked Sendable {
         gtk_label_set_line_wrap(tc_gtk_label(hint), 1)
         tc_gtk_add_class(hint, "tokenclock-settings-hint")
         gtk_box_pack_start(tc_gtk_box(page), hint, 0, 0, 4)
-        gtk_container_add(tc_gtk_container(scroll), page)
-        return scroll
+        return page
     }
 
     private func usagePage() -> UnsafeMutablePointer<GtkWidget>? {
@@ -311,10 +388,144 @@ final class LinuxSettingsWindow: @unchecked Sendable {
         return page
     }
 
+    private func pricingPage() -> UnsafeMutablePointer<GtkWidget>? {
+        guard let page = verticalPage() else { return nil }
+        let summary = PricingService.shared.catalogSummary
+        let generated = summary.generatedAt.map { String($0.prefix(10)) } ?? "—"
+
+        // GTK computes a hidden revealer's natural width before it is expanded. A single long
+        // pricing sentence therefore widened the entire non-resizable Settings window to nearly
+        // 1,000 px. Insert a semantic sentence break so the collapsed page keeps the normal
+        // 520 px footprint while preserving the full explanatory text.
+        let rawNote = L10n.shared.tr("pricing.note")
+        let wrappedNote = rawNote
+            .replacingOccurrences(of: ". Usage", with: ".\nUsage")
+            .replacingOccurrences(of: "，订阅", with: "，\n订阅")
+            .replacingOccurrences(of: "，訂閱", with: "，\n訂閱")
+        let note = gtk_label_new(wrappedNote)
+        gtk_label_set_xalign(tc_gtk_label(note), 0)
+        gtk_label_set_line_wrap(tc_gtk_label(note), 1)
+        gtk_label_set_max_width_chars(tc_gtk_label(note), 62)
+        tc_gtk_add_class(note, "tokenclock-settings-hint")
+        gtk_box_pack_start(tc_gtk_box(page), note, 0, 0, 0)
+
+        let statusRow = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8)
+        let status = gtk_label_new(L10n.shared.tr("pricing.catalog", summary.count, generated))
+        gtk_label_set_xalign(tc_gtk_label(status), 0)
+        gtk_widget_set_hexpand(status, 1)
+        gtk_box_pack_start(tc_gtk_box(statusRow), status, 1, 1, 0)
+        appendButton(
+            pricingRefreshInFlight ? L10n.shared.tr("pricing.refreshing") : L10n.shared.tr("pricing.refresh"),
+            name: "settings:pricing-refresh", to: statusRow
+        )
+        gtk_box_pack_start(tc_gtk_box(page), statusRow, 0, 0, 0)
+
+        let unpriced = PricingService.shared.unpricedModels
+        if !unpriced.isEmpty {
+            appendSection(L10n.shared.tr("pricing.unpricedTitle"), to: page)
+            let wrappedModels = stride(from: 0, to: unpriced.count, by: 3).map { start in
+                unpriced[start..<min(start + 3, unpriced.count)].joined(separator: "  ·  ")
+            }.joined(separator: "\n")
+            let label = gtk_label_new(wrappedModels)
+            gtk_label_set_xalign(tc_gtk_label(label), 0)
+            gtk_label_set_line_wrap(tc_gtk_label(label), 1)
+            gtk_label_set_max_width_chars(tc_gtk_label(label), 62)
+            tc_gtk_add_class(label, "tokenclock-settings-hint")
+            gtk_box_pack_start(tc_gtk_box(page), label, 0, 0, 0)
+        }
+
+        appendSection(L10n.shared.tr("pricing.customTitle"), to: page)
+        let headers = gtk_label_new("\(L10n.shared.tr("pricing.modelName"))  ·  \(L10n.shared.tr("pricing.input"))  ·  \(L10n.shared.tr("pricing.output"))  ·  \(L10n.shared.tr("pricing.cacheRead"))  ·  \(L10n.shared.tr("pricing.cacheWrite"))")
+        gtk_label_set_xalign(tc_gtk_label(headers), 0)
+        gtk_label_set_max_width_chars(tc_gtk_label(headers), 62)
+        tc_gtk_add_class(headers, "tokenclock-settings-hint")
+        gtk_box_pack_start(tc_gtk_box(page), headers, 0, 0, 0)
+
+        let editor = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 5)
+        pricingModelEntry = pricingEntry(placeholder: L10n.shared.tr("pricing.example"), width: 150, to: editor)
+        pricingInputEntry = pricingEntry(placeholder: "3.0", width: 58, to: editor)
+        pricingOutputEntry = pricingEntry(placeholder: "15.0", width: 58, to: editor)
+        pricingCacheReadEntry = pricingEntry(placeholder: "0.3", width: 58, to: editor)
+        pricingCacheWriteEntry = pricingEntry(placeholder: "3.75", width: 58, to: editor)
+        appendButton(L10n.shared.tr("pricing.addCustom"), name: "settings:pricing-save", to: editor)
+        gtk_box_pack_start(tc_gtk_box(page), editor, 0, 0, 0)
+
+        pricingRemoveModels.removeAll()
+        for (index, model) in PricingService.shared.customModels.enumerated() {
+            guard let price = PricingService.shared.customPrice(for: model) else { continue }
+            let row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6)
+            let description = String(
+                format: "%@  ·  %.6g / %.6g / %.6g / %.6g",
+                model, price.input, price.output, price.cacheRead, price.cacheWrite
+            )
+            let label = gtk_label_new(description)
+            gtk_label_set_xalign(tc_gtk_label(label), 0)
+            gtk_widget_set_hexpand(label, 1)
+            gtk_box_pack_start(tc_gtk_box(row), label, 1, 1, 0)
+            let action = "settings:pricing-remove:\(index)"
+            pricingRemoveModels[action] = model
+            appendButton(L10n.shared.tr("pricing.remove"), name: action, to: row)
+            gtk_box_pack_start(tc_gtk_box(page), row, 0, 0, 0)
+        }
+        return page
+    }
+
+    @discardableResult
+    private func pricingEntry(placeholder: String, width: Int32, to row: UnsafeMutablePointer<GtkWidget>?) -> UnsafeMutablePointer<GtkWidget>? {
+        let entry = gtk_entry_new()
+        gtk_entry_set_placeholder_text(tc_gtk_entry(entry), placeholder)
+        let characterWidth: gint = width >= 100 ? 14 : 5
+        gtk_entry_set_width_chars(tc_gtk_entry(entry), characterWidth)
+        gtk_entry_set_max_width_chars(tc_gtk_entry(entry), characterWidth)
+        gtk_widget_set_size_request(entry, gint(width), -1)
+        gtk_box_pack_start(tc_gtk_box(row), entry, 0, 0, 0)
+        return entry
+    }
+
+    private func saveCustomPrice() {
+        guard let modelEntry = pricingModelEntry else { return }
+        let name = String(cString: gtk_entry_get_text(tc_gtk_entry(modelEntry)))
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { return }
+        func number(_ widget: UnsafeMutablePointer<GtkWidget>?) -> Double {
+            guard let widget else { return 0 }
+            return Double(String(cString: gtk_entry_get_text(tc_gtk_entry(widget)))) ?? 0
+        }
+        PricingService.shared.setCustomPrice(
+            model: name,
+            price: ModelPrice(
+                input: number(pricingInputEntry),
+                output: number(pricingOutputEntry),
+                cacheRead: number(pricingCacheReadEntry),
+                cacheWrite: number(pricingCacheWriteEntry)
+            )
+        )
+        owner?.pricingCatalogDidChange()
+        refreshLanguage()
+        show()
+    }
+
+    private func refreshPricingCatalog() {
+        guard !pricingRefreshInFlight else { return }
+        pricingRefreshInFlight = true
+        Task.detached(priority: .utility) { [weak self] in
+            try? await PricingService.shared.refresh()
+            guard let self else { return }
+            _ = tc_gtk_idle_add(linuxPricingRefreshFinished, self.opaque)
+        }
+        refreshLanguage()
+        show()
+    }
+
+    fileprivate func pricingRefreshFinished() {
+        pricingRefreshInFlight = false
+        owner?.pricingCatalogDidChange()
+        refreshLanguage()
+        show()
+    }
+
     private func themesPage() -> UnsafeMutablePointer<GtkWidget>? {
-        guard let scroll = gtk_scrolled_window_new(nil, nil),
-              let page = verticalPage() else { return nil }
-        gtk_scrolled_window_set_policy(tc_gtk_scrolled_window(scroll), GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC)
+        guard let page = verticalPage() else { return nil }
         appendSection(L10n.shared.tr("theme.title"), to: page)
         let description = gtk_label_new(
             localized(
@@ -451,13 +662,12 @@ final class LinuxSettingsWindow: @unchecked Sendable {
                 gtk_box_pack_start(tc_gtk_box(page), row, 0, 0, 0)
             }
         }
-        gtk_container_add(tc_gtk_container(scroll), page)
-        return scroll
+        return page
     }
 
-    private func verticalPage() -> UnsafeMutablePointer<GtkWidget>? {
+    private func verticalPage(border: Int = 18) -> UnsafeMutablePointer<GtkWidget>? {
         let page = gtk_box_new(GTK_ORIENTATION_VERTICAL, 12)
-        gtk_container_set_border_width(tc_gtk_container(page), 18)
+        gtk_container_set_border_width(tc_gtk_container(page), guint(border))
         return page
     }
 
@@ -468,6 +678,52 @@ final class LinuxSettingsWindow: @unchecked Sendable {
     ) {
         guard let page else { return }
         _ = gtk_notebook_append_page(tc_gtk_notebook(notebook), page, gtk_label_new(title))
+    }
+
+    private func appendDisclosure(
+        key: String,
+        title: String,
+        page: UnsafeMutablePointer<GtkWidget>?,
+        to content: UnsafeMutablePointer<GtkWidget>
+    ) {
+        guard let page,
+              let button = gtk_button_new_with_label("▸  \(title)"),
+              let revealer = gtk_revealer_new() else { return }
+        gtk_widget_set_name(button, "settings:section:\(key)")
+        gtk_button_set_relief(tc_gtk_button(button), GTK_RELIEF_NONE)
+        gtk_button_set_alignment(tc_gtk_button(button), 0, 0.5)
+        tc_gtk_add_class(button, "tokenclock-settings-disclosure")
+        _ = tc_gtk_on_clicked(button, linuxSettingsAction, opaque)
+        gtk_revealer_set_transition_type(
+            tc_gtk_revealer(revealer), GTK_REVEALER_TRANSITION_TYPE_SLIDE_DOWN
+        )
+        gtk_revealer_set_transition_duration(tc_gtk_revealer(revealer), 160)
+        gtk_container_add(tc_gtk_container(revealer), page)
+        gtk_box_pack_start(tc_gtk_box(content), button, 0, 0, 0)
+        gtk_box_pack_start(tc_gtk_box(content), revealer, 0, 0, 0)
+        sectionRevealers[key] = revealer
+        sectionButtons[key] = button
+        sectionTitles[key] = title
+    }
+
+    private func toggleDisclosure(_ key: String) {
+        if expandedSections.contains(key) { expandedSections.remove(key) }
+        else { expandedSections.insert(key) }
+        syncDisclosureState(key)
+    }
+
+    private func syncDisclosureStates() {
+        for key in sectionRevealers.keys { syncDisclosureState(key) }
+    }
+
+    private func syncDisclosureState(_ key: String) {
+        let expanded = expandedSections.contains(key)
+        if let revealer = sectionRevealers[key] {
+            gtk_revealer_set_reveal_child(tc_gtk_revealer(revealer), expanded ? 1 : 0)
+        }
+        if let button = sectionButtons[key], let title = sectionTitles[key] {
+            gtk_button_set_label(tc_gtk_button(button), "\(expanded ? "▾" : "▸")  \(title)")
+        }
     }
 
     private func appendSection(_ title: String, to page: UnsafeMutablePointer<GtkWidget>?) {
@@ -645,7 +901,7 @@ final class LinuxSettingsWindow: @unchecked Sendable {
         _ = LinuxCustomThemeStore.shared.resetDraft()
         UserDefaults.standard.remove(.activeCustomThemeId)
         loadCustomThemeValues()
-        owner?.applyCustomTheme(id: nil)
+        owner?.resetCustomThemeToClassic()
     }
 
     private func colorValue(_ key: String, fallback: LinuxThemeColor) -> LinuxThemeColor {
@@ -813,6 +1069,15 @@ final class LinuxSettingsWindow: @unchecked Sendable {
         customHandButtons.removeAll()
         customNumberStyleButtons.removeAll()
         customFontButtons.removeAll()
+        pricingModelEntry = nil
+        pricingInputEntry = nil
+        pricingOutputEntry = nil
+        pricingCacheReadEntry = nil
+        pricingCacheWriteEntry = nil
+        pricingRemoveModels.removeAll()
+        sectionRevealers.removeAll()
+        sectionButtons.removeAll()
+        sectionTitles.removeAll()
     }
 
     private func localized(zh: String, en: String) -> String {
@@ -831,4 +1096,9 @@ private func linuxSettingsAction(
 ) {
     guard let widget else { return }
     settings(from: data)?.handleAction(widget: widget)
+}
+
+private func linuxPricingRefreshFinished(_ data: gpointer?) -> gboolean {
+    settings(from: data)?.pricingRefreshFinished()
+    return 0
 }

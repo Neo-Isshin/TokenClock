@@ -34,6 +34,14 @@ static inline GtkScrolledWindow *tc_gtk_scrolled_window(GtkWidget *widget) {
     return GTK_SCROLLED_WINDOW(widget);
 }
 
+static inline GtkProgressBar *tc_gtk_progress_bar(GtkWidget *widget) {
+    return GTK_PROGRESS_BAR(widget);
+}
+
+static inline GtkRevealer *tc_gtk_revealer(GtkWidget *widget) {
+    return GTK_REVEALER(widget);
+}
+
 static inline GtkEntry *tc_gtk_entry(GtkWidget *widget) {
     return GTK_ENTRY(widget);
 }
@@ -169,6 +177,21 @@ static inline void tc_gtk_prepare_transparent_window(GtkWidget *widget) {
     gtk_widget_set_app_paintable(widget, TRUE);
 }
 
+static inline void tc_gtk_set_fixed_window_size(GtkWidget *widget, gint size) {
+    GdkGeometry geometry = {0};
+    geometry.min_width = size;
+    geometry.min_height = size;
+    geometry.max_width = size;
+    geometry.max_height = size;
+    gtk_window_set_geometry_hints(
+        GTK_WINDOW(widget), widget, &geometry,
+        GDK_HINT_MIN_SIZE | GDK_HINT_MAX_SIZE
+    );
+    gtk_widget_set_size_request(widget, size, size);
+    gtk_window_resize(GTK_WINDOW(widget), size, size);
+    gtk_widget_queue_resize(widget);
+}
+
 static inline gint tc_gtk_primary_workarea_height(void) {
     GdkDisplay *display = gdk_display_get_default();
     if (display == NULL) return 900;
@@ -217,6 +240,7 @@ static inline void tc_gtk_position_adjacent_panel(
 
     gint x = parent_x + (parent_width - panel_width) / 2;
     gint y = parent_y + parent_height + margin;
+    gint actual_height = panel_height;
     GdkWindow *gdk_parent = gtk_widget_get_window(parent_widget);
     GdkDisplay *display = gdk_display_get_default();
     GdkMonitor *monitor = (display != NULL && gdk_parent != NULL)
@@ -224,12 +248,27 @@ static inline void tc_gtk_position_adjacent_panel(
     if (monitor != NULL) {
         GdkRectangle workarea;
         gdk_monitor_get_workarea(monitor, &workarea);
-        if (y + panel_height > workarea.y + workarea.height) {
+        const gint workarea_bottom = workarea.y + workarea.height;
+        const gint below_y = parent_y + parent_height + margin;
+        const gint below_space = MAX(0, workarea_bottom - below_y);
+        const gint above_space = MAX(0, parent_y - margin - workarea.y);
+
+        if (below_space >= panel_height) {
+            y = below_y;
+        } else if (above_space >= panel_height) {
             y = parent_y - panel_height - margin;
+        } else if (below_space >= above_space) {
+            actual_height = MAX(1, below_space);
+            y = below_y;
+        } else {
+            actual_height = MAX(1, above_space);
+            y = parent_y - actual_height - margin;
         }
         x = MAX(workarea.x, MIN(x, workarea.x + workarea.width - panel_width));
-        y = MAX(workarea.y, MIN(y, workarea.y + workarea.height - panel_height));
+        y = MAX(workarea.y, MIN(y, workarea_bottom - actual_height));
     }
+    gtk_widget_set_size_request(panel_widget, panel_width, actual_height);
+    gtk_window_resize(panel, panel_width, actual_height);
     gtk_window_move(panel, x, y);
 }
 
@@ -249,18 +288,36 @@ static inline void tc_gtk_clipboard_set_text(const char *text) {
     }
 }
 
-static inline void tc_gtk_show_about(GtkWidget *parent_widget, const char *version) {
+static inline void tc_gtk_show_about(
+    GtkWidget *parent_widget,
+    const char *version,
+    const char *logo_path
+) {
     GtkWidget *dialog = gtk_about_dialog_new();
     gtk_about_dialog_set_program_name(GTK_ABOUT_DIALOG(dialog), "TokenClock");
     gtk_about_dialog_set_version(GTK_ABOUT_DIALOG(dialog), version);
+    gtk_about_dialog_set_copyright(
+        GTK_ABOUT_DIALOG(dialog), "Copyright © 2026 Neo-Isshin"
+    );
+    gtk_about_dialog_set_license_type(GTK_ABOUT_DIALOG(dialog), GTK_LICENSE_GPL_3_0);
     gtk_about_dialog_set_comments(
         GTK_ABOUT_DIALOG(dialog),
-        "A beautiful desktop clock for local AI token usage."
+        "normal · Linux\nA beautiful desktop clock for local AI token usage."
     );
     gtk_about_dialog_set_website(
         GTK_ABOUT_DIALOG(dialog),
-        "https://github.com/Neo-Isshin/TokenClock"
+        "https://github.com/Neo-Isshin/TokenClock/issues"
     );
+    gtk_about_dialog_set_website_label(GTK_ABOUT_DIALOG(dialog), "GitHub Issues");
+    if (logo_path != NULL && logo_path[0] != '\0') {
+        GError *error = NULL;
+        GdkPixbuf *logo = gdk_pixbuf_new_from_file_at_scale(logo_path, 96, 96, TRUE, &error);
+        if (logo != NULL) {
+            gtk_about_dialog_set_logo(GTK_ABOUT_DIALOG(dialog), logo);
+            g_object_unref(logo);
+        }
+        if (error != NULL) g_error_free(error);
+    }
     gtk_window_set_transient_for(GTK_WINDOW(dialog), GTK_WINDOW(parent_widget));
     gtk_window_set_keep_above(GTK_WINDOW(dialog), TRUE);
     gtk_dialog_run(GTK_DIALOG(dialog));

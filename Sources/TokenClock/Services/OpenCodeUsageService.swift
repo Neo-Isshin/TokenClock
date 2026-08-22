@@ -61,7 +61,11 @@ final class OpenCodeUsageService: @unchecked Sendable {
     // MARK: - 内部
 
     private var dbPath: String {
+#if os(Linux)
+        PathConfig.opencodeDatabasePath()
+#else
         opencodeHome + "/opencode.db"
+#endif
     }
 
     private func scanDatabase() {

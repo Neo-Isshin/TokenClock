@@ -95,7 +95,6 @@ enum UsageAggregator {
         return result
     }
 }
-
 /// 「按模型」视图：某个模型下，各工具对其的消耗贡献
 struct ModelGroup: Identifiable, Hashable {
     var id: String { name }

@@ -13,6 +13,7 @@ final class LinuxApp: @unchecked Sendable {
     private var detailsPanel: LinuxDetailsPanel?
     private var themePicker: LinuxThemePicker?
     private var settingsWindow: LinuxSettingsWindow?
+    private var overviewWindow: LinuxUsageOverviewWindow?
     private var themeItems: [LinuxClockTheme: UnsafeMutablePointer<GtkWidget>] = [:]
     private var sizeItems: [LinuxClockSize: UnsafeMutablePointer<GtkWidget>] = [:]
     private var opacityItems: [Int: UnsafeMutablePointer<GtkWidget>] = [:]
@@ -150,6 +151,7 @@ final class LinuxApp: @unchecked Sendable {
             )
         )
         gtk_container_add(tc_gtk_container(createdWindow), createdDial)
+        tc_gtk_set_fixed_window_size(createdWindow, diameter)
 
         _ = tc_gtk_on_destroy(createdWindow, linuxDestroy, opaque)
         _ = tc_gtk_on_button_press(createdDial, linuxButtonPress, opaque)
@@ -157,10 +159,19 @@ final class LinuxApp: @unchecked Sendable {
         _ = tc_gtk_on_motion(createdDial, linuxMotion, opaque)
         _ = tc_gtk_on_draw(createdDial, linuxDraw, opaque)
 
-        detailsPanel = LinuxDetailsPanel(parent: createdWindow)
+        detailsPanel = LinuxDetailsPanel(
+            parent: createdWindow,
+            onHistoryUsage: { [weak self] in self?.overviewWindow?.show() },
+            onQuickContrast: { [weak self] in self?.refreshUI() },
+            onUsageIncludesCache: { [weak self] value in
+                self?.model.setUsageIncludesCacheRead(value)
+                self?.refreshUI()
+            }
+        )
         detailsPanel?.setOpacity(windowOpacity)
         themePicker = LinuxThemePicker(parent: createdWindow, owner: self)
         settingsWindow = LinuxSettingsWindow(parent: createdWindow, owner: self, model: model)
+        overviewWindow = LinuxUsageOverviewWindow(parent: createdWindow, model: model)
         buildContextMenu()
 
         gtk_widget_show_all(createdWindow)
@@ -168,6 +179,9 @@ final class LinuxApp: @unchecked Sendable {
         detailsPanel?.hide()
         tc_gtk_shape_circle(createdWindow, diameter)
         refreshUI()
+        if ProcessInfo.processInfo.environment["TC_OVERVIEW"] != nil {
+            overviewWindow?.show()
+        }
     }
 
     private func buildContextMenu() {
@@ -471,11 +485,18 @@ final class LinuxApp: @unchecked Sendable {
             print("[TokenClock] Copied \(endpoint)")
         case "always-on-top": toggleAlwaysOnTop()
         case "details": toggleDetails()
+        case "overview": overviewWindow?.show()
         case "refresh": scheduleScan(incremental: true)
         case "settings": showSettings()
         case "launch-at-login": toggleAutostart()
         case "about":
-            if let window { tc_gtk_show_about(window, "normal · Linux") }
+            if let window {
+                if let path = Bundle.module.path(forResource: "glass_disc", ofType: "png") {
+                    path.withCString { tc_gtk_show_about(window, "v1.4.7", $0) }
+                } else {
+                    tc_gtk_show_about(window, "v1.4.7", nil)
+                }
+            }
         case "quit":
             shutdown()
             gtk_main_quit()
@@ -498,10 +519,17 @@ final class LinuxApp: @unchecked Sendable {
     }
 
     func chooseThemeFromPicker(_ theme: LinuxClockTheme) {
-        selectTheme(theme)
+        if theme == .custom {
+            applyCustomTheme(id: nil)
+        } else {
+            selectTheme(theme)
+        }
     }
 
     func applyCustomTheme(id: UUID?) {
+        // Saved custom faces carry explicit dial/detail text colors, so applying one
+        // supersedes the quick contrast preset as the newest manual color choice.
+        UserDefaults.standard.remove(.quickContrastPreset)
         if let id {
             guard LinuxCustomThemeStore.shared.apply(id: id) else { return }
         } else {
@@ -512,11 +540,19 @@ final class LinuxApp: @unchecked Sendable {
     }
 
     func customThemeListChanged() {
-        if selectedTheme == .custom,
-           let active = UserDefaults.standard.string(for: .activeCustomThemeId),
-           !LinuxCustomThemeStore.shared.themes.contains(where: { $0.id.uuidString == active }) {
-            selectTheme(.classic)
+        if selectedTheme == .custom {
+            let active = UserDefaults.standard.string(for: .activeCustomThemeId)
+            if active == nil || !LinuxCustomThemeStore.shared.themes.contains(where: { $0.id.uuidString == active }) {
+                UserDefaults.standard.remove(.activeCustomThemeId)
+                selectTheme(.classic)
+            }
         }
+        rebuildContextMenu()
+    }
+
+    func resetCustomThemeToClassic() {
+        UserDefaults.standard.remove(.activeCustomThemeId)
+        selectTheme(.classic)
         rebuildContextMenu()
     }
 
@@ -533,7 +569,7 @@ final class LinuxApp: @unchecked Sendable {
         guard let window, let dial else { return }
         let diameter = gint(size.diameter)
         gtk_widget_set_size_request(dial, diameter, diameter)
-        gtk_window_resize(tc_gtk_window(window), diameter, diameter)
+        tc_gtk_set_fixed_window_size(window, diameter)
         detailsPanel?.hide()
         updateDetailsPanel()
         _ = tc_gtk_idle_add(linuxShapeFinished, opaque)
@@ -585,9 +621,11 @@ final class LinuxApp: @unchecked Sendable {
 
     private func selectLanguage(_ language: AppLanguage) {
         L10n.shared.language = language
+        refreshWeather()
         updateDetailsPanel()
         themePicker?.refreshLanguage()
         settingsWindow?.refreshLanguage()
+        overviewWindow?.refreshLanguage()
         rebuildContextMenu()
         refreshClock()
     }
@@ -647,6 +685,10 @@ final class LinuxApp: @unchecked Sendable {
     func openThemePickerFromSettings() {
         settingsWindow?.hide()
         themePicker?.show(selected: selectedTheme)
+    }
+
+    func pricingCatalogDidChange() {
+        scheduleScan(incremental: true)
     }
 
     func settingsDidSave(apiChanged: Bool) {

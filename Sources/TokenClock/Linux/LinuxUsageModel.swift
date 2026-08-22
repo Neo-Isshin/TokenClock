@@ -16,20 +16,23 @@ final class LinuxUsageModel: @unchecked Sendable {
     private var storedRateWindowMinutes: Int
     private var scanning = false
 
-    private let openclawService = OpenClawUsageService()
-    private let claudeCodeService = ClaudeCodeUsageService()
-    private let geminiService = GeminiUsageService()
-    private let codexService = CodexUsageService()
-    private let hermesService = HermesUsageService()
-    private let opencodeService = OpenCodeUsageService()
-    private let qwenService = QwenCodeUsageService()
-    private let copilotService = CopilotUsageService()
-    private let grokService = GrokUsageService()
-    private let aiderService = AiderUsageService()
-    private let antigravityService = AntigravityUsageService()
-    private let clineService = ClineUsageService()
-    private let continueService = ContinueUsageService()
-    private let cursorAgentService = CursorAgentUsageService()
+    // Construct parsers only after init-time Linux catalog detection has saved
+    // any alternate path. Otherwise an alternate would take effect only after
+    // restarting TokenClock because parser homes are captured in init().
+    private lazy var openclawService = OpenClawUsageService()
+    private lazy var claudeCodeService = ClaudeCodeUsageService()
+    private lazy var geminiService = GeminiUsageService()
+    private lazy var codexService = CodexUsageService()
+    private lazy var hermesService = HermesUsageService()
+    private lazy var opencodeService = OpenCodeUsageService()
+    private lazy var qwenService = QwenCodeUsageService()
+    private lazy var copilotService = CopilotUsageService()
+    private lazy var grokService = GrokUsageService()
+    private lazy var aiderService = AiderUsageService()
+    private lazy var antigravityService = AntigravityUsageService()
+    private lazy var clineService = ClineUsageService()
+    private lazy var continueService = ContinueUsageService()
+    private lazy var cursorAgentService = CursorAgentUsageService()
 
     static let allToolNames = Set([
         "OpenClaw", "Claude Code", "Gemini CLI", "Codex", "Hermes", "OpenCode",
@@ -51,11 +54,12 @@ final class LinuxUsageModel: @unchecked Sendable {
             let summary = PathDetector.runFullDetection()
             saveDetectedPaths(summary.results)
         }
-
-        // 每周自动静默刷新价格目录（与 macOS ViewModel 一致）
         if PricingService.shared.isStale() {
-            Task.detached(priority: .utility) {
-                try? await PricingService.shared.refresh()
+            Task.detached(priority: .utility) { [weak self] in
+                do {
+                    try await PricingService.shared.refresh()
+                    _ = self?.scan(incremental: true)
+                } catch {}
             }
         }
     }
@@ -78,6 +82,14 @@ final class LinuxUsageModel: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         return storedRateWindowMinutes
+    }
+
+    var usageIncludesCacheRead: Bool {
+        UserDefaults.standard.bool(for: .usageIncludesCacheRead)
+    }
+
+    func setUsageIncludesCacheRead(_ value: Bool) {
+        UserDefaults.standard.setBool(value, for: .usageIncludesCacheRead)
     }
 
     func applyPreferences(enabledTools: Set<String>, rateWindowMinutes: Int) {
@@ -128,11 +140,11 @@ final class LinuxUsageModel: @unchecked Sendable {
         var results: [String: ScanSnapshot] = [:]
         if enabled.contains("OpenClaw") {
             let usage = openclawService.todayUsage()
-            results["OpenClaw"] = snapshot(usage, openclawService.recentUsage(minutes: rateWindow).tokens, openclawService.currentHourTokens(), openclawService.isActive(), openclawService.todaySessions())
+            results["OpenClaw"] = snapshot(usage, openclawService.recentUsage(minutes: rateWindow).tokens, openclawService.currentHourTokens(), openclawService.isActive(), openclawService.todaySessions(), cost: openclawService.todayCost(), cacheRead: openclawService.todayCacheReadTokens())
         }
         if enabled.contains("Claude Code") {
             let usage = claudeCodeService.todayUsage()
-            results["Claude Code"] = snapshot(usage, claudeCodeService.recentUsage(minutes: rateWindow).tokens, claudeCodeService.currentHourTokens(), claudeCodeService.isActive(), claudeCodeService.todaySessions(), claudeCodeService.todayCost())
+            results["Claude Code"] = snapshot(usage, claudeCodeService.recentUsage(minutes: rateWindow).tokens, claudeCodeService.currentHourTokens(), claudeCodeService.isActive(), claudeCodeService.todaySessions(), cost: claudeCodeService.todayCost(), cacheRead: claudeCodeService.todayCacheReadTokens())
         }
         if enabled.contains("Gemini CLI") {
             let usage = geminiService.todayUsage()
@@ -140,7 +152,7 @@ final class LinuxUsageModel: @unchecked Sendable {
         }
         if enabled.contains("Codex") {
             let usage = codexService.todayUsage()
-            results["Codex"] = snapshot(usage, codexService.recentUsage(minutes: rateWindow).tokens, codexService.currentHourTokens(), codexService.isActive(), codexService.todaySessions(), codexService.todayCost())
+            results["Codex"] = snapshot(usage, codexService.recentUsage(minutes: rateWindow).tokens, codexService.currentHourTokens(), codexService.isActive(), codexService.todaySessions(), cost: codexService.todayCost(), cacheRead: codexService.todayCacheReadTokens())
         }
         if enabled.contains("Hermes") {
             let usage = hermesService.todayUsage()
@@ -168,7 +180,7 @@ final class LinuxUsageModel: @unchecked Sendable {
         }
         if enabled.contains("Antigravity") {
             let usage = antigravityService.todayUsage()
-            results["Antigravity"] = snapshot(usage, antigravityService.recentUsage(minutes: rateWindow).tokens, antigravityService.currentHourTokens(), antigravityService.isActive(), antigravityService.todaySessions())
+            results["Antigravity"] = snapshot(usage, antigravityService.recentUsage(minutes: rateWindow).tokens, antigravityService.currentHourTokens(), antigravityService.isActive(), antigravityService.todaySessions(), cost: antigravityService.todayCost(), cacheRead: antigravityService.todayCacheReadTokens())
         }
         if enabled.contains("Cline") {
             let usage = clineService.todayUsage()
@@ -198,6 +210,7 @@ final class LinuxUsageModel: @unchecked Sendable {
                 recentTokens: result.recent,
                 hourlyTokens: result.hourly,
                 todayCost: result.cost,
+                todayCacheReadTokens: result.cacheRead,
                 sessions: result.sessions
             )
         }
@@ -210,10 +223,18 @@ final class LinuxUsageModel: @unchecked Sendable {
 
     func usageJSONObject() -> [String: Any] {
         let current = tools
+        let includesCache = usageIncludesCacheRead
+        var totalCost = CostEstimate.unavailable
+        for tool in current where tool.todayTokens > 0 { totalCost.merge(tool.todayCost) }
         return [
             "timestamp": ISO8601DateFormatter().string(from: Date()),
             "totalTokens": UsageAggregator.totalTokens(current),
+            "displayTotalTokens": UsageAggregator.totalTokens(current, includingCacheRead: includesCache),
+            "usageIncludesCacheRead": includesCache,
             "totalMessages": UsageAggregator.totalMessages(current),
+            "totalCost": totalCost.value,
+            "costComplete": totalCost.complete,
+            "costAvailable": totalCost.available,
             "rateEmoji": UsageAggregator.rateEmoji(current),
             "windowMinutes": rateWindowMinutes,
             "variant": "normal",
@@ -223,19 +244,25 @@ final class LinuxUsageModel: @unchecked Sendable {
                     "name": tool.name,
                     "emoji": tool.emoji,
                     "todayTokens": tool.todayTokens,
+                    "todayCacheReadTokens": tool.todayCacheReadTokens,
                     "todayMessages": tool.todayMessages,
+                    "todayCost": tool.todayCost.value,
+                    "costComplete": tool.todayCost.complete,
+                    "costAvailable": tool.todayCost.available,
                     "isActive": tool.isActive,
                     "cacheRate": tool.cacheRate,
                     "recentTokens": tool.recentTokens,
                     "hourlyTokens": tool.hourlyTokens,
-                    "todayCost": tool.todayCost.value,
-                    "costComplete": tool.todayCost.complete,
                     "sessions": tool.sessions.map {
                         [
                             "id": $0.rawId,
                             "displayName": $0.displayName,
                             "todayTokens": $0.todayTokens,
+                            "todayCacheReadTokens": $0.cacheReadTokens,
                             "todayMessages": $0.todayMessages,
+                            "todayCost": $0.todayCost.value,
+                            "costComplete": $0.todayCost.complete,
+                            "costAvailable": $0.todayCost.available,
                             "isActive": $0.isActive,
                         ] as [String: Any]
                     },
@@ -264,17 +291,27 @@ final class LinuxUsageModel: @unchecked Sendable {
                         "tokens": tool.tokens,
                         "messages": tool.messages,
                         "cacheRate": tool.cacheRate,
+                        "cost": tool.cost.value,
+                        "costComplete": tool.cost.complete,
+                        "costAvailable": tool.cost.available,
                         "isActive": tool.isActive,
                     ]
+                    if let cache = tool.cacheReadTokens { value["cacheReadTokens"] = cache }
                     if includeSessions {
-                        value["sessions"] = tool.sessions.map {
-                            [
-                                "id": $0.id,
-                                "displayName": $0.displayName,
-                                "tokens": $0.tokens,
-                                "messages": $0.messages,
-                                "isActive": $0.isActive,
-                            ] as [String: Any]
+                        value["sessions"] = tool.sessions.map { session -> [String: Any] in
+                            var result: [String: Any] = [
+                                "id": session.id,
+                                "displayName": session.displayName,
+                                "tokens": session.tokens,
+                                "messages": session.messages,
+                                "cost": session.cost.value,
+                                "costComplete": session.cost.complete,
+                                "costAvailable": session.cost.available,
+                                "isActive": session.isActive,
+                            ]
+                            if let model = session.model { result["model"] = model }
+                            if let cache = session.cacheReadTokens { result["cacheReadTokens"] = cache }
+                            return result
                         }
                     }
                     return value
@@ -291,8 +328,8 @@ final class LinuxUsageModel: @unchecked Sendable {
         let hourly: Int
         let active: Bool
         let cacheRate: Double
-        /// 今日估算费用（暂只有 Claude Code / Codex 提供分桶计费，其余工具为 .zero）
-        var cost: CostEstimate = .zero
+        var cost: CostEstimate = .unavailable
+        var cacheRead: Int = 0
         let sessions: [SessionInfo]
     }
 
@@ -302,7 +339,8 @@ final class LinuxUsageModel: @unchecked Sendable {
         _ hourly: Int,
         _ active: Bool,
         _ sessions: [SessionInfo],
-        _ cost: CostEstimate = .zero
+        cost: CostEstimate = .unavailable,
+        cacheRead: Int = 0
     ) -> ScanSnapshot {
         ScanSnapshot(
             tokens: usage.tokens,
@@ -312,8 +350,13 @@ final class LinuxUsageModel: @unchecked Sendable {
             active: active,
             cacheRate: usage.cacheRate,
             cost: cost,
+            cacheRead: cacheRead,
             sessions: sessions
         )
+    }
+
+    func persistCurrentUsage() {
+        persistToday(tools)
     }
 
     private func persistToday(_ tools: [ToolUsage]) {
@@ -324,13 +367,18 @@ final class LinuxUsageModel: @unchecked Sendable {
                 messages: tool.todayMessages,
                 cacheRate: tool.cacheRate,
                 isActive: tool.isActive,
+                cost: tool.todayCost,
+                cacheReadTokens: tool.todayCacheReadTokens,
                 sessions: tool.sessions.map {
                     SessionSnapshot(
                         id: $0.rawId,
                         displayName: $0.displayName,
                         tokens: $0.todayTokens,
                         messages: $0.todayMessages,
-                        isActive: $0.isActive
+                        isActive: $0.isActive,
+                        model: $0.model,
+                        cost: $0.todayCost,
+                        cacheReadTokens: $0.cacheReadTokens
                     )
                 }
             )
