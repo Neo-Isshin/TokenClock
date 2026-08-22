@@ -69,7 +69,7 @@ verify_sidecar "$ASSETS_DIR/TokenClock-x86_64.AppImage" "$ASSETS_DIR/TokenClock-
 command -v tar >/dev/null 2>&1 || die "tar is required"
 command -v unzip >/dev/null 2>&1 || die "unzip is required"
 unzip -tq "$ASSETS_DIR/TokenClock-windows-x86_64.zip" >/dev/null || die "Windows zip integrity check failed"
-unzip -Z1 "$ASSETS_DIR/TokenClock-windows-x86_64.zip" | grep -Eq '(^|/)TokenClock\.exe$' \
+unzip -Z1 "$ASSETS_DIR/TokenClock-windows-x86_64.zip" | grep -E '(^|/)TokenClock\.exe$' >/dev/null \
   || die "Windows zip does not contain TokenClock.exe"
 
 TMP_DIR="$(mktemp -d -t tokenclock-release.XXXXXX)" || die "cannot create validation directory"
