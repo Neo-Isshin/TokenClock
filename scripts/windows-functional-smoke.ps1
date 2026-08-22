@@ -256,16 +256,16 @@ $detail0=Window-Rect $detail;$dialWhileOpen=Window-Rect $h
 [void](Check-Fluent "detail-acrylic" $detail 2)
 Capture "02-detail-session" $detail;Capture-Screen "02b-dial-and-detail"
 $forecastOffset=76 # TC_WEATHER_MOCK always provides the fixed four-slot forecast strip.
-Click-Client $detail ([int]($detail0.width*0.75)) (20+$forecastOffset) "detail-group-model" 550;Capture "03-detail-model" $detail
+Click-Client $detail ([int]($detail0.width*0.75)) (78+$forecastOffset) "detail-group-model" 550;Capture "03-detail-model" $detail
 for($toggleRound=1;$toggleRound-le3;$toggleRound++){
-  Click-Client $detail ([int]($detail0.width*0.25)) (20+$forecastOffset) ("detail-group-session-repeat-$toggleRound") 180
-  Click-Client $detail ([int]($detail0.width*0.75)) (20+$forecastOffset) ("detail-group-model-repeat-$toggleRound") 180
+  Click-Client $detail ([int]($detail0.width*0.25)) (78+$forecastOffset) ("detail-group-session-repeat-$toggleRound") 180
+  Click-Client $detail ([int]($detail0.width*0.75)) (78+$forecastOffset) ("detail-group-model-repeat-$toggleRound") 180
 }
 Capture "03b-detail-model-after-repeated-switches" $detail
-Click-Client $detail ([int]($detail0.width*0.80)) (49+$forecastOffset) "detail-percentage" 300
+Click-Client $detail ([int]($detail0.width*0.80)) (116+$forecastOffset) "detail-percentage" 300
 for($toggleRound=1;$toggleRound-le3;$toggleRound++){
-  Click-Client $detail ([int]($detail0.width*0.80)) (49+$forecastOffset) ("detail-percentage-off-repeat-$toggleRound") 180
-  Click-Client $detail ([int]($detail0.width*0.80)) (49+$forecastOffset) ("detail-percentage-on-repeat-$toggleRound") 180
+  Click-Client $detail ([int]($detail0.width*0.80)) (116+$forecastOffset) ("detail-percentage-off-repeat-$toggleRound") 180
+  Click-Client $detail ([int]($detail0.width*0.80)) (116+$forecastOffset) ("detail-percentage-on-repeat-$toggleRound") 180
 }
 $detailSettings=Get-Content -Raw -LiteralPath "$Out\localappdata\TokenClock\settings.json" | ConvertFrom-Json
 $costModePersisted=([int]$detailSettings.TC_dropdownValueMode-eq1)
@@ -275,15 +275,15 @@ Capture "04-detail-model-percent" $detail;Capture "04c-detail-model-percent-afte
 # Subscription Quota window on the right. Exercise both launch surfaces and
 # close the modal through its own Close command so it cannot be mistaken for
 # Settings later (both native windows intentionally share the TCDialog class).
-Click-Client $detail ([int]($detail0.width*0.20)) (49+$forecastOffset) "detail-model-detect-placeholder" 300
-Click-Client $detail ([int]($detail0.width*0.80)) (49+$forecastOffset) "detail-subscription-quota" 700
+Click-Client $detail ([int]($detail0.width*0.20)) (32+$forecastOffset) "detail-model-detect-placeholder" 300
+Click-Client $detail ([int]($detail0.width*0.80)) (32+$forecastOffset) "detail-subscription-quota" 700
 $quotaDialog=Wait-DialogControl "TCDialog" $pidApp 982 8000
 if($quotaDialog-eq[IntPtr]::Zero){throw "Subscription Quota window did not open"}
 Capture "04b-detail-subscription-quota" $quotaDialog
 [void][TCWinTest]::PostMessage($quotaDialog,0x0111,[IntPtr]982,[IntPtr]::Zero)
 if(-not(Wait-Hidden $quotaDialog)){throw "Subscription Quota window did not close"}
 Record "detail-subscription-quota-close" $h
-$beforeExpand=Window-Rect $detail;Click-Client $detail ([int]($beforeExpand.width/2)) (101+$forecastOffset) "detail-expand-first-row" 650;$afterExpand=Window-Rect $detail;Capture "05-detail-expanded" $detail
+$beforeExpand=Window-Rect $detail;Click-Client $detail ([int]($beforeExpand.width/2)) (179+$forecastOffset) "detail-expand-first-row" 650;$afterExpand=Window-Rect $detail;Capture "05-detail-expanded" $detail
 [void][TCWinTest]::PostMessage($detail,0x020A,[IntPtr](-120-shl16),[IntPtr]::Zero);Start-Sleep -Milliseconds 500;Record "detail-scroll" $h;Capture "05b-detail-scrolled" $detail;Sample "detail-expanded"
 Click-Client $h ([int]((Window-Rect $h).width/2)) 100 "left-click-detail-close" 450
 if([TCWinTest]::IsWindowVisible($detail)){Start-Sleep -Milliseconds 250;Click-Client $h ([int]((Window-Rect $h).width/2)) 100 "left-click-detail-close-retry" 450}
