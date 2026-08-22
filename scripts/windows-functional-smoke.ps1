@@ -328,11 +328,14 @@ foreach($opacityCase in @(@(150,25,"06c"),@(151,50,"06d"),@(152,75,"06e"),@(153,
   $opacity=[int]$opacityCase[1]
   Command $h ([int]$opacityCase[0]) ("opacity-$opacity-detail-special") 250
   Click-Client $h ([int]((Window-Rect $h).width/2)) 100 ("opacity-$opacity-detail-open") 600;$opacityDetail=Wait-Detail $pidApp
+  if($opacityDetail-eq[IntPtr]::Zero){Start-Sleep -Milliseconds 400;Click-Client $h ([int]((Window-Rect $h).width/2)) 100 ("opacity-$opacity-detail-open-retry") 600;$opacityDetail=Wait-Detail $pidApp}
   if($opacityDetail-eq[IntPtr]::Zero){throw "Detail did not open at opacity $opacity"}
   $opacityPath=Capture-Exact ($opacityCase[2]+"-detail-opacity-$opacity") $opacityDetail;$opacityPaths[$opacity]=$opacityPath
   $opacityRaw=[TCWinTest]::GetProp($opacityDetail,"TokenClock.FluentApplied").ToInt64()
   $opacityCaptures+=[ordered]@{opacity=$opacity;path=$opacityPath;fluentPropertyRaw=$opacityRaw;alive=(Is-Alive $h)}
   Click-Client $h ([int]((Window-Rect $h).width/2)) 100 ("opacity-$opacity-detail-close") 400
+  if([TCWinTest]::IsWindowVisible($opacityDetail)){Start-Sleep -Milliseconds 400;Click-Client $h ([int]((Window-Rect $h).width/2)) 100 ("opacity-$opacity-detail-close-retry") 400}
+  if([TCWinTest]::IsWindowVisible($opacityDetail)){throw "Detail did not close at opacity $opacity"}
 }
 $opacityComparisons=[ordered]@{
   '25to50'=Compare-Images $opacityPaths[25] $opacityPaths[50]
