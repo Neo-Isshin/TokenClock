@@ -51,11 +51,13 @@ ok "binary: $BIN ($(du -h "$BIN" | cut -f1))"
 step "Assembling AppDir"
 APPDIR="$ROOT/AppDir"
 rm -rf "$APPDIR"
-mkdir -p "$APPDIR/usr/bin" "$APPDIR/usr/share/applications" "$APPDIR/usr/share/icons/hicolor/256x256/apps"
+mkdir -p "$APPDIR/usr/bin" "$APPDIR/usr/lib/tokenclock-empty-modules" "$APPDIR/usr/share/applications" "$APPDIR/usr/share/icons/hicolor/256x256/apps"
 mkdir -p "$APPDIR/usr/share/fonts/truetype/noto"
 
 cp "$BIN" "$APPDIR/usr/bin/$APP"
-chmod +x "$APPDIR/usr/bin/$APP"
+cp "$ROOT/scripts/tokenclock-appimage-launcher.sh" "$APPDIR/usr/bin/$APP-launcher"
+chmod +x "$APPDIR/usr/bin/$APP" "$APPDIR/usr/bin/$APP-launcher"
+ok "isolated GLib/GIO launcher installed"
 
 RESOURCE_BUNDLE="$ROOT/.build/release/TokenClock_TokenClock.resources"
 [ -d "$RESOURCE_BUNDLE" ] || die "resource bundle not found: $RESOURCE_BUNDLE"
@@ -77,7 +79,7 @@ cat > "$APPDIR/usr/share/applications/$APP.desktop" <<EOF
 [Desktop Entry]
 Name=TokenClock
 Comment=Token usage clock for AI coding tools
-Exec=$APP
+Exec=$APP-launcher
 Icon=$ICON_NAME
 Type=Application
 Categories=Utility;
@@ -107,6 +109,7 @@ export OUTPUT="$APPIMAGE"
 
 step "Packaging AppImage (linuxdeploy --output appimage)"
 "$LD" --appdir "$APPDIR" \
+      --executable    "$APPDIR/usr/bin/$APP" \
       --desktop-file "$APPDIR/usr/share/applications/$APP.desktop" \
       --icon-file    "$APPDIR/usr/share/icons/hicolor/256x256/apps/$ICON_NAME.png" \
       --output appimage \

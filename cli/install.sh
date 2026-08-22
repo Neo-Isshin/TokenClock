@@ -101,11 +101,10 @@ case "$KERNEL" in
     [ "$VARIANT" != glass ] || die "Linux supports the normal variant only; remove --glass."
     if [ "$(uname -m)" = x86_64 ] && [ "$BUILD_FROM_SOURCE" -eq 0 ]; then
       # x86_64 默认走预编译 AppImage：无需 Swift/GTK 工具链，下载即用。
-      # AppImage 运行期需要 libfuse2（多数桌面发行版自带；缺失时给一行安装提示）。
+      # 缺少 FUSE 2 时，CLI 与自启动项会自动使用 AppImage 的解包运行模式。
       LINUX_APPIMAGE=1
-      if ! ldconfig -p 2>/dev/null | grep -q 'libfuse.so.2'; then
-        say "  ⚠ 未检测到 libfuse2（AppImage 运行所需）。如启动失败请安装："
-        say "      Ubuntu/Debian: sudo apt install libfuse2    (24.04+ 为 libfuse2t64)"
+      if [ ! -e /dev/fuse ] || ! ldconfig -p 2>/dev/null | grep -q 'libfuse.so.2'; then
+        say "  ℹ 未检测到可用的 FUSE 2；将自动使用 AppImage 解包运行模式（无需 sudo 安装依赖）"
       fi
       say "  Linux $(uname -m) · 预编译 AppImage（--build-from-source 可改走源码编译）"
     else
@@ -214,9 +213,9 @@ release_tag_for_variant() {
     return
   fi
   case "$1" in
-    glass)  echo "v1.4.7" ;;
-    normal) echo "v1.4.7" ;;
-    linux)  echo "v1.4.7" ;;
+    glass)  echo "v1.4.8" ;;
+    normal) echo "v1.4.8" ;;
+    linux)  echo "v1.4.8" ;;
   esac
 }
 release_base_for_tag() {
@@ -233,8 +232,8 @@ tarball_name() {
 }
 tarball_sha256() {
   case "$1" in
-    glass)  echo "cebe39ad26dfc3a8c1923ed7acd00cd93d114fc92b7aa80f9c4595df85711d9d" ;;
-    normal) echo "0df4b8d824519ebf26e0608ef10a0a138e9320ad215d572ec3cce091f668887f" ;;
+    glass)  echo "946cc370732e5243e5c03720d4f5139cbc7c0d9df3c108268b9700e4e43410d4" ;;
+    normal) echo "139752a2baa3bc5784573e612520803ef1b857e30fd89e505e8e69dc2001578e" ;;
   esac
 }
 
@@ -364,15 +363,20 @@ for entry in "${BUILT_BINS[@]}"; do
     bin_changed=1
   fi
   if [ "$bin_changed" -eq 1 ]; then
-    cp "$bin_path" "$dest_bin"
-    chmod +x "$dest_bin"
+    # Deploy through a sibling inode and atomically rename it into place. Linux returns
+    # ETXTBSY when cp truncates a running AppImage; rename keeps the old process on its
+    # existing inode while the next launch sees the complete, verified replacement.
+    dest_tmp="$HOME_DIR/$variant/.TokenClock.new.$$"
+    cp "$bin_path" "$dest_tmp" || { rm -f "$dest_tmp"; die "Failed to stage [$variant] binary"; }
+    chmod +x "$dest_tmp" || { rm -f "$dest_tmp"; die "Failed to make [$variant] binary executable"; }
     # Ad-hoc re-sign safety net: prebuilt downloads or source-fallback artifacts may still be
     # linker-signed adhoc (flags=0x20002), which taskgated kills on macOS 27. `--force --sign -`
     # produces a proper adhoc (0x2). release.sh already signs before packaging; this re-signs
     # $dest_bin to cover the source-fallback path and self-heal any signing damage from transfer/extraction.
     if [ "$PLATFORM" = macos ]; then
-      codesign --force --sign - "$dest_bin" >/dev/null 2>&1 || warn "[$variant] ad-hoc re-sign failed: $dest_bin (may crash on launch under macOS 27)"
+      codesign --force --sign - "$dest_tmp" >/dev/null 2>&1 || warn "[$variant] ad-hoc re-sign failed: $dest_tmp (may crash on launch under macOS 27)"
     fi
+    mv -f "$dest_tmp" "$dest_bin" || { rm -f "$dest_tmp"; die "Failed to activate [$variant] binary"; }
     say "  ✓ $dest_bin"
     DEPLOYED_ANYTHING=1
   else
@@ -520,13 +524,17 @@ enable_linux_autostart() {
   local binary_path="$1"
   local autostart_dir="${XDG_CONFIG_HOME:-$HOME/.config}/autostart"
   local desktop_path="$autostart_dir/tokenclock.desktop"
+  local exec_line="$binary_path"
+  if [ ! -e /dev/fuse ] || ! ldconfig -p 2>/dev/null | grep -q 'libfuse\.so\.2'; then
+    exec_line="env APPIMAGE_EXTRACT_AND_RUN=1 $binary_path"
+  fi
   mkdir -p "$autostart_dir" || die "Failed to create $autostart_dir"
   cat > "$desktop_path" <<EOF || die "Failed to write $desktop_path"
 [Desktop Entry]
 Type=Application
 Name=TokenClock
 Comment=Local AI coding usage clock
-Exec=$binary_path
+Exec=$exec_line
 Terminal=false
 X-GNOME-Autostart-enabled=true
 EOF
@@ -686,11 +694,23 @@ else
 
   # API server smoke test (if enabled). The port only listens after TokenClock starts.
   if [ "${API_ENABLED:-0}" -eq 1 ] && [ -n "${API_CHOSEN_PORT:-}" ]; then
-    sleep 1
-    if out="$(curl -fsS --max-time 2 "http://127.0.0.1:${API_CHOSEN_PORT}/api/usage" 2>/dev/null | head -c 80)"; then
+    # FUSE-less AppImage startup includes a one-time extraction and can take longer than
+    # the ordinary launch. Poll rather than reporting a false failure after a fixed delay.
+    api_ready=0
+    api_attempt=0
+    out=""
+    while [ "$api_attempt" -lt 30 ]; do
+      if out="$(curl -fsS --connect-timeout 1 --max-time 2 "http://127.0.0.1:${API_CHOSEN_PORT}/api/usage" 2>/dev/null | head -c 80)"; then
+        api_ready=1
+        break
+      fi
+      api_attempt=$((api_attempt + 1))
+      sleep 1
+    done
+    if [ "$api_ready" -eq 1 ]; then
       say "  ✓ API smoke test: http://127.0.0.1:${API_CHOSEN_PORT}/api/usage → ${out}…"
     else
-      say "  ⚠ API smoke test failed (port ${API_CHOSEN_PORT} is not listening; check the firewall or retry later)"
+      say "  ⚠ API smoke test failed (port ${API_CHOSEN_PORT} did not become ready within 30 seconds; retry later)"
     fi
   fi
 fi

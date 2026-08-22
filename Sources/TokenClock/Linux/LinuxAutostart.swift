@@ -38,13 +38,17 @@ enum LinuxAutostart {
             ?? ProcessInfo.processInfo.arguments.first
             ?? "/usr/bin/tokenclock"
         let quotedExecutable = "\"\(executable.replacingOccurrences(of: "\"", with: "\\\""))\""
+        let shouldExtract = ProcessInfo.processInfo.environment["APPIMAGE_EXTRACT_AND_RUN"] == "1"
+        let launchCommand = shouldExtract
+            ? "/usr/bin/env APPIMAGE_EXTRACT_AND_RUN=1 \(quotedExecutable)"
+            : quotedExecutable
         let desktopFile = """
         [Desktop Entry]
         Type=Application
         Version=1.0
         Name=TokenClock
         Comment=Beautiful local AI token usage clock
-        Exec=\(quotedExecutable)
+        Exec=\(launchCommand)
         Terminal=false
         Categories=Utility;
         X-GNOME-Autostart-enabled=true
