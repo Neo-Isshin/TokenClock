@@ -13,7 +13,7 @@
 [![Linux normal](https://img.shields.io/badge/Linux-normal-FCC624?style=for-the-badge&logo=linux&logoColor=black)](#macos-and-linux)
 
 [![Swift 6](https://img.shields.io/static/v1?label=Swift&message=6&color=F05138&logo=swift&logoColor=white)](https://www.swift.org/)
-[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Releases](https://img.shields.io/badge/releases-GitHub-181717?logo=github&logoColor=white)](https://github.com/Neo-Isshin/TokenClock/releases)
 
 </div>
@@ -35,11 +35,12 @@ Click the clock for session and model details. Right-click it to change the face
 
 ## What you get
 
-- **14 AI coding tools in one place.** TokenClock finds their local usage data automatically and lets you correct a path in Settings when needed.
+- **14+ AI coding tools in one place.** TokenClock finds their local usage data automatically and lets you correct a path in Settings when needed.
 - **A clearer usage total.** Reused prompt-cache reads stay out of the main number, while new input, cache creation, output, and reasoning still count.
 - **8 carefully designed clock faces.** Glass, Classic, Glacier, Midnight, Luxe, Antique, Railgun, and Sky, plus saved custom faces.
 - **Useful details without leaving the desktop.** Group usage by session or model, expand individual rows, and sort by percentage.
-- **Codex remaining quota on every edition.** Open Codex Quota to see available windows and reset times. It only checks when you open it.
+- **Cost estimation.** Today's token usage converted to USD at API list prices (catalog from LiteLLM, auto-refreshed weekly); custom proxy models can be priced manually in Settings.
+- **Subscription quotas in one panel.** View Codex, Claude Code, Antigravity, and Cursor limits and reset times when those local accounts are available. Checks run only when you open the panel.
 - **Weather without a location permission popup.** Automatic weather uses an approximate city from your public IP, or you can choose a city yourself.
 - **A native experience on each platform.** macOS uses SwiftUI/AppKit, Windows uses Win32, and Linux uses GTK3. The workflow is shared while controls keep their native appearance.
 
@@ -106,7 +107,8 @@ Windows may show a reputation warning for an unsigned first release. Check that 
 ## Everyday use
 
 - **Left-click the clock:** show or hide usage details.
-- **Codex Quota:** show remaining Codex limits and reset times.
+- **Subscription Quota:** show Codex, Claude Code, Antigravity, and Cursor limits and reset times.
+- **Cost column:** estimated USD cost of today's usage at API list prices (customize prices in Settings).
 - **By Session / By Model:** change how details are grouped.
 - **By Percent:** compare which tools consumed the most.
 - **Click a detail row:** expand its sessions or models.
@@ -127,6 +129,8 @@ Settings includes automatic detection, tool switches, custom data paths, rate th
 
 Most tools need no setup. If a tool stores data somewhere unusual, open **Settings → Data Source Paths** and choose its folder or file.
 
+Windows also offers optional Kiro session-contract detection and experimental CodeBuddy current-session statistics.
+
 ## Screenshots
 
 <div align="center">
@@ -146,7 +150,7 @@ Most tools need no setup. If a tool stores data somewhere unusual, open **Settin
 - Token and session totals are read from files already stored by your AI tools. TokenClock does not upload those logs or totals.
 - The optional local API listens only on `127.0.0.1`.
 - Automatic weather contacts the configured weather/IP services to estimate a city. It does not request macOS Location Services permission.
-- Codex Quota runs only when you open its panel. It asks the installed Codex app-server for rate-limit information and does not read or modify Codex authentication files.
+- Subscription Quota runs only when you open its panel. It uses each installed tool's local signed-in service or saved credentials when available; TokenClock does not ask you to paste account secrets.
 - Cursor cloud usage is optional. When enabled, it contacts Cursor's service using the credentials already stored by Cursor; leave it off if you only want local data.
 
 ## Local API (optional)
@@ -163,9 +167,9 @@ The server is loopback-only, so other computers cannot connect to it directly.
 ## Troubleshooting
 
 - **A tool shows zero:** use Re-detect in Settings, then check its Data Source Path. The tool must have created at least one local session first.
-- **Codex Quota is unavailable:** make sure Codex is installed and signed in, then retry from the quota panel.
+- **A subscription quota is unavailable:** make sure the corresponding tool is installed and signed in, then retry from the quota panel. Some providers may not expose quota data on every plan or platform.
 - **Weather is unavailable:** choose a city manually or check whether `wttr.in` is reachable from your network.
-- **Linux AppImage does not start:** install `libfuse2`/`libfuse2t64`, then try again.
+- **Linux AppImage does not start:** run `tokenclock doctor`, then reinstall. On systems without FUSE 2, the launcher automatically uses extraction mode and does not require `sudo`.
 - **Something is using too much CPU:** update and restart TokenClock. Recent builds avoid repeatedly scanning old Codex and Gemini histories.
 - **Still stuck:** run `tokenclock doctor` on macOS/Linux, or open a [GitHub issue](https://github.com/Neo-Isshin/TokenClock/issues) with your platform and TokenClock version.
 
@@ -179,11 +183,11 @@ cd TokenClock
 swift build -c release
 ```
 
-The product channels are maintained separately: `main` for Liquid Glass macOS, `normal` for classic macOS, and dedicated Linux and `windows-port` branches for the other platforms. Platform-specific paths and UI code stay in their own channels.
+The Normal edition shares its features across macOS, Windows, and Linux while keeping native controls and platform-specific data paths. Liquid Glass remains a separate macOS presentation built on the same usage core.
 
 ## License
 
-TokenClock is open-sourced under the **[GPL v3 License](LICENSE)** — © 2026 Neo-Isshin.
+TokenClock is open-sourced under the **[MIT License](LICENSE)** — © 2026 Neo-Isshin.
 
 ## Acknowledgments
 
