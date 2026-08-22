@@ -9,6 +9,7 @@ struct UsageOverviewView: View {
 
     @State private var period: Period = .week
     @State private var grouping: UsageOverviewGrouping = .tool
+    @State private var includesCacheRead = false
     @State private var customStart = Calendar.current.date(byAdding: .day, value: -6, to: Date()) ?? Date()
     @State private var customEnd = Date()
     @State private var overview = UsageOverviewBuilder.load(
@@ -30,12 +31,13 @@ struct UsageOverviewView: View {
         .background(Color(nsColor: .windowBackgroundColor))
         .onChange(of: period) { _ in reload() }
         .onChange(of: grouping) { _ in reload() }
+        .onChange(of: includesCacheRead) { _ in reload() }
         .onChange(of: customStart) { _ in if period == .custom { reload() } }
         .onChange(of: customEnd) { _ in if period == .custom { reload() } }
     }
 
     private var header: some View {
-        HStack(spacing: 14) {
+        HStack(spacing: 10) {
             VStack(alignment: .leading, spacing: 3) {
                 Text(L10n.shared.tr("overview.title"))
                     .font(.system(size: 22, weight: .bold, design: .rounded))
@@ -51,14 +53,24 @@ struct UsageOverviewView: View {
             }
             .labelsHidden()
             .pickerStyle(.segmented)
-            .frame(width: 290)
+            .frame(width: 270)
             Picker("", selection: $grouping) {
                 Text(L10n.shared.tr("overview.byTool")).tag(UsageOverviewGrouping.tool)
                 Text(L10n.shared.tr("overview.byModel")).tag(UsageOverviewGrouping.model)
             }
             .labelsHidden()
             .pickerStyle(.segmented)
-            .frame(width: 170)
+            .frame(width: 150)
+            Button { includesCacheRead.toggle() } label: {
+                Label(
+                    L10n.shared.tr("overview.includeCache"),
+                    systemImage: includesCacheRead ? "bolt.horizontal.fill" : "bolt.horizontal"
+                )
+                .font(.system(size: 11, weight: .semibold))
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+            .tint(includesCacheRead ? .orange : .accentColor)
         }
     }
 
@@ -77,7 +89,7 @@ struct UsageOverviewView: View {
 
     private var metricCards: some View {
         HStack(spacing: 12) {
-            metricCard(L10n.shared.tr("overview.tokens"), TokenFormat.compact(overview.summary.tokens), "number.circle.fill", .blue)
+            metricCard(tokenColumnTitle, TokenFormat.compact(displayedTokens(overview.summary)), "number.circle.fill", .blue)
             metricCard(L10n.shared.tr("overview.messages"), integer(overview.summary.messages), "bubble.left.and.bubble.right.fill", .purple)
             metricCard(L10n.shared.tr("overview.cost"), CostFormat.estimate(overview.summary.cost), "dollarsign.circle.fill", .green)
             metricCard(
@@ -107,7 +119,7 @@ struct UsageOverviewView: View {
         VStack(alignment: .leading, spacing: 9) {
             Text(L10n.shared.tr("overview.daily")).font(.headline)
             GeometryReader { proxy in
-                let maxValue = max(1, overview.days.map(\.metrics.tokens).max() ?? 1)
+                let maxValue = max(1, overview.days.map { displayedTokens($0.metrics) }.max() ?? 1)
                 HStack(alignment: .bottom, spacing: overview.days.count > 20 ? 3 : 7) {
                     ForEach(Array(overview.days.enumerated()), id: \.element.id) { index, day in
                         VStack(spacing: 4) {
@@ -119,7 +131,7 @@ struct UsageOverviewView: View {
                                         startPoint: .bottom, endPoint: .top
                                     )
                                 )
-                                .frame(height: max(2, CGFloat(day.metrics.tokens) / CGFloat(maxValue) * 82))
+                                .frame(height: max(2, CGFloat(displayedTokens(day.metrics)) / CGFloat(maxValue) * 82))
                             if shouldShowDate(at: index) {
                                 Text(shortDate(day.dateKey))
                                     .font(.system(size: 9))
@@ -129,7 +141,7 @@ struct UsageOverviewView: View {
                                 Text(" ").font(.system(size: 9))
                             }
                         }
-                        .help("\(day.dateKey) · \(TokenFormat.compact(day.metrics.tokens)) tokens")
+                        .help("\(day.dateKey) · \(TokenFormat.compact(displayedTokens(day.metrics))) tokens")
                         .frame(maxWidth: .infinity)
                     }
                 }
@@ -147,7 +159,7 @@ struct UsageOverviewView: View {
             Text(L10n.shared.tr("overview.breakdown")).font(.headline)
             HStack {
                 Text(L10n.shared.tr("overview.name")).frame(maxWidth: .infinity, alignment: .leading)
-                column(L10n.shared.tr("overview.tokens"))
+                column(tokenColumnHeader)
                 column(L10n.shared.tr("overview.messages"))
                 column(L10n.shared.tr("overview.cost"))
                 column(L10n.shared.tr("overview.averageCache"))
@@ -170,7 +182,7 @@ struct UsageOverviewView: View {
                                 Text(displayName(row.name)).lineLimit(1)
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            column(TokenFormat.compact(row.metrics.tokens))
+                            column(TokenFormat.compact(displayedTokens(row.metrics)))
                             column(integer(row.metrics.messages))
                             column(CostFormat.estimate(row.metrics.cost))
                             column(String(format: "%@%.1f%%", row.metrics.cacheIsExact ? "" : "≈", row.metrics.averageCacheRate * 100))
@@ -227,8 +239,21 @@ struct UsageOverviewView: View {
 
     private func reload() {
         overview = UsageOverviewBuilder.load(
-            startDate: dates.0, endDate: dates.1, grouping: grouping
+            startDate: dates.0, endDate: dates.1, grouping: grouping,
+            includingCacheRead: includesCacheRead
         )
+    }
+
+    private var tokenColumnTitle: String {
+        L10n.shared.tr(includesCacheRead ? "overview.tokensWithCache" : "overview.tokens")
+    }
+
+    private var tokenColumnHeader: String {
+        L10n.shared.tr(includesCacheRead ? "overview.tokensWithCacheShort" : "overview.tokens")
+    }
+
+    private func displayedTokens(_ metrics: UsageOverviewMetrics) -> Int {
+        metrics.displayedTokens(includingCacheRead: includesCacheRead)
     }
 
     private func shouldShowDate(at index: Int) -> Bool {

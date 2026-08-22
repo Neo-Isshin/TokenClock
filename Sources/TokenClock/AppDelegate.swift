@@ -9,6 +9,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var viewModel: ViewModel!
     private var settingsWindow: NSWindow?
     private var overviewWindow: NSWindow?
+    private var subscriptionQuotaWindow: NSWindow?
     private var aboutWindow: NSWindow?
     private var themePickerPanel: NSPanel?
     private var themePickerEventMonitor: Any?
@@ -53,11 +54,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             onResizeEnded: { [weak self] in
                 self?.dropdownPanel?.endResize()
             },
-            onCodexQuotaShown: { [weak self] in
-                guard let self else { return }
-                let comfortableHeight: CGFloat = self.viewModel.weather.cityName.isEmpty ? 280 : 356
-                self.dropdownPanel.ensureHeight(comfortableHeight)
-            }
+            onSubscriptionQuota: { [weak self] in self?.showSubscriptionQuotaWindow() },
+            onHistoryUsage: { [weak self] in self?.showUsageOverviewWindow() }
         )
         let detailContentView = NSHostingView(rootView: detailView)
         detailContentView.frame = NSRect(
@@ -212,12 +210,47 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         sizeItem.submenu = sizeMenu
         menu.addItem(sizeItem)
 
+        // 文字颜色保留完整手动设置；下拉面板里的按钮只是三档快捷切换。
+        let appearanceMenu = NSMenu()
+        let dialTextMenu = NSMenu()
+        for (mode, title) in [(DialTextMode.theme, tr("menu.dialTextTheme")),
+                              (.white, tr("menu.dialTextWhite")),
+                              (.black, tr("menu.dialTextBlack"))] {
+            let item = NSMenuItem(title: title, action: #selector(setDialTextMode(_:)), keyEquivalent: "")
+            item.tag = mode.rawValue
+            if viewModel.dialTextMode == mode { item.state = .on }
+            dialTextMenu.addItem(item)
+        }
+        let dialCustom = NSMenuItem(title: tr("menu.dialTextCustom"), action: #selector(pickDialTextColor(_:)), keyEquivalent: "")
+        if viewModel.dialTextMode == .custom { dialCustom.state = .on }
+        dialTextMenu.addItem(dialCustom)
+        let dialTextItem = NSMenuItem(title: tr("menu.dialTextColor"), action: nil, keyEquivalent: "")
+        dialTextItem.submenu = dialTextMenu
+        appearanceMenu.addItem(dialTextItem)
+
+        let panelTextMenu = NSMenu()
+        for (hex, title) in [(nil, tr("menu.panelTextTheme")),
+                             ("#FFFFFF", tr("menu.panelTextWhite")),
+                             ("#000000", tr("menu.panelTextBlack"))] as [(String?, String)] {
+            let item = NSMenuItem(title: title, action: #selector(setDropdownTextColorPreset(_:)), keyEquivalent: "")
+            item.representedObject = hex
+            if viewModel.dropdownTextColorHex == hex { item.state = .on }
+            panelTextMenu.addItem(item)
+        }
+        let panelCustom = NSMenuItem(title: tr("menu.panelTextCustom"), action: #selector(pickDropdownTextColor(_:)), keyEquivalent: "")
+        if let hex = viewModel.dropdownTextColorHex, hex != "#FFFFFF", hex != "#000000" { panelCustom.state = .on }
+        panelTextMenu.addItem(panelCustom)
+        let panelTextItem = NSMenuItem(title: tr("menu.panelTextColor"), action: nil, keyEquivalent: "")
+        panelTextItem.submenu = panelTextMenu
+        appearanceMenu.addItem(panelTextItem)
+
+        let appearanceItem = NSMenuItem(title: tr("menu.dialAppearance"), action: nil, keyEquivalent: "")
+        appearanceItem.submenu = appearanceMenu
+        menu.addItem(appearanceItem)
+
         let apiItem = NSMenuItem(title: L10n.shared.tr("menu.api", Int(AppDelegate.resolveAPIServerPort())),
                                  action: #selector(copyAPIEndpoint(_:)), keyEquivalent: "")
         menu.addItem(apiItem)
-        let overviewItem = NSMenuItem(title: tr("menu.overview"),
-                                      action: #selector(openUsageOverview(_:)), keyEquivalent: "")
-        menu.addItem(overviewItem)
         menu.addItem(.separator())
 
         let opacityMenu = NSMenu()
@@ -253,18 +286,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         menu.addItem(.separator())
 
         // 用量口径：token 展示是否包含缓存读（费用估算始终含缓存计价，不受此影响）
-        let scopeItem = NSMenuItem(title: tr("menu.usageScope"), action: nil, keyEquivalent: "")
-        let scopeMenu = NSMenu()
-        let exclItem = NSMenuItem(title: tr("menu.usageExclCache"), action: #selector(setUsageExcludesCache(_:)), keyEquivalent: "")
-        exclItem.state = viewModel.usageIncludesCache ? .off : .on
-        let inclItem = NSMenuItem(title: tr("menu.usageInclCache"), action: #selector(setUsageIncludesCache(_:)), keyEquivalent: "")
-        inclItem.state = viewModel.usageIncludesCache ? .on : .off
-        scopeMenu.addItem(exclItem)
-        scopeMenu.addItem(inclItem)
-        scopeItem.submenu = scopeMenu
-        menu.addItem(scopeItem)
-        menu.addItem(.separator())
-
         let cityMenu = NSMenu()
         let currentCity = viewModel.selectedCity
         for city in ViewModel.cityOptions {
@@ -346,6 +367,53 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
               let size = ClockSize(rawValue: raw) else { return }
         viewModel.setClockSize(size)
         setupRightClickMenu()  // 刷新子菜单勾选状态
+    }
+
+    @objc private func setDialTextMode(_ sender: NSMenuItem) {
+        guard let mode = DialTextMode(rawValue: sender.tag) else { return }
+        viewModel.dialTextMode = mode
+        setupRightClickMenu()
+    }
+
+    @objc private func setDropdownTextColorPreset(_ sender: NSMenuItem) {
+        viewModel.dropdownTextColorHex = sender.representedObject as? String
+        setupRightClickMenu()
+    }
+
+    @objc private func pickDialTextColor(_ sender: NSMenuItem) { openColorPicker(for: .dialText) }
+    @objc private func pickDropdownTextColor(_ sender: NSMenuItem) { openColorPicker(for: .dropdownText) }
+
+    private enum ColorPickerTarget { case dialText, dropdownText }
+    private var colorPickerTarget: ColorPickerTarget = .dialText
+
+    private func openColorPicker(for target: ColorPickerTarget) {
+        colorPickerTarget = target
+        DispatchQueue.main.async {
+            let picker = NSColorPanel.shared
+            picker.showsAlpha = false
+            picker.hidesOnDeactivate = false
+            switch target {
+            case .dialText:
+                picker.color = CodableColor(hex: self.viewModel.dialTextColorHex)?.nsColor ?? .white
+            case .dropdownText:
+                picker.color = self.viewModel.dropdownTextColorHex.flatMap { CodableColor(hex: $0)?.nsColor } ?? .white
+            }
+            picker.setTarget(self)
+            picker.setAction(#selector(self.colorPanelChanged(_:)))
+            NSApp.activate(ignoringOtherApps: true)
+            picker.makeKeyAndOrderFront(nil)
+        }
+    }
+
+    @objc private func colorPanelChanged(_ panel: NSColorPanel) {
+        let hex = CodableColor(nsColor: panel.color).hexString
+        switch colorPickerTarget {
+        case .dialText:
+            viewModel.dialTextColorHex = hex
+            viewModel.dialTextMode = .custom
+        case .dropdownText:
+            viewModel.dropdownTextColorHex = hex
+        }
     }
 
     @objc private func openThemePicker(_ sender: NSMenuItem) {
@@ -542,24 +610,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         setupRightClickMenu()
     }
 
-    @objc private func setUsageExcludesCache(_ sender: NSMenuItem) {
-        viewModel.usageIncludesCache = false
-        setupRightClickMenu()
-    }
-
-    @objc private func setUsageIncludesCache(_ sender: NSMenuItem) {
-        viewModel.usageIncludesCache = true
-        setupRightClickMenu()
-    }
-
     @objc private func selectLanguage(_ sender: NSMenuItem) {
         guard let raw = sender.representedObject as? String,
               let lang = AppLanguage(rawValue: raw) else { return }
         L10n.shared.language = lang
         viewModel.language = lang
+        viewModel.refreshWeather()
         setupRightClickMenu()
         settingsWindow?.title = L10n.shared.tr("settings.title")
         overviewWindow?.title = L10n.shared.tr("overview.title")
+        subscriptionQuotaWindow?.title = L10n.shared.tr("quota.windowTitle")
     }
 
     @objc private func openSettings(_ sender: NSMenuItem) {
@@ -639,6 +699,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         window.center()
         window.makeKeyAndOrderFront(nil)
         overviewWindow = window
+    }
+
+    private func showSubscriptionQuotaWindow() {
+        NSApp.activate(ignoringOtherApps: true)
+        if let window = subscriptionQuotaWindow {
+            window.level = .floating
+            window.makeKeyAndOrderFront(nil)
+            viewModel.refreshSubscriptionQuotas()
+            return
+        }
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 430, height: 650),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable],
+            backing: .buffered, defer: false
+        )
+        window.title = L10n.shared.tr("quota.windowTitle")
+        window.minSize = NSSize(width: 380, height: 480)
+        window.isReleasedWhenClosed = false
+        window.delegate = self
+        window.contentView = NSHostingView(rootView: SubscriptionQuotaWindowView(viewModel: viewModel))
+        window.level = .floating
+        window.center()
+        window.makeKeyAndOrderFront(nil)
+        subscriptionQuotaWindow = window
+        viewModel.refreshSubscriptionQuotas()
     }
 
     private func showSettingsWindow() {
@@ -761,6 +846,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 settingsWindow = nil
             } else if let window = closingWindow, window == overviewWindow {
                 overviewWindow = nil
+            } else if let window = closingWindow, window == subscriptionQuotaWindow {
+                subscriptionQuotaWindow = nil
             }
         }
     }
@@ -796,13 +883,15 @@ private struct DropdownPanelView: View {
     let onResizeStart: () -> Void
     let onResizeChanged: (CGFloat) -> Void
     let onResizeEnded: () -> Void
-    let onCodexQuotaShown: () -> Void
+    let onSubscriptionQuota: () -> Void
+    let onHistoryUsage: () -> Void
 
     var body: some View {
         VStack(spacing: 0) {
             DetailDropdownView(
                 tools: viewModel.visibleTools,
                 theme: viewModel.selectedTheme,
+                dropdownTextColorOverride: viewModel.dropdownTextColorHex.flatMap { CodableColor(hex: $0)?.swiftUIColor },
                 weather: viewModel.weather,
                 localizedCityName: viewModel.localizedCityName,
                 isLoading: viewModel.isInitialLoading,
@@ -811,13 +900,11 @@ private struct DropdownPanelView: View {
                 valueMode: viewModel.valueMode,
                 onValueModeChange: { viewModel.valueMode = $0 },
                 usageIncludesCache: viewModel.usageIncludesCache,
-                showsCodexQuota: viewModel.showsCodexQuota,
-                codexQuota: viewModel.codexQuota,
-                onCodexQuotaToggle: {
-                    viewModel.toggleCodexQuota()
-                    if viewModel.showsCodexQuota { onCodexQuotaShown() }
-                },
-                onCodexQuotaRefresh: { viewModel.refreshCodexQuota() }
+                onUsageIncludesCacheToggle: { viewModel.usageIncludesCache.toggle() },
+                quickContrastPreset: viewModel.quickContrastPreset,
+                onQuickContrast: { viewModel.cycleQuickContrast() },
+                onHistoryUsage: onHistoryUsage,
+                onSubscriptionQuota: onSubscriptionQuota
             )
             .frame(maxHeight: .infinity, alignment: .top)
 

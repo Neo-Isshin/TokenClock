@@ -22,6 +22,7 @@ struct ClockContentView: View {
                 minutes: viewModel.minutes,
                 seconds: viewModel.seconds,
                 theme: viewModel.selectedTheme,
+                numberColorOverride: viewModel.effectiveDialNumberColor,
                 scale: s
             )
             .frame(width: d, height: d)
@@ -32,10 +33,10 @@ struct ClockContentView: View {
                 VStack(spacing: 3) {
                     Text(viewModel.dateString)
                         .font(.system(size: 11 * s, weight: .medium))
-                        .foregroundColor(viewModel.selectedTheme.textSecondaryColor)
+                        .foregroundColor(viewModel.effectiveDialSecondary)
                     Text(viewModel.weatherString)
                         .font(.system(size: 13 * s))
-                        .foregroundColor(viewModel.selectedTheme.textPrimaryColor)
+                        .foregroundColor(viewModel.effectiveDialPrimary)
                 }
                 .padding(.top, 55 * s)
 
@@ -45,13 +46,13 @@ struct ClockContentView: View {
                 VStack(spacing: 2) {
                     Text(L10n.shared.tr("clock.todayTokens"))
                         .font(.system(size: 9 * s))
-                        .foregroundColor(viewModel.selectedTheme.textSecondaryColor)
+                        .foregroundColor(viewModel.effectiveDialSecondary)
                     Text(viewModel.totalTokensFormatted)
                         .font(.system(size: 20 * s, weight: .bold, design: .rounded))
-                        .foregroundColor(viewModel.selectedTheme.textPrimaryColor)
+                        .foregroundColor(viewModel.effectiveDialPrimary)
                     Text(viewModel.totalMessagesFormatted)
                         .font(.system(size: 10 * s))
-                        .foregroundColor(viewModel.selectedTheme.textSecondaryColor)
+                        .foregroundColor(viewModel.effectiveDialSecondary)
                 }
                 .padding(.bottom, 48 * s)
             }
@@ -62,7 +63,7 @@ struct ClockContentView: View {
                     ForEach(viewModel.activeToolsList) { tool in
                         Text("\(tool.emoji) \(tool.abbreviation)")
                             .font(.system(size: 13 * s, weight: .semibold, design: .rounded))
-                            .foregroundColor(viewModel.selectedTheme.textPrimaryColor.opacity(0.75))
+                            .foregroundColor(viewModel.effectiveDialPrimary.opacity(0.75))
                     }
                 }
                 .padding(.leading, 22 * s)

@@ -2,6 +2,23 @@ import SwiftUI
 import Combine
 import AppKit
 
+enum DialTextMode: Int {
+    case theme = 0
+    case white = 1
+    case black = 2
+    case custom = 3
+}
+
+enum QuickContrastPreset: Int, CaseIterable {
+    case light, dark, amber
+    var next: Self {
+        switch self { case .light: return .dark; case .dark: return .amber; case .amber: return .light }
+    }
+    var hex: String {
+        switch self { case .light: return "#FFFFFF"; case .dark: return "#000000"; case .amber: return "#FFD60A" }
+    }
+}
+
 /// 下拉面板分组模式：按会话 / 按模型
 enum GroupingMode: Int {
     case session = 0
@@ -74,6 +91,9 @@ final class ViewModel: ObservableObject {
     /// Codex 额度面板按需读取；不开面板时不会启动 app-server，也没有额外轮询。
     @Published var showsCodexQuota = false
     @Published private(set) var codexQuota = CodexQuotaSnapshot.idle
+    @Published private(set) var claudeQuota = ClaudeQuotaSnapshot.idle
+    @Published private(set) var antigravityQuota = ProviderQuotaSnapshot.idle(source: "Antigravity local service")
+    @Published private(set) var cursorQuota = ProviderQuotaSnapshot.idle(source: "Cursor dashboard")
 
     @Published var windowOpacity: Double = 1.0 { didSet { UserDefaults.standard.set(windowOpacity, forKey: SettingsKey.windowOpacity.rawValue) } }
     @Published var alwaysOnTop: Bool = {
@@ -100,6 +120,46 @@ final class ViewModel: ObservableObject {
     @Published var selectedCity: String = "auto" { didSet { UserDefaults.standard.setString(selectedCity, for: .selectedCity) } }
     /// IP 定位解析到的城市名（用于菜单动态标签）
     @Published var resolvedCityName: String = ""
+
+    @Published var dialTextMode: DialTextMode = .theme {
+        didSet { UserDefaults.standard.setInt(dialTextMode.rawValue, for: .dialTextMode) }
+    }
+    @Published var dialTextColorHex: String = "#FFFFFF" {
+        didSet { UserDefaults.standard.setString(dialTextColorHex, for: .dialTextColor) }
+    }
+    @Published var dropdownTextColorHex: String? = nil {
+        didSet { UserDefaults.standard.setString(dropdownTextColorHex, for: .dropdownTextColor) }
+    }
+
+    var effectiveDialPrimary: Color {
+        switch dialTextMode {
+        case .theme: return selectedTheme.textPrimaryColor
+        case .white: return .white
+        case .black: return .black
+        case .custom: return CodableColor(hex: dialTextColorHex)?.swiftUIColor ?? selectedTheme.textPrimaryColor
+        }
+    }
+    var effectiveDialSecondary: Color {
+        dialTextMode == .theme ? selectedTheme.textSecondaryColor : effectiveDialPrimary.opacity(0.72)
+    }
+    var effectiveDialNumberColor: Color? { dialTextMode == .theme ? nil : effectiveDialPrimary }
+    var quickContrastPreset: QuickContrastPreset? {
+        switch (dialTextMode, dropdownTextColorHex?.uppercased()) {
+        case (.white, "#FFFFFF"): return .light
+        case (.black, "#000000"): return .dark
+        case (.custom, "#FFD60A") where dialTextColorHex.uppercased() == "#FFD60A": return .amber
+        default: return nil
+        }
+    }
+    func cycleQuickContrast() {
+        let preset = quickContrastPreset?.next ?? .light
+        switch preset {
+        case .light: dialTextMode = .white
+        case .dark: dialTextMode = .black
+        case .amber: dialTextColorHex = preset.hex; dialTextMode = .custom
+        }
+        dropdownTextColorHex = preset.hex
+    }
 
     /// 可选城市列表（auto = 自动定位）
     static let cityOptions = ["auto", "Hong Kong", "Shanghai", "Beijing", "Tokyo", "Singapore", "New York"]
@@ -143,6 +203,9 @@ final class ViewModel: ObservableObject {
     private var weatherTimer: Timer?
     private var historyTimer: Timer?
     private var codexQuotaTask: Task<Void, Never>?
+    private var claudeQuotaTask: Task<Void, Never>?
+    private var antigravityQuotaTask: Task<Void, Never>?
+    private var cursorQuotaTask: Task<Void, Never>?
     private var cachedDateFormatter: DateFormatter?
     private var cachedDateFormatterKey = ""
 
@@ -155,6 +218,9 @@ final class ViewModel: ObservableObject {
     private let geminiService = GeminiUsageService()
     private let codexService = CodexUsageService()
     private let codexQuotaService = CodexQuotaService()
+    private let claudeQuotaService = ClaudeQuotaService()
+    private let antigravityQuotaService = AntigravityQuotaService()
+    private let cursorQuotaService = CursorQuotaService()
     private let hermesService = HermesUsageService()
     private let opencodeService = OpenCodeUsageService()
     private let qwenService = QwenCodeUsageService()
@@ -184,6 +250,12 @@ final class ViewModel: ObservableObject {
         if let s = UserDefaults.standard.string(for: .selectedTimezone) { selectedTimezone = s }
         if UserDefaults.standard.object(forKey: SettingsKey.windowOpacity.rawValue) != nil { windowOpacity = UserDefaults.standard.double(forKey: SettingsKey.windowOpacity.rawValue) }
         if UserDefaults.standard.object(forKey: SettingsKey.cursorCloudFetchEnabled.rawValue) != nil { cursorCloudFetchEnabled = UserDefaults.standard.bool(for: .cursorCloudFetchEnabled) }
+        if let raw = UserDefaults.standard.object(forKey: SettingsKey.dialTextMode.rawValue) as? Int,
+           let mode = DialTextMode(rawValue: raw) { dialTextMode = mode }
+        if let hex = UserDefaults.standard.string(for: .dialTextColor) { dialTextColorHex = hex }
+        if let hex = UserDefaults.standard.string(for: .dropdownTextColor), CodableColor(hex: hex) != nil {
+            dropdownTextColorHex = hex
+        }
 
         loadTheme()
         // 表盘大小：首启按主屏分辨率自动选档（用户手动改过后跳过），再加载到 @Published
@@ -207,26 +279,70 @@ final class ViewModel: ObservableObject {
         stopTimers()
         codexQuotaTask?.cancel()
         codexQuotaTask = nil
+        claudeQuotaTask?.cancel()
+        claudeQuotaTask = nil
+        antigravityQuotaTask?.cancel(); antigravityQuotaTask = nil
+        cursorQuotaTask?.cancel(); cursorQuotaTask = nil
     }
 
     func toggleCodexQuota() {
         showsCodexQuota.toggle()
-        if showsCodexQuota && (codexQuota.status == .idle || codexQuota.isStale) {
+        if showsCodexQuota && (
+            codexQuota.status == .idle || codexQuota.isStale ||
+            claudeQuota.status == .idle || claudeQuota.isStale
+        ) {
             refreshCodexQuota()
         }
     }
 
     func refreshCodexQuota() {
-        guard codexQuota.status != .loading else { return }
-        codexQuotaTask?.cancel()
-        codexQuota = .loading(previous: codexQuota)
-        let service = codexQuotaService
-        codexQuotaTask = Task { [weak self] in
-            let result = await Task.detached(priority: .utility) {
-                service.fetch()
-            }.value
-            guard !Task.isCancelled else { return }
-            self?.codexQuota = result
+        refreshSubscriptionQuotas()
+    }
+
+    func refreshSubscriptionQuotas() {
+        if codexQuota.status != .loading {
+            codexQuotaTask?.cancel()
+            codexQuota = .loading(previous: codexQuota)
+            let service = codexQuotaService
+            codexQuotaTask = Task { [weak self] in
+                let result = await Task.detached(priority: .utility) {
+                    service.fetch()
+                }.value
+                guard !Task.isCancelled else { return }
+                self?.codexQuota = result
+            }
+        }
+        if claudeQuota.status != .loading {
+            claudeQuotaTask?.cancel()
+            claudeQuota = .loading(previous: claudeQuota)
+            let service = claudeQuotaService
+            claudeQuotaTask = Task { [weak self] in
+                let result = await Task.detached(priority: .utility) {
+                    service.fetch()
+                }.value
+                guard !Task.isCancelled else { return }
+                self?.claudeQuota = result
+            }
+        }
+        if antigravityQuota.status != .loading {
+            antigravityQuotaTask?.cancel()
+            antigravityQuota = .loading(previous: antigravityQuota)
+            let service = antigravityQuotaService
+            antigravityQuotaTask = Task { [weak self] in
+                let result = await Task.detached(priority: .utility) { service.fetch() }.value
+                guard !Task.isCancelled else { return }
+                self?.antigravityQuota = result
+            }
+        }
+        if cursorQuota.status != .loading {
+            cursorQuotaTask?.cancel()
+            cursorQuota = .loading(previous: cursorQuota)
+            let service = cursorQuotaService
+            cursorQuotaTask = Task { [weak self] in
+                let result = await Task.detached(priority: .utility) { service.fetch() }.value
+                guard !Task.isCancelled else { return }
+                self?.cursorQuota = result
+            }
         }
     }
 
@@ -433,6 +549,9 @@ final class ViewModel: ObservableObject {
         UserDefaults.standard.setString(id.uuidString, for: .activeCustomThemeId)
         // 将配置同步到 CustomThemeConfig 的默认存储，供 ClockFaceTheme.custom 读取
         theme.config.save()
+        // The saved face's explicit text colors are the latest manual choice.
+        dialTextMode = .theme
+        dropdownTextColorHex = nil
     }
 
     // MARK: - 聚合属性
@@ -786,7 +905,7 @@ final class ViewModel: ObservableObject {
             var results: [String: ToolSnapshot] = [:]
             if enabled.contains("OpenClaw") {
                 let u = self.openclawService.todayUsage()
-                results["OpenClaw"] = ToolSnapshot(tokens: u.tokens, messages: u.messages, recent: self.openclawService.recentUsage(minutes: rateWindow).tokens, hourly: self.openclawService.currentHourTokens(), active: self.openclawService.isActive(), cacheRate: u.cacheRate, cost: .zero, sessions: self.openclawService.todaySessions())
+                results["OpenClaw"] = ToolSnapshot(tokens: u.tokens, messages: u.messages, recent: self.openclawService.recentUsage(minutes: rateWindow).tokens, hourly: self.openclawService.currentHourTokens(), active: self.openclawService.isActive(), cacheRate: u.cacheRate, cost: self.openclawService.todayCost(), cacheRead: self.openclawService.todayCacheReadTokens(), sessions: self.openclawService.todaySessions())
             }
             if enabled.contains("Claude Code") {
                 let u = self.claudeCodeService.todayUsage()
@@ -826,7 +945,7 @@ final class ViewModel: ObservableObject {
             }
             if enabled.contains("Antigravity") {
                 let u = self.antigravityService.todayUsage()
-                results["Antigravity"] = ToolSnapshot(tokens: u.tokens, messages: u.messages, recent: self.antigravityService.recentUsage(minutes: rateWindow).tokens, hourly: self.antigravityService.currentHourTokens(), active: self.antigravityService.isActive(), cacheRate: u.cacheRate, sessions: self.antigravityService.todaySessions())
+                results["Antigravity"] = ToolSnapshot(tokens: u.tokens, messages: u.messages, recent: self.antigravityService.recentUsage(minutes: rateWindow).tokens, hourly: self.antigravityService.currentHourTokens(), active: self.antigravityService.isActive(), cacheRate: u.cacheRate, cost: self.antigravityService.todayCost(), cacheRead: self.antigravityService.todayCacheReadTokens(), sessions: self.antigravityService.todaySessions())
             }
             if enabled.contains("Cline") {
                 let u = self.clineService.todayUsage()
@@ -863,7 +982,7 @@ final class ViewModel: ObservableObject {
         let hourly: Int
         let active: Bool
         let cacheRate: Double
-        /// 今日估算费用（暂只有 Claude Code / Codex 提供分桶计费，其余工具为 .zero）
+        /// 今日估算费用；未提供可靠模型分桶的工具保持 unavailable。
         var cost: CostEstimate = .unavailable
         /// 今日缓存读 token 数（「包含缓存读」口径展示用）
         var cacheRead: Int = 0

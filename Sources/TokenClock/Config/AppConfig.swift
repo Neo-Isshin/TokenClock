@@ -22,6 +22,9 @@ enum AppConfig {
         /// IP 地理定位（中国境内可访问）
         // 使用 https 避免 MITM 风险（明文 http 易被中间人篡改）
         static let ipLookup = "https://myip.ipip.net/"
+        /// 结构化 IP 地理信息（城市、经纬度）；显式传入上一步取得的公网 IP，
+        /// 避免代理出口影响定位结果。
+        static let ipGeolocationBase = "https://ipwho.is"
     }
 
     // MARK: - HTTP / 网络
@@ -58,6 +61,9 @@ enum AppConfig {
         /// 本地 rollout 兜底只读取最新文件尾部，不为额度查询重扫完整历史。
         static let codexQuotaFallbackTailBytes = 2_097_152
         static let codexQuotaFallbackFileLimit = 32
+        /// Claude Code 额度端点限制较严；只在面板打开时请求，并缓存 5 分钟。
+        static let claudeQuotaCacheSeconds: TimeInterval = 300
+        static let claudeQuotaTimeoutSeconds: TimeInterval = 8
         /// "活跃工具" 判定窗口（10 分钟内有调用算活跃）
         static let activeThresholdSeconds: TimeInterval = 600
         /// "最近 token" 默认窗口（分钟）

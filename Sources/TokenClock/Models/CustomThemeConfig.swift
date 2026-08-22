@@ -159,6 +159,42 @@ struct CodableColor: Codable, Equatable {
     }
 }
 
+extension CodableColor {
+    init(nsColor: NSColor) {
+        let color = nsColor.usingColorSpace(.deviceRGB) ?? nsColor
+        var red: CGFloat = 0, green: CGFloat = 0, blue: CGFloat = 0, alpha: CGFloat = 0
+        color.getRed(&red, green: &green, blue: &blue, alpha: &alpha)
+        self.init(red: Double(red), green: Double(green), blue: Double(blue), opacity: Double(alpha))
+    }
+
+    var nsColor: NSColor {
+        NSColor(srgbRed: red, green: green, blue: blue, alpha: opacity)
+    }
+
+    init?(hex: String) {
+        var value = hex.trimmingCharacters(in: .whitespacesAndNewlines)
+        if value.hasPrefix("#") { value.removeFirst() }
+        guard value.count == 6 || value.count == 8 else { return nil }
+        var rgba: UInt64 = 0
+        guard Scanner(string: value).scanHexInt64(&rgba) else { return nil }
+        if value.count == 8 {
+            self.init(red: Double((rgba >> 24) & 0xFF) / 255,
+                      green: Double((rgba >> 16) & 0xFF) / 255,
+                      blue: Double((rgba >> 8) & 0xFF) / 255,
+                      opacity: Double(rgba & 0xFF) / 255)
+        } else {
+            self.init(red: Double((rgba >> 16) & 0xFF) / 255,
+                      green: Double((rgba >> 8) & 0xFF) / 255,
+                      blue: Double(rgba & 0xFF) / 255)
+        }
+    }
+
+    var hexString: String {
+        String(format: "#%02X%02X%02X", Int((red * 255).rounded()),
+               Int((green * 255).rounded()), Int((blue * 255).rounded()))
+    }
+}
+
 /// 已保存的自定义主题
 struct SavedCustomTheme: Codable, Identifiable, Equatable {
     let id: UUID

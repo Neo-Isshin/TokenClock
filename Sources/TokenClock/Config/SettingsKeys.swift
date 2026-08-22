@@ -64,6 +64,11 @@ enum SettingsKey: String {
     case selectedCity = "TC_selectedCity"
     case selectedTimezone = "TC_selectedTimezone"
     case useFahrenheit = "TC_useFahrenheit"
+    /// 0=跟随主题 1=白 2=黑 3=自定义
+    case dialTextMode = "TC_dialTextMode"
+    case dialTextColor = "TC_dialTextColor"
+    /// 下拉详情面板主文字色 #RRGGBB（空=跟随主题）
+    case dropdownTextColor = "TC_dropdownTextColor"
     /// Cursor 用量是否从云端获取（关闭则不向 cursor.com 发凭证请求）
     case cursorCloudFetchEnabled = "TC_cursorCloudFetchEnabled"
 
