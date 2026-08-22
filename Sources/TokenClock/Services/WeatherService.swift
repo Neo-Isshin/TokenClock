@@ -199,40 +199,37 @@ final class WeatherService {
 
     // MARK: - IP 定位实现
 
-    /// 通过 IP 定位获取天气（IPIP.net 国内服务为主，失败时用 wttr.in 自动定位）
+    /// 通过 IP 定位获取天气。先取得公网 IP，再用结构化服务获得本地化城市名和经纬度，
+    /// 最终按经纬度查询天气，避免把“欧文”等中文地名误判到其他国家。
     private func fetchWeatherByIP() async {
-        // 先尝试 IPIP.net IP 定位（国内服务，绕过代理）
-        if let cityName = await fetchCityFromIPService(), !cityName.isEmpty {
-            await self.fetchWeatherByCityName(cityName)
+        if let location = await fetchLocationFromIPService() {
+            await fetchWeatherFromAPI(
+                lat: location.latitude,
+                lon: location.longitude,
+                cityName: location.city
+            )
             return
         }
-        // 失败时回退到 wttr.in 自动定位（根据 IP 自动识别城市）
         await self.fetchWeatherByAutoLocation()
     }
 
-    private func fetchCityFromIPService() async -> String? {
-        // 使用 IPIP.net 获取国内真实 IP 位置（绕过代理）
-        guard let url = URL(string: AppConfig.API.ipLookup) else { return nil }
+    private func fetchLocationFromIPService() async -> IPWeatherLocation? {
+        var publicIP: String?
+        if let ipURL = URL(string: AppConfig.API.ipLookup),
+           let (data, _) = try? await URLSession.shared.data(from: ipURL) {
+            publicIP = IPGeolocation.publicIP(from: data)
+        }
+
+        guard let locationURL = IPGeolocation.endpoint(
+            publicIP: publicIP,
+            language: L10n.shared.language
+        ) else { return nil }
+
         do {
-            let (data, _) = try await URLSession.shared.data(from: url)
-            guard let text = String(data: data, encoding: .utf8) else { return nil }
-            // 响应格式: "当前 IP：183.191.125.191  来自于：中国 山西 太原  联通"
-            let components = text.components(separatedBy: "来自于：")
-            guard components.count >= 2 else { return nil }
-            let locationPart = components[1].trimmingCharacters(in: .whitespacesAndNewlines)
-            // 按空格拆分，取城市部分（格式: 中国 省 市）
-            let parts = locationPart.components(separatedBy: .whitespaces)
-                .map { $0.trimmingCharacters(in: .whitespaces) }
-                .filter { !$0.isEmpty }
-            // parts 示例: ["中国", "山西", "太原", "联通"]
-            guard parts.count >= 3 else { return nil }
-            var cityName = parts[2] // 市名
-            cityName = cityName.replacingOccurrences(of: "省", with: "")
-                               .replacingOccurrences(of: "市", with: "")
-                               .replacingOccurrences(of: "自治区", with: "")
-            return cityName.isEmpty ? nil : cityName
+            let (data, _) = try await URLSession.shared.data(from: locationURL)
+            return IPGeolocation.location(from: data)
         } catch {
-            print("IP geolocation error: \(error)")
+            print("Structured IP geolocation error: \(error)")
             return nil
         }
     }

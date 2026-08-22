@@ -18,6 +18,10 @@ struct UsageOverviewMetrics: Sendable {
         return denominator > 0 ? Double(cacheReadTokens) / Double(denominator) : 0
     }
 
+    func displayedTokens(includingCacheRead: Bool) -> Int {
+        tokens + (includingCacheRead ? cacheReadTokens : 0)
+    }
+
     static let zero = UsageOverviewMetrics(
         tokens: 0, messages: 0, cacheReadTokens: 0,
         cost: .unavailable, cacheIsExact: true
@@ -55,6 +59,7 @@ enum UsageOverviewBuilder {
         startDate: Date,
         endDate: Date,
         grouping: UsageOverviewGrouping,
+        includingCacheRead: Bool = false,
         store: HistoryStore = .shared
     ) -> UsageOverviewData {
         let calendar = Calendar.current
@@ -64,14 +69,18 @@ enum UsageOverviewBuilder {
             from: DateHelper.dateKey(from: start),
             through: DateHelper.dateKey(from: end)
         )
-        return make(startDate: start, endDate: end, snapshots: snapshots, grouping: grouping)
+        return make(
+            startDate: start, endDate: end, snapshots: snapshots,
+            grouping: grouping, includingCacheRead: includingCacheRead
+        )
     }
 
     static func make(
         startDate: Date,
         endDate: Date,
         snapshots: [DaySnapshot],
-        grouping: UsageOverviewGrouping
+        grouping: UsageOverviewGrouping,
+        includingCacheRead: Bool = false
     ) -> UsageOverviewData {
         var summary = Accumulator()
         var dayMetrics: [String: UsageOverviewMetrics] = [:]
@@ -106,8 +115,10 @@ enum UsageOverviewBuilder {
             $0.metrics.tokens > 0 || $0.metrics.messages > 0 ||
             $0.metrics.cacheReadTokens > 0 || $0.metrics.cost.value > 0
         }.sorted {
-            if $0.metrics.tokens == $1.metrics.tokens { return $0.name < $1.name }
-            return $0.metrics.tokens > $1.metrics.tokens
+            let lhs = $0.metrics.displayedTokens(includingCacheRead: includingCacheRead)
+            let rhs = $1.metrics.displayedTokens(includingCacheRead: includingCacheRead)
+            if lhs == rhs { return $0.name < $1.name }
+            return lhs > rhs
         }
         let finalSummary = summary.metrics
         return UsageOverviewData(
@@ -117,7 +128,7 @@ enum UsageOverviewBuilder {
             days: days,
             rows: rows,
             containsLegacyCacheEstimate: !finalSummary.cacheIsExact,
-            containsUnavailableCost: finalSummary.tokens > 0 &&
+            containsUnavailableCost: finalSummary.displayedTokens(includingCacheRead: includingCacheRead) > 0 &&
                 (!finalSummary.cost.available || !finalSummary.cost.complete),
             containsUnknownModel: grouping == .model && unknownModel
         )

@@ -63,18 +63,29 @@ struct DetailDropdownView: View {
     /// 显示模式循环切换回调
     var onValueModeChange: ((DetailValueMode) -> Void)? = nil
 
-    /// 用量口径：true=token 展示包含缓存读（右键菜单切换）
+    /// 用量口径：true=token 展示包含缓存读（详情快捷按钮切换）
     var usageIncludesCache: Bool = false
+    var onUsageIncludesCacheToggle: (() -> Void)? = nil
+
+    var quickContrastPreset: QuickContrastPreset? = nil
+    var onQuickContrast: (() -> Void)? = nil
+    var onHistoryUsage: (() -> Void)? = nil
+    var onSubscriptionQuota: (() -> Void)? = nil
 
     /// Codex 剩余额度面板。额度只在点击后按需读取，不参与 30 秒用量扫描。
     var showsCodexQuota: Bool = false
     var codexQuota: CodexQuotaSnapshot = .idle
+    var claudeQuota: ClaudeQuotaSnapshot = .idle
     var onCodexQuotaToggle: (() -> Void)? = nil
     var onCodexQuotaRefresh: (() -> Void)? = nil
 
     /// 百分比 chip 的悬停态（驱动背景底色透明度）
     @State private var percentHovered = false
     @State private var quotaHovered = false
+    @State private var modelDetectHovered = false
+    @State private var cacheHovered = false
+    @State private var textColorHovered = false
+    @State private var historyHovered = false
 
     private var textColor: Color { dropdownTextColorOverride ?? theme.dropdownTextColor }
     private var subtextColor: Color { dropdownTextColorOverride.map { $0.opacity(0.65) } ?? theme.dropdownSubtextColor }
@@ -129,9 +140,33 @@ struct DetailDropdownView: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                // 分组切换胶囊 [按会话 | 按模型]
-                // 自定义胶囊替代系统 segmented：字号更小、配色更克制，不抢占列表视觉焦点。
-                // 外层胶囊用 dropdownTextColor 低透明叠层（与面板底色略微区分），选中段加一层略浓的圆角块。
+                // 第一行是会打开独立窗口的主入口，视觉上比下方 toggle 更有层次。
+                HStack(spacing: 8) {
+                    launcherCard(
+                        icon: "waveform.path.ecg.rectangle",
+                        titleLine1: L10n.shared.tr("detail.modelDetectLine1"),
+                        titleLine2: L10n.shared.tr("detail.modelDetectLine2"),
+                        hovered: modelDetectHovered,
+                        enabled: false,
+                        action: {}
+                    )
+                    .onHover { modelDetectHovered = $0 }
+
+                    launcherCard(
+                        icon: "gauge.with.dots.needle.50percent",
+                        titleLine1: L10n.shared.tr("detail.subscriptionQuotaLine1"),
+                        titleLine2: L10n.shared.tr("detail.subscriptionQuotaLine2"),
+                        hovered: quotaHovered,
+                        enabled: true,
+                        action: { onSubscriptionQuota?() }
+                    )
+                    .onHover { quotaHovered = $0 }
+                }
+                .padding(.horizontal, 12)
+                .padding(.top, 7)
+                .padding(.bottom, 4)
+
+                // 第二行：按会话 / 按模型。
                 HStack(spacing: 2) {
                     ForEach([GroupingMode.session, GroupingMode.model], id: \.self) { mode in
                         let selected = (groupingMode == mode)
@@ -155,119 +190,101 @@ struct DetailDropdownView: View {
                         .fill(textColor.opacity(0.07))
                 )
                 .padding(.horizontal, 12)
-                .padding(.top, 6)
-                .padding(.bottom, 2)
+                .padding(.top, 1)
+                .padding(.bottom, 3)
 
-                // 百分比显示开关：置于分组胶囊正下方，切换用量列在「绝对 token」与「占总数百分比」之间。
-                // 做成带常驻底色 + 描边的胶囊 chip（与上方分组胶囊同语言），悬停/按下有反馈，
-                // 确保一眼能看出是可点交互元素（而非一行说明文字）。
-                // 右上操作 chip 行：Codex 额度 + 数值列模式（用量/占比/费用循环切换）
-                HStack {
-                    Spacer()
-                    Button { onCodexQuotaToggle?() } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: "gauge")
-                                .font(.system(size: 11, weight: .semibold))
-                            Text(L10n.shared.tr("detail.codexQuota"))
-                                .font(.system(size: 10, weight: showsCodexQuota ? .semibold : .regular))
-                        }
-                        .foregroundColor(showsCodexQuota ? textColor : subtextColor)
-                        .padding(.horizontal, 9)
-                        .padding(.vertical, 4)
-                        .background(
-                            Capsule(style: .continuous)
-                                .fill(textColor.opacity(showsCodexQuota ? 0.18 : (quotaHovered ? 0.11 : 0.07)))
-                        )
-                        .overlay(
-                            Capsule(style: .continuous)
-                                .strokeBorder(textColor.opacity(showsCodexQuota ? 0.32 : 0.15), lineWidth: 0.5)
-                        )
-                    }
-                    .buttonStyle(ChipPressStyle())
-                    .onHover { quotaHovered = $0 }
-                    .help(L10n.shared.tr("detail.codexQuota"))
-                    .accessibilityLabel(L10n.shared.tr("detail.codexQuota"))
+                // 第三行均为紧凑 toggle/快捷操作。
+                HStack(spacing: 4) {
+                    compactAction(
+                        icon: usageIncludesCache ? "externaldrive.fill.badge.checkmark" : "externaldrive",
+                        title: "\(L10n.shared.tr("detail.cacheDataLine1"))\n\(L10n.shared.tr("detail.cacheDataLine2"))",
+                        subtitle: "",
+                        selected: usageIncludesCache,
+                        hovered: cacheHovered,
+                        action: { onUsageIncludesCacheToggle?() }
+                    )
+                    .frame(width: 64)
+                    .onHover { cacheHovered = $0 }
 
-                    Button { onValueModeChange?(valueMode.next) } label: {
-                        HStack(spacing: 5) {
-                            Image(systemName: "dollarsign.circle")
-                                .font(.system(size: 11, weight: .semibold))
-                            // 两行标签：按费用 / 按占比（点击后两列同时切换）
-                            VStack(alignment: .leading, spacing: 0) {
-                                Text(L10n.shared.tr("detail.byCost"))
-                                    .font(.system(size: 8, weight: valueMode == .costPercent ? .semibold : .regular))
-                                Text(L10n.shared.tr("detail.byPercent"))
-                                    .font(.system(size: 8, weight: valueMode == .costPercent ? .semibold : .regular))
-                            }
-                        }
-                        .foregroundColor(valueMode == .costPercent ? textColor : subtextColor)
-                        .padding(.horizontal, 9)
-                        .padding(.vertical, 3)
-                        .background(
-                            Capsule(style: .continuous)
-                                .fill(textColor.opacity(valueMode == .costPercent ? 0.18 : (percentHovered ? 0.11 : 0.07)))
-                        )
-                        .overlay(
-                            Capsule(style: .continuous)
-                                .strokeBorder(textColor.opacity(valueMode == .costPercent ? 0.32 : 0.15), lineWidth: 0.5)
-                        )
-                    }
-                    .buttonStyle(ChipPressStyle())
+                    compactAction(
+                        icon: "circle.fill",
+                        iconColor: textColor,
+                        title: "\(L10n.shared.tr("detail.textColorLine1"))\n\(L10n.shared.tr("detail.textColorLine2"))",
+                        subtitle: "",
+                        selected: quickContrastPreset != nil,
+                        hovered: textColorHovered,
+                        action: { onQuickContrast?() }
+                    )
+                    .frame(width: 58)
+                    .onHover { textColorHovered = $0 }
+
+                    compactAction(
+                        icon: "clock.arrow.circlepath",
+                        title: "\(L10n.shared.tr("detail.historyUsageLine1"))\n\(L10n.shared.tr("detail.historyUsageLine2"))",
+                        subtitle: "",
+                        selected: false,
+                        hovered: historyHovered,
+                        action: { onHistoryUsage?() }
+                    )
+                    .frame(width: 80)
+                    .onHover { historyHovered = $0 }
+
+                    compactAction(
+                        icon: "dollarsign.circle",
+                        title: valueMode == .tokens ? L10n.shared.tr("detail.byCost") : L10n.shared.tr("detail.byPercent"),
+                        subtitle: valueMode == .tokens ? L10n.shared.tr("detail.byPercent") : L10n.shared.tr("detail.todayUsage"),
+                        selected: valueMode == .costPercent,
+                        hovered: percentHovered,
+                        action: { onValueModeChange?(valueMode.next) }
+                    )
+                    .frame(width: 82)
                     .onHover { percentHovered = $0 }
-                    .help(L10n.shared.tr("detail.valueModeHelp"))
-                    .accessibilityLabel(L10n.shared.tr("detail.valueModeHelp"))
                 }
-                .padding(.horizontal, 12)
-                .padding(.top, 2)
-                .padding(.bottom, 2)
+                .padding(.horizontal, 4)
+                .padding(.bottom, 3)
 
-                if showsCodexQuota {
-                    codexQuotaPanel()
-                        .frame(maxHeight: .infinity)
-                } else {
-                    // 表头：名称 + 主列（用量↔费用）+ 次列（消息数↔占比）+ 缓存率（仅会话模式）
-                    HStack(spacing: 0) {
-                        Text(L10n.shared.tr(groupingMode == .model ? "detail.model" : "detail.instance"))
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                        Text(L10n.shared.tr(primaryHeaderKey))
-                            .frame(width: 62, alignment: .trailing)
-                        Text(L10n.shared.tr(secondaryHeaderKey))
-                            .frame(width: 36, alignment: .trailing)
-                        if groupingMode == .session {
-                            Text(L10n.shared.tr("detail.cacheRate"))
-                                .frame(width: 40, alignment: .trailing)
-                        }
+                // 表头：名称 + 主列（用量↔费用）+ 次列（消息数↔占比）+ 缓存率（仅会话模式）
+                HStack(spacing: 0) {
+                    Text(L10n.shared.tr(groupingMode == .model ? "detail.model" : "detail.instance"))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    Text(L10n.shared.tr(primaryHeaderKey))
+                        .frame(width: 62, alignment: .trailing)
+                    Text(L10n.shared.tr(secondaryHeaderKey))
+                        .frame(width: 36, alignment: .trailing)
+                    if groupingMode == .session {
+                        Text(L10n.shared.tr("detail.cacheRate"))
+                            .frame(width: 40, alignment: .trailing)
                     }
-                    .font(.system(size: 9, weight: .medium))
-                    .foregroundColor(headerColor)
-                    .padding(.horizontal, 16)
-                    .padding(.top, 8)
-                    .padding(.bottom, 4)
+                }
+                .font(.system(size: 9, weight: .medium))
+                .foregroundColor(headerColor)
+                .padding(.horizontal, 16)
+                .padding(.top, 6)
+                .padding(.bottom, 4)
 
-                    // 列表（按模式切换）
-                    ScrollView(.vertical, showsIndicators: true) {
-                        VStack(spacing: 0) {
-                            if groupingMode == .session {
-                                ForEach(Array(activeTools.enumerated()), id: \.element.id) { index, tool in
-                                    if index > 0 {
-                                        Divider()
-                                            .background(theme.dropdownDividerColor)
-                                    }
-                                    ToolExpandableRow(tool: tool, theme: theme, textColorOverride: dropdownTextColorOverride, valueMode: valueMode, grandTotal: grandTotal, usageIncludesCache: usageIncludesCache)
+                // 列表（按模式切换）
+                ScrollView(.vertical, showsIndicators: true) {
+                    VStack(spacing: 0) {
+                        if groupingMode == .session {
+                            ForEach(Array(activeTools.enumerated()), id: \.element.id) { index, tool in
+                                if index > 0 {
+                                    Divider()
+                                        .background(theme.dropdownDividerColor)
                                 }
-                            } else {
-                                ForEach(Array(modelGroups.enumerated()), id: \.element.id) { index, group in
-                                    if index > 0 {
-                                        Divider()
-                                            .background(theme.dropdownDividerColor)
-                                    }
-                                    ModelExpandableRow(group: group, theme: theme, textColorOverride: dropdownTextColorOverride, valueMode: valueMode, grandTotal: grandTotal, usageIncludesCache: usageIncludesCache)
+                                ToolExpandableRow(tool: tool, theme: theme, textColorOverride: dropdownTextColorOverride, valueMode: valueMode, grandTotal: grandTotal, usageIncludesCache: usageIncludesCache)
+                            }
+                        } else {
+                            ForEach(Array(modelGroups.enumerated()), id: \.element.id) { index, group in
+                                if index > 0 {
+                                    Divider()
+                                        .background(theme.dropdownDividerColor)
                                 }
+                                ModelExpandableRow(group: group, theme: theme, textColorOverride: dropdownTextColorOverride, valueMode: valueMode, grandTotal: grandTotal, usageIncludesCache: usageIncludesCache)
                             }
                         }
                     }
-                    .frame(maxHeight: .infinity)
                 }
+                .frame(maxHeight: .infinity)
             }
         }
         .frame(maxHeight: .infinity, alignment: .top)
@@ -279,69 +296,142 @@ struct DetailDropdownView: View {
         .padding(.bottom, 10)
     }
 
+    private func launcherCard(
+        icon: String,
+        titleLine1: String,
+        titleLine2: String,
+        subtitle: String? = nil,
+        hovered: Bool,
+        enabled: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                Image(systemName: icon)
+                    .font(.system(size: 15, weight: .semibold))
+                    .frame(width: 22)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(titleLine1)
+                        .font(.system(size: 11.5, weight: .semibold, design: .rounded))
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    Text(titleLine2)
+                        .font(.system(size: 11.5, weight: .semibold, design: .rounded))
+                        .lineLimit(1)
+                        .fixedSize(horizontal: true, vertical: false)
+                    if let subtitle, !subtitle.isEmpty {
+                        Text(subtitle)
+                            .font(.system(size: 8.5, weight: .medium))
+                            .opacity(0.68)
+                            .lineLimit(1)
+                    }
+                }
+                Spacer(minLength: 0)
+                Image(systemName: enabled ? "arrow.up.right" : "lock.fill")
+                    .font(.system(size: 8.5, weight: .bold))
+                    .opacity(0.55)
+            }
+            .foregroundColor(enabled ? textColor : subtextColor)
+            .padding(.horizontal, 10)
+            .frame(maxWidth: .infinity, minHeight: 49)
+            .background(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(textColor.opacity(hovered && enabled ? 0.14 : 0.075))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .strokeBorder(textColor.opacity(enabled ? 0.18 : 0.09), lineWidth: 0.6)
+            )
+        }
+        .buttonStyle(ChipPressStyle())
+        .disabled(!enabled)
+        .accessibilityLabel("\(titleLine1) \(titleLine2)")
+    }
+
+    private func compactAction(
+        icon: String,
+        iconColor: Color? = nil,
+        title: String,
+        subtitle: String,
+        trailingIcon: String? = nil,
+        selected: Bool,
+        hovered: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            HStack(spacing: 4) {
+                Image(systemName: icon)
+                    .font(.system(size: 10.5, weight: .semibold))
+                    .foregroundColor(iconColor)
+                    .overlay {
+                        if iconColor != nil {
+                            Circle()
+                                .strokeBorder(subtextColor.opacity(0.55), lineWidth: 0.6)
+                        }
+                    }
+                VStack(alignment: .leading, spacing: 0) {
+                    Text(title).lineLimit(2).multilineTextAlignment(.leading)
+                    if !subtitle.isEmpty {
+                        Text(subtitle).font(.system(size: 7.5, weight: .medium)).opacity(0.65).lineLimit(1)
+                    }
+                }
+                if let trailingIcon {
+                    Spacer(minLength: 0)
+                    Image(systemName: trailingIcon)
+                        .font(.system(size: 8, weight: .bold))
+                        .opacity(0.68)
+                }
+            }
+            .font(.system(size: 9, weight: selected ? .semibold : .medium))
+            .foregroundColor(selected ? textColor : subtextColor)
+            .frame(maxWidth: .infinity, minHeight: 35)
+            .padding(.horizontal, 5)
+            .background(
+                Capsule(style: .continuous)
+                    .fill(textColor.opacity(selected ? 0.17 : (hovered ? 0.11 : 0.065)))
+            )
+            .overlay(
+                Capsule(style: .continuous)
+                    .strokeBorder(textColor.opacity(selected ? 0.29 : 0.13), lineWidth: 0.5)
+            )
+        }
+        .buttonStyle(ChipPressStyle())
+        .accessibilityLabel(title.replacingOccurrences(of: "\n", with: " "))
+    }
+
     // MARK: - Codex quota
 
     @ViewBuilder
     private func codexQuotaPanel() -> some View {
-        if codexQuota.status == .loading && codexQuota.buckets.isEmpty {
-            VStack(spacing: 9) {
-                ProgressView().controlSize(.small)
-                Text(L10n.shared.tr("quota.loading"))
-                    .font(.system(size: 11))
-                    .foregroundColor(subtextColor)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else if codexQuota.status == .unavailable || codexQuota.status == .idle {
-            VStack(spacing: 10) {
-                Image(systemName: "gauge")
-                    .font(.system(size: 24, weight: .light))
-                    .foregroundColor(subtextColor.opacity(0.8))
-                Text(L10n.shared.tr("quota.unavailable"))
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundColor(textColor)
-                Button { onCodexQuotaRefresh?() } label: {
-                    Label(L10n.shared.tr("quota.retry"), systemImage: "arrow.clockwise")
-                        .font(.system(size: 10, weight: .medium))
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 5)
-                        .background(Capsule().fill(textColor.opacity(0.1)))
+        ScrollView(.vertical, showsIndicators: true) {
+            VStack(spacing: 12) {
+                HStack(spacing: 6) {
+                    Text(L10n.shared.tr("quota.subscriptions"))
+                        .font(.system(size: 12, weight: .semibold, design: .rounded))
+                        .tracking(0.2)
+                        .foregroundColor(textColor)
+                    Spacer()
+                    Button { onCodexQuotaRefresh?() } label: {
+                        Image(systemName: "arrow.clockwise")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundColor(subtextColor)
+                            .frame(width: 26, height: 26)
+                            .background(Circle().fill(textColor.opacity(0.09)))
+                    }
+                    .buttonStyle(ChipPressStyle())
+                    .disabled(codexQuota.status == .loading || claudeQuota.status == .loading)
+                    .accessibilityLabel(L10n.shared.tr("quota.retry"))
                 }
-                .buttonStyle(ChipPressStyle())
-                .foregroundColor(textColor)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else {
-            ScrollView(.vertical, showsIndicators: true) {
-                VStack(spacing: 8) {
-                    HStack(spacing: 6) {
-                        if codexQuota.status == .loading {
-                            ProgressView().controlSize(.mini)
-                        }
-                        Text("CODEX")
-                            .font(.system(size: 10, weight: .bold, design: .rounded))
-                            .tracking(1.2)
-                            .foregroundColor(headerColor)
-                        Spacer()
-                        Button { onCodexQuotaRefresh?() } label: {
-                            Image(systemName: "arrow.clockwise")
-                                .font(.system(size: 10, weight: .semibold))
-                                .foregroundColor(subtextColor)
-                                .frame(width: 22, height: 22)
-                                .background(Circle().fill(textColor.opacity(0.07)))
-                        }
-                        .buttonStyle(ChipPressStyle())
-                        .disabled(codexQuota.status == .loading)
-                        .accessibilityLabel(L10n.shared.tr("quota.retry"))
-                    }
 
-                    ForEach(codexQuota.buckets) { bucket in
-                        codexQuotaCard(bucket)
-                    }
-
+                quotaProviderHeader("🤖 Codex", plan: codexQuota.planType, loading: codexQuota.status == .loading)
+                if codexQuota.buckets.isEmpty {
+                    quotaUnavailableRow(L10n.shared.tr(
+                        codexQuota.status == .loading ? "quota.loadingCodex" : "quota.codexUnavailable"
+                    ))
+                } else {
+                    ForEach(codexQuota.buckets) { bucket in codexQuotaCard(bucket) }
                     HStack(spacing: 5) {
-                        if let plan = codexQuota.planType, !plan.isEmpty {
-                            quotaMetaChip(L10n.shared.tr("quota.plan", displayPlan(plan)))
-                        }
                         if codexQuota.hasUnlimitedCredits {
                             quotaMetaChip(L10n.shared.tr("quota.unlimited"))
                         } else if let balance = codexQuota.creditBalance, balance != "0" {
@@ -352,47 +442,88 @@ struct DetailDropdownView: View {
                         }
                         Spacer(minLength: 0)
                     }
-
-                    HStack(spacing: 4) {
-                        Circle()
-                            .fill(codexQuota.source == .appServer ? Color.green : Color.orange)
-                            .frame(width: 5, height: 5)
-                        Text(L10n.shared.tr(codexQuota.source == .appServer ? "quota.liveSource" : "quota.logSource"))
-                            .font(.system(size: 9))
-                            .foregroundColor(subtextColor)
-                        Spacer()
-                        if let refreshedAt = codexQuota.refreshedAt {
-                            Text(L10n.shared.tr("quota.updated", quotaUpdatedLabel(refreshedAt)))
-                                .font(.system(size: 9))
-                                .foregroundColor(subtextColor)
-                        }
-                    }
-                    .padding(.horizontal, 2)
+                    quotaSourceRow(
+                        codexQuota.source == .appServer ? "quota.liveSource" : "quota.logSource",
+                        refreshedAt: codexQuota.refreshedAt,
+                        live: codexQuota.source == .appServer
+                    )
                 }
-                .padding(.horizontal, 12)
-                .padding(.top, 7)
-                .padding(.bottom, 8)
+
+                Divider().background(textColor.opacity(0.16)).padding(.vertical, 2)
+
+                quotaProviderHeader("✳️ Claude Code", plan: claudeQuota.planType, loading: claudeQuota.status == .loading)
+                if claudeQuota.buckets.isEmpty {
+                    quotaUnavailableRow(L10n.shared.tr(
+                        claudeQuota.status == .loading ? "quota.loadingClaude" : "quota.claudeUnavailable"
+                    ))
+                } else {
+                    ForEach(claudeQuota.buckets) { bucket in codexQuotaCard(bucket) }
+                    quotaSourceRow("quota.claudeSource", refreshedAt: claudeQuota.refreshedAt, live: true)
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.top, 7)
+            .padding(.bottom, 8)
+        }
+    }
+
+    private func quotaProviderHeader(_ title: String, plan: String?, loading: Bool) -> some View {
+        HStack(spacing: 6) {
+            if loading { ProgressView().controlSize(.mini) }
+            Text(title)
+                .font(.system(size: 11.5, weight: .bold, design: .rounded))
+                .foregroundColor(textColor)
+            Spacer()
+            if let plan, !plan.isEmpty {
+                quotaMetaChip(L10n.shared.tr("quota.plan", displayPlan(plan)))
             }
         }
+        .padding(.horizontal, 1)
+    }
+
+    private func quotaSourceRow(_ key: String, refreshedAt: Date?, live: Bool) -> some View {
+        HStack(spacing: 4) {
+            Circle().fill(live ? Color.green : Color.orange).frame(width: 5, height: 5)
+            Text(L10n.shared.tr(key))
+                .font(.system(size: 9.5, weight: .medium))
+                .foregroundColor(subtextColor)
+            Spacer()
+            if let refreshedAt {
+                Text(L10n.shared.tr("quota.updated", quotaUpdatedLabel(refreshedAt)))
+                    .font(.system(size: 9.5))
+                    .foregroundColor(subtextColor)
+            }
+        }
+        .padding(.horizontal, 2)
+    }
+
+    private func quotaUnavailableRow(_ text: String) -> some View {
+        HStack(spacing: 7) {
+            Image(systemName: "exclamationmark.circle").foregroundColor(subtextColor)
+            Text(text).font(.system(size: 10)).foregroundColor(subtextColor)
+            Spacer()
+        }
+        .padding(10)
+        .background(RoundedRectangle(cornerRadius: 8).fill(textColor.opacity(0.045)))
     }
 
     private func codexQuotaCard(_ bucket: CodexQuotaBucket) -> some View {
         let accent = quotaAccent(for: bucket.remainingPercent)
-        return VStack(alignment: .leading, spacing: 7) {
-            HStack(alignment: .firstTextBaseline, spacing: 6) {
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(bucket.name)
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundColor(textColor)
-                        .lineLimit(1)
-                    Text(quotaWindowLabel(minutes: bucket.windowMinutes))
-                        .font(.system(size: 9))
+        let reset = bucket.resetsAt.map(quotaResetLabels)
+        return VStack(alignment: .leading, spacing: 9) {
+            HStack(alignment: .center, spacing: 8) {
+                Text(quotaWindowLabel(minutes: bucket.windowMinutes))
+                    .font(.system(size: 11.5, weight: .semibold))
+                    .foregroundColor(textColor)
+                Spacer()
+                VStack(alignment: .trailing, spacing: -1) {
+                    Text(String(format: "%.0f%%", bucket.remainingPercent))
+                        .font(.system(size: 16, weight: .bold, design: .rounded))
+                        .foregroundColor(.white)
+                    Text(L10n.shared.tr("quota.remainingLabel"))
+                        .font(.system(size: 8.5, weight: .semibold, design: .rounded))
                         .foregroundColor(subtextColor)
                 }
-                Spacer()
-                Text(L10n.shared.tr("quota.remaining", bucket.remainingPercent))
-                    .font(.system(size: 13, weight: .bold, design: .rounded))
-                    .foregroundColor(accent)
             }
 
             GeometryReader { geometry in
@@ -406,33 +537,40 @@ struct DetailDropdownView: View {
                         ))
                 }
             }
-            .frame(height: 6)
+            .frame(height: 8)
 
-            if let resetsAt = bucket.resetsAt {
-                Text(quotaResetLabel(resetsAt))
-                    .font(.system(size: 9))
-                    .foregroundColor(subtextColor)
-                    .lineLimit(1)
+            if let reset {
+                HStack(alignment: .firstTextBaseline, spacing: 5) {
+                    Image(systemName: "arrow.clockwise.circle")
+                        .font(.system(size: 9, weight: .semibold))
+                    Text(reset.relative)
+                        .font(.system(size: 9.5, weight: .semibold))
+                    Spacer(minLength: 4)
+                    Text(reset.absolute)
+                        .font(.system(size: 8.5))
+                        .lineLimit(1)
+                }
+                .foregroundColor(subtextColor)
             }
         }
-        .padding(10)
+        .padding(12)
         .background(
-            RoundedRectangle(cornerRadius: 9, style: .continuous)
-                .fill(textColor.opacity(0.055))
+            RoundedRectangle(cornerRadius: 11, style: .continuous)
+                .fill(textColor.opacity(0.075))
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 9, style: .continuous)
-                .strokeBorder(textColor.opacity(0.1), lineWidth: 0.5)
+            RoundedRectangle(cornerRadius: 11, style: .continuous)
+                .strokeBorder(textColor.opacity(0.14), lineWidth: 0.6)
         )
     }
 
     private func quotaMetaChip(_ text: String) -> some View {
         Text(text)
-            .font(.system(size: 8.5, weight: .medium))
+            .font(.system(size: 9, weight: .semibold))
             .foregroundColor(subtextColor)
-            .padding(.horizontal, 6)
-            .padding(.vertical, 3)
-            .background(Capsule().fill(textColor.opacity(0.07)))
+            .padding(.horizontal, 7)
+            .padding(.vertical, 3.5)
+            .background(Capsule().fill(textColor.opacity(0.1)))
     }
 
     private func quotaAccent(for remaining: Double) -> Color {
@@ -452,18 +590,19 @@ struct DetailDropdownView: View {
         return L10n.shared.tr("quota.minutes", minutes)
     }
 
-    private func quotaResetLabel(_ date: Date) -> String {
+    private func quotaResetLabels(_ date: Date) -> (relative: String, absolute: String) {
         let absolute = DateFormatter()
         absolute.locale = Locale(identifier: L10n.shared.language.rawValue)
-        absolute.dateStyle = .medium
-        absolute.timeStyle = .short
+        absolute.dateFormat = L10n.shared.language == .en ? "MMM d · h:mm a" : "M月d日 · HH:mm"
         let relative = RelativeDateTimeFormatter()
         relative.locale = absolute.locale
         relative.unitsStyle = .short
-        return L10n.shared.tr(
-            "quota.resets",
-            absolute.string(from: date),
-            relative.localizedString(for: date, relativeTo: Date())
+        return (
+            L10n.shared.tr(
+                "quota.resetsRelative",
+                relative.localizedString(for: date, relativeTo: Date())
+            ),
+            absolute.string(from: date)
         )
     }
 

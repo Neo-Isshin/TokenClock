@@ -10,7 +10,9 @@ final class FloatingPanel: NSPanel {
     static var clockHeight: CGFloat { currentClockSize.diameter }
     static let dropdownVerticalMargin: CGFloat = 10
     static let forecastHeight: CGFloat = 76
-    static let headerHeight: CGFloat = 25
+    /// Three control rows plus the table header. Keep this in sync with
+    /// DetailDropdownView so an empty tool list never clips the launchers.
+    static let headerHeight: CGFloat = 147
     static let toolRowHeight: CGFloat = 37
 
     /// 当前表盘大小（缺省 / 越界回退 medium）。

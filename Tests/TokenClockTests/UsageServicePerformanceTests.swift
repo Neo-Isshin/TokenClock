@@ -158,6 +158,11 @@ final class UsageServicePerformanceTests: XCTestCase {
         assertUsage(service.todayUsage(), tokens: 13, messages: 1, cacheRate: 5.0 / 18.0)
         XCTAssertEqual(service.todaySessions().first?.todayTokens, 13)
         XCTAssertEqual(service.todaySessions().first?.model, "gpt-5.6")
+        let expectedCost = (3.0 * 5.0 + 4.0 * 30.0 + 5.0 * 0.5 + 6.0 * 6.25) / 1_000_000.0
+        XCTAssertEqual(service.todayCost().value, expectedCost, accuracy: 0.0000001)
+        XCTAssertTrue(service.todayCost().available)
+        XCTAssertEqual(service.todaySessions().first?.todayCost.value ?? -1, expectedCost, accuracy: 0.0000001)
+        XCTAssertEqual(service.todaySessions().first?.cacheReadTokens, 5)
 
         let renamed = sessions.appendingPathComponent("renamed.jsonl")
         try FileManager.default.moveItem(at: live, to: renamed)

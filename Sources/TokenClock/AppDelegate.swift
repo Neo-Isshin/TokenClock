@@ -9,6 +9,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var viewModel: ViewModel!
     private var settingsWindow: NSWindow?
     private var overviewWindow: NSWindow?
+    private var subscriptionQuotaWindow: NSWindow?
     private var aboutWindow: NSWindow?
     private var themePickerPanel: NSPanel?
     private var themePickerEventMonitor: Any?
@@ -53,11 +54,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             onResizeEnded: { [weak self] in
                 self?.dropdownPanel?.endResize()
             },
-            onCodexQuotaShown: { [weak self] in
-                guard let self else { return }
-                let comfortableHeight: CGFloat = self.viewModel.weather.cityName.isEmpty ? 280 : 356
-                self.dropdownPanel.ensureHeight(comfortableHeight)
-            }
+            onSubscriptionQuota: { [weak self] in self?.showSubscriptionQuotaWindow() },
+            onHistoryUsage: { [weak self] in self?.showUsageOverviewWindow() }
         )
         let detailContentView = NSHostingView(rootView: detailView)
         detailContentView.frame = NSRect(
@@ -301,8 +299,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let apiItem = NSMenuItem(title: L10n.shared.tr("menu.api", Int(AppDelegate.resolveAPIServerPort())),
                                  action: #selector(copyAPIEndpoint(_:)), keyEquivalent: "")
         menu.addItem(apiItem)
-        menu.addItem(NSMenuItem(title: tr("menu.overview"),
-                                action: #selector(openUsageOverview(_:)), keyEquivalent: ""))
         menu.addItem(.separator())
 
         let opacityMenu = NSMenu()
@@ -335,18 +331,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         tempMenu.addItem(fahrenheitItem)
         tempItem.submenu = tempMenu
         menu.addItem(tempItem)
-        menu.addItem(.separator())
-
-        let scopeItem = NSMenuItem(title: tr("menu.usageScope"), action: nil, keyEquivalent: "")
-        let scopeMenu = NSMenu()
-        let exclItem = NSMenuItem(title: tr("menu.usageExclCache"), action: #selector(setUsageExcludesCache(_:)), keyEquivalent: "")
-        exclItem.state = viewModel.usageIncludesCache ? .off : .on
-        let inclItem = NSMenuItem(title: tr("menu.usageInclCache"), action: #selector(setUsageIncludesCache(_:)), keyEquivalent: "")
-        inclItem.state = viewModel.usageIncludesCache ? .on : .off
-        scopeMenu.addItem(exclItem)
-        scopeMenu.addItem(inclItem)
-        scopeItem.submenu = scopeMenu
-        menu.addItem(scopeItem)
         menu.addItem(.separator())
 
         let cityMenu = NSMenu()
@@ -727,19 +711,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
               let lang = AppLanguage(rawValue: raw) else { return }
         L10n.shared.language = lang
         viewModel.language = lang
+        viewModel.refreshWeather()
         setupRightClickMenu()
         settingsWindow?.title = L10n.shared.tr("settings.title")
         overviewWindow?.title = L10n.shared.tr("overview.title")
-    }
-
-    @objc private func setUsageExcludesCache(_ sender: NSMenuItem) {
-        viewModel.usageIncludesCache = false
-        setupRightClickMenu()
-    }
-
-    @objc private func setUsageIncludesCache(_ sender: NSMenuItem) {
-        viewModel.usageIncludesCache = true
-        setupRightClickMenu()
+        subscriptionQuotaWindow?.title = L10n.shared.tr("quota.windowTitle")
     }
 
     @objc private func openSettings(_ sender: NSMenuItem) {
@@ -817,6 +793,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         window.center()
         window.makeKeyAndOrderFront(nil)
         overviewWindow = window
+    }
+
+    private func showSubscriptionQuotaWindow() {
+        NSApp.activate(ignoringOtherApps: true)
+        if let window = subscriptionQuotaWindow {
+            window.level = .floating
+            window.makeKeyAndOrderFront(nil)
+            viewModel.refreshSubscriptionQuotas()
+            return
+        }
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 430, height: 650),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable],
+            backing: .buffered,
+            defer: false
+        )
+        window.title = L10n.shared.tr("quota.windowTitle")
+        window.minSize = NSSize(width: 380, height: 480)
+        window.isReleasedWhenClosed = false
+        window.delegate = self
+        window.contentView = NSHostingView(rootView: SubscriptionQuotaWindowView(viewModel: viewModel))
+        window.level = .floating
+        window.center()
+        window.makeKeyAndOrderFront(nil)
+        subscriptionQuotaWindow = window
+        viewModel.refreshSubscriptionQuotas()
     }
 
     private func showSettingsWindow() {
@@ -939,6 +941,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 settingsWindow = nil
             } else if let window = closingWindow, window == overviewWindow {
                 overviewWindow = nil
+            } else if let window = closingWindow, window == subscriptionQuotaWindow {
+                subscriptionQuotaWindow = nil
             }
         }
     }
@@ -974,7 +978,8 @@ private struct DropdownPanelView: View {
     let onResizeStart: () -> Void
     let onResizeChanged: (CGFloat) -> Void
     let onResizeEnded: () -> Void
-    let onCodexQuotaShown: () -> Void
+    let onSubscriptionQuota: () -> Void
+    let onHistoryUsage: () -> Void
 
     var body: some View {
         VStack(spacing: 0) {
@@ -990,13 +995,11 @@ private struct DropdownPanelView: View {
                 valueMode: viewModel.valueMode,
                 onValueModeChange: { viewModel.valueMode = $0 },
                 usageIncludesCache: viewModel.usageIncludesCache,
-                showsCodexQuota: viewModel.showsCodexQuota,
-                codexQuota: viewModel.codexQuota,
-                onCodexQuotaToggle: {
-                    viewModel.toggleCodexQuota()
-                    if viewModel.showsCodexQuota { onCodexQuotaShown() }
-                },
-                onCodexQuotaRefresh: { viewModel.refreshCodexQuota() }
+                onUsageIncludesCacheToggle: { viewModel.usageIncludesCache.toggle() },
+                quickContrastPreset: viewModel.quickContrastPreset,
+                onQuickContrast: { viewModel.cycleQuickContrast() },
+                onHistoryUsage: onHistoryUsage,
+                onSubscriptionQuota: onSubscriptionQuota
             )
             .frame(maxHeight: .infinity, alignment: .top)
 

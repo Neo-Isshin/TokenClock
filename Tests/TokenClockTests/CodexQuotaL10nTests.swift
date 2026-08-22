@@ -8,7 +8,8 @@ final class CodexQuotaL10nTests: XCTestCase {
         defer { l10n.language = originalLanguage }
 
         let keys = [
-            "detail.codexQuota", "quota.loading", "quota.unavailable", "quota.retry",
+            "detail.codexQuota", "detail.subscriptionQuotaLine1", "detail.subscriptionQuotaLine2",
+            "quota.loading", "quota.unavailable", "quota.retry",
             "quota.weekly", "quota.liveSource", "quota.logSource",
         ]
         for language in AppLanguage.allCases {
