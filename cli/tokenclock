@@ -355,14 +355,15 @@ cmd_update() {
   # Don't stop up front: install.sh stages a sibling file and atomically replaces the installed
   # path, so a running process safely keeps its old inode on every platform. Only restart when
   # something was actually deployed (or --force), avoiding interruption on a no-op update.
-  local status_file force_arg=""
+  local status_file force_arg="" variant_arg=""
   status_file="$(umask 077; mktemp -t tokenclock-status.XXXXXX)" || die "Failed to create a status file"
   [ "$force" -eq 1 ] && force_arg="--force"
+  [ -z "$variant" ] || variant_arg="--$variant"
 
   # Run the installer with --no-start: fetch + build + atomically deploy as needed; it reports DEPLOYED via the
   # status file. --no-start skips the API prompt (preserves existing UserDefaults) and the first-launch
   # scan; detect_and_set_language is also guarded off on this path, respecting the user's chosen language.
-  if ! TOKENCLOCK_STATUS_FILE="$status_file" bash "$tmp_script" --no-start $force_arg; then
+  if ! TOKENCLOCK_STATUS_FILE="$status_file" bash "$tmp_script" --no-start $variant_arg $force_arg; then
     rm -f "$tmp_script" "$status_file"
     die "Upgrade failed (state restored, the old binary was not replaced)"
   fi
