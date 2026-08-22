@@ -333,7 +333,7 @@ final class WindowsApp: @unchecked Sendable {
             ov.detail_quota_visible = 0
             ov.clock_diameter = dialHeight
             ov.detail_card_width = 320
-            applyQuickContrast(to: &wt)
+            applyDetailTextPreset(to: &wt)
             win_render_clock(currentHostWidth, currentHeight,
                              Int32(comps.hour ?? 0), Int32(comps.minute ?? 0), Int32(comps.second ?? 0),
                              &wt, &ov)
@@ -488,18 +488,19 @@ final class WindowsApp: @unchecked Sendable {
         UserDefaults.standard.setInt(next, for: .quickContrastPreset)
     }
 
-    private func applyQuickContrast(to theme: inout win_theme) {
+    private func applyDetailTextPreset(to theme: inout win_theme) {
+        Self.applyDetailTextPreset(quickContrastPreset, to: &theme)
+    }
+
+    static func applyDetailTextPreset(_ preset: Int, to theme: inout win_theme) {
         let primary: UInt32
         let secondary: UInt32
-        switch quickContrastPreset {
+        switch preset {
         case 1: primary = 0xFFFFFFFF; secondary = 0xB8FFFFFF
         case 2: primary = 0xFF000000; secondary = 0xB8000000
         case 3: primary = 0xFFFFD60A; secondary = 0xB8FFD60A
         default: return
         }
-        theme.number_color = primary
-        theme.text_primary = primary
-        theme.text_secondary = secondary
         theme.dd_text = primary
         theme.dd_subtext = secondary
     }
@@ -968,7 +969,7 @@ final class WindowsApp: @unchecked Sendable {
         defer { aboutDlg = nil; dlg_destroy(dlg) }
         dlg_add_brand_logo(dlg, 136, 22, 88, 88)
         dlg_add_title(dlg, "TokenClock", 112, 120, 180, 30)
-        dlg_add_static(dlg, "v1.5.0", 154, 154, 90, 22)
+        dlg_add_static(dlg, "v1.5.1", 154, 154, 90, 22)
         dlg_add_sep(dlg, 28, 188, 304)
         dlg_add_static(dlg, "Copyright © 2026 Neo-Isshin", 78, 210, 250, 22)
         dlg_add_static(dlg, L10n.shared.tr("about.license"), 128, 238, 180, 22)

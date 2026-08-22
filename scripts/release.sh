@@ -39,7 +39,7 @@ while [ "$#" -gt 0 ]; do
 done
 
 [ -n "$VERSION" ] || { usage; die "missing version"; }
-case "$VERSION" in v[0-9]*.[0-9]*.[0-9]*) ;; *) die "version must look like v1.5.0" ;; esac
+case "$VERSION" in v[0-9]*.[0-9]*.[0-9]*) ;; *) die "version must look like v1.5.1" ;; esac
 [ -n "$ASSETS_DIR" ] || die "--assets-dir is required"
 ASSETS_DIR="$(cd "$ASSETS_DIR" 2>/dev/null && pwd)" || die "asset directory does not exist"
 

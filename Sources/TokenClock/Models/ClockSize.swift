@@ -30,6 +30,10 @@ enum ClockSize: String, CaseIterable, Identifiable {
     /// 浮动面板宽度 = 直径 + 左右各 40pt 边距（历史 320 = 240 + 80）。
     var panelWidth: CGFloat { diameter + 80 }
 
+    /// 详情面板至少保持 medium 的可用宽度，避免 small 档压缩控制行与数据列。
+    /// 表盘窗口仍使用 `panelWidth`，large / extraLarge 的详情宽度保持不变。
+    var detailPanelWidth: CGFloat { max(panelWidth, ClockSize.medium.panelWidth) }
+
     var localizedName: String {
         switch self {
         case .small:      return L10n.shared.tr("size.small")

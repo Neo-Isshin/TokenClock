@@ -1022,10 +1022,10 @@ void win_render_clock(int w, int h, int hh, int mm, int ss, const win_theme *t, 
         textC(ov->today_label, cxd, cyd + r * 0.28, (float)(9.0 * S), t->text_secondary, false);
         textC(ov->tokens,   cxd, cyd + r * 0.40, (float)(20.0 * S), t->text_primary, true);
         textC(ov->messages, cxd, cyd + r * 0.40 + 18.0 * S, (float)(10.0 * S), t->text_secondary, false);
-        textEmoji(ov->rate, cxd + r * 0.72, cyd, (float)(25.0 * S), t->text_primary);
+        textEmoji(ov->rate, cxd + r * 0.62, cyd, (float)(25.0 * S), t->text_primary);
         if (!expanded) {
-            textLEmojiLine(ov->tool_left1, cxd - r * 0.72, cyd - 10.0 * S, (float)(13.0 * S), t->text_primary);
-            textLEmojiLine(ov->tool_left2, cxd - r * 0.72, cyd + 12.0 * S, (float)(13.0 * S), t->text_primary);
+            textLEmojiLine(ov->tool_left1, cxd - r * 0.62, cyd - 10.0 * S, (float)(13.0 * S), t->text_primary);
+            textLEmojiLine(ov->tool_left2, cxd - r * 0.62, cyd + 12.0 * S, (float)(13.0 * S), t->text_primary);
         }
     }
 

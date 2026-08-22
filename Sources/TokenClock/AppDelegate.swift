@@ -61,7 +61,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         detailContentView.frame = NSRect(
             x: 0,
             y: 0,
-            width: FloatingPanel.panelWidth,
+            width: FloatingPanel.detailPanelWidth,
             height: FloatingPanel.collapsedHeight
         )
         detailContentView.autoresizingMask = [.width, .height]
@@ -208,8 +208,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         sizeItem.submenu = sizeMenu
         menu.addItem(sizeItem)
 
-        // 表盘外观子菜单（液态玻璃：文字颜色 / 玻璃材质 / 玻璃底色）
-        let appearanceMenu = NSMenu()
+        // 取消「表盘外观」嵌套：颜色与玻璃控制都直接作为一级菜单展示。
 
         // — 文字颜色（解决浅色壁纸上白色文字不可见）—
         let textColorMenu = NSMenu()
@@ -227,7 +226,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         textColorMenu.addItem(customTextItem)
         let textColorItem = NSMenuItem(title: tr("menu.dialTextColor"), action: nil, keyEquivalent: "")
         textColorItem.submenu = textColorMenu
-        appearanceMenu.addItem(textColorItem)
+        menu.addItem(textColorItem)
 
         // — 详情面板文字色（覆写下拉面板文字色；nil = 跟随主题）—
         let panelHex = viewModel.dropdownTextColorHex
@@ -253,7 +252,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         panelTextMenu.addItem(panelCustomItem)
         let panelTextItem = NSMenuItem(title: tr("menu.panelTextColor"), action: nil, keyEquivalent: "")
         panelTextItem.submenu = panelTextMenu
-        appearanceMenu.addItem(panelTextItem)
+        menu.addItem(panelTextItem)
 
         // — 玻璃底色（私有 tintColor SPI；27 Beta 可能渲染偏实心）—
         let tintMenu = NSMenu()
@@ -266,7 +265,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         tintMenu.addItem(customTintItem)
         let tintSubItem = NSMenuItem(title: tr("menu.dialTint"), action: nil, keyEquivalent: "")
         tintSubItem.submenu = tintMenu
-        appearanceMenu.addItem(tintSubItem)
+        menu.addItem(tintSubItem)
 
         // — 毛玻璃底板透明度（公开 NSVisualEffectView.alphaValue；折射玻璃下层，0=无底板）—
         let backingMenu = NSMenu()
@@ -278,23 +277,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
         let backingItem = NSMenuItem(title: tr("menu.glassBacking"), action: nil, keyEquivalent: "")
         backingItem.submenu = backingMenu
-        appearanceMenu.addItem(backingItem)
+        menu.addItem(backingItem)
 
         // 液态玻璃折射总开关（实验性私有 API；关 → 回退公开 .clear 玻璃）
         let glassToggle = NSMenuItem(title: tr("menu.glassRefraction"),
                                      action: #selector(toggleGlassRefraction(_:)), keyEquivalent: "")
         glassToggle.state = viewModel.glassRefractionEnabled ? .on : .off
-        appearanceMenu.addItem(glassToggle)
+        menu.addItem(glassToggle)
 
         // 一键恢复默认：文字→跟随主题、材质→标准、底色→无
-        appearanceMenu.addItem(.separator())
+        menu.addItem(.separator())
         let resetItem = NSMenuItem(title: tr("menu.dialResetDefaults"),
                                    action: #selector(resetDialAppearance(_:)), keyEquivalent: "")
-        appearanceMenu.addItem(resetItem)
-
-        let appearanceItem = NSMenuItem(title: tr("menu.dialAppearance"), action: nil, keyEquivalent: "")
-        appearanceItem.submenu = appearanceMenu
-        menu.addItem(appearanceItem)
+        menu.addItem(resetItem)
 
         let apiItem = NSMenuItem(title: L10n.shared.tr("menu.api", Int(AppDelegate.resolveAPIServerPort())),
                                  action: #selector(copyAPIEndpoint(_:)), keyEquivalent: "")
@@ -1008,9 +1003,9 @@ private struct DropdownPanelView: View {
                 onResizeChanged: onResizeChanged,
                 onResizeEnded: onResizeEnded
             )
-            .frame(width: FloatingPanel.panelWidth, height: FloatingPanel.resizeGripHeight)
+            .frame(width: FloatingPanel.detailPanelWidth, height: FloatingPanel.resizeGripHeight)
         }
-        .frame(width: FloatingPanel.panelWidth)
+        .frame(width: FloatingPanel.detailPanelWidth)
     }
 }
 

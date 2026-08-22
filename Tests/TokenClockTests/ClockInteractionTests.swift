@@ -5,6 +5,30 @@ import XCTest
 
 @MainActor
 final class ClockInteractionTests: XCTestCase {
+    func testSmallDetailPanelUsesMediumWidthWithoutChangingOtherSizes() {
+        XCTAssertEqual(ClockSize.small.panelWidth, 280)
+        XCTAssertEqual(ClockSize.small.detailPanelWidth, ClockSize.medium.panelWidth)
+        XCTAssertEqual(ClockSize.medium.detailPanelWidth, ClockSize.medium.panelWidth)
+        XCTAssertEqual(ClockSize.large.detailPanelWidth, ClockSize.large.panelWidth)
+        XCTAssertEqual(ClockSize.extraLarge.detailPanelWidth, ClockSize.extraLarge.panelWidth)
+    }
+
+    func testDropdownPanelAppliesDetailWidthForEveryClockSize() {
+        let key = SettingsKey.clockSize.rawValue
+        let saved = UserDefaults.standard.object(forKey: key)
+        defer { UserDefaults.standard.set(saved, forKey: key) }
+
+        UserDefaults.standard.setString(ClockSize.small.rawValue, for: .clockSize)
+        let panel = DropdownPanel()
+        XCTAssertEqual(panel.frame.width, ClockSize.medium.panelWidth)
+
+        for size in ClockSize.allCases {
+            UserDefaults.standard.setString(size.rawValue, for: .clockSize)
+            panel.reposition(below: NSRect(x: 200, y: 500, width: size.panelWidth, height: size.diameter))
+            XCTAssertEqual(panel.frame.width, size.detailPanelWidth)
+        }
+    }
+
     func testDefaultWindowPositionKeepsEverySizeInsideVisibleFrame() {
         let screen = NSRect(x: 0, y: 98, width: 3440, height: 1312)
         for size in ClockSize.allCases {
