@@ -74,7 +74,7 @@ tokenclock update
 tokenclock uninstall
 ```
 
-如果 Linux 无法打开 AppImage，请安装 `libfuse2`；Ubuntu 24.04+ 对应的软件包名为 `libfuse2t64`。
+Linux 缺少 FUSE 2 时会自动切换到解包运行模式，无需使用 `sudo` 安装额外依赖。
 
 ### Windows
 

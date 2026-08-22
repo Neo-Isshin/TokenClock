@@ -255,7 +255,7 @@ try {
         Write-Host "Fetching TokenClock release metadata ($Version)..."
         $release = Get-Release
         if ($null -eq $release -or [string]::IsNullOrWhiteSpace([string] $release.tag_name)) {
-            throw 'GitHub returned release metadata without a tag name. Retry shortly or specify -Version v1.4.8.'
+            throw 'GitHub returned release metadata without a tag name. Retry shortly or specify -Version v1.5.0.'
         }
         $releaseTag = [string] $release.tag_name
         $zipAsset = $release.assets | Where-Object name -eq $assetName | Select-Object -First 1

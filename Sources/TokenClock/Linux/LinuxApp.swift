@@ -492,9 +492,9 @@ final class LinuxApp: @unchecked Sendable {
         case "about":
             if let window {
                 if let path = Bundle.module.path(forResource: "glass_disc", ofType: "png") {
-                    path.withCString { tc_gtk_show_about(window, "v1.4.8", $0) }
+                    path.withCString { tc_gtk_show_about(window, "v1.5.0", $0) }
                 } else {
-                    tc_gtk_show_about(window, "v1.4.8", nil)
+                    tc_gtk_show_about(window, "v1.5.0", nil)
                 }
             }
         case "quit":

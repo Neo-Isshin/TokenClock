@@ -74,7 +74,7 @@ tokenclock update
 tokenclock uninstall
 ```
 
-On Linux, install `libfuse2` if your desktop cannot open the AppImage (`libfuse2t64` on Ubuntu 24.04+).
+On Linux, the installer automatically uses extraction mode when FUSE 2 is unavailable; no `sudo` dependency install is required.
 
 ### Windows
 
