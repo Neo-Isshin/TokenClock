@@ -150,6 +150,21 @@ case "$TC_TOOLCHAIN" in
 esac
 
 # ── 2. Select variant ──
+# v1.4.7 and older CLIs did not forward --glass/--normal to install.sh during an
+# update. Preserve those users' installed channel instead of interpreting an
+# empty variant as a request to add both macOS builds.
+if [ "$PLATFORM" = macos ] && [ "$UPDATE_MODE" -eq 1 ] && [ -z "$VARIANT" ]; then
+  has_glass=0
+  has_normal=0
+  [ ! -x "$HOME_DIR/glass/TokenClock" ] || has_glass=1
+  [ ! -x "$HOME_DIR/normal/TokenClock" ] || has_normal=1
+  if [ "$has_glass" -eq 1 ] && [ "$has_normal" -eq 0 ]; then
+    VARIANT=glass
+  elif [ "$has_normal" -eq 1 ] && [ "$has_glass" -eq 0 ]; then
+    VARIANT=normal
+  fi
+fi
+
 if [ "$PLATFORM" = linux ]; then
   VARIANTS=(normal)
   BRANCHES=(normal)
