@@ -1,0 +1,7 @@
+.build
+.git
+.swiftpm
+.appimage-tools
+AppDir
+*.AppImage
+*.AppImage.sha256

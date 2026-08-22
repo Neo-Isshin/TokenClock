@@ -1,5 +1,5 @@
 import Foundation
-#if os(Linux)
+#if os(Linux) || os(Windows)
 import CSQLite
 #else
 import SQLite3

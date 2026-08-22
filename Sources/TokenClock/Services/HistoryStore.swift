@@ -1,5 +1,9 @@
 import Foundation
+#if os(macOS)
 import SQLite3
+#else
+import CSQLite
+#endif
 
 /// 日结历史持久化：每天 00:01 抓 viewModel.tools 快照写入 SQLite
 /// 路径：~/Library/Application Support/TokenClock/history.sqlite
@@ -65,10 +69,18 @@ final class HistoryStore: @unchecked Sendable {
         if !columns.contains("sessions_json") {
             sqlite3_exec(db, "ALTER TABLE daily_snapshots ADD COLUMN sessions_json TEXT NOT NULL DEFAULT '[]'", nil, nil, nil)
         }
-        if !columns.contains("cache_read_tokens") { sqlite3_exec(db, "ALTER TABLE daily_snapshots ADD COLUMN cache_read_tokens INTEGER NOT NULL DEFAULT -1", nil, nil, nil) }
-        if !columns.contains("cost_value") { sqlite3_exec(db, "ALTER TABLE daily_snapshots ADD COLUMN cost_value REAL NOT NULL DEFAULT 0", nil, nil, nil) }
-        if !columns.contains("cost_complete") { sqlite3_exec(db, "ALTER TABLE daily_snapshots ADD COLUMN cost_complete INTEGER NOT NULL DEFAULT 0", nil, nil, nil) }
-        if !columns.contains("cost_available") { sqlite3_exec(db, "ALTER TABLE daily_snapshots ADD COLUMN cost_available INTEGER NOT NULL DEFAULT 0", nil, nil, nil) }
+        if !columns.contains("cache_read_tokens") {
+            sqlite3_exec(db, "ALTER TABLE daily_snapshots ADD COLUMN cache_read_tokens INTEGER NOT NULL DEFAULT -1", nil, nil, nil)
+        }
+        if !columns.contains("cost_value") {
+            sqlite3_exec(db, "ALTER TABLE daily_snapshots ADD COLUMN cost_value REAL NOT NULL DEFAULT 0", nil, nil, nil)
+        }
+        if !columns.contains("cost_complete") {
+            sqlite3_exec(db, "ALTER TABLE daily_snapshots ADD COLUMN cost_complete INTEGER NOT NULL DEFAULT 0", nil, nil, nil)
+        }
+        if !columns.contains("cost_available") {
+            sqlite3_exec(db, "ALTER TABLE daily_snapshots ADD COLUMN cost_available INTEGER NOT NULL DEFAULT 0", nil, nil, nil)
+        }
     }
 
     /// [SessionSnapshot] → JSON 字符串（空或失败回退 "[]"，保证 NOT NULL）。
@@ -78,11 +90,13 @@ final class HistoryStore: @unchecked Sendable {
             var value: [String: Any] = [
                 "id": $0.id, "displayName": $0.displayName,
                 "tokens": $0.tokens, "messages": $0.messages,
-                "isActive": $0.isActive, "costValue": $0.cost.value,
-                "costComplete": $0.cost.complete, "costAvailable": $0.cost.available,
+                "isActive": $0.isActive,
+                "costValue": $0.cost.value,
+                "costComplete": $0.cost.complete,
+                "costAvailable": $0.cost.available,
             ]
             if let model = $0.model { value["model"] = model }
-            if let cache = $0.cacheReadTokens { value["cacheReadTokens"] = cache }
+            if let cacheReadTokens = $0.cacheReadTokens { value["cacheReadTokens"] = cacheReadTokens }
             return value
         }
         guard let data = try? JSONSerialization.data(withJSONObject: arr, options: []),
@@ -101,16 +115,18 @@ final class HistoryStore: @unchecked Sendable {
                   let tokens = (d["tokens"] as? NSNumber)?.intValue,
                   let messages = (d["messages"] as? NSNumber)?.intValue else { return nil }
             let isActive = d["isActive"] as? Bool ?? false
+            let model = d["model"] as? String
             let hasCost = d["costAvailable"] != nil || d["costValue"] != nil
             let cost = hasCost ? CostEstimate(
                 value: (d["costValue"] as? NSNumber)?.doubleValue ?? 0,
                 complete: d["costComplete"] as? Bool ?? false,
                 available: d["costAvailable"] as? Bool ?? false
             ) : .unavailable
+            let cacheReadTokens = (d["cacheReadTokens"] as? NSNumber)?.intValue
             return DaySnapshot.Tool.Session(id: id, displayName: displayName,
                                             tokens: tokens, messages: messages, isActive: isActive,
-                                            model: d["model"] as? String, cost: cost,
-                                            cacheReadTokens: (d["cacheReadTokens"] as? NSNumber)?.intValue)
+                                            model: model, cost: cost,
+                                            cacheReadTokens: cacheReadTokens)
         }
     }
 
@@ -119,6 +135,24 @@ final class HistoryStore: @unchecked Sendable {
     }
 
     static func dbPath() -> URL {
+#if os(Linux)
+        let environment = ProcessInfo.processInfo.environment
+        let dataHome = environment["XDG_DATA_HOME"].flatMap { $0.isEmpty ? nil : $0 }
+            ?? URL(fileURLWithPath: NSHomeDirectory())
+                .appendingPathComponent(".local/share", isDirectory: true).path
+        return URL(fileURLWithPath: dataHome, isDirectory: true)
+            .appendingPathComponent("tokenclock", isDirectory: true)
+            .appendingPathComponent("history.sqlite")
+#elseif os(Windows)
+        // Windows 历史始终留在当前用户 LocalAppData，不与 macOS/Linux 路径混用。
+        let environment = ProcessInfo.processInfo.environment
+        let local = environment["LOCALAPPDATA"]
+            ?? environment["USERPROFILE"].map { $0 + "\\AppData\\Local" }
+            ?? "C:\\TokenClock"
+        return URL(fileURLWithPath: local, isDirectory: true)
+            .appendingPathComponent("TokenClock", isDirectory: true)
+            .appendingPathComponent("history.sqlite")
+#else
         let appSupport = (try? FileManager.default.url(
             for: .applicationSupportDirectory, in: .userDomainMask,
             appropriateFor: nil, create: true
@@ -126,6 +160,7 @@ final class HistoryStore: @unchecked Sendable {
         return appSupport
             .appendingPathComponent("TokenClock", isDirectory: true)
             .appendingPathComponent("history.sqlite")
+#endif
     }
 
     /// 写入或覆盖一个 date_key 的所有工具快照(幂等:重跑只留最新)
@@ -185,17 +220,23 @@ final class HistoryStore: @unchecked Sendable {
               SELECT DISTINCT date_key FROM daily_snapshots
               ORDER BY date_key DESC LIMIT ?1
             )
-            """, bind: { sqlite3_bind_int($0, 1, Int32(max(1, days))) })
+            """, bind: { statement in
+                sqlite3_bind_int(statement, 1, Int32(max(1, days)))
+            })
     }
 
+    /// 按闭区间查询，date_key 使用 YYYY-MM-DD，可直接按字典序比较。
     func query(from startDateKey: String, through endDateKey: String) -> [DaySnapshot] {
-        query(whereClause: "WHERE date_key >= ?1 AND date_key <= ?2", bind: {
-            sqlite3_bind_text($0, 1, startDateKey, -1, Self.SQLITE_TRANSIENT)
-            sqlite3_bind_text($0, 2, endDateKey, -1, Self.SQLITE_TRANSIENT)
+        query(whereClause: "WHERE date_key >= ?1 AND date_key <= ?2", bind: { statement in
+            sqlite3_bind_text(statement, 1, startDateKey, -1, Self.SQLITE_TRANSIENT)
+            sqlite3_bind_text(statement, 2, endDateKey, -1, Self.SQLITE_TRANSIENT)
         })
     }
 
-    private func query(whereClause: String, bind: (OpaquePointer?) -> Void) -> [DaySnapshot] {
+    private func query(
+        whereClause: String,
+        bind: (OpaquePointer?) -> Void
+    ) -> [DaySnapshot] {
         ioQueue.sync {
             guard let db = db else { return [] }
             var stmt: OpaquePointer?
@@ -231,9 +272,11 @@ final class HistoryStore: @unchecked Sendable {
                 let isActive = sqlite3_column_int(stmt, 5) != 0
                 let sessionsJSON = sqlite3_column_text(stmt, 6).map { String(cString: $0) } ?? "[]"
                 let rawCacheRead = Int(sqlite3_column_int64(stmt, 7))
-                let cost = CostEstimate(value: sqlite3_column_double(stmt, 8),
-                                        complete: sqlite3_column_int(stmt, 9) != 0,
-                                        available: sqlite3_column_int(stmt, 10) != 0)
+                let cost = CostEstimate(
+                    value: sqlite3_column_double(stmt, 8),
+                    complete: sqlite3_column_int(stmt, 9) != 0,
+                    available: sqlite3_column_int(stmt, 10) != 0
+                )
                 byDate[dateKey, default: []].append(
                     Row(name: name, tokens: tokens, messages: messages,
                         cacheRate: cacheRate, isActive: isActive,

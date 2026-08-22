@@ -162,7 +162,7 @@ final class UsageServicePerformanceTests: XCTestCase {
         XCTAssertEqual(service.todayCost().value, expectedCost, accuracy: 0.0000001)
         XCTAssertTrue(service.todayCost().available)
         XCTAssertEqual(service.todaySessions().first?.todayCost.value ?? -1, expectedCost, accuracy: 0.0000001)
-        XCTAssertEqual(service.todaySessions().first?.cacheReadTokens, 5)
+        XCTAssertEqual(service.todayCacheReadTokens(), 5)
 
         let renamed = sessions.appendingPathComponent("renamed.jsonl")
         try FileManager.default.moveItem(at: live, to: renamed)

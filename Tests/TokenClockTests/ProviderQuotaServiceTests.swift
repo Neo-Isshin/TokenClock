@@ -24,3 +24,4 @@ final class ProviderQuotaServiceTests: XCTestCase {
         XCTAssertEqual(CursorQuotaService.userID(from: "header.\(payload).signature"), "user_ABC123")
     }
 }
+

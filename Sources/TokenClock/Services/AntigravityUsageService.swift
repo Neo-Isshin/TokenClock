@@ -1,5 +1,9 @@
 import Foundation
+#if os(macOS)
 import SQLite3
+#else
+import CSQLite
+#endif
 
 /// 从 Antigravity 本地 SQLite 数据库读取 token 使用数据（CLI + IDE + 主应用）
 /// 数据库位置:
@@ -325,27 +329,55 @@ final class AntigravityUsageService: @unchecked Sendable {
         return nil
     }
 
-    /// Prefer the precise protobuf field. The generic `gemini` fallback prevents valid
-    /// Antigravity traffic from being mislabeled as Unknown if the schema evolves.
+    /// Prefer the precise protobuf field. The byte scan remains a compatibility fallback for
+    /// older Antigravity database revisions; the generic `gemini` fallback prevents valid
+    /// Antigravity traffic from being mislabeled as Unknown.
     private func sessionModel(db: OpaquePointer?) -> String {
         var stmt: OpaquePointer?
-        guard sqlite3_prepare_v2(
+        if sqlite3_prepare_v2(
             db, "SELECT data FROM executor_metadata WHERE data IS NOT NULL ORDER BY idx", -1, &stmt, nil
-        ) == SQLITE_OK else { return "gemini" }
-        defer { sqlite3_finalize(stmt) }
+        ) == SQLITE_OK {
+            defer { sqlite3_finalize(stmt) }
+            while sqlite3_step(stmt) == SQLITE_ROW {
+                guard let pointer = sqlite3_column_blob(stmt, 0) else { continue }
+                let length = sqlite3_column_bytes(stmt, 0)
+                guard length > 0 else { continue }
+                if let model = decodeModelFromExecutorMetadata(
+                    Data(bytes: pointer, count: Int(length))
+                ) {
+                    return model
+                }
+            }
+        }
 
-        while sqlite3_step(stmt) == SQLITE_ROW {
-            guard let pointer = sqlite3_column_blob(stmt, 0) else { continue }
-            let length = sqlite3_column_bytes(stmt, 0)
-            guard length > 0 else { continue }
-            if let model = decodeModelFromExecutorMetadata(
-                Data(bytes: pointer, count: Int(length))
-            ) {
-                return model
+        let candidates = ["SELECT data FROM gen_metadata", "SELECT data FROM executor_metadata"]
+        for sql in candidates {
+            var counts: [String: Int] = [:]
+            var fallbackStatement: OpaquePointer?
+            guard sqlite3_prepare_v2(db, sql, -1, &fallbackStatement, nil) == SQLITE_OK else { continue }
+            defer { sqlite3_finalize(fallbackStatement) }
+            while sqlite3_step(fallbackStatement) == SQLITE_ROW {
+                guard let ptr = sqlite3_column_blob(fallbackStatement, 0),
+                      sqlite3_column_bytes(fallbackStatement, 0) > 0 else { continue }
+                let data = Data(bytes: ptr, count: Int(sqlite3_column_bytes(fallbackStatement, 0)))
+                // 宽松解码（无效字节替换为 U+FFFD，不影响 ASCII 模型名的匹配）
+                let text = String(decoding: data, as: UTF8.self)
+                let range = NSRange(text.startIndex..., in: text)
+                for match in Self.geminiIdPattern.matches(in: text, range: range) {
+                    if let r = Range(match.range, in: text) {
+                        counts[String(text[r]), default: 0] += 1
+                    }
+                }
+            }
+            if let dominant = counts.max(by: { $0.value < $1.value })?.key {
+                return dominant
             }
         }
         return "gemini"
     }
+
+    /// gemini 模型 ID 形态：gemini-3.7-flash / gemini-3-pro-preview 等
+    private static let geminiIdPattern = try! NSRegularExpression(pattern: "gemini-[A-Za-z0-9._-]+")
 
     func todaySessions() -> [SessionInfo] {
         let fm = FileManager.default

@@ -1,5 +1,12 @@
 import Foundation
+#if canImport(FoundationNetworking) && !os(Windows)
+import FoundationNetworking
+#endif
+#if os(macOS)
 import SQLite3
+#else
+import CSQLite
+#endif
 
 /// 通过 Cursor 官方 usage API 拉取 token 消耗。
 ///
@@ -15,22 +22,30 @@ import SQLite3
 ///
 /// 同时覆盖 Cursor IDE 和 Cursor Agent CLI，因为两者共用同一套账户系统。
 final class CursorAgentUsageService: @unchecked Sendable {
+    static var cloudFetchEnabled: Bool {
+        UserDefaults.standard.bool(for: .cursorCloudFetchEnabled, default: true)
+    }
+
     private(set) var dailyData: [String: DayUsage] = [:]
     private(set) var hourlyData: [String: HourlyUsage] = [:]
     private(set) var dailyCache: [String: Int] = [:]
     private var recentEntries: [RecentEntry] = []
 
+#if !os(Windows)
     private let session: URLSession
+#endif
     private var sessionToken: String?
     private var userId: String?
     private var lastFetchTime: Date = .distantPast
 
     init() {
+#if !os(Windows)
         let config = URLSessionConfiguration.default
         config.timeoutIntervalForRequest = AppConfig.HTTP.requestTimeout
         config.timeoutIntervalForResource = AppConfig.HTTP.resourceTimeout
         config.httpCookieStorage = nil  // 不使用系统 cookie storage
         session = URLSession(configuration: config)
+#endif
     }
 
     func fullScan() {
@@ -109,9 +124,29 @@ final class CursorAgentUsageService: @unchecked Sendable {
         userId = uid
     }
 
-    /// macOS 上 Cursor IDE 的 state.vscdb 路径
+    /// Cursor IDE 的 state.vscdb 路径。Settings 中可填写 globalStorage 目录，也可直接
+    /// 填写 state.vscdb；Windows 默认映射到 %APPDATA%\Cursor\User\globalStorage。
     private func cursorStateDbPath() -> String {
-        AppPaths.appSupport("Cursor", "User", "globalStorage", "state.vscdb")
+        #if os(Windows)
+        let configured = PathConfig.cursorAgentHome()
+        if configured.lowercased().hasSuffix(".vscdb") { return configured }
+        return configured + "/state.vscdb"
+        #elseif os(Linux)
+        let configured = PathConfig.cursorAgentHome()
+        let candidates: [String]
+        if configured.hasSuffix(".vscdb") {
+            candidates = [configured]
+        } else {
+            candidates = [
+                configured + "/state.vscdb",
+                configured + "/User/globalStorage/state.vscdb",
+            ]
+        }
+        return candidates.first(where: { FileManager.default.isReadableFile(atPath: $0) })
+            ?? candidates[0]
+        #else
+        return AppPaths.appSupport("Cursor", "User", "globalStorage", "state.vscdb")
+        #endif
     }
 
     /// 从 token 提取 userId
@@ -148,14 +183,16 @@ final class CursorAgentUsageService: @unchecked Sendable {
 
     private func fetchUsageData(timeRangeDays: Int) async {
         // 用户可在设置中关闭 Cursor 云端获取，避免凭证外发 cursor.com
-        guard UserDefaults.standard.bool(for: .cursorCloudFetchEnabled, default: true) else { return }
+        guard Self.cloudFetchEnabled else { return }
         guard let token = sessionToken, let uid = userId else { return }
 
         let nowMs = Int(Date().timeIntervalSince1970 * 1000)
         let startMs = nowMs - timeRangeDays * 24 * 60 * 60 * 1000
 
-        guard let url = URL(string: "\(AppConfig.API.cursorBase)/dashboard/get-filtered-usage-events") else { return }
+        let endpoint = "\(AppConfig.API.cursorBase)/dashboard/get-filtered-usage-events"
 
+#if !os(Windows)
+        guard let url = URL(string: endpoint) else { return }
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -163,6 +200,7 @@ final class CursorAgentUsageService: @unchecked Sendable {
         request.setValue(AppConfig.API.cursorOrigin, forHTTPHeaderField: "Origin")
         request.setValue(AppConfig.API.cursorDashboard, forHTTPHeaderField: "Referer")
         request.setValue(AppConfig.HTTP.userAgent, forHTTPHeaderField: "User-Agent")
+#endif
 
         // Cookie 格式：WorkosCursorSessionToken=user_XXX%3A%3AJWT
         let cookieValue: String
@@ -171,7 +209,18 @@ final class CursorAgentUsageService: @unchecked Sendable {
         } else {
             cookieValue = "\(uid)%3A%3A\(token)"
         }
+#if os(Windows)
+        let requestHeaders = [
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "Origin": AppConfig.API.cursorOrigin,
+            "Referer": AppConfig.API.cursorDashboard,
+            "User-Agent": AppConfig.HTTP.userAgent,
+            "Cookie": "WorkosCursorSessionToken=\(cookieValue)",
+        ]
+#else
         request.setValue("WorkosCursorSessionToken=\(cookieValue)", forHTTPHeaderField: "Cookie")
+#endif
 
         // 分页拉满整个窗口：单页 pageSize=200，超过部分曾被静默丢弃。
         // 循环直到某页返回 < pageSize（最后一页）/ 空 / 非 200，安全上限 100 页（=20000 事件，30 天远超）。
@@ -189,18 +238,35 @@ final class CursorAgentUsageService: @unchecked Sendable {
                 "page": page,
                 "pageSize": AppConfig.Scan.cursorPageSize
             ]
-            request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+            guard let requestBody = try? JSONSerialization.data(withJSONObject: body) else { break }
 
             do {
+#if os(Windows)
+                let nativeResponse = try WindowsNativeHTTP.request(
+                    url: endpoint,
+                    method: "POST",
+                    headers: requestHeaders,
+                    body: requestBody,
+                    connectTimeout: AppConfig.HTTP.requestTimeout,
+                    sendTimeout: AppConfig.HTTP.requestTimeout,
+                    receiveTimeout: AppConfig.HTTP.resourceTimeout,
+                    maximumResponseBytes: 8 * 1024 * 1024
+                )
+                let data = nativeResponse.body
+                let statusCode = nativeResponse.statusCode
+#else
+                request.httpBody = requestBody
                 let (data, response) = try await session.data(for: request)
                 guard let http = response as? HTTPURLResponse else { break }
+                let statusCode = http.statusCode
+#endif
 
                 // 401/403：token 过期，清空凭据，下次扫描重新读；停止翻页
-                if http.statusCode == 401 || http.statusCode == 403 {
+                if statusCode == 401 || statusCode == 403 {
                     sawAuthError = true
                     break
                 }
-                guard http.statusCode == 200 else { break }   // 翻页中途非 200：停止，保留已拿到的事件
+                guard statusCode == 200 else { break }   // 翻页中途非 200：停止，保留已拿到的事件
 
                 guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                       let events = json["usageEventsDisplay"] as? [[String: Any]] else { break }

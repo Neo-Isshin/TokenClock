@@ -16,14 +16,20 @@ struct SessionSnapshot: Sendable {
     let isActive: Bool
     let model: String?
     let cost: CostEstimate
+    /// nil 表示旧历史没有保存精确缓存读数，聚合时只能由 cacheRate 估算。
     let cacheReadTokens: Int?
 
     init(id: String, displayName: String, tokens: Int, messages: Int,
          isActive: Bool, model: String? = nil,
          cost: CostEstimate = .unavailable, cacheReadTokens: Int? = nil) {
-        self.id = id; self.displayName = displayName; self.tokens = tokens
-        self.messages = messages; self.isActive = isActive; self.model = model
-        self.cost = cost; self.cacheReadTokens = cacheReadTokens
+        self.id = id
+        self.displayName = displayName
+        self.tokens = tokens
+        self.messages = messages
+        self.isActive = isActive
+        self.model = model
+        self.cost = cost
+        self.cacheReadTokens = cacheReadTokens
     }
 }
 
@@ -35,6 +41,7 @@ struct ToolSnapshot: Sendable {
     let cacheRate: Double
     let isActive: Bool
     let cost: CostEstimate
+    /// nil = 旧记录；新记录必须写入精确值（即使为 0）。
     let cacheReadTokens: Int?
     /// 当日各 session 明细（默认空 → 旧构造调用不破坏）
     let sessions: [SessionSnapshot]
@@ -129,9 +136,9 @@ enum DateHelper: Sendable {
 
         var offsetSeconds = 0
         if index < bytes.count {
-            if bytes[index] == 0x5A || bytes[index] == 0x7A {
+            if bytes[index] == 0x5A || bytes[index] == 0x7A { // Z / z
                 index += 1
-            } else if bytes[index] == 0x2B || bytes[index] == 0x2D {
+            } else if bytes[index] == 0x2B || bytes[index] == 0x2D { // + / -
                 let sign = bytes[index] == 0x2B ? 1 : -1
                 index += 1
                 guard index + 1 < bytes.count,

@@ -1,5 +1,9 @@
 import Foundation
+#if os(Windows) || os(Linux)
+import CSQLite
+#else
 import SQLite3
+#endif
 #if canImport(FoundationNetworking) && !os(Windows)
 import FoundationNetworking
 #endif

@@ -3,25 +3,32 @@ import Foundation
 /// 聚合计算工具使用数据
 enum UsageAggregator {
     /// 计算所有工具的 token 总数
+    /// - Parameter includingCacheRead: true 时返回「包含缓存读」口径（todayTokens + 缓存读）
     static func totalTokens(_ tools: [ToolUsage], includingCacheRead: Bool = false) -> Int {
         tools.reduce(0) {
-            $0 + $1.todayTokens + (includingCacheRead ? $1.todayCacheReadTokens : 0)
+            $0 + ($1.measurementUnit == .tokens && $1.measurementScope == .today
+                ? $1.todayTokens + (includingCacheRead ? $1.todayCacheReadTokens : 0) : 0)
         }
     }
 
     /// 计算所有工具的消息总数
     static func totalMessages(_ tools: [ToolUsage]) -> Int {
-        tools.reduce(0) { $0 + $1.todayMessages }
+        tools.reduce(0) {
+            $0 + ($1.measurementUnit == .tokens && $1.measurementScope == .today ? $1.todayMessages : 0)
+        }
     }
 
     /// 获取 token 消耗最高的工具（最多2个）
     static func topToolsByTokens(_ tools: [ToolUsage], limit: Int = 2) -> [ToolUsage] {
-        tools.sorted { $0.todayTokens > $1.todayTokens }.prefix(limit).map { $0 }
+        tools.filter { $0.measurementUnit == .tokens && $0.measurementScope == .today }
+            .sorted { $0.todayTokens > $1.todayTokens }.prefix(limit).map { $0 }
     }
 
     /// 根据近 N 分钟 token 消耗判断热力 emoji（阈值可自定义）
     static func rateEmoji(_ tools: [ToolUsage]) -> String {
-        let recentTotal = tools.reduce(0) { $0 + $1.recentTokens }
+        let recentTotal = tools.reduce(0) {
+            $0 + ($1.measurementUnit == .tokens && $1.measurementScope == .today ? $1.recentTokens : 0)
+        }
         let burst = UserDefaults.standard.int(for: .rateBurst, default: 0)
         let hot = UserDefaults.standard.int(for: .rateHot, default: 0)
         let active = UserDefaults.standard.int(for: .rateActive, default: 0)
@@ -54,6 +61,7 @@ enum UsageAggregator {
     static func groupedByModel(_ tools: [ToolUsage], unknownLabel: String) -> [ModelGroup] {
         var bucket: [String: ModelGroup] = [:]
         for tool in tools {
+            guard tool.measurementUnit == .tokens, tool.measurementScope == .today else { continue }
             guard tool.todayTokens > 0 || tool.todayMessages > 0 else { continue }
             for session in tool.sessions {
                 let name = ModelNormalizer.normalize(session.model) ?? unknownLabel
@@ -94,7 +102,6 @@ enum UsageAggregator {
         return result
     }
 }
-
 /// 「按模型」视图：某个模型下，各工具对其的消耗贡献
 struct ModelGroup: Identifiable, Hashable {
     var id: String { name }
@@ -104,7 +111,9 @@ struct ModelGroup: Identifiable, Hashable {
     var emoji: String = "🧠"
     var totalTokens: Int = 0
     var totalMessages: Int = 0
+    /// 该模型今日的估算费用（各 session 费用之和；「未知」桶必然查不到价 → 恒为 ≈ 前缀或 0）
     var totalCost: CostEstimate = .unavailable
+    /// 该模型今日的缓存读 token 数（「包含缓存读」口径用）
     var totalCacheReadTokens: Int = 0
     /// 该模型下每个工具的贡献（按 token 降序）
     var contributions: [ToolContribution] = []
@@ -122,7 +131,9 @@ struct ToolContribution: Identifiable, Hashable {
     let emoji: String
     var tokens: Int = 0
     var messages: Int = 0
+    /// 该工具对该模型的今日估算费用
     var cost: CostEstimate = .unavailable
+    /// 该工具对该模型的今日缓存读 token 数（「包含缓存读」口径用）
     var cacheReadTokens: Int = 0
 
     var formattedCost: String {

@@ -5,6 +5,19 @@ import XCTest
 
 @MainActor
 final class ClockInteractionTests: XCTestCase {
+    func testDefaultWindowPositionKeepsEverySizeInsideVisibleFrame() {
+        let screen = NSRect(x: 0, y: 98, width: 3440, height: 1312)
+        for size in ClockSize.allCases {
+            let panel = NSSize(width: size.panelWidth, height: size.diameter)
+            let origin = ViewModel.defaultWindowPosition(screenFrame: screen, panelSize: panel)
+            let frame = NSRect(origin: origin, size: panel)
+            XCTAssertGreaterThanOrEqual(frame.minX, screen.minX)
+            XCTAssertGreaterThanOrEqual(frame.minY, screen.minY)
+            XCTAssertLessThanOrEqual(frame.maxX, screen.maxX)
+            XCTAssertLessThanOrEqual(frame.maxY, screen.maxY)
+        }
+    }
+
     func testStationaryClickTogglesWithoutMovingWindow() throws {
         var clickCount = 0
         let (window, view) = makeWindow { clickCount += 1 }
@@ -51,20 +64,6 @@ final class ClockInteractionTests: XCTestCase {
         XCTAssertEqual(clickCount, 0)
         XCTAssertEqual(window.frame.origin.x, 150, accuracy: 0.001)
         XCTAssertEqual(window.frame.origin.y, 130, accuracy: 0.001)
-    }
-
-    func testDefaultWindowPositionKeepsEverySizeInsideVisibleFrame() {
-        let visible = NSRect(x: 0, y: 98, width: 3440, height: 1312)
-        for size in ClockSize.allCases {
-            let origin = ViewModel.defaultWindowPosition(
-                screenFrame: visible,
-                panelSize: NSSize(width: size.panelWidth, height: size.diameter)
-            )
-            XCTAssertGreaterThanOrEqual(origin.x, visible.minX)
-            XCTAssertGreaterThanOrEqual(origin.y, visible.minY)
-            XCTAssertLessThanOrEqual(origin.x + size.panelWidth, visible.maxX)
-            XCTAssertLessThanOrEqual(origin.y + size.diameter, visible.maxY)
-        }
     }
 
     private func makeWindow(onClick: @escaping () -> Void) -> (NSWindow, ClockInteractionNSView) {

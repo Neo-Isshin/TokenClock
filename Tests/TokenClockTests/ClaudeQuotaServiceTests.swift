@@ -5,21 +5,41 @@ import XCTest
 final class ClaudeQuotaServiceTests: XCTestCase {
     func testDecodesSubscriptionWindowsAndModelLimits() throws {
         let payload = #"{"five_hour":{"utilization":25,"resets_at":"2026-08-21T12:00:00Z"},"seven_day":{"utilization":"70","resets_at":"2026-08-25T12:00:00Z"},"seven_day_opus":{"utilization":90,"resets_at":2000000000}}"#
-        let snapshot = try XCTUnwrap(ClaudeQuotaService.decodeUsageResponse(Data(payload.utf8), planType: "max"))
+        let refreshed = Date(timeIntervalSince1970: 1_900_000_000)
+        let snapshot = try XCTUnwrap(ClaudeQuotaService.decodeUsageResponse(
+            Data(payload.utf8), planType: "max", now: refreshed
+        ))
+
+        XCTAssertEqual(snapshot.status, .available)
+        XCTAssertEqual(snapshot.source, .oauthAPI)
+        XCTAssertEqual(snapshot.planType, "max")
+        XCTAssertEqual(snapshot.refreshedAt, refreshed)
         XCTAssertEqual(snapshot.buckets.map(\.id), ["claude:five_hour", "claude:seven_day", "claude:seven_day_opus"])
         XCTAssertEqual(snapshot.buckets.map(\.remainingPercent), [75, 30, 10])
+        XCTAssertNotNil(snapshot.buckets[0].resetsAt)
     }
 
-    func testDecodesClaudeCodeCredentialAndPaths() throws {
-        let payload = #"{"claudeAiOauth":{"accessToken":"secret-token","subscriptionType":"pro"}}"#
-        XCTAssertEqual(
-            try XCTUnwrap(ClaudeQuotaService.decodeCredentialPayload(Data(payload.utf8))).subscriptionType,
-            "pro"
-        )
-        XCTAssertEqual(ClaudeQuotaService.credentialCandidatePaths(
-            environment: ["CLAUDE_CONFIG_DIR": "/custom/claude"], homeDirectory: "/home/neo",
+    func testDecodesClaudeCodeCredentialWithoutLeakingOtherFields() throws {
+        let payload = #"{"claudeAiOauth":{"accessToken":"secret-token","refreshToken":"do-not-use","subscriptionType":"pro"}}"#
+        let credential = try XCTUnwrap(ClaudeQuotaService.decodeCredentialPayload(Data(payload.utf8)))
+        XCTAssertEqual(credential.accessToken, "secret-token")
+        XCTAssertEqual(credential.subscriptionType, "pro")
+    }
+
+    func testBuildsAndDeduplicatesCredentialPaths() {
+        let paths = ClaudeQuotaService.credentialCandidatePaths(
+            environment: ["CLAUDE_CONFIG_DIR": "/custom/claude"],
+            homeDirectory: "/home/neo",
             configuredClaudeHome: "/custom/claude"
-        ), ["/custom/claude/.credentials.json", "/home/neo/.claude/.credentials.json"])
+        )
+        XCTAssertEqual(paths, [
+            "/custom/claude/.credentials.json",
+            "/home/neo/.claude/.credentials.json",
+        ])
+    }
+
+    func testRejectsResponsesWithoutQuotaWindows() {
+        XCTAssertNil(ClaudeQuotaService.decodeUsageResponse(Data(#"{"five_hour":null}"#.utf8)))
     }
 
     #if os(macOS)

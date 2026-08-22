@@ -6,10 +6,14 @@ import SQLite3
 
 final class UsageOverviewTests: XCTestCase {
     func testEmptySnapshotsDoNotProduceZeroRowsOrZeroDollarClaim() {
-        let emptyTool = DaySnapshot.Tool(name: "Codex", tokens: 0, messages: 0, cacheRate: 0,
-            isActive: false, cost: .zero, cacheReadTokens: nil, sessions: [])
-        let data = UsageOverviewBuilder.make(startDate: date("2026-08-20"), endDate: date("2026-08-20"),
-            snapshots: [day("2026-08-20", tools: [emptyTool])], grouping: .tool)
+        let emptyTool = DaySnapshot.Tool(
+            name: "Codex", tokens: 0, messages: 0, cacheRate: 0, isActive: false,
+            cost: .zero, cacheReadTokens: nil, sessions: []
+        )
+        let data = UsageOverviewBuilder.make(
+            startDate: date("2026-08-20"), endDate: date("2026-08-20"),
+            snapshots: [day("2026-08-20", tools: [emptyTool])], grouping: .tool
+        )
         XCTAssertTrue(data.rows.isEmpty)
         XCTAssertFalse(data.summary.cost.available)
         XCTAssertFalse(data.containsUnavailableCost)
@@ -122,17 +126,37 @@ final class UsageOverviewTests: XCTestCase {
 
 #if os(macOS)
     func testHistoryStoreMigratesLegacySchemaBeforeWritingExtendedRows() throws {
-        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("TokenClockLegacyHistory-\(UUID().uuidString)", isDirectory: true)
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("TokenClockLegacyHistory-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directory) }
         let path = directory.appendingPathComponent("history.sqlite")
-        var db: OpaquePointer?; XCTAssertEqual(sqlite3_open(path.path, &db), SQLITE_OK)
-        sqlite3_exec(db, "CREATE TABLE daily_snapshots (date_key TEXT NOT NULL, tool_name TEXT NOT NULL, tokens INTEGER NOT NULL, messages INTEGER NOT NULL, cache_rate REAL NOT NULL DEFAULT 0, is_active INTEGER NOT NULL DEFAULT 0, settled_at TEXT NOT NULL, sessions_json TEXT NOT NULL DEFAULT '[]', PRIMARY KEY(date_key, tool_name)); INSERT INTO daily_snapshots VALUES ('2026-08-19','Codex',90,2,0.25,0,'2026-08-19T23:59:00Z','[]');", nil, nil, nil)
+        var db: OpaquePointer?
+        XCTAssertEqual(sqlite3_open(path.path, &db), SQLITE_OK)
+        sqlite3_exec(db, """
+            CREATE TABLE daily_snapshots (
+              date_key TEXT NOT NULL, tool_name TEXT NOT NULL, tokens INTEGER NOT NULL,
+              messages INTEGER NOT NULL, cache_rate REAL NOT NULL DEFAULT 0,
+              is_active INTEGER NOT NULL DEFAULT 0, settled_at TEXT NOT NULL,
+              sessions_json TEXT NOT NULL DEFAULT '[]', PRIMARY KEY(date_key, tool_name)
+            );
+            INSERT INTO daily_snapshots VALUES
+              ('2026-08-19','Codex',90,2,0.25,0,'2026-08-19T23:59:00Z','[]');
+            """, nil, nil, nil)
         sqlite3_close(db)
+
         let store = HistoryStore(path: path)
-        XCTAssertNil(try XCTUnwrap(store.query(from: "2026-08-19", through: "2026-08-19").first?.tools.first).cacheReadTokens)
-        store.upsertDay(dateKey: "2026-08-20", snapshots: [ToolSnapshot(name: "Codex", tokens: 100, messages: 3, cacheRate: 0.2, isActive: false, cost: .init(value: 1, complete: true, available: true), cacheReadTokens: 25)])
-        XCTAssertEqual(try XCTUnwrap(store.query(from: "2026-08-20", through: "2026-08-20").first?.tools.first).cacheReadTokens, 25)
+        let legacy = try XCTUnwrap(store.query(from: "2026-08-19", through: "2026-08-19").first?.tools.first)
+        XCTAssertNil(legacy.cacheReadTokens)
+        XCTAssertFalse(legacy.cost.available)
+        store.upsertDay(dateKey: "2026-08-20", snapshots: [
+            ToolSnapshot(name: "Codex", tokens: 100, messages: 3, cacheRate: 0.2,
+                         isActive: false, cost: .init(value: 1, complete: true, available: true),
+                         cacheReadTokens: 25)
+        ])
+        let fresh = try XCTUnwrap(store.query(from: "2026-08-20", through: "2026-08-20").first?.tools.first)
+        XCTAssertEqual(fresh.cacheReadTokens, 25)
+        XCTAssertEqual(fresh.cost.value, 1, accuracy: 0.0001)
     }
 #endif
 

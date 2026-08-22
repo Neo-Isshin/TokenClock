@@ -8,6 +8,11 @@ let package = Package(
         .executableTarget(
             name: "TokenClock",
             path: "Sources/TokenClock",
+            exclude: [
+                "Linux",
+                "Windows",
+                "Resources/glass_disc.png",
+            ],
             resources: [
                 .copy("Resources/pricing-snapshot.json"),
             ],

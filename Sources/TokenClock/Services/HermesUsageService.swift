@@ -1,5 +1,9 @@
 import Foundation
+#if os(macOS)
 import SQLite3
+#else
+import CSQLite
+#endif
 
 /// 从 Hermes Agent 本地 SQLite 数据库读取 token 使用数据
 /// 数据库位置: ~/.hermes/state.db
