@@ -9,12 +9,13 @@
 #
 set -u
 
-CLI_VERSION="1.4.7"
+CLI_VERSION="1.4.8"
 # Process name (comm) of the running clock. **The executable of every variant must be named TokenClock**
 # (placed in a glass/ or normal/ subdir to distinguish variants), so that no matter which variant is
 # launched the process name is TokenClock — the pgrep/pkill -x below hits it precisely and never
 # accidentally matches the shell or the script itself.
 APP_PROCESS="TokenClock"
+LINUX_APP_PROCESS="TokenClock.bin"
 
 # Constants shared across scripts (kept in sync with cli/install.sh)
 MIN_MACOS=12              # minimum supported macOS major version (Monterey)
@@ -60,14 +61,34 @@ validate_variant_compat() {
   esac
 }
 
-# PIDs of any running TokenClock (may be multiple lines).
+# PIDs of any TokenClock owned by the current user (may be multiple lines).
 # Double-matched, each as a fallback for the other:
 #   ① executable path lives under ~/.tokenclock/ — covers the current glass/normal subdir layout and
 #      the legacy tokenclock-glass/normal naming (where comm is not TokenClock);
-#   ② process name is TokenClock — covers dev .build builds and /Applications .app bundles.
+#   ② process name is TokenClock — covers dev .build builds and /Applications .app bundles;
+#   ③ on FUSE-less Linux, the AppImage runtime launches an extracted TokenClock.bin child.
 # The CLI itself lives in ~/.local/bin, so neither rule ever hits it or the shell.
 running_pids() {
-  { pgrep -f "${HOME}/.tokenclock/[^/]*/TokenClock( |$)" 2>/dev/null; pgrep -x "$APP_PROCESS" 2>/dev/null; } | sort -u
+  local uid; uid="$(id -u)"
+  {
+    pgrep -u "$uid" -f "${HOME}/.tokenclock/[^/]*/TokenClock( |$)" 2>/dev/null
+    pgrep -u "$uid" -x "$APP_PROCESS" 2>/dev/null
+    [ "$PLATFORM" != Linux ] || pgrep -u "$uid" -x "$LINUX_APP_PROCESS" 2>/dev/null
+  } | sort -u
+}
+
+terminate_running() {
+  local uid; uid="$(id -u)"
+  pkill -u "$uid" -f "${HOME}/.tokenclock/[^/]*/TokenClock( |$)" 2>/dev/null
+  pkill -u "$uid" -x "$APP_PROCESS" 2>/dev/null
+  [ "$PLATFORM" != Linux ] || pkill -u "$uid" -x "$LINUX_APP_PROCESS" 2>/dev/null
+}
+
+kill_running() {
+  local uid; uid="$(id -u)"
+  pkill -9 -u "$uid" -f "${HOME}/.tokenclock/[^/]*/TokenClock( |$)" 2>/dev/null
+  pkill -9 -u "$uid" -x "$APP_PROCESS" 2>/dev/null
+  [ "$PLATFORM" != Linux ] || pkill -9 -u "$uid" -x "$LINUX_APP_PROCESS" 2>/dev/null
 }
 
 # Print the first path that actually exists, or fail non-zero (no output).
@@ -120,7 +141,16 @@ find_normal() {
 launch_path() {
   case "$1" in
     *.app) open "$1" ;;
-    *) nohup "$1" >/dev/null 2>&1 & ;;
+    *)
+      if [ "$PLATFORM" = Linux ] \
+         && { [ ! -e /dev/fuse ] || ! ldconfig -p 2>/dev/null | grep -q 'libfuse\.so\.2'; }; then
+        # Type-2 AppImages can self-extract without FUSE. This keeps the public one-liner
+        # working on Debian 13 / Ubuntu 24.04 minimal desktops without requiring a root install.
+        APPIMAGE_EXTRACT_AND_RUN=1 nohup "$1" >/dev/null 2>&1 &
+      else
+        nohup "$1" >/dev/null 2>&1 &
+      fi
+      ;;
   esac
 }
 
@@ -199,12 +229,10 @@ cmd_stop() {
   # issue). Try unloading both variants' plists; ignore ones that don't exist.
   unload_launchagent glass
   unload_launchagent normal
-  pkill    -f "${HOME}/.tokenclock/[^/]*/TokenClock( |$)" 2>/dev/null
-  pkill    -x "$APP_PROCESS" 2>/dev/null
+  terminate_running
   sleep 2
   if [ -n "$(running_pids)" ]; then
-    pkill -9 -f "${HOME}/.tokenclock/[^/]*/TokenClock( |$)" 2>/dev/null
-    pkill -9 -x "$APP_PROCESS" 2>/dev/null
+    kill_running
     sleep 0.3
   fi
   if [ -n "$(running_pids)" ]; then
@@ -227,8 +255,7 @@ cmd_uninstall() {
   # 1. Stop the service: unload (prevents KeepAlive revival) + pkill fallback
   unload_launchagent glass
   unload_launchagent normal
-  pkill -f "${HOME}/.tokenclock/[^/]*/TokenClock( |$)" 2>/dev/null
-  pkill -x "$APP_PROCESS" 2>/dev/null
+  terminate_running
   sleep 1
   # 2. Remove both variants' plists
   if [ "$PLATFORM" = Darwin ]; then
@@ -325,14 +352,14 @@ cmd_update() {
     return 0
   fi
 
-  # Don't stop up front: install.sh's cp can overwrite the running binary (macOS unlink semantics
-  # allow it). Only restart when something was actually deployed (or --force) — restart does
-  # stop+start internally — so we avoid interrupting a running clock when nothing changed.
+  # Don't stop up front: install.sh stages a sibling file and atomically replaces the installed
+  # path, so a running process safely keeps its old inode on every platform. Only restart when
+  # something was actually deployed (or --force), avoiding interruption on a no-op update.
   local status_file force_arg=""
   status_file="$(umask 077; mktemp -t tokenclock-status.XXXXXX)" || die "Failed to create a status file"
   [ "$force" -eq 1 ] && force_arg="--force"
 
-  # Run the installer with --no-start: fetch + build + cp as needed; it reports DEPLOYED via the
+  # Run the installer with --no-start: fetch + build + atomically deploy as needed; it reports DEPLOYED via the
   # status file. --no-start skips the API prompt (preserves existing UserDefaults) and the first-launch
   # scan; detect_and_set_language is also guarded off on this path, respecting the user's chosen language.
   if ! TOKENCLOCK_STATUS_FILE="$status_file" bash "$tmp_script" --no-start $force_arg; then
