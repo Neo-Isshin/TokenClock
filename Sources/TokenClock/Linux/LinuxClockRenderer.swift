@@ -46,17 +46,16 @@ final class LinuxClockRenderer: @unchecked Sendable {
         let centerY = height / 2
         let radius = min(width, height) / 2 - 4
         let theme = snapshot.theme
-        let quickTextColor = quickContrastColor()
 
         drawDial(context, centerX, centerY, radius, theme)
         if theme.hasDialDecoration {
             drawSkyDecoration(context, centerX, centerY, radius)
         }
         drawTickMarks(context, centerX, centerY, radius, theme)
-        drawNumbers(context, centerX, centerY, radius, theme, snapshot.size.scale, colorOverride: quickTextColor)
+        drawNumbers(context, centerX, centerY, radius, theme, snapshot.size.scale)
         drawHands(context, centerX, centerY, radius, theme, snapshot.date, snapshot.timeZone)
         drawCenterDot(context, centerX, centerY, theme)
-        drawOverlay(context, width, height, snapshot, colorOverride: quickTextColor)
+        drawOverlay(context, width, height, snapshot)
     }
 
     /// Compact face-only rendering used by Linux's visual clock-face picker.
@@ -299,12 +298,12 @@ final class LinuxClockRenderer: @unchecked Sendable {
         let firstY = height / 2 - Double(max(0, activeTools.count - 1)) * rowSpacing / 2
         for (index, tool) in activeTools.enumerated() {
             drawText(context, "\(tool.emoji) \(tool.abbreviation)", family: "Sans", size: 13 * scale, weight: 600,
-                     x: 22 * scale, y: firstY + Double(index) * rowSpacing, alignment: 0,
+                     x: 32 * scale, y: firstY + Double(index) * rowSpacing, alignment: 0,
                      color: withAlpha(primary, primary.alpha * 0.75))
         }
 
         drawText(context, UsageAggregator.rateEmoji(tools), family: "Noto Color Emoji, Emoji, Sans", size: 28 * scale, weight: 400,
-                 x: width - 22 * scale, y: height / 2, alignment: 2, color: LinuxColor(1, 1, 1))
+                 x: width - 32 * scale, y: height / 2, alignment: 2, color: LinuxColor(1, 1, 1))
     }
 
     private func roundHand(
@@ -520,12 +519,4 @@ final class LinuxClockRenderer: @unchecked Sendable {
         LinuxColor(color.red, color.green, color.blue, alpha)
     }
 
-    private func quickContrastColor() -> LinuxColor? {
-        switch UserDefaults.standard.int(for: .quickContrastPreset, default: 0) {
-        case 1: return LinuxColor(1, 1, 1)
-        case 2: return LinuxColor(0, 0, 0)
-        case 3: return LinuxColor(1, 214.0 / 255.0, 10.0 / 255.0)
-        default: return nil
-        }
-    }
 }

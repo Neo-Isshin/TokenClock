@@ -4,6 +4,7 @@ import AppKit
 final class FloatingPanel: NSPanel {
     /// 面板宽 / 高由用户选择的表盘大小（ClockSize）派生，读取 UserDefaults，随设置实时变化。
     static var panelWidth: CGFloat { currentClockSize.panelWidth }
+    static var detailPanelWidth: CGFloat { currentClockSize.detailPanelWidth }
     static var collapsedHeight: CGFloat { currentClockSize.diameter }
     static let resizeGripHeight: CGFloat = 18
     static var clockHeight: CGFloat { currentClockSize.diameter }
@@ -99,7 +100,7 @@ final class DropdownPanel: NSPanel {
 
     init() {
         super.init(
-            contentRect: NSRect(x: 0, y: 0, width: FloatingPanel.panelWidth, height: FloatingPanel.collapsedHeight),
+            contentRect: NSRect(x: 0, y: 0, width: FloatingPanel.detailPanelWidth, height: FloatingPanel.collapsedHeight),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
@@ -162,7 +163,7 @@ final class DropdownPanel: NSPanel {
         let newHeight = min(max(requestedHeight, minPanelHeight), maxPanelHeight)
         preferredPanelHeight = newHeight
         setFrame(
-            NSRect(x: frame.minX, y: resizeTopY - newHeight, width: FloatingPanel.panelWidth, height: newHeight),
+            NSRect(x: frame.minX, y: resizeTopY - newHeight, width: FloatingPanel.detailPanelWidth, height: newHeight),
             display: true
         )
     }
@@ -180,7 +181,7 @@ final class DropdownPanel: NSPanel {
             NSRect(
                 x: frame.minX,
                 y: frame.maxY - targetHeight,
-                width: FloatingPanel.panelWidth,
+                width: FloatingPanel.detailPanelWidth,
                 height: targetHeight
             ),
             display: true
@@ -203,9 +204,9 @@ final class DropdownPanel: NSPanel {
 
     private func frame(below clockFrame: NSRect, height: CGFloat) -> NSRect {
         NSRect(
-            x: clockFrame.midX - FloatingPanel.panelWidth / 2,
+            x: clockFrame.midX - FloatingPanel.detailPanelWidth / 2,
             y: clockFrame.minY - height,
-            width: FloatingPanel.panelWidth,
+            width: FloatingPanel.detailPanelWidth,
             height: height
         )
     }

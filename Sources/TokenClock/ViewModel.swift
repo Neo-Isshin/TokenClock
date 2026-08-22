@@ -17,6 +17,15 @@ enum QuickContrastPreset: Int, CaseIterable {
     var hex: String {
         switch self { case .light: return "#FFFFFF"; case .dark: return "#000000"; case .amber: return "#FFD60A" }
     }
+
+    static func matchingPanelColor(_ hex: String?) -> Self? {
+        switch hex?.uppercased() {
+        case Self.light.hex: return .light
+        case Self.dark.hex: return .dark
+        case Self.amber.hex: return .amber
+        default: return nil
+        }
+    }
 }
 
 /// 下拉面板分组模式：按会话 / 按模型
@@ -144,20 +153,10 @@ final class ViewModel: ObservableObject {
     }
     var effectiveDialNumberColor: Color? { dialTextMode == .theme ? nil : effectiveDialPrimary }
     var quickContrastPreset: QuickContrastPreset? {
-        switch (dialTextMode, dropdownTextColorHex?.uppercased()) {
-        case (.white, "#FFFFFF"): return .light
-        case (.black, "#000000"): return .dark
-        case (.custom, "#FFD60A") where dialTextColorHex.uppercased() == "#FFD60A": return .amber
-        default: return nil
-        }
+        QuickContrastPreset.matchingPanelColor(dropdownTextColorHex)
     }
     func cycleQuickContrast() {
         let preset = quickContrastPreset?.next ?? .light
-        switch preset {
-        case .light: dialTextMode = .white
-        case .dark: dialTextMode = .black
-        case .amber: dialTextColorHex = preset.hex; dialTextMode = .custom
-        }
         dropdownTextColorHex = preset.hex
     }
 

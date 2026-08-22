@@ -61,7 +61,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         detailContentView.frame = NSRect(
             x: 0,
             y: 0,
-            width: FloatingPanel.panelWidth,
+            width: FloatingPanel.detailPanelWidth,
             height: FloatingPanel.collapsedHeight
         )
         detailContentView.autoresizingMask = [.width, .height]
@@ -210,8 +210,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         sizeItem.submenu = sizeMenu
         menu.addItem(sizeItem)
 
-        // 文字颜色保留完整手动设置；下拉面板里的按钮只是三档快捷切换。
-        let appearanceMenu = NSMenu()
+        // 两套文字颜色都作为一级菜单展示，避免再藏进「表盘外观」二级菜单。
+        // 下拉面板里的快捷按钮仅循环详情面板文字色，完整手动设置仍保留在这里。
         let dialTextMenu = NSMenu()
         for (mode, title) in [(DialTextMode.theme, tr("menu.dialTextTheme")),
                               (.white, tr("menu.dialTextWhite")),
@@ -226,7 +226,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         dialTextMenu.addItem(dialCustom)
         let dialTextItem = NSMenuItem(title: tr("menu.dialTextColor"), action: nil, keyEquivalent: "")
         dialTextItem.submenu = dialTextMenu
-        appearanceMenu.addItem(dialTextItem)
+        menu.addItem(dialTextItem)
 
         let panelTextMenu = NSMenu()
         for (hex, title) in [(nil, tr("menu.panelTextTheme")),
@@ -242,11 +242,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         panelTextMenu.addItem(panelCustom)
         let panelTextItem = NSMenuItem(title: tr("menu.panelTextColor"), action: nil, keyEquivalent: "")
         panelTextItem.submenu = panelTextMenu
-        appearanceMenu.addItem(panelTextItem)
-
-        let appearanceItem = NSMenuItem(title: tr("menu.dialAppearance"), action: nil, keyEquivalent: "")
-        appearanceItem.submenu = appearanceMenu
-        menu.addItem(appearanceItem)
+        menu.addItem(panelTextItem)
 
         let apiItem = NSMenuItem(title: L10n.shared.tr("menu.api", Int(AppDelegate.resolveAPIServerPort())),
                                  action: #selector(copyAPIEndpoint(_:)), keyEquivalent: "")
@@ -913,9 +909,9 @@ private struct DropdownPanelView: View {
                 onResizeChanged: onResizeChanged,
                 onResizeEnded: onResizeEnded
             )
-            .frame(width: FloatingPanel.panelWidth, height: FloatingPanel.resizeGripHeight)
+            .frame(width: FloatingPanel.detailPanelWidth, height: FloatingPanel.resizeGripHeight)
         }
-        .frame(width: FloatingPanel.panelWidth)
+        .frame(width: FloatingPanel.detailPanelWidth)
     }
 }
 

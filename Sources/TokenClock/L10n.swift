@@ -94,7 +94,6 @@ final class L10n: @unchecked Sendable {
         "menu.language":         [.zhHans: "🌐 语言",              .zhHant: "🌐 語言",              .en: "🌐 Language"],
         "menu.settings":         [.zhHans: "⚙️ 设置",              .zhHant: "⚙️ 設定",              .en: "⚙️ Settings"],
         "menu.launchAtLogin":    [.zhHans: "开机自启",              .zhHant: "開機自啟",              .en: "Launch at Login"],
-        "menu.dialAppearance":   [.zhHans: "🪟 表盘外观",           .zhHant: "🪟 錶盤外觀",           .en: "🪟 Dial Appearance"],
         "menu.dialTextColor":    [.zhHans: "文字颜色",             .zhHant: "文字顏色",              .en: "Text Color"],
         "menu.dialTextTheme":    [.zhHans: "跟随主题",             .zhHant: "跟隨主題",              .en: "Follow Theme"],
         "menu.dialTextWhite":    [.zhHans: "白色",                 .zhHant: "白色",                  .en: "White"],

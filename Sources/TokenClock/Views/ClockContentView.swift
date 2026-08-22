@@ -66,7 +66,7 @@ struct ClockContentView: View {
                             .foregroundColor(viewModel.effectiveDialPrimary.opacity(0.75))
                     }
                 }
-                .padding(.leading, 22 * s)
+                .padding(.leading, 32 * s)
                 Spacer()
             }
 
@@ -75,7 +75,7 @@ struct ClockContentView: View {
                 Spacer()
                 Text(viewModel.rateEmoji)
                     .font(.system(size: 28 * s))
-                    .padding(.trailing, 22 * s)
+                    .padding(.trailing, 32 * s)
             }
 
             // SwiftUI 的 tap 手势会吞掉「窗口背景拖拽」的鼠标序列（normal 版曾因此拖不动表盘）。
