@@ -13,6 +13,8 @@ final class OpenClawUsageService: @unchecked Sendable {
     private var fileCacheContrib: [String: [String: Int]] = [:]
     private var fileRecentContrib: [String: [RecentEntry]] = [:]
     private var fileModelContrib: [String: [String: [String: Int]]] = [:]
+    /// path → date → model → billable token buckets.
+    private var fileModelBucketContrib: [String: [String: [String: ModelBuckets]]] = [:]
     private var fileAgentNames: [String: String] = [:]
     private var recentEntries: [RecentEntry] = []
 
@@ -47,6 +49,7 @@ final class OpenClawUsageService: @unchecked Sendable {
         fileCacheContrib.removeAll()
         fileRecentContrib.removeAll()
         fileModelContrib.removeAll()
+        fileModelBucketContrib.removeAll()
         fileAgentNames.removeAll()
         recentEntries = []
         scanAgentDirectories()
@@ -136,6 +139,7 @@ final class OpenClawUsageService: @unchecked Sendable {
                     fileCacheContrib.removeValue(forKey: fullPath)
                     fileRecentContrib.removeValue(forKey: fullPath)
                     fileModelContrib.removeValue(forKey: fullPath)
+                    fileModelBucketContrib.removeValue(forKey: fullPath)
                     fileCache[fullPath] = FileMeta(path: fullPath, modDate: modDate)
                     continue
                 }
@@ -160,6 +164,7 @@ final class OpenClawUsageService: @unchecked Sendable {
             fileCacheContrib.removeValue(forKey: path)
             fileRecentContrib.removeValue(forKey: path)
             fileModelContrib.removeValue(forKey: path)
+            fileModelBucketContrib.removeValue(forKey: path)
             fileAgentNames.removeValue(forKey: path)
         }
     }
@@ -212,6 +217,7 @@ final class OpenClawUsageService: @unchecked Sendable {
         var newCacheContrib: [String: Int] = [:]
         var newRecent: [RecentEntry] = []
         var newModels: [String: [String: Int]] = [:]
+        var newModelBuckets: [String: [String: ModelBuckets]] = [:]
 
         guard let readResult = JSONLLineReader.read(path: path, matchingAny: Self.assistantLineNeedle, onLine: { line in
             if line.contains("\"assistant\""), let result = parseAssistantLine(line) {
@@ -219,7 +225,7 @@ final class OpenClawUsageService: @unchecked Sendable {
                            dailyContrib: &newDailyContrib,
                            hourlyContrib: &newHourlyContrib,
                            cacheContrib: &newCacheContrib, recent: &newRecent,
-                           models: &newModels)
+                           models: &newModels, modelBuckets: &newModelBuckets)
             }
         }) else { return }
         _ = JSONLLineReader.consumeCompleteTrailingLine(readResult.trailingData) { line in
@@ -228,7 +234,7 @@ final class OpenClawUsageService: @unchecked Sendable {
                            dailyContrib: &newDailyContrib,
                            hourlyContrib: &newHourlyContrib,
                            cacheContrib: &newCacheContrib, recent: &newRecent,
-                           models: &newModels)
+                           models: &newModels, modelBuckets: &newModelBuckets)
             }
         }
 
@@ -237,6 +243,7 @@ final class OpenClawUsageService: @unchecked Sendable {
         fileCacheContrib[path] = newCacheContrib
         fileRecentContrib[path] = newRecent
         fileModelContrib[path] = newModels
+        fileModelBucketContrib[path] = newModelBuckets
     }
 
     private struct ParseResult {
@@ -246,6 +253,7 @@ final class OpenClawUsageService: @unchecked Sendable {
         let cacheTokens: Int
         let timestamp: Date?
         let model: String?
+        let buckets: ModelBuckets
     }
 
     private func parseAssistantLine(_ line: String) -> ParseResult? {
@@ -273,7 +281,11 @@ final class OpenClawUsageService: @unchecked Sendable {
         return ParseResult(dateKey: dateKey, hourKey: hourKey,
                           tokens: tokens, cacheTokens: cacheTokens,
                           timestamp: DateHelper.parseISO8601(timestamp),
-                          model: (obj["model"] as? String) ?? (msg["model"] as? String))
+                          model: (obj["model"] as? String) ?? (msg["model"] as? String),
+                          buckets: ModelBuckets(
+                            input: input, output: output,
+                            cacheRead: cacheRead, cacheWrite: cacheWrite
+                          ))
     }
 
     private func accumulate(_ result: ParseResult, today: String,
@@ -281,7 +293,8 @@ final class OpenClawUsageService: @unchecked Sendable {
                             hourlyContrib: inout [String: HourlyUsage],
                             cacheContrib: inout [String: Int],
                             recent: inout [RecentEntry],
-                            models: inout [String: [String: Int]]) {
+                            models: inout [String: [String: Int]],
+                            modelBuckets: inout [String: [String: ModelBuckets]]) {
         // daily
         if var existing = dailyData[result.dateKey] {
             existing.tokens += result.tokens
@@ -321,6 +334,8 @@ final class OpenClawUsageService: @unchecked Sendable {
         }
         if let model = result.model, !model.isEmpty {
             models[result.dateKey, default: [:]][model, default: 0] += result.tokens
+            modelBuckets[result.dateKey, default: [:]][model, default: ModelBuckets()]
+                .merge(result.buckets)
         }
     }
 
@@ -336,10 +351,30 @@ final class OpenClawUsageService: @unchecked Sendable {
 
     // MARK: - 今日活跃 Agent 列表
 
+    func todayModelBuckets() -> [String: ModelBuckets] {
+        let today = DateHelper.todayKey()
+        var result: [String: ModelBuckets] = [:]
+        for dates in fileModelBucketContrib.values {
+            for (model, buckets) in dates[today] ?? [:] {
+                result[model, default: ModelBuckets()].merge(buckets)
+            }
+        }
+        return result
+    }
+
+    func todayCost() -> CostEstimate {
+        PricingService.shared.cost(of: todayModelBuckets())
+    }
+
+    func todayCacheReadTokens() -> Int {
+        dailyCache[DateHelper.todayKey()] ?? 0
+    }
+
     /// 返回今日每个活跃 agent 的数据（用于展开展示）
     func todaySessions() -> [SessionInfo] {
         let today = DateHelper.todayKey()
         var agents: [String: (tokens: Int, messages: Int, models: [String: Int])] = [:]
+        var agentBuckets: [String: [String: ModelBuckets]] = [:]
         for (path, dates) in fileDailyContrib {
             guard let usage = dates[today], let agentName = fileAgentNames[path] else { continue }
             var summary = agents[agentName] ?? (0, 0, [:])
@@ -347,6 +382,9 @@ final class OpenClawUsageService: @unchecked Sendable {
             summary.messages += usage.messages
             for (model, tokens) in fileModelContrib[path]?[today] ?? [:] {
                 summary.models[model, default: 0] += tokens
+            }
+            for (model, buckets) in fileModelBucketContrib[path]?[today] ?? [:] {
+                agentBuckets[agentName, default: [:]][model, default: ModelBuckets()].merge(buckets)
             }
             agents[agentName] = summary
         }
@@ -359,7 +397,9 @@ final class OpenClawUsageService: @unchecked Sendable {
                 todayTokens: summary.tokens,
                 todayMessages: summary.messages,
                 isActive: true,
-                model: summary.models.max(by: { $0.value < $1.value })?.key
+                model: summary.models.max(by: { $0.value < $1.value })?.key,
+                todayCost: PricingService.shared.cost(of: agentBuckets[agentName] ?? [:]),
+                cacheReadTokens: (agentBuckets[agentName] ?? [:]).values.reduce(0) { $0 + $1.cacheRead }
             )
         }.sorted { $0.todayTokens > $1.todayTokens }
     }

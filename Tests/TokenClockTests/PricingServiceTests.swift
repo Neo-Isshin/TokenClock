@@ -9,9 +9,24 @@ final class PricingServiceTests: XCTestCase {
         let summary = PricingService.shared.catalogSummary
         XCTAssertGreaterThan(summary.count, 100, "内置快照应加载出 100+ 模型，实际 \(summary.count)")
         XCTAssertNotNil(summary.generatedAt, "快照应带 generatedAt 元数据")
+        XCTAssertGreaterThanOrEqual(summary.generatedAt ?? "", "2026-08-21T11:30:00Z")
         // 核心模型必须能查到价（脚本侧也有同样的保底断言）
         XCTAssertNotNil(PricingService.shared.price(forModel: "claude-sonnet-4-5"))
         XCTAssertNotNil(PricingService.shared.price(forModel: "gpt-5-codex"))
+        XCTAssertEqual(
+            PricingService.shared.price(forModel: "MiniMax-M2.7-highspeed"),
+            ModelPrice(input: 0.6, output: 2.4, cacheRead: 0.06, cacheWrite: 0.375)
+        )
+    }
+
+    /// Antigravity appends the thinking level to Gemini's official model ID. Thinking level
+    /// changes token consumption, not unit prices, so all variants use the base catalog row.
+    func testGeminiThinkingLevelPricingAliases() {
+        let base = PricingService.shared.price(forModel: "gemini-3.7-flash")
+        XCTAssertEqual(base, ModelPrice(input: 0.75, output: 3.75, cacheRead: 0.075))
+        XCTAssertEqual(PricingService.shared.price(forModel: "gemini-3.7-flash-low"), base)
+        XCTAssertEqual(PricingService.shared.price(forModel: "gemini-3.7-flash-medium"), base)
+        XCTAssertEqual(PricingService.shared.price(forModel: "gemini-3.7-flash-high"), base)
     }
 
     /// 日期后缀归一化：日志里的带日期模型名应命中目录里的无日期 key

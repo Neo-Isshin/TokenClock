@@ -46,16 +46,17 @@ final class LinuxClockRenderer: @unchecked Sendable {
         let centerY = height / 2
         let radius = min(width, height) / 2 - 4
         let theme = snapshot.theme
+        let quickTextColor = quickContrastColor()
 
         drawDial(context, centerX, centerY, radius, theme)
         if theme.hasDialDecoration {
             drawSkyDecoration(context, centerX, centerY, radius)
         }
         drawTickMarks(context, centerX, centerY, radius, theme)
-        drawNumbers(context, centerX, centerY, radius, theme, snapshot.size.scale)
+        drawNumbers(context, centerX, centerY, radius, theme, snapshot.size.scale, colorOverride: quickTextColor)
         drawHands(context, centerX, centerY, radius, theme, snapshot.date, snapshot.timeZone)
         drawCenterDot(context, centerX, centerY, theme)
-        drawOverlay(context, width, height, snapshot)
+        drawOverlay(context, width, height, snapshot, colorOverride: quickTextColor)
     }
 
     /// Compact face-only rendering used by Linux's visual clock-face picker.
@@ -151,9 +152,11 @@ final class LinuxClockRenderer: @unchecked Sendable {
         _ centerY: Double,
         _ radius: Double,
         _ theme: LinuxClockTheme,
-        _ scale: Double
+        _ scale: Double,
+        colorOverride: LinuxColor? = nil
     ) {
-        guard theme.numberColor.alpha > 0 else { return }
+        let numberColor = colorOverride ?? theme.numberColor
+        guard numberColor.alpha > 0 else { return }
         let chinese = ["", "壹", "贰", "叁", "肆", "伍", "陆", "柒", "捌", "玖", "拾", "拾壹", "拾贰"]
         let numberRadius = radius * 0.84
         for value in 1...12 {
@@ -168,7 +171,7 @@ final class LinuxClockRenderer: @unchecked Sendable {
                 x: centerX + numberRadius * cos(angle),
                 y: centerY + numberRadius * sin(angle),
                 alignment: 1,
-                color: theme.numberColor
+                color: numberColor
             )
         }
     }
@@ -230,10 +233,13 @@ final class LinuxClockRenderer: @unchecked Sendable {
         _ context: OpaquePointer,
         _ width: Double,
         _ height: Double,
-        _ snapshot: LinuxClockSnapshot
+        _ snapshot: LinuxClockSnapshot,
+        colorOverride: LinuxColor? = nil
     ) {
         let scale = snapshot.size.scale
         let theme = snapshot.theme
+        let primary = colorOverride ?? theme.textPrimaryColor
+        let secondary = colorOverride.map { LinuxColor($0.red, $0.green, $0.blue, 0.72) } ?? theme.textSecondaryColor
         let tools = snapshot.tools
         let totalTokens = TokenFormat.compact(UsageAggregator.totalTokens(
             tools,
@@ -256,7 +262,7 @@ final class LinuxClockRenderer: @unchecked Sendable {
         }
         let dateText = formatter.string(from: snapshot.date)
         drawText(context, dateText, family: "Sans", size: 11 * scale, weight: 500,
-                 x: width / 2, y: 64 * scale, alignment: 1, color: theme.textSecondaryColor)
+                 x: width / 2, y: 64 * scale, alignment: 1, color: secondary)
 
         if !snapshot.weather.cityName.isEmpty {
             let temperature: Int
@@ -277,16 +283,16 @@ final class LinuxClockRenderer: @unchecked Sendable {
                 x: width / 2,
                 y: 82 * scale,
                 alignment: 1,
-                color: theme.textPrimaryColor
+                color: primary
             )
         }
 
         drawText(context, L10n.shared.tr("clock.todayTokens"), family: "Sans", size: 9 * scale, weight: 400,
-                 x: width / 2, y: height - 91 * scale, alignment: 1, color: theme.textSecondaryColor)
+                 x: width / 2, y: height - 91 * scale, alignment: 1, color: secondary)
         drawText(context, totalTokens, family: "Sans", size: 20 * scale, weight: 700,
-                 x: width / 2, y: height - 71 * scale, alignment: 1, color: theme.textPrimaryColor)
+                 x: width / 2, y: height - 71 * scale, alignment: 1, color: primary)
         drawText(context, L10n.shared.tr("clock.messagesCount", totalMessages), family: "Sans", size: 10 * scale, weight: 400,
-                 x: width / 2, y: height - 51 * scale, alignment: 1, color: theme.textSecondaryColor)
+                 x: width / 2, y: height - 51 * scale, alignment: 1, color: secondary)
 
         let activeTools = UsageAggregator.topToolsByTokens(tools, limit: 2)
         let rowSpacing = 17 * scale
@@ -294,7 +300,7 @@ final class LinuxClockRenderer: @unchecked Sendable {
         for (index, tool) in activeTools.enumerated() {
             drawText(context, "\(tool.emoji) \(tool.abbreviation)", family: "Sans", size: 13 * scale, weight: 600,
                      x: 22 * scale, y: firstY + Double(index) * rowSpacing, alignment: 0,
-                     color: withAlpha(theme.textPrimaryColor, theme.textPrimaryColor.alpha * 0.75))
+                     color: withAlpha(primary, primary.alpha * 0.75))
         }
 
         drawText(context, UsageAggregator.rateEmoji(tools), family: "Noto Color Emoji, Emoji, Sans", size: 28 * scale, weight: 400,
@@ -512,5 +518,14 @@ final class LinuxClockRenderer: @unchecked Sendable {
 
     private func withAlpha(_ color: LinuxColor, _ alpha: Double) -> LinuxColor {
         LinuxColor(color.red, color.green, color.blue, alpha)
+    }
+
+    private func quickContrastColor() -> LinuxColor? {
+        switch UserDefaults.standard.int(for: .quickContrastPreset, default: 0) {
+        case 1: return LinuxColor(1, 1, 1)
+        case 2: return LinuxColor(0, 0, 0)
+        case 3: return LinuxColor(1, 214.0 / 255.0, 10.0 / 255.0)
+        default: return nil
+        }
     }
 }

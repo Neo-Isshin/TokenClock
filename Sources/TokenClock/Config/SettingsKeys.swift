@@ -64,6 +64,8 @@ enum SettingsKey: String {
     case selectedCity = "TC_selectedCity"
     case selectedTimezone = "TC_selectedTimezone"
     case useFahrenheit = "TC_useFahrenheit"
+    /// 0=跟随主题，1=白，2=黑，3=琥珀；详情快捷配色。
+    case quickContrastPreset = "TC_quickContrastPreset"
     /// Cursor 用量是否从云端获取（关闭则不向 cursor.com 发凭证请求）
     case cursorCloudFetchEnabled = "TC_cursorCloudFetchEnabled"
 

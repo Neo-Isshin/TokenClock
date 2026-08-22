@@ -10,6 +10,7 @@ final class LinuxUsageOverviewWindow: @unchecked Sendable {
     private var root: UnsafeMutablePointer<GtkWidget>?
     private var period: Period = .week
     private var grouping: UsageOverviewGrouping = .tool
+    private var includesCacheRead = false
     private var customStart = Calendar.current.date(byAdding: .day, value: -6, to: Date()) ?? Date()
     private var customEnd = Date()
     private var startEntry: UnsafeMutablePointer<GtkWidget>?
@@ -70,6 +71,7 @@ final class LinuxUsageOverviewWindow: @unchecked Sendable {
         case "overview:period:custom": period = .custom
         case "overview:group:tool": grouping = .tool
         case "overview:group:model": grouping = .model
+        case "overview:include-cache": includesCacheRead.toggle()
         case "overview:apply":
             if let startEntry, let parsed = parseDate(String(cString: gtk_entry_get_text(tc_gtk_entry(startEntry)))) {
                 customStart = parsed
@@ -89,7 +91,8 @@ final class LinuxUsageOverviewWindow: @unchecked Sendable {
         endEntry = nil
         let dates = selectedDates
         let data = UsageOverviewBuilder.load(
-            startDate: dates.0, endDate: dates.1, grouping: grouping
+            startDate: dates.0, endDate: dates.1, grouping: grouping,
+            includingCacheRead: includesCacheRead
         )
         appendHeader(data, to: root)
         if period == .custom { appendCustomRange(to: root) }
@@ -115,9 +118,16 @@ final class LinuxUsageOverviewWindow: @unchecked Sendable {
         appendButton(period == .week ? "✓  \(L10n.shared.tr("overview.last7Days"))" : L10n.shared.tr("overview.last7Days"), name: "overview:period:week", to: top)
         appendButton(period == .month ? "✓  \(L10n.shared.tr("overview.last30Days"))" : L10n.shared.tr("overview.last30Days"), name: "overview:period:month", to: top)
         appendButton(period == .custom ? "✓  \(L10n.shared.tr("overview.custom"))" : L10n.shared.tr("overview.custom"), name: "overview:period:custom", to: top)
-        appendButton(grouping == .tool ? "✓  \(L10n.shared.tr("overview.byTool"))" : L10n.shared.tr("overview.byTool"), name: "overview:group:tool", to: top)
-        appendButton(grouping == .model ? "✓  \(L10n.shared.tr("overview.byModel"))" : L10n.shared.tr("overview.byModel"), name: "overview:group:model", to: top)
         gtk_box_pack_start(tc_gtk_box(root), top, 0, 0, 0)
+
+        let controls = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8)
+        let spacer = gtk_label_new("")
+        gtk_widget_set_hexpand(spacer, 1)
+        gtk_box_pack_start(tc_gtk_box(controls), spacer, 1, 1, 0)
+        appendButton(grouping == .tool ? "✓  \(L10n.shared.tr("overview.byTool"))" : L10n.shared.tr("overview.byTool"), name: "overview:group:tool", to: controls)
+        appendButton(grouping == .model ? "✓  \(L10n.shared.tr("overview.byModel"))" : L10n.shared.tr("overview.byModel"), name: "overview:group:model", to: controls)
+        appendButton(includesCacheRead ? "✓  \(L10n.shared.tr("overview.includeCache"))" : L10n.shared.tr("overview.includeCache"), name: "overview:include-cache", to: controls)
+        gtk_box_pack_start(tc_gtk_box(root), controls, 0, 0, 0)
     }
 
     private func appendCustomRange(to root: UnsafeMutablePointer<GtkWidget>) {
@@ -143,7 +153,7 @@ final class LinuxUsageOverviewWindow: @unchecked Sendable {
 
     private func appendMetricCards(_ metrics: UsageOverviewMetrics, to root: UnsafeMutablePointer<GtkWidget>) {
         let row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 10)
-        appendCard("🔢", L10n.shared.tr("overview.tokens"), TokenFormat.compact(metrics.tokens), to: row)
+        appendCard("🔢", tokenColumnTitle, TokenFormat.compact(displayedTokens(metrics)), to: row)
         appendCard("💬", L10n.shared.tr("overview.messages"), number(metrics.messages), to: row)
         appendCard("💵", L10n.shared.tr("overview.cost"), CostFormat.estimate(metrics.cost), to: row)
         appendCard("⚡", L10n.shared.tr("overview.averageCache"), String(format: "%@%.1f%%", metrics.cacheIsExact ? "" : "≈", metrics.averageCacheRate * 100), to: row)
@@ -171,7 +181,7 @@ final class LinuxUsageOverviewWindow: @unchecked Sendable {
 
     private func appendDaily(_ days: [UsageOverviewDay], to root: UnsafeMutablePointer<GtkWidget>) {
         appendSection(L10n.shared.tr("overview.daily"), to: root)
-        let maxTokens = max(1, days.map(\.metrics.tokens).max() ?? 1)
+        let maxTokens = max(1, days.map { displayedTokens($0.metrics) }.max() ?? 1)
         let chart = gtk_box_new(GTK_ORIENTATION_VERTICAL, 4)
         tc_gtk_add_class(chart, "tc-overview-card")
         for day in days.suffix(30) {
@@ -180,9 +190,10 @@ final class LinuxUsageOverviewWindow: @unchecked Sendable {
             gtk_widget_set_size_request(date, 50, -1)
             gtk_label_set_xalign(tc_gtk_label(date), 0)
             let bar = gtk_progress_bar_new()
-            gtk_progress_bar_set_fraction(tc_gtk_progress_bar(bar), Double(day.metrics.tokens) / Double(maxTokens))
+            let tokens = displayedTokens(day.metrics)
+            gtk_progress_bar_set_fraction(tc_gtk_progress_bar(bar), Double(tokens) / Double(maxTokens))
             gtk_widget_set_hexpand(bar, 1)
-            let value = gtk_label_new(TokenFormat.compact(day.metrics.tokens))
+            let value = gtk_label_new(TokenFormat.compact(tokens))
             gtk_widget_set_size_request(value, 68, -1)
             gtk_label_set_xalign(tc_gtk_label(value), 1)
             gtk_box_pack_start(tc_gtk_box(row), date, 0, 0, 0)
@@ -197,7 +208,7 @@ final class LinuxUsageOverviewWindow: @unchecked Sendable {
         appendSection(L10n.shared.tr("overview.breakdown"), to: root)
         let list = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0)
         tc_gtk_add_class(list, "tc-overview-card")
-        appendDataRow(name: L10n.shared.tr("overview.name"), tokens: L10n.shared.tr("overview.tokens"), messages: L10n.shared.tr("overview.messages"), cost: L10n.shared.tr("overview.cost"), cache: L10n.shared.tr("overview.averageCache"), header: true, to: list)
+        appendDataRow(name: L10n.shared.tr("overview.name"), tokens: tokenColumnHeader, messages: L10n.shared.tr("overview.messages"), cost: L10n.shared.tr("overview.cost"), cache: L10n.shared.tr("overview.averageCache"), header: true, to: list)
         if rows.isEmpty {
             let empty = gtk_label_new(L10n.shared.tr("overview.noData"))
             gtk_widget_set_margin_top(empty, 18)
@@ -207,7 +218,7 @@ final class LinuxUsageOverviewWindow: @unchecked Sendable {
         }
         for row in rows {
             let name = row.name == "Unknown" ? L10n.shared.tr("detail.unknownModel") : row.name
-            appendDataRow(name: "\(row.emoji)  \(name)", tokens: TokenFormat.compact(row.metrics.tokens), messages: number(row.metrics.messages), cost: CostFormat.estimate(row.metrics.cost), cache: String(format: "%@%.1f%%", row.metrics.cacheIsExact ? "" : "≈", row.metrics.averageCacheRate * 100), header: false, to: list)
+            appendDataRow(name: "\(row.emoji)  \(name)", tokens: TokenFormat.compact(displayedTokens(row.metrics)), messages: number(row.metrics.messages), cost: CostFormat.estimate(row.metrics.cost), cache: String(format: "%@%.1f%%", row.metrics.cacheIsExact ? "" : "≈", row.metrics.averageCacheRate * 100), header: false, to: list)
         }
         gtk_box_pack_start(tc_gtk_box(root), list, 0, 0, 0)
     }
@@ -278,6 +289,18 @@ final class LinuxUsageOverviewWindow: @unchecked Sendable {
     private func number(_ value: Int) -> String {
         let formatter = NumberFormatter(); formatter.numberStyle = .decimal
         return formatter.string(from: NSNumber(value: value)) ?? "\(value)"
+    }
+
+    private var tokenColumnTitle: String {
+        L10n.shared.tr(includesCacheRead ? "overview.tokensWithCache" : "overview.tokens")
+    }
+
+    private var tokenColumnHeader: String {
+        L10n.shared.tr(includesCacheRead ? "overview.tokensWithCacheShort" : "overview.tokens")
+    }
+
+    private func displayedTokens(_ metrics: UsageOverviewMetrics) -> Int {
+        metrics.displayedTokens(includingCacheRead: includesCacheRead)
     }
 }
 

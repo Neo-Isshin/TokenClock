@@ -159,7 +159,15 @@ final class LinuxApp: @unchecked Sendable {
         _ = tc_gtk_on_motion(createdDial, linuxMotion, opaque)
         _ = tc_gtk_on_draw(createdDial, linuxDraw, opaque)
 
-        detailsPanel = LinuxDetailsPanel(parent: createdWindow)
+        detailsPanel = LinuxDetailsPanel(
+            parent: createdWindow,
+            onHistoryUsage: { [weak self] in self?.overviewWindow?.show() },
+            onQuickContrast: { [weak self] in self?.refreshUI() },
+            onUsageIncludesCache: { [weak self] value in
+                self?.model.setUsageIncludesCacheRead(value)
+                self?.refreshUI()
+            }
+        )
         detailsPanel?.setOpacity(windowOpacity)
         themePicker = LinuxThemePicker(parent: createdWindow, owner: self)
         settingsWindow = LinuxSettingsWindow(parent: createdWindow, owner: self, model: model)
@@ -262,24 +270,6 @@ final class LinuxApp: @unchecked Sendable {
         _ = tc_gtk_on_activate(fahrenheit, linuxMenuAction, opaque)
         gtk_menu_shell_append(tc_gtk_menu_shell(temperatureMenu), fahrenheit)
 
-        let scopeRoot = gtk_menu_item_new_with_label(L10n.shared.tr("menu.usageScope"))
-        let scopeMenu = gtk_menu_new()
-        gtk_menu_item_set_submenu(tc_gtk_menu_item(scopeRoot), scopeMenu)
-        gtk_menu_shell_append(tc_gtk_menu_shell(root), scopeRoot)
-        let includesCache = model.usageIncludesCacheRead
-        let excludes = gtk_menu_item_new_with_label(
-            menuSelectionLabel(!includesCache, title: L10n.shared.tr("menu.usageExclCache"))
-        )
-        gtk_widget_set_name(excludes, "usage-scope:exclude")
-        _ = tc_gtk_on_activate(excludes, linuxMenuAction, opaque)
-        gtk_menu_shell_append(tc_gtk_menu_shell(scopeMenu), excludes)
-        let includes = gtk_menu_item_new_with_label(
-            menuSelectionLabel(includesCache, title: L10n.shared.tr("menu.usageInclCache"))
-        )
-        gtk_widget_set_name(includes, "usage-scope:include")
-        _ = tc_gtk_on_activate(includes, linuxMenuAction, opaque)
-        gtk_menu_shell_append(tc_gtk_menu_shell(scopeMenu), includes)
-
         let cityRoot = gtk_menu_item_new_with_label(L10n.shared.tr("menu.city"))
         let cityMenu = gtk_menu_new()
         gtk_menu_item_set_submenu(tc_gtk_menu_item(cityRoot), cityMenu)
@@ -336,7 +326,6 @@ final class LinuxApp: @unchecked Sendable {
 
         gtk_menu_shell_append(tc_gtk_menu_shell(root), gtk_separator_menu_item_new())
         appendMenuItem(localized(zh: "查看详情", en: "Show Details"), name: "details", to: root)
-        appendMenuItem(L10n.shared.tr("menu.overview"), name: "overview", to: root)
         appendMenuItem(localized(zh: "刷新数据", en: "Refresh Usage"), name: "refresh", to: root)
         gtk_menu_shell_append(tc_gtk_menu_shell(root), gtk_separator_menu_item_new())
         appendMenuItem(L10n.shared.tr("menu.settings"), name: "settings", to: root)
@@ -483,12 +472,6 @@ final class LinuxApp: @unchecked Sendable {
             selectCity(String(name.dropFirst("city:".count)))
             return
         }
-        if name.hasPrefix("usage-scope:") {
-            model.setUsageIncludesCacheRead(name.hasSuffix(":include"))
-            rebuildContextMenu()
-            refreshUI()
-            return
-        }
         if name.hasPrefix("custom-theme:"),
            let id = UUID(uuidString: String(name.dropFirst("custom-theme:".count))) {
             applyCustomTheme(id: id)
@@ -544,6 +527,9 @@ final class LinuxApp: @unchecked Sendable {
     }
 
     func applyCustomTheme(id: UUID?) {
+        // Saved custom faces carry explicit dial/detail text colors, so applying one
+        // supersedes the quick contrast preset as the newest manual color choice.
+        UserDefaults.standard.remove(.quickContrastPreset)
         if let id {
             guard LinuxCustomThemeStore.shared.apply(id: id) else { return }
         } else {
@@ -635,6 +621,7 @@ final class LinuxApp: @unchecked Sendable {
 
     private func selectLanguage(_ language: AppLanguage) {
         L10n.shared.language = language
+        refreshWeather()
         updateDetailsPanel()
         themePicker?.refreshLanguage()
         settingsWindow?.refreshLanguage()

@@ -140,7 +140,7 @@ final class LinuxUsageModel: @unchecked Sendable {
         var results: [String: ScanSnapshot] = [:]
         if enabled.contains("OpenClaw") {
             let usage = openclawService.todayUsage()
-            results["OpenClaw"] = snapshot(usage, openclawService.recentUsage(minutes: rateWindow).tokens, openclawService.currentHourTokens(), openclawService.isActive(), openclawService.todaySessions())
+            results["OpenClaw"] = snapshot(usage, openclawService.recentUsage(minutes: rateWindow).tokens, openclawService.currentHourTokens(), openclawService.isActive(), openclawService.todaySessions(), cost: openclawService.todayCost(), cacheRead: openclawService.todayCacheReadTokens())
         }
         if enabled.contains("Claude Code") {
             let usage = claudeCodeService.todayUsage()
@@ -180,7 +180,7 @@ final class LinuxUsageModel: @unchecked Sendable {
         }
         if enabled.contains("Antigravity") {
             let usage = antigravityService.todayUsage()
-            results["Antigravity"] = snapshot(usage, antigravityService.recentUsage(minutes: rateWindow).tokens, antigravityService.currentHourTokens(), antigravityService.isActive(), antigravityService.todaySessions())
+            results["Antigravity"] = snapshot(usage, antigravityService.recentUsage(minutes: rateWindow).tokens, antigravityService.currentHourTokens(), antigravityService.isActive(), antigravityService.todaySessions(), cost: antigravityService.todayCost(), cacheRead: antigravityService.todayCacheReadTokens())
         }
         if enabled.contains("Cline") {
             let usage = clineService.todayUsage()

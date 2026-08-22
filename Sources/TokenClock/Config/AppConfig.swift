@@ -22,6 +22,9 @@ enum AppConfig {
         /// IP 地理定位（中国境内可访问）
         // 使用 https 避免 MITM 风险（明文 http 易被中间人篡改）
         static let ipLookup = "https://myip.ipip.net/"
+        /// 结构化 IP 地理信息（城市、经纬度）；显式传入上一步取得的公网 IP，
+        /// 避免代理出口影响定位结果。
+        static let ipGeolocationBase = "https://ipwho.is"
     }
 
     // MARK: - HTTP / 网络
@@ -58,6 +61,8 @@ enum AppConfig {
         static let codexQuotaTimeoutSeconds: TimeInterval = 8
         static let codexQuotaFallbackTailBytes = 2_097_152
         static let codexQuotaFallbackFileLimit = 32
+        static let claudeQuotaCacheSeconds: TimeInterval = 300
+        static let claudeQuotaTimeoutSeconds: TimeInterval = 8
         static let oneDaySeconds: TimeInterval = 86_400
     }
 

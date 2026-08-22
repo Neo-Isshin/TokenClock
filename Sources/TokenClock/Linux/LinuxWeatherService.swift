@@ -1,12 +1,57 @@
 import Foundation
 import FoundationNetworking
 
-/// Linux weather adapter for normal mode. `wttr.in` supplies both selected-city
-/// and IP-based automatic weather without platform location frameworks.
+private struct LinuxWeatherCache: Codable {
+    struct Slot: Codable {
+        let time: String
+        let tempC: Int
+        let emoji: String
+        let description: String
+    }
+
+    let cityKey: String
+    let savedAt: TimeInterval
+    let emoji: String
+    let temperature: Int
+    let cityName: String
+    let forecast: [Slot]
+
+    init(cityKey: String, info: WeatherInfo) {
+        self.cityKey = cityKey
+        savedAt = Date().timeIntervalSince1970
+        emoji = info.emoji
+        temperature = info.temperature
+        cityName = info.cityName
+        forecast = info.forecast.map {
+            Slot(time: $0.time, tempC: $0.tempC, emoji: $0.emoji, description: $0.description)
+        }
+    }
+
+    var weather: WeatherInfo {
+        WeatherInfo(
+            emoji: emoji,
+            temperature: temperature,
+            cityName: cityName,
+            forecast: forecast.map {
+                HourlyForecast(time: $0.time, tempC: $0.tempC, emoji: $0.emoji, description: $0.description)
+            }
+        )
+    }
+}
+
+/// Linux weather adapter for normal mode. Automatic mode resolves the public IP
+/// to a localized city and coordinates, then queries wttr.in by coordinates.
 final class LinuxWeatherService: @unchecked Sendable {
+    private static let cacheKey = "TC_linuxWeatherCacheV1"
+    private static let cacheLifetime: TimeInterval = 6 * 60 * 60
     private let lock = NSLock()
-    private var storedWeather = WeatherInfo()
+    private var storedWeather: WeatherInfo
     private var generation = 0
+
+    init() {
+        let selectedCity = UserDefaults.standard.string(forKey: SettingsKey.selectedCity.rawValue) ?? "auto"
+        storedWeather = Self.cachedWeather(for: selectedCity) ?? WeatherInfo()
+    }
 
     var weather: WeatherInfo {
         lock.lock()
@@ -20,35 +65,66 @@ final class LinuxWeatherService: @unchecked Sendable {
         let requestGeneration = generation
         lock.unlock()
 
-        let location: String
-        if city == "auto" {
-            location = ""
-        } else {
-            location = city.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? city
-        }
-        guard let url = URL(string: "\(AppConfig.API.weatherBase)/\(location)?format=j1&m") else { return }
-        var request = URLRequest(url: url)
-        request.timeoutInterval = AppConfig.HTTP.requestTimeout
-        request.setValue("TokenClock/1.0 (Linux)", forHTTPHeaderField: "User-Agent")
-        URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
+        Task.detached(priority: .utility) { [weak self] in
             guard let self else { return }
-            guard error == nil,
-                  let response = response as? HTTPURLResponse,
-                  (200..<300).contains(response.statusCode),
-                  let data,
-                  let parsed = Self.parse(data: data, fallbackCity: city == "auto" ? "" : city) else {
-                if let error { print("[Weather] \(error.localizedDescription)") }
+            guard let target = await Self.weatherTarget(for: city),
+                  let data = await Self.data(from: target.url),
+                  let parsed = Self.parse(data: data, fallbackCity: target.fallbackCity) else {
                 return
             }
-            self.lock.lock()
-            guard self.generation == requestGeneration else {
-                self.lock.unlock()
-                return
+            let isLatest = self.lock.withLock {
+                guard self.generation == requestGeneration else { return false }
+                self.storedWeather = parsed
+                return true
             }
-            self.storedWeather = parsed
-            self.lock.unlock()
+            guard isLatest else { return }
+            Self.save(parsed, for: city)
             completion()
-        }.resume()
+        }
+    }
+
+    private static func weatherTarget(for city: String) async -> (url: URL, fallbackCity: String)? {
+        if city.caseInsensitiveCompare("auto") != .orderedSame && !city.isEmpty {
+            let encoded = city.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? city
+            return URL(string: "\(AppConfig.API.weatherBase)/\(encoded)?format=j1&m")
+                .map { ($0, city) }
+        }
+
+        if let location = await automaticLocation() {
+            let coordinates = "\(location.latitude)+\(location.longitude)"
+            return URL(string: "\(AppConfig.API.weatherBase)/\(coordinates)?format=j1&m")
+                .map { ($0, location.city) }
+        }
+        return URL(string: "\(AppConfig.API.weatherBase)/?format=j1&m").map { ($0, "") }
+    }
+
+    private static func automaticLocation() async -> IPWeatherLocation? {
+        let publicIP: String?
+        if let url = URL(string: AppConfig.API.ipLookup) {
+            publicIP = IPGeolocation.publicIP(from: await data(from: url))
+        } else {
+            publicIP = nil
+        }
+        guard let url = IPGeolocation.endpoint(
+            publicIP: publicIP,
+            language: L10n.shared.language
+        ) else { return nil }
+        return IPGeolocation.location(from: await data(from: url))
+    }
+
+    private static func data(from url: URL) async -> Data? {
+        var request = URLRequest(url: url)
+        request.timeoutInterval = AppConfig.HTTP.resourceTimeout
+        request.setValue("TokenClock/1.0 (Linux)", forHTTPHeaderField: "User-Agent")
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let response = response as? HTTPURLResponse,
+                  (200..<300).contains(response.statusCode) else { return nil }
+            return data
+        } catch {
+            print("[Weather] \(error.localizedDescription)")
+            return nil
+        }
     }
 
     private static func parse(data: Data, fallbackCity: String) -> WeatherInfo? {
@@ -103,5 +179,27 @@ final class LinuxWeatherService: @unchecked Sendable {
         case 296, 299, 302, 305, 308, 356, 359: return "🌧️"
         default: return "🌤️"
         }
+    }
+
+    private static func normalizedCityKey(_ city: String) -> String {
+        let value = city.trimmingCharacters(in: .whitespacesAndNewlines)
+        return value.isEmpty ? "auto" : value.lowercased()
+    }
+
+    private static func cachedWeather(for city: String) -> WeatherInfo? {
+        guard let data = UserDefaults.standard.data(forKey: cacheKey),
+              let cache = try? JSONDecoder().decode(LinuxWeatherCache.self, from: data),
+              cache.cityKey == normalizedCityKey(city),
+              Date().timeIntervalSince1970 - cache.savedAt <= cacheLifetime,
+              !cache.cityName.isEmpty else { return nil }
+        return cache.weather
+    }
+
+    private static func save(_ info: WeatherInfo, for city: String) {
+        guard !info.cityName.isEmpty,
+              let data = try? JSONEncoder().encode(
+                LinuxWeatherCache(cityKey: normalizedCityKey(city), info: info)
+              ) else { return }
+        UserDefaults.standard.set(data, forKey: cacheKey)
     }
 }

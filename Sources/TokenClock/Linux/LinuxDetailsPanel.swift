@@ -14,6 +14,11 @@ final class LinuxDetailsPanel: @unchecked Sendable {
     private(set) var window: UnsafeMutablePointer<GtkWidget>?
     private var card: UnsafeMutablePointer<GtkWidget>?
     private var parent: UnsafeMutablePointer<GtkWidget>?
+    private var quotaWindow: UnsafeMutablePointer<GtkWidget>?
+    private var quotaContent: UnsafeMutablePointer<GtkWidget>?
+    private let onHistoryUsage: () -> Void
+    private let onQuickContrast: () -> Void
+    private let onUsageIncludesCache: (Bool) -> Void
 
     private var tools: [ToolUsage] = []
     private var weather = WeatherInfo()
@@ -31,18 +36,37 @@ final class LinuxDetailsPanel: @unchecked Sendable {
     private var expandedTools: Set<String> = []
     private var expandedModels: Set<String> = []
     private var appliedTheme: LinuxClockTheme?
-    private var showsCodexQuota = false
     private var codexQuota = CodexQuotaSnapshot.idle
+    private var claudeQuota = ClaudeQuotaSnapshot.idle
+    private var antigravityQuota = ProviderQuotaSnapshot.idle(source: "Antigravity local service")
+    private var cursorQuota = ProviderQuotaSnapshot.idle(source: "Cursor dashboard")
     private let quotaService = CodexQuotaService()
+    private let claudeQuotaService = ClaudeQuotaService()
+    private let antigravityQuotaService = AntigravityQuotaService()
+    private let cursorQuotaService = CursorQuotaService()
     private let quotaLock = NSLock()
     private var pendingQuota: CodexQuotaSnapshot?
+    private var pendingClaudeQuota: ClaudeQuotaSnapshot?
+    private var pendingAntigravityQuota: ProviderQuotaSnapshot?
+    private var pendingCursorQuota: ProviderQuotaSnapshot?
     private var quotaFetchInFlight = false
+    private var claudeQuotaFetchInFlight = false
+    private var antigravityQuotaFetchInFlight = false
+    private var cursorQuotaFetchInFlight = false
     private var rebuildScheduled = false
 
     private lazy var opaque = Unmanaged.passUnretained(self).toOpaque()
 
-    init(parent: UnsafeMutablePointer<GtkWidget>) {
+    init(
+        parent: UnsafeMutablePointer<GtkWidget>,
+        onHistoryUsage: @escaping () -> Void,
+        onQuickContrast: @escaping () -> Void,
+        onUsageIncludesCache: @escaping (Bool) -> Void
+    ) {
         self.parent = parent
+        self.onHistoryUsage = onHistoryUsage
+        self.onQuickContrast = onQuickContrast
+        self.onUsageIncludesCache = onUsageIncludesCache
         buildWindow(parent: parent)
     }
 
@@ -114,13 +138,17 @@ final class LinuxDetailsPanel: @unchecked Sendable {
         case "details:value-mode":
             valueMode = valueMode.next
             UserDefaults.standard.setInt(valueMode.rawValue, for: .dropdownValueMode)
+        case "details:cache":
+            onUsageIncludesCache(!UserDefaults.standard.bool(for: .usageIncludesCacheRead))
         case "details:quota":
-            showsCodexQuota.toggle()
-            if showsCodexQuota, codexQuota.status == .idle || codexQuota.isStale {
-                refreshQuota()
-            }
+            showQuotaWindow()
+        case "details:text-color":
+            cycleQuickContrast()
+            onQuickContrast()
+            applyThemeIfNeeded(force: true)
+        case "details:history":
+            onHistoryUsage()
         case "details:quota-refresh", "details:quota-retry":
-            showsCodexQuota = true
             refreshQuota(force: true)
         default:
             if name.hasPrefix("details:tool:") {
@@ -170,37 +198,61 @@ final class LinuxDetailsPanel: @unchecked Sendable {
         let controls = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6)
         gtk_container_set_border_width(tc_gtk_container(controls), 10)
         gtk_box_pack_start(tc_gtk_box(card), controls, 0, 0, 0)
+        let launcherRow = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 7)
+        gtk_box_pack_start(tc_gtk_box(controls), launcherRow, 0, 0, 0)
+        let detect = appendControl(
+            "◉  \(tr("detail.modelDetectLine1"))\n   \(tr("detail.modelDetectLine2"))",
+            name: "details:model-detect", expands: true, prominent: true, to: launcherRow
+        )
+        if let detect { gtk_widget_set_sensitive(detect, 0) }
+        _ = appendControl(
+            "◔  \(tr("detail.subscriptionQuotaLine1"))\n   \(tr("detail.subscriptionQuotaLine2"))",
+            name: "details:quota", expands: true, prominent: true, to: launcherRow
+        )
+
         let groupingRow = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6)
         gtk_box_pack_start(tc_gtk_box(controls), groupingRow, 0, 0, 0)
-        appendControl(
+        _ = appendControl(
             grouping == .session ? "✓  \(tr("detail.groupBySession"))" : tr("detail.groupBySession"),
             name: "details:session", expands: true, to: groupingRow
         )
-        appendControl(
+        _ = appendControl(
             grouping == .model ? "✓  \(tr("detail.groupByModel"))" : tr("detail.groupByModel"),
             name: "details:model", expands: true, to: groupingRow
         )
-        let displayRow = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6)
+        let displayRow = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4)
         gtk_box_pack_start(tc_gtk_box(controls), displayRow, 0, 0, 0)
-        let spacer = gtk_label_new("")
-        gtk_widget_set_hexpand(spacer, 1)
-        gtk_box_pack_start(tc_gtk_box(displayRow), spacer, 1, 1, 0)
-        appendControl(
-            showsCodexQuota ? "✓  \(tr("detail.codexQuota"))" : "◔  \(tr("detail.codexQuota"))",
-            name: "details:quota", to: displayRow
+        let includesCache = UserDefaults.standard.bool(for: .usageIncludesCacheRead)
+        let cacheControl = appendControl(
+            "\(includesCache ? "✓" : "○")  \(tr("detail.cacheDataLine1"))\n   \(tr("detail.cacheDataLine2"))",
+            name: "details:cache", prominent: true, to: displayRow
         )
-        appendControl(
+        if let cacheControl {
+            gtk_widget_set_size_request(cacheControl, 64, -1)
+            tc_gtk_add_class(cacheControl, "tokenclock-detail-third-chip")
+        }
+        _ = appendTextColorControl(
+            "\(tr("detail.textColorLine1"))\n\(tr("detail.textColorLine2"))",
+            width: 58,
+            to: displayRow
+        )
+        _ = appendHistoryControl(
+            "\(tr("detail.historyUsageLine1"))\n\(tr("detail.historyUsageLine2"))",
+            width: 80,
+            to: displayRow
+        )
+        let valueControl = appendControl(
             valueMode == .costPercent
-                ? "✓  \(tr("detail.byCost")) · \(tr("detail.byPercent"))"
-                : "$  \(tr("detail.byCost")) · %  \(tr("detail.byPercent"))",
-            name: "details:value-mode", to: displayRow
+                ? "✓  \(tr("detail.byPercent"))\n   \(tr("detail.todayUsage"))"
+                : "$  \(tr("detail.byCost"))\n   \(tr("detail.byPercent"))",
+            name: "details:value-mode", prominent: true, to: displayRow
         )
+        if let valueControl {
+            gtk_widget_set_size_request(valueControl, 86, -1)
+            tc_gtk_add_class(valueControl, "tokenclock-detail-third-chip")
+        }
 
         gtk_box_pack_start(tc_gtk_box(card), separator(), 0, 0, 0)
-        if showsCodexQuota {
-            buildQuotaContent(in: card)
-            return
-        }
         gtk_box_pack_start(tc_gtk_box(card), headerRow(), 0, 0, 0)
         gtk_box_pack_start(tc_gtk_box(card), separator(), 0, 0, 0)
 
@@ -218,16 +270,53 @@ final class LinuxDetailsPanel: @unchecked Sendable {
         }
     }
 
+    private func appendTextColorControl(
+        _ title: String,
+        width: gint,
+        to box: UnsafeMutablePointer<GtkWidget>?
+    ) -> UnsafeMutablePointer<GtkWidget>? {
+        guard let button = gtk_button_new(),
+              let content = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4) else { return nil }
+        gtk_widget_set_name(button, "details:text-color")
+        tc_gtk_add_class(button, "tokenclock-detail-chip")
+        tc_gtk_add_class(button, "tokenclock-detail-action-chip")
+        tc_gtk_add_class(button, "tokenclock-detail-third-chip")
+        gtk_button_set_relief(tc_gtk_button(button), GTK_RELIEF_NONE)
+        _ = tc_gtk_on_clicked(button, linuxDetailsAction, opaque)
+        gtk_widget_set_size_request(button, width, -1)
+
+        let leading = gtk_label_new("●")
+        let titleLabel = gtk_label_new(title)
+        gtk_widget_set_name(leading, "tokenclock-current-color-dot")
+        gtk_label_set_justify(tc_gtk_label(titleLabel), GTK_JUSTIFY_CENTER)
+        gtk_widget_set_hexpand(titleLabel, 1)
+        gtk_box_pack_start(tc_gtk_box(content), leading, 0, 0, 0)
+        gtk_box_pack_start(tc_gtk_box(content), titleLabel, 1, 1, 0)
+        gtk_container_add(tc_gtk_container(button), content)
+        gtk_box_pack_start(tc_gtk_box(box), button, 0, 0, 0)
+        return button
+    }
+
     private func buildWeatherBar(in card: UnsafeMutablePointer<GtkWidget>) {
         let box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 5)
         gtk_container_set_border_width(tc_gtk_container(box), 10)
         let temperature = displayTemperature(weather.temperature)
+        let header = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4)
         let current = gtk_label_new("\(weather.emoji)  \(weather.cityName)  \(temperature)")
         gtk_label_set_xalign(tc_gtk_label(current), 0)
+        gtk_widget_set_hexpand(current, 1)
         tc_gtk_add_class(current, "tokenclock-detail-text")
-        gtk_box_pack_start(tc_gtk_box(box), current, 0, 0, 0)
+        gtk_box_pack_start(tc_gtk_box(header), current, 1, 1, 0)
 
         let slots = selectedForecastSlots()
+        if !slots.isEmpty {
+            let forecastLabel = gtk_label_new(tr("detail.forecast"))
+            gtk_label_set_xalign(tc_gtk_label(forecastLabel), 1)
+            tc_gtk_add_class(forecastLabel, "tokenclock-detail-subtext")
+            gtk_box_pack_end(tc_gtk_box(header), forecastLabel, 0, 0, 0)
+        }
+        gtk_box_pack_start(tc_gtk_box(box), header, 0, 0, 0)
+
         if !slots.isEmpty {
             let row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4)
             for slot in slots {
@@ -272,15 +361,44 @@ final class LinuxDetailsPanel: @unchecked Sendable {
         _ title: String,
         name: String,
         expands: Bool = false,
+        prominent: Bool = false,
         to box: UnsafeMutablePointer<GtkWidget>?
-    ) {
-        guard let button = gtk_button_new_with_label(title) else { return }
+    ) -> UnsafeMutablePointer<GtkWidget>? {
+        guard let button = gtk_button_new_with_label(title) else { return nil }
         gtk_widget_set_name(button, name)
         tc_gtk_add_class(button, "tokenclock-detail-chip")
+        if prominent { tc_gtk_add_class(button, "tokenclock-detail-action-chip") }
         gtk_button_set_relief(tc_gtk_button(button), GTK_RELIEF_NONE)
         _ = tc_gtk_on_clicked(button, linuxDetailsAction, opaque)
         if expands { gtk_widget_set_hexpand(button, 1) }
         gtk_box_pack_start(tc_gtk_box(box), button, expands ? 1 : 0, expands ? 1 : 0, 0)
+        return button
+    }
+
+    private func appendHistoryControl(
+        _ title: String,
+        width: gint,
+        to box: UnsafeMutablePointer<GtkWidget>?
+    ) -> UnsafeMutablePointer<GtkWidget>? {
+        guard let button = gtk_button_new(),
+              let content = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 5) else { return nil }
+        gtk_widget_set_name(button, "details:history")
+        tc_gtk_add_class(button, "tokenclock-detail-chip")
+        tc_gtk_add_class(button, "tokenclock-detail-action-chip")
+        tc_gtk_add_class(button, "tokenclock-detail-third-chip")
+        gtk_button_set_relief(tc_gtk_button(button), GTK_RELIEF_NONE)
+        _ = tc_gtk_on_clicked(button, linuxDetailsAction, opaque)
+        gtk_widget_set_size_request(button, width, -1)
+
+        let leading = gtk_label_new("◷")
+        let titleLabel = gtk_label_new(title)
+        gtk_label_set_justify(tc_gtk_label(titleLabel), GTK_JUSTIFY_CENTER)
+        gtk_widget_set_hexpand(titleLabel, 1)
+        gtk_box_pack_start(tc_gtk_box(content), leading, 0, 0, 0)
+        gtk_box_pack_start(tc_gtk_box(content), titleLabel, 1, 1, 0)
+        gtk_container_add(tc_gtk_container(button), content)
+        gtk_box_pack_start(tc_gtk_box(box), button, 0, 0, 0)
+        return button
     }
 
     private func headerRow() -> UnsafeMutablePointer<GtkWidget>? {
@@ -432,9 +550,38 @@ final class LinuxDetailsPanel: @unchecked Sendable {
         gtk_box_pack_start(tc_gtk_box(list), label, 1, 1, 24)
     }
 
+    private func showQuotaWindow() {
+        if quotaWindow == nil {
+            guard let created = gtk_window_new(GTK_WINDOW_TOPLEVEL),
+                  let content = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0) else { return }
+            quotaWindow = created
+            quotaContent = content
+            gtk_window_set_title(tc_gtk_window(created), tr("quota.windowTitle"))
+            gtk_window_set_default_size(tc_gtk_window(created), 430, 650)
+            gtk_window_set_resizable(tc_gtk_window(created), 1)
+            if let parent { gtk_window_set_transient_for(tc_gtk_window(created), tc_gtk_window(parent)) }
+            gtk_window_set_keep_above(tc_gtk_window(created), 1)
+            gtk_container_add(tc_gtk_container(created), content)
+            _ = tc_gtk_hide_on_delete(created)
+        }
+        refreshQuota()
+        rebuildQuotaWindow()
+        if let quotaWindow {
+            gtk_widget_show_all(quotaWindow)
+            gtk_window_present(tc_gtk_window(quotaWindow))
+        }
+    }
+
+    private func rebuildQuotaWindow() {
+        guard let quotaContent else { return }
+        tc_gtk_remove_all_children(quotaContent)
+        buildQuotaContent(in: quotaContent)
+        if let quotaWindow, gtk_widget_get_visible(quotaWindow) != 0 { gtk_widget_show_all(quotaWindow) }
+    }
+
     private func buildQuotaContent(in card: UnsafeMutablePointer<GtkWidget>) {
         guard let scroll = gtk_scrolled_window_new(nil, nil),
-              let content = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8) else { return }
+              let content = gtk_box_new(GTK_ORIENTATION_VERTICAL, 10) else { return }
         gtk_scrolled_window_set_policy(
             tc_gtk_scrolled_window(scroll), GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC
         )
@@ -442,40 +589,29 @@ final class LinuxDetailsPanel: @unchecked Sendable {
         gtk_container_add(tc_gtk_container(scroll), content)
         gtk_box_pack_start(tc_gtk_box(card), scroll, 1, 1, 0)
 
-        if codexQuota.status == .loading, codexQuota.buckets.isEmpty {
-            let label = gtk_label_new("◌  \(tr("quota.loading"))")
-            tc_gtk_add_class(label, "tokenclock-detail-subtext")
-            gtk_widget_set_vexpand(label, 1)
-            gtk_box_pack_start(tc_gtk_box(content), label, 1, 1, 80)
-            return
-        }
-
-        if codexQuota.status == .unavailable || codexQuota.status == .idle {
-            let label = gtk_label_new("◔\n\n\(tr("quota.unavailable"))")
-            gtk_label_set_justify(tc_gtk_label(label), GTK_JUSTIFY_CENTER)
-            tc_gtk_add_class(label, "tokenclock-detail-text")
-            gtk_widget_set_vexpand(label, 1)
-            gtk_box_pack_start(tc_gtk_box(content), label, 1, 1, 52)
-            appendControl(tr("quota.retry"), name: "details:quota-retry", to: content)
-            return
-        }
-
         let heading = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6)
-        let title = gtk_label_new(codexQuota.status == .loading ? "◌  CODEX" : "CODEX")
+        let title = gtk_label_new(tr("quota.subscriptions"))
         gtk_label_set_xalign(tc_gtk_label(title), 0)
-        tc_gtk_add_class(title, "tokenclock-quota-heading")
+        tc_gtk_add_class(title, "tokenclock-quota-title")
         gtk_box_pack_start(tc_gtk_box(heading), title, 1, 1, 0)
-        appendControl("↻", name: "details:quota-refresh", to: heading)
+        _ = appendControl("↻", name: "details:quota-refresh", to: heading)
         gtk_box_pack_start(tc_gtk_box(content), heading, 0, 0, 0)
 
-        for bucket in codexQuota.buckets {
-            appendQuotaCard(bucket, to: content)
+        appendQuotaProviderHeading(
+            "🤖 Codex", plan: codexQuota.planType,
+            loading: codexQuota.status == .loading, to: content
+        )
+
+        if codexQuota.buckets.isEmpty {
+            appendQuotaUnavailable(
+                tr(codexQuota.status == .loading ? "quota.loadingCodex" : "quota.codexUnavailable"),
+                to: content
+            )
+        } else {
+            for bucket in codexQuota.buckets { appendQuotaCard(bucket, to: content) }
         }
 
         let metadata = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 5)
-        if let plan = codexQuota.planType, !plan.isEmpty {
-            appendQuotaChip(tr("quota.plan", displayPlan(plan)), to: metadata)
-        }
         if codexQuota.hasUnlimitedCredits {
             appendQuotaChip(tr("quota.unlimited"), to: metadata)
         } else if let balance = codexQuota.creditBalance, balance != "0" {
@@ -484,40 +620,131 @@ final class LinuxDetailsPanel: @unchecked Sendable {
         if codexQuota.resetCreditCount > 0 {
             appendQuotaChip(tr("quota.resetCredits", codexQuota.resetCreditCount), to: metadata)
         }
-        gtk_box_pack_start(tc_gtk_box(content), metadata, 0, 0, 0)
+        let hasCodexMetadata = codexQuota.hasUnlimitedCredits
+            || (codexQuota.creditBalance.map { $0 != "0" } ?? false)
+            || codexQuota.resetCreditCount > 0
+        if !codexQuota.buckets.isEmpty, hasCodexMetadata {
+            gtk_box_pack_start(tc_gtk_box(content), metadata, 0, 0, 0)
+        }
 
         var source = tr(codexQuota.source == .appServer ? "quota.liveSource" : "quota.logSource")
         if let refreshedAt = codexQuota.refreshedAt {
             source += "  ·  " + tr("quota.updated", quotaUpdatedLabel(refreshedAt))
         }
-        let sourceLabel = gtk_label_new("●  \(source)")
-        gtk_label_set_xalign(tc_gtk_label(sourceLabel), 0)
-        tc_gtk_add_class(sourceLabel, "tokenclock-quota-source")
-        gtk_box_pack_start(tc_gtk_box(content), sourceLabel, 0, 0, 2)
+        if !codexQuota.buckets.isEmpty {
+            let sourceLabel = gtk_label_new("●  \(source)")
+            gtk_label_set_xalign(tc_gtk_label(sourceLabel), 0)
+            tc_gtk_add_class(sourceLabel, "tokenclock-quota-source")
+            gtk_box_pack_start(tc_gtk_box(content), sourceLabel, 0, 0, 2)
+        }
+
+        gtk_box_pack_start(tc_gtk_box(content), separator(), 0, 0, 4)
+        appendQuotaProviderHeading(
+            "✳️ Claude Code", plan: claudeQuota.planType,
+            loading: claudeQuota.status == .loading, to: content
+        )
+        if claudeQuota.buckets.isEmpty {
+            appendQuotaUnavailable(
+                tr(claudeQuota.status == .loading ? "quota.loadingClaude" : "quota.claudeUnavailable"),
+                to: content
+            )
+        } else {
+            for bucket in claudeQuota.buckets { appendQuotaCard(bucket, to: content) }
+            var claudeSource = tr("quota.claudeSource")
+            if let refreshedAt = claudeQuota.refreshedAt {
+                claudeSource += "  ·  " + tr("quota.updated", quotaUpdatedLabel(refreshedAt))
+            }
+            let label = gtk_label_new("●  \(claudeSource)")
+            gtk_label_set_xalign(tc_gtk_label(label), 0)
+            tc_gtk_add_class(label, "tokenclock-quota-source")
+            gtk_box_pack_start(tc_gtk_box(content), label, 0, 0, 2)
+        }
+
+        appendProviderQuotaSection("🛸 Antigravity", snapshot: antigravityQuota,
+            unavailable: tr("quota.antigravityUnavailable"), to: content)
+        appendProviderQuotaSection("🖱️ Cursor", snapshot: cursorQuota,
+            unavailable: tr("quota.cursorUnavailable"), to: content)
+    }
+
+    private func appendProviderQuotaSection(
+        _ title: String, snapshot: ProviderQuotaSnapshot, unavailable: String,
+        to content: UnsafeMutablePointer<GtkWidget>
+    ) {
+        gtk_box_pack_start(tc_gtk_box(content), separator(), 0, 0, 4)
+        appendQuotaProviderHeading(title, plan: snapshot.planType,
+            loading: snapshot.status == .loading, to: content)
+        if snapshot.groups.isEmpty {
+            appendQuotaUnavailable(snapshot.status == .loading
+                ? tr("quota.loadingProvider", title) : unavailable, to: content)
+            return
+        }
+        for group in snapshot.groups {
+            if snapshot.groups.count > 1 || group.name != "Subscription" {
+                let label = gtk_label_new(group.name)
+                gtk_label_set_xalign(tc_gtk_label(label), 0)
+                tc_gtk_add_class(label, "tokenclock-quota-source")
+                gtk_box_pack_start(tc_gtk_box(content), label, 0, 0, 1)
+            }
+            for bucket in group.buckets { appendQuotaCard(bucket, to: content) }
+        }
+        var source = snapshot.source
+        if let refreshedAt = snapshot.refreshedAt {
+            source += "  ·  " + tr("quota.updated", quotaUpdatedLabel(refreshedAt))
+        }
+        let label = gtk_label_new("●  \(source)")
+        gtk_label_set_xalign(tc_gtk_label(label), 0)
+        tc_gtk_add_class(label, "tokenclock-quota-source")
+        gtk_box_pack_start(tc_gtk_box(content), label, 0, 0, 2)
+    }
+
+    private func appendQuotaProviderHeading(
+        _ title: String, plan: String?, loading: Bool,
+        to content: UnsafeMutablePointer<GtkWidget>
+    ) {
+        let row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6)
+        let label = gtk_label_new(loading ? "◌  \(title)" : title)
+        gtk_label_set_xalign(tc_gtk_label(label), 0)
+        tc_gtk_add_class(label, "tokenclock-quota-provider")
+        gtk_box_pack_start(tc_gtk_box(row), label, 1, 1, 0)
+        if let plan, !plan.isEmpty {
+            appendQuotaChip(tr("quota.plan", displayPlan(plan)), to: row)
+        }
+        gtk_box_pack_start(tc_gtk_box(content), row, 0, 0, 0)
+    }
+
+    private func appendQuotaUnavailable(_ text: String, to content: UnsafeMutablePointer<GtkWidget>) {
+        let label = gtk_label_new("◔  \(text)")
+        gtk_label_set_xalign(tc_gtk_label(label), 0)
+        gtk_label_set_line_wrap(tc_gtk_label(label), 1)
+        tc_gtk_add_class(label, "tokenclock-detail-subtext")
+        gtk_box_pack_start(tc_gtk_box(content), label, 0, 0, 10)
     }
 
     private func appendQuotaCard(
         _ bucket: CodexQuotaBucket,
         to content: UnsafeMutablePointer<GtkWidget>
     ) {
-        let card = gtk_box_new(GTK_ORIENTATION_VERTICAL, 7)
-        gtk_container_set_border_width(tc_gtk_container(card), 10)
+        let card = gtk_box_new(GTK_ORIENTATION_VERTICAL, 9)
+        gtk_container_set_border_width(tc_gtk_container(card), 12)
         tc_gtk_add_class(card, "tokenclock-quota-card")
 
-        let heading = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6)
-        let nameBox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 1)
-        let name = gtk_label_new(bucket.name)
-        gtk_label_set_xalign(tc_gtk_label(name), 0)
-        tc_gtk_add_class(name, "tokenclock-detail-text")
-        gtk_box_pack_start(tc_gtk_box(nameBox), name, 0, 0, 0)
-        let window = gtk_label_new(quotaWindowLabel(minutes: bucket.windowMinutes))
+        let heading = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8)
+        let window = gtk_label_new(
+            bucket.name.isEmpty ? quotaWindowLabel(minutes: bucket.windowMinutes) : bucket.name
+        )
         gtk_label_set_xalign(tc_gtk_label(window), 0)
-        tc_gtk_add_class(window, "tokenclock-detail-subtext")
-        gtk_box_pack_start(tc_gtk_box(nameBox), window, 0, 0, 0)
-        gtk_box_pack_start(tc_gtk_box(heading), nameBox, 1, 1, 0)
-        let remaining = gtk_label_new(tr("quota.remaining", bucket.remainingPercent))
-        tc_gtk_add_class(remaining, quotaAccentClass(bucket.remainingPercent))
-        gtk_box_pack_start(tc_gtk_box(heading), remaining, 0, 0, 0)
+        tc_gtk_add_class(window, "tokenclock-quota-window")
+        gtk_box_pack_start(tc_gtk_box(heading), window, 1, 1, 0)
+        let percentBox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0)
+        let percent = gtk_label_new(String(format: "%.0f%%", bucket.remainingPercent))
+        gtk_label_set_xalign(tc_gtk_label(percent), 1)
+        tc_gtk_add_class(percent, "tokenclock-quota-percent")
+        gtk_box_pack_start(tc_gtk_box(percentBox), percent, 0, 0, 0)
+        let remaining = gtk_label_new(tr("quota.remainingLabel"))
+        gtk_label_set_xalign(tc_gtk_label(remaining), 1)
+        tc_gtk_add_class(remaining, "tokenclock-quota-remaining-caption")
+        gtk_box_pack_start(tc_gtk_box(percentBox), remaining, 0, 0, 0)
+        gtk_box_pack_start(tc_gtk_box(heading), percentBox, 0, 0, 0)
         gtk_box_pack_start(tc_gtk_box(card), heading, 0, 0, 0)
 
         let progress = gtk_progress_bar_new()
@@ -528,11 +755,18 @@ final class LinuxDetailsPanel: @unchecked Sendable {
         gtk_box_pack_start(tc_gtk_box(card), progress, 0, 0, 0)
 
         if let resetsAt = bucket.resetsAt {
-            let reset = gtk_label_new(quotaResetLabel(resetsAt))
-            gtk_label_set_xalign(tc_gtk_label(reset), 0)
-            gtk_label_set_ellipsize(tc_gtk_label(reset), PANGO_ELLIPSIZE_END)
-            tc_gtk_add_class(reset, "tokenclock-detail-subtext")
-            gtk_box_pack_start(tc_gtk_box(card), reset, 0, 0, 0)
+            let labels = quotaResetLabels(resetsAt)
+            let resetRow = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 5)
+            let relative = gtk_label_new("↻  \(labels.relative)")
+            gtk_label_set_xalign(tc_gtk_label(relative), 0)
+            tc_gtk_add_class(relative, "tokenclock-quota-reset-relative")
+            gtk_box_pack_start(tc_gtk_box(resetRow), relative, 1, 1, 0)
+            let absolute = gtk_label_new(labels.absolute)
+            gtk_label_set_xalign(tc_gtk_label(absolute), 1)
+            gtk_label_set_ellipsize(tc_gtk_label(absolute), PANGO_ELLIPSIZE_END)
+            tc_gtk_add_class(absolute, "tokenclock-quota-reset-absolute")
+            gtk_box_pack_start(tc_gtk_box(resetRow), absolute, 0, 0, 0)
+            gtk_box_pack_start(tc_gtk_box(card), resetRow, 0, 0, 0)
         }
         gtk_box_pack_start(tc_gtk_box(content), card, 0, 0, 0)
     }
@@ -560,11 +794,10 @@ final class LinuxDetailsPanel: @unchecked Sendable {
         return tr("quota.minutes", minutes)
     }
 
-    private func quotaResetLabel(_ date: Date) -> String {
+    private func quotaResetLabels(_ date: Date) -> (relative: String, absolute: String) {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: L10n.shared.language.rawValue)
-        formatter.dateStyle = .medium
-        formatter.timeStyle = .short
+        formatter.dateFormat = L10n.shared.language == .en ? "MMM d · h:mm a" : "M月d日 · HH:mm"
         let seconds = max(0, date.timeIntervalSinceNow)
         let relative: String
         if seconds >= 86_400 {
@@ -574,12 +807,21 @@ final class LinuxDetailsPanel: @unchecked Sendable {
         } else {
             relative = localized(zh: "\(Int(ceil(seconds / 60))) 分钟后", en: "in \(Int(ceil(seconds / 60)))m")
         }
-        return tr("quota.resets", formatter.string(from: date), relative)
+        return (tr("quota.resetsRelative", relative), formatter.string(from: date))
     }
 
     private func displayPlan(_ raw: String) -> String {
         if raw.lowercased() == "prolite" { return "Pro" }
         return raw.replacingOccurrences(of: "_", with: " ").capitalized
+    }
+
+    private var quickContrastPreset: Int {
+        UserDefaults.standard.int(for: .quickContrastPreset, default: 0)
+    }
+
+    private func cycleQuickContrast() {
+        let next = quickContrastPreset >= 3 ? 1 : quickContrastPreset + 1
+        UserDefaults.standard.setInt(next, for: .quickContrastPreset)
     }
 
     private func quotaUpdatedLabel(_ date: Date) -> String {
@@ -592,18 +834,47 @@ final class LinuxDetailsPanel: @unchecked Sendable {
     }
 
     private func refreshQuota(force: Bool = false) {
-        guard !quotaFetchInFlight else { return }
-        if !force, codexQuota.status == .available, !codexQuota.isStale { return }
-        quotaFetchInFlight = true
-        codexQuota = .loading(previous: codexQuota)
-        DispatchQueue.global(qos: .utility).async { [weak self] in
-            guard let self else { return }
-            let snapshot = self.quotaService.fetch()
-            self.quotaLock.lock()
-            self.pendingQuota = snapshot
-            self.quotaLock.unlock()
-            _ = tc_gtk_idle_add(linuxDetailsQuotaReady, self.opaque)
+        if !quotaFetchInFlight && (force || codexQuota.status != .available || codexQuota.isStale) {
+            quotaFetchInFlight = true
+            codexQuota = .loading(previous: codexQuota)
+            DispatchQueue.global(qos: .utility).async { [weak self] in
+                guard let self else { return }
+                let snapshot = self.quotaService.fetch()
+                self.quotaLock.lock(); self.pendingQuota = snapshot; self.quotaLock.unlock()
+                _ = tc_gtk_idle_add(linuxDetailsQuotaReady, self.opaque)
+            }
         }
+        if !claudeQuotaFetchInFlight && (force || claudeQuota.status != .available || claudeQuota.isStale) {
+            claudeQuotaFetchInFlight = true
+            claudeQuota = .loading(previous: claudeQuota)
+            DispatchQueue.global(qos: .utility).async { [weak self] in
+                guard let self else { return }
+                let snapshot = self.claudeQuotaService.fetch()
+                self.quotaLock.lock(); self.pendingClaudeQuota = snapshot; self.quotaLock.unlock()
+                _ = tc_gtk_idle_add(linuxDetailsClaudeQuotaReady, self.opaque)
+            }
+        }
+        if !antigravityQuotaFetchInFlight && (force || antigravityQuota.status != .available || antigravityQuota.isStale) {
+            antigravityQuotaFetchInFlight = true
+            antigravityQuota = .loading(previous: antigravityQuota)
+            DispatchQueue.global(qos: .utility).async { [weak self] in
+                guard let self else { return }
+                let snapshot = self.antigravityQuotaService.fetch()
+                self.quotaLock.lock(); self.pendingAntigravityQuota = snapshot; self.quotaLock.unlock()
+                _ = tc_gtk_idle_add(linuxDetailsAntigravityQuotaReady, self.opaque)
+            }
+        }
+        if !cursorQuotaFetchInFlight && (force || cursorQuota.status != .available || cursorQuota.isStale) {
+            cursorQuotaFetchInFlight = true
+            cursorQuota = .loading(previous: cursorQuota)
+            DispatchQueue.global(qos: .utility).async { [weak self] in
+                guard let self else { return }
+                let snapshot = self.cursorQuotaService.fetch()
+                self.quotaLock.lock(); self.pendingCursorQuota = snapshot; self.quotaLock.unlock()
+                _ = tc_gtk_idle_add(linuxDetailsCursorQuotaReady, self.opaque)
+            }
+        }
+        rebuildQuotaWindow()
     }
 
     fileprivate func applyPendingQuota() {
@@ -613,7 +884,31 @@ final class LinuxDetailsPanel: @unchecked Sendable {
         quotaLock.unlock()
         quotaFetchInFlight = false
         if let snapshot { codexQuota = snapshot }
-        scheduleRebuild()
+        rebuildQuotaWindow()
+    }
+
+    fileprivate func applyPendingClaudeQuota() {
+        quotaLock.lock()
+        let snapshot = pendingClaudeQuota
+        pendingClaudeQuota = nil
+        quotaLock.unlock()
+        claudeQuotaFetchInFlight = false
+        if let snapshot { claudeQuota = snapshot }
+        rebuildQuotaWindow()
+    }
+
+    fileprivate func applyPendingAntigravityQuota() {
+        quotaLock.lock(); let snapshot = pendingAntigravityQuota; pendingAntigravityQuota = nil; quotaLock.unlock()
+        antigravityQuotaFetchInFlight = false
+        if let snapshot { antigravityQuota = snapshot }
+        rebuildQuotaWindow()
+    }
+
+    fileprivate func applyPendingCursorQuota() {
+        quotaLock.lock(); let snapshot = pendingCursorQuota; pendingCursorQuota = nil; quotaLock.unlock()
+        cursorQuotaFetchInFlight = false
+        if let snapshot { cursorQuota = snapshot }
+        rebuildQuotaWindow()
     }
 
     private func scheduleRebuild() {
@@ -674,9 +969,10 @@ final class LinuxDetailsPanel: @unchecked Sendable {
         guard force || appliedTheme != theme else { return }
         appliedTheme = theme
         let background = css(theme.dropdownBackgroundColor)
-        let text = css(theme.dropdownTextColor)
-        let subtext = css(theme.dropdownSubtextColor)
-        let header = css(theme.dropdownHeaderColor)
+        let quick = quickContrastColor
+        let text = css(quick ?? theme.dropdownTextColor)
+        let subtext = css(quick.map { LinuxColor($0.red, $0.green, $0.blue, 0.68) } ?? theme.dropdownSubtextColor)
+        let header = css(quick.map { LinuxColor($0.red, $0.green, $0.blue, 0.72) } ?? theme.dropdownHeaderColor)
         let border = css(theme.dropdownBorderColor)
         let divider = css(theme.dropdownDividerColor)
         tc_gtk_apply_css(
@@ -697,26 +993,35 @@ final class LinuxDetailsPanel: @unchecked Sendable {
               padding: 3px 8px; font: 600 10px Sans;
             }
             .tokenclock-detail-chip:hover { background: alpha(\(text), 0.14); }
+            .tokenclock-detail-action-chip { padding: 5px 10px; font: 600 11px Sans; }
+            .tokenclock-detail-third-chip { padding: 5px 5px; font: 600 10px Sans; }
+            #tokenclock-current-color-dot { color: \(text); font: 700 13px Sans; }
             .tokenclock-detail-row-button { background: transparent; border: 0; padding: 0; }
             .tokenclock-detail-row-button:hover { background: alpha(\(text), 0.07); }
             .tokenclock-detail-child-row { background: alpha(\(text), 0.025); }
-            .tokenclock-quota-heading { color: \(header); font: 700 10px Sans; letter-spacing: 1.2px; }
+            .tokenclock-quota-title { color: \(text); font: 600 12px Sans; letter-spacing: 0.2px; }
+            .tokenclock-quota-provider { color: \(text); font: 700 12px Sans; }
+            .tokenclock-quota-window { color: \(text); font: 600 12px Sans; }
             .tokenclock-quota-card {
-              background: alpha(\(text), 0.055); border: 1px solid alpha(\(text), 0.10);
-              border-radius: 9px;
+              background: alpha(\(text), 0.075); border: 1px solid alpha(\(text), 0.14);
+              border-radius: 11px;
             }
             .tokenclock-quota-chip {
-              color: \(subtext); background: alpha(\(text), 0.07);
-              border-radius: 9px; padding: 3px 6px; font: 600 9px Sans;
+              color: \(subtext); background: alpha(\(text), 0.10);
+              border-radius: 9px; padding: 3px 7px; font: 600 9px Sans;
             }
-            .tokenclock-quota-source { color: \(subtext); font: 9px Sans; }
-            .tokenclock-quota-good { color: #3ac56c; font: 700 13px Sans; }
-            .tokenclock-quota-warning { color: #f0a32f; font: 700 13px Sans; }
-            .tokenclock-quota-danger { color: #ef4b4b; font: 700 13px Sans; }
-            progressbar trough { background: alpha(\(text), 0.09); min-height: 6px; border-radius: 3px; }
-            progressbar.tokenclock-quota-good progress { background: #3ac56c; min-height: 6px; border-radius: 3px; }
-            progressbar.tokenclock-quota-warning progress { background: #f0a32f; min-height: 6px; border-radius: 3px; }
-            progressbar.tokenclock-quota-danger progress { background: #ef4b4b; min-height: 6px; border-radius: 3px; }
+            .tokenclock-quota-source { color: \(subtext); font: 500 10px Sans; }
+            .tokenclock-quota-remaining-caption { color: \(subtext); font: 600 9px Sans; }
+            .tokenclock-quota-percent { color: #ffffff; font: 700 16px Sans; }
+            .tokenclock-quota-reset-relative { color: \(subtext); font: 600 10px Sans; }
+            .tokenclock-quota-reset-absolute { color: \(subtext); font: 9px Sans; }
+            .tokenclock-quota-good { color: #3ac56c; font: 700 16px Sans; }
+            .tokenclock-quota-warning { color: #f0a32f; font: 700 16px Sans; }
+            .tokenclock-quota-danger { color: #ef4b4b; font: 700 16px Sans; }
+            progressbar trough { background: alpha(\(text), 0.09); min-height: 8px; border-radius: 4px; }
+            progressbar.tokenclock-quota-good progress { background: #3ac56c; min-height: 8px; border-radius: 4px; }
+            progressbar.tokenclock-quota-warning progress { background: #f0a32f; min-height: 8px; border-radius: 4px; }
+            progressbar.tokenclock-quota-danger progress { background: #ef4b4b; min-height: 8px; border-radius: 4px; }
             scrollbar slider { background: alpha(\(text), 0.25); min-width: 6px; border-radius: 3px; }
             """
         )
@@ -727,6 +1032,15 @@ final class LinuxDetailsPanel: @unchecked Sendable {
         let g = Int((min(1, max(0, color.green)) * 255).rounded())
         let b = Int((min(1, max(0, color.blue)) * 255).rounded())
         return String(format: "rgba(%d,%d,%d,%.3f)", r, g, b, color.alpha)
+    }
+
+    private var quickContrastColor: LinuxColor? {
+        switch quickContrastPreset {
+        case 1: return LinuxColor(1, 1, 1)
+        case 2: return LinuxColor(0, 0, 0)
+        case 3: return LinuxColor(1, 214.0 / 255.0, 10.0 / 255.0)
+        default: return nil
+        }
     }
 
     private func tr(_ key: String) -> String { L10n.shared.tr(key) }
@@ -761,5 +1075,20 @@ private func linuxDetailsRebuildIdle(_ data: gpointer?) -> gboolean {
 
 private func linuxDetailsQuotaReady(_ data: gpointer?) -> gboolean {
     detailsPanel(from: data)?.applyPendingQuota()
+    return 0
+}
+
+private func linuxDetailsClaudeQuotaReady(_ data: gpointer?) -> gboolean {
+    detailsPanel(from: data)?.applyPendingClaudeQuota()
+    return 0
+}
+
+private func linuxDetailsAntigravityQuotaReady(_ data: gpointer?) -> gboolean {
+    detailsPanel(from: data)?.applyPendingAntigravityQuota()
+    return 0
+}
+
+private func linuxDetailsCursorQuotaReady(_ data: gpointer?) -> gboolean {
+    detailsPanel(from: data)?.applyPendingCursorQuota()
     return 0
 }
