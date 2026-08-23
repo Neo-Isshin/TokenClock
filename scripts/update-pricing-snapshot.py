@@ -23,9 +23,10 @@
 
 import argparse
 import json
+import ssl
 import sys
 import urllib.request
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 UPSTREAM_URL = (
@@ -49,6 +50,7 @@ ALLOWED_PROVIDERS = {
     "dashscope",
     "qwen",
     "moonshotai",
+    "moonshot",
     "minimax",
     "zai",
     "z-ai",
@@ -59,7 +61,9 @@ ALLOWED_ROUTE_PREFIXES = (
     "dashscope/",
     "qwen/",
     "moonshotai/",
+    "moonshot/",
     "minimax/",
+    "xai/",
     "z-ai/",
     "zai/",
 )
@@ -67,10 +71,75 @@ ALLOWED_ROUTE_PREFIXES = (
 # 只收对话类模型；embedding/audio/image/moderation 无 token 计费意义。
 ALLOWED_MODES = {"chat", "responses", "completion"}
 
+# Official first-party overrides protect the bundled catalog from stale or reseller
+# rows in aggregation feeds. Values are USD / MTok. `lt` selects a full-request
+# long-context tier; `pm` is the API Priority multiplier.
+OFFICIAL_OVERRIDES = {
+    # OpenAI Docs: developers.openai.com/api/docs/models and learn.chatgpt.com/docs/pricing
+    "gpt-5.6": {"in": 4.0, "out": 20.0, "cr": 0.4, "cw": 5.0, "lt": 272_000,
+                "lin": 8.0, "lout": 30.0, "lcr": 0.8, "lcw": 10.0, "pm": 2.0, "p": "openai"},
+    "gpt-5.6-sol": {"in": 4.0, "out": 20.0, "cr": 0.4, "cw": 5.0, "lt": 272_000,
+                    "lin": 8.0, "lout": 30.0, "lcr": 0.8, "lcw": 10.0, "pm": 2.0, "p": "openai"},
+    "gpt-5.6-terra": {"in": 2.0, "out": 12.0, "cr": 0.2, "cw": 2.5, "lt": 272_000,
+                      "lin": 4.0, "lout": 18.0, "lcr": 0.4, "lcw": 5.0, "pm": 2.0, "p": "openai"},
+    "gpt-5.6-luna": {"in": 0.2, "out": 1.2, "cr": 0.02, "cw": 0.25, "lt": 272_000,
+                     "lin": 0.4, "lout": 1.8, "lcr": 0.04, "lcw": 0.5, "pm": 2.0, "p": "openai"},
+    "gpt-5.5": {"in": 5.0, "out": 30.0, "cr": 0.5, "lt": 272_000,
+                "lin": 10.0, "lout": 45.0, "lcr": 1.0, "pm": 2.0, "p": "openai"},
+    "gpt-5.4": {"in": 2.5, "out": 15.0, "cr": 0.25, "lt": 272_000,
+                "lin": 5.0, "lout": 22.5, "lcr": 0.5, "pm": 2.0, "p": "openai"},
+
+    # Anthropic: platform.claude.com/docs/en/about-claude/pricing (5-minute cache writes)
+    "claude-fable-5": {"in": 10.0, "out": 50.0, "cr": 1.0, "cw": 12.5, "p": "anthropic"},
+    "claude-mythos-5": {"in": 10.0, "out": 50.0, "cr": 1.0, "cw": 12.5, "p": "anthropic"},
+    "claude-opus-5": {"in": 5.0, "out": 25.0, "cr": 0.5, "cw": 6.25, "p": "anthropic"},
+    "claude-opus-4-8": {"in": 5.0, "out": 25.0, "cr": 0.5, "cw": 6.25, "p": "anthropic"},
+    "claude-sonnet-5": {"in": 2.0, "out": 10.0, "cr": 0.2, "cw": 2.5, "p": "anthropic"},
+
+    # Google AI for Developers: ai.google.dev/gemini-api/docs/pricing
+    "gemini-3.5-flash": {"in": 1.5, "out": 9.0, "cr": 0.15, "p": "vertex_ai-language-models"},
+    "gemini-3.5-flash-lite": {"in": 0.3, "out": 2.5, "cr": 0.03, "p": "vertex_ai-language-models"},
+    "gemini-2.5-pro": {"in": 1.25, "out": 10.0, "cr": 0.125, "lt": 200_000,
+                       "lin": 2.5, "lout": 15.0, "lcr": 0.25, "p": "gemini"},
+
+    # xAI: docs.x.ai/developers/models/grok-4.6
+    "xai/grok-4.6": {"in": 2.0, "out": 6.0, "cr": 0.5, "lt": 200_000,
+                     "lin": 4.0, "lout": 12.0, "lcr": 1.0, "p": "xai"},
+
+    # DeepSeek: api-docs.deepseek.com/quick_start/pricing
+    "deepseek-v4-flash": {"in": 0.14, "out": 0.28, "cr": 0.0028, "cw": 0.0, "p": "deepseek"},
+    "deepseek-v4-pro": {"in": 0.435, "out": 0.87, "cr": 0.003625, "cw": 0.0, "p": "deepseek"},
+
+    # Kimi API Platform: platform.kimi.ai/docs/pricing
+    "moonshot/kimi-k3": {"in": 3.0, "out": 15.0, "cr": 0.3, "p": "moonshot"},
+    "moonshot/kimi-k2.7-code": {"in": 0.95, "out": 4.0, "cr": 0.19, "p": "moonshot"},
+    "moonshot/kimi-k2.7-code-highspeed": {"in": 1.9, "out": 8.0, "cr": 0.38, "p": "moonshot"},
+    "moonshot/kimi-k2.6": {"in": 0.95, "out": 4.0, "cr": 0.16, "p": "moonshot"},
+    "moonshot/kimi-k2.5": {"in": 0.6, "out": 3.0, "cr": 0.1, "p": "moonshot"},
+
+    # MiniMax: platform.minimax.io/docs/guides/pricing-paygo
+    "minimax/MiniMax-M2.7": {"in": 0.3, "out": 1.2, "cr": 0.06, "cw": 0.375, "p": "minimax"},
+    "minimax/MiniMax-M2.7-highspeed": {"in": 0.6, "out": 2.4, "cr": 0.06, "cw": 0.375, "p": "minimax"},
+
+    # Z.AI: docs.z.ai/guides/overview/pricing
+    "zai/glm-5.1": {"in": 1.4, "out": 4.4, "cr": 0.26, "cw": 0.0, "p": "zai"},
+    "zai/glm-5": {"in": 1.0, "out": 3.2, "cr": 0.2, "cw": 0.0, "p": "zai"},
+
+    # Alibaba Cloud international catalog: help.aliyun.com/en/model-studio/model-pricing
+    "dashscope/qwen3.8-max": {"in": 2.0, "out": 6.0, "cr": 0.25, "p": "dashscope"},
+}
+OFFICIAL_REVIEW_AFTER = date(2026, 11, 21)
+
 
 def fetch_upstream() -> dict:
     req = urllib.request.Request(UPSTREAM_URL, headers={"User-Agent": "TokenClock-pricing-snapshot"})
-    with urllib.request.urlopen(req, timeout=60) as resp:
+    context = ssl.create_default_context()
+    try:
+        import certifi
+        context = ssl.create_default_context(cafile=certifi.where())
+    except ImportError:
+        pass
+    with urllib.request.urlopen(req, timeout=60, context=context) as resp:
         return json.load(resp)
 
 
@@ -116,6 +185,8 @@ def build_models(upstream: dict) -> dict:
         if price["in"] is None or price["out"] is None:
             continue  # 没有输入/输出单价的条目无法计费
         models[key] = {k: v for k, v in price.items() if v is not None}
+    for key, official in OFFICIAL_OVERRIDES.items():
+        models[key] = dict(official)
     return dict(sorted(models.items()))
 
 
@@ -125,6 +196,8 @@ def render_snapshot(models: dict) -> str:
         "generatedAt": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "unit": "USD/MTok",
         "source": "BerriAI/litellm model_prices_and_context_window.json",
+        "officialOverrides": len(OFFICIAL_OVERRIDES),
+        "officialReviewAfter": OFFICIAL_REVIEW_AFTER.isoformat(),
         "models": len(models),
     }
     lines = ["{"]
@@ -144,13 +217,25 @@ def main() -> int:
                         help="只检查上游变化是否影响快照，不写文件")
     args = parser.parse_args()
 
+    if datetime.now(timezone.utc).date() > OFFICIAL_REVIEW_AFTER:
+        print(
+            "error: OpenAI GPT-5.6 promotional pricing review date has passed; "
+            "re-verify official overrides before regenerating",
+            file=sys.stderr,
+        )
+        return 1
+
     upstream = fetch_upstream()
     models = build_models(upstream)
     if not models:
         print("error: 裁剪后模型数为 0，上游格式可能已变化，拒绝生成", file=sys.stderr)
         return 1
     # 保底：一方核心模型必须在，否则上游改名/结构变化应人工介入
-    for must in ("claude-sonnet-4-5", "gpt-5", "gpt-5-codex"):
+    for must in (
+        "claude-sonnet-5", "gpt-5.6-sol", "gemini-3.5-flash", "xai/grok-4.6",
+        "deepseek-v4-pro", "moonshot/kimi-k3", "minimax/MiniMax-M2.7",
+        "zai/glm-5.1", "dashscope/qwen3.8-max",
+    ):
         if must not in models:
             print(f"error: 核心模型 {must} 缺失，请检查上游变化", file=sys.stderr)
             return 1

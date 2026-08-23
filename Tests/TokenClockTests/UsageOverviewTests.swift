@@ -146,9 +146,10 @@ final class UsageOverviewTests: XCTestCase {
         sqlite3_close(db)
 
         let store = HistoryStore(path: path)
-        let legacy = try XCTUnwrap(store.query(from: "2026-08-19", through: "2026-08-19").first?.tools.first)
-        XCTAssertNil(legacy.cacheReadTokens)
-        XCTAssertFalse(legacy.cost.available)
+        XCTAssertTrue(
+            store.query(from: "2026-08-19", through: "2026-08-19").isEmpty,
+            "Codex rows written before replay-safe accounting must stay stored but be hidden"
+        )
         store.upsertDay(dateKey: "2026-08-20", snapshots: [
             ToolSnapshot(name: "Codex", tokens: 100, messages: 3, cacheRate: 0.2,
                          isActive: false, cost: .init(value: 1, complete: true, available: true),

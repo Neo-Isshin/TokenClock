@@ -202,6 +202,7 @@ struct UsageOverviewView: View {
 
     private var notes: some View {
         HStack(spacing: 12) {
+            if overview.summary.cost.available { note(L10n.shared.tr("overview.apiEquivalentCost")) }
             if overview.containsLegacyCacheEstimate { note(L10n.shared.tr("overview.estimatedCache")) }
             if overview.containsUnavailableCost { note(L10n.shared.tr("overview.partialCost")) }
             if overview.containsUnknownModel { note(L10n.shared.tr("overview.unknownModel")) }
