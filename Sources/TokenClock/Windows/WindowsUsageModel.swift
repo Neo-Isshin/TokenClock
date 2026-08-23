@@ -252,6 +252,7 @@ final class WindowsUsageModel: @unchecked Sendable {
             "usageIncludesCacheRead": includesCache,
             "totalMessages": UsageAggregator.totalMessages(current),
             "totalCost": cost.value,
+            "costBasis": "api_equivalent_public_list",
             "costComplete": cost.complete,
             "costAvailable": cost.available,
             "rateEmoji": UsageAggregator.rateEmoji(current),
@@ -391,7 +392,7 @@ final class WindowsUsageModel: @unchecked Sendable {
                 },
             ]
         }
-        return ["windowDays": days, "days": rows]
+        return ["windowDays": days, "costBasis": "api_equivalent_public_list", "days": rows]
     }
 
     private struct ScanSnapshot {

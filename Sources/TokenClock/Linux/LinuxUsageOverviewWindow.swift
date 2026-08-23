@@ -239,6 +239,7 @@ final class LinuxUsageOverviewWindow: @unchecked Sendable {
 
     private func appendNotes(_ data: UsageOverviewData, to root: UnsafeMutablePointer<GtkWidget>) {
         let notes = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 12)
+        if data.summary.cost.available { appendNote(L10n.shared.tr("overview.apiEquivalentCost"), to: notes) }
         if data.containsLegacyCacheEstimate { appendNote(L10n.shared.tr("overview.estimatedCache"), to: notes) }
         if data.containsUnavailableCost { appendNote(L10n.shared.tr("overview.partialCost"), to: notes) }
         if data.containsUnknownModel { appendNote(L10n.shared.tr("overview.unknownModel"), to: notes) }

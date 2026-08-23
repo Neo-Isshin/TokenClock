@@ -233,6 +233,7 @@ final class LinuxUsageModel: @unchecked Sendable {
             "usageIncludesCacheRead": includesCache,
             "totalMessages": UsageAggregator.totalMessages(current),
             "totalCost": totalCost.value,
+            "costBasis": "api_equivalent_public_list",
             "costComplete": totalCost.complete,
             "costAvailable": totalCost.available,
             "rateEmoji": UsageAggregator.rateEmoji(current),
@@ -318,7 +319,7 @@ final class LinuxUsageModel: @unchecked Sendable {
                 },
             ]
         }
-        return ["windowDays": days, "days": rows]
+        return ["windowDays": days, "costBasis": "api_equivalent_public_list", "days": rows]
     }
 
     private struct ScanSnapshot {

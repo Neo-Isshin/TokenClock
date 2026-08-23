@@ -1176,6 +1176,7 @@ final class WindowsApp: @unchecked Sendable {
         y += listHeight + 12
 
         var notes: [String] = []
+        if data.summary.cost.available { notes.append(L10n.shared.tr("overview.apiEquivalentCost")) }
         if data.containsLegacyCacheEstimate { notes.append(L10n.shared.tr("overview.estimatedCache")) }
         if data.containsUnavailableCost { notes.append(L10n.shared.tr("overview.partialCost")) }
         if data.containsUnknownModel { notes.append(L10n.shared.tr("overview.unknownModel")) }

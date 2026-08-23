@@ -10,6 +10,7 @@ import CSQLite
 /// API 端点：GET /api/history?days=N
 final class HistoryStore: @unchecked Sendable {
     static let shared = HistoryStore()
+    private static let currentAccountingVersion = 2
 
     private var db: OpaquePointer?
     private let ioQueue = DispatchQueue(label: "com.tokenclock.history.io", qos: .utility)
@@ -45,6 +46,7 @@ final class HistoryStore: @unchecked Sendable {
                 cost_value    REAL NOT NULL DEFAULT 0,
                 cost_complete INTEGER NOT NULL DEFAULT 0,
                 cost_available INTEGER NOT NULL DEFAULT 0,
+                accounting_version INTEGER NOT NULL DEFAULT 0,
                 PRIMARY KEY (date_key, tool_name)
             );
             CREATE INDEX IF NOT EXISTS idx_date ON daily_snapshots(date_key);
@@ -80,6 +82,9 @@ final class HistoryStore: @unchecked Sendable {
         }
         if !columns.contains("cost_available") {
             sqlite3_exec(db, "ALTER TABLE daily_snapshots ADD COLUMN cost_available INTEGER NOT NULL DEFAULT 0", nil, nil, nil)
+        }
+        if !columns.contains("accounting_version") {
+            sqlite3_exec(db, "ALTER TABLE daily_snapshots ADD COLUMN accounting_version INTEGER NOT NULL DEFAULT 0", nil, nil, nil)
         }
     }
 
@@ -183,8 +188,9 @@ final class HistoryStore: @unchecked Sendable {
             guard sqlite3_prepare_v2(db, """
                 INSERT INTO daily_snapshots
                   (date_key, tool_name, tokens, messages, cache_rate, is_active, settled_at,
-                   sessions_json, cache_read_tokens, cost_value, cost_complete, cost_available)
-                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
+                   sessions_json, cache_read_tokens, cost_value, cost_complete, cost_available,
+                   accounting_version)
+                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
             """, -1, &ins, nil) == SQLITE_OK else {
                 return
             }
@@ -205,6 +211,7 @@ final class HistoryStore: @unchecked Sendable {
                 sqlite3_bind_double(ins, 10, s.cost.value)
                 sqlite3_bind_int(ins, 11, s.cost.complete ? 1 : 0)
                 sqlite3_bind_int(ins, 12, s.cost.available ? 1 : 0)
+                sqlite3_bind_int(ins, 13, Int32(Self.currentAccountingVersion))
                 if sqlite3_step(ins) != SQLITE_DONE {
                     print("[HistoryStore] insert failed for \(s.name): \(String(cString: sqlite3_errmsg(db)))")
                 }
@@ -243,7 +250,8 @@ final class HistoryStore: @unchecked Sendable {
             // 取最近 N 个不同 date_key 下的所有 (tool, tokens, messages, cacheRate, isActive) 行
             let sql = """
                 SELECT date_key, tool_name, tokens, messages, cache_rate, is_active, sessions_json,
-                       cache_read_tokens, cost_value, cost_complete, cost_available
+                       cache_read_tokens, cost_value, cost_complete, cost_available,
+                       accounting_version
                 FROM daily_snapshots
                 \(whereClause)
                 ORDER BY date_key DESC, tool_name ASC
@@ -277,6 +285,10 @@ final class HistoryStore: @unchecked Sendable {
                     complete: sqlite3_column_int(stmt, 9) != 0,
                     available: sqlite3_column_int(stmt, 10) != 0
                 )
+                let accountingVersion = Int(sqlite3_column_int(stmt, 11))
+                // v1 Codex rows can contain inherited subagent replay. Keep the database
+                // row recoverable, but never surface known-invalid historical totals.
+                if name == "Codex", accountingVersion < Self.currentAccountingVersion { continue }
                 byDate[dateKey, default: []].append(
                     Row(name: name, tokens: tokens, messages: messages,
                         cacheRate: cacheRate, isActive: isActive,

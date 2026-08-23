@@ -9,15 +9,43 @@ struct ModelPrice: Equatable, Hashable, Sendable {
     var output: Double
     var cacheRead: Double
     var cacheWrite: Double
+    /// Some providers select a higher price tier from the whole request context.
+    /// These rates apply to the full request once `contextInputTokens` exceeds the threshold.
+    var longContextThreshold: Int?
+    var longInput: Double?
+    var longOutput: Double?
+    var longCacheRead: Double?
+    var longCacheWrite: Double?
+    /// API Priority multiplier. A value of 1 means the catalog does not publish a premium.
+    var priorityMultiplier: Double
 
-    init(input: Double, output: Double, cacheRead: Double = 0, cacheWrite: Double = 0) {
+    init(
+        input: Double,
+        output: Double,
+        cacheRead: Double = 0,
+        cacheWrite: Double = 0,
+        longContextThreshold: Int? = nil,
+        longInput: Double? = nil,
+        longOutput: Double? = nil,
+        longCacheRead: Double? = nil,
+        longCacheWrite: Double? = nil,
+        priorityMultiplier: Double = 1
+    ) {
         self.input = input
         self.output = output
         self.cacheRead = cacheRead
         self.cacheWrite = cacheWrite
+        self.longContextThreshold = longContextThreshold
+        self.longInput = longInput
+        self.longOutput = longOutput
+        self.longCacheRead = longCacheRead
+        self.longCacheWrite = longCacheWrite
+        self.priorityMultiplier = priorityMultiplier
     }
 
-    /// 从快照条目（键 in/out/cr/cw，USD/MTok）解码；缺 cr/cw 视为 0（如 OpenAI 无缓存写计价）。
+    /// Compact catalog keys use USD/MTok. Advanced keys are optional:
+    /// lt = full-request long-context threshold, lin/lout/lcr/lcw = long-context rates,
+    /// pm = API Priority multiplier.
     fileprivate init?(entry: [String: Any]) {
         guard let input = entry["in"] as? Double,
               let output = entry["out"] as? Double else { return nil }
@@ -25,6 +53,12 @@ struct ModelPrice: Equatable, Hashable, Sendable {
         self.output = output
         self.cacheRead = entry["cr"] as? Double ?? 0
         self.cacheWrite = entry["cw"] as? Double ?? 0
+        self.longContextThreshold = (entry["lt"] as? NSNumber)?.intValue
+        self.longInput = entry["lin"] as? Double
+        self.longOutput = entry["lout"] as? Double
+        self.longCacheRead = entry["lcr"] as? Double
+        self.longCacheWrite = entry["lcw"] as? Double
+        self.priorityMultiplier = max(1, entry["pm"] as? Double ?? 1)
     }
 }
 
@@ -43,6 +77,33 @@ struct ModelBuckets: Sendable {
         output += other.output
         cacheRead += other.cacheRead
         cacheWrite += other.cacheWrite
+    }
+}
+
+enum PricingServiceTier: String, Sendable {
+    case standard
+    case priority
+}
+
+/// One billable model request. Request granularity is required for full-request
+/// long-context tiers and for service-tier changes inside a session.
+struct ModelUsageRequest: Sendable {
+    let model: String
+    let buckets: ModelBuckets
+    /// Whole input context, including cached input, used only to choose a pricing tier.
+    let contextInputTokens: Int
+    let serviceTier: PricingServiceTier
+
+    init(
+        model: String,
+        buckets: ModelBuckets,
+        contextInputTokens: Int,
+        serviceTier: PricingServiceTier = .standard
+    ) {
+        self.model = model
+        self.buckets = buckets
+        self.contextInputTokens = max(0, contextInputTokens)
+        self.serviceTier = serviceTier
     }
 }
 
@@ -102,9 +163,9 @@ final class PricingService: @unchecked Sendable {
     /// 目录刷新后广播（ViewModel 收到后增量重扫，30 秒内的下一轮扫描也会自然重算）
     static let catalogUpdatedNotification = Notification.Name("PricingCatalogUpdated")
 
-    /// 四个平台共享的刷新源。暂由稳定 normal 分支托管；后续可由仓库自动更新任务维护。
+    /// 四个平台共享的刷新源。统一发布线以 main 为价格目录的单一事实来源。
     private static let refreshURL = URL(string:
-        "https://raw.githubusercontent.com/Neo-Isshin/TokenClock/normal/Sources/TokenClock/Resources/pricing-snapshot.json")!
+        "https://raw.githubusercontent.com/Neo-Isshin/TokenClock/main/Sources/TokenClock/Resources/pricing-snapshot.json")!
 
     private var catalog: [String: ModelPrice] = [:]
     /// 带路由前缀的 key（如 dashscope/glm-5.2）→ 后缀索引；后缀唯一才收录，歧义即弃用
@@ -120,6 +181,15 @@ final class PricingService: @unchecked Sendable {
         "gemini-3.7-flash-low": "gemini-3.7-flash",
         "gemini-3.7-flash-medium": "gemini-3.7-flash",
         "gemini-3.7-flash-high": "gemini-3.7-flash",
+        "grok-4.6": "xai/grok-4.6",
+        "kimi-k3": "moonshot/kimi-k3",
+        "kimi-k2.7-code": "moonshot/kimi-k2.7-code",
+        "kimi-k2.7-code-highspeed": "moonshot/kimi-k2.7-code-highspeed",
+        "kimi-k2.6": "moonshot/kimi-k2.6",
+        "kimi-k2.5": "moonshot/kimi-k2.5",
+        "glm-5.1": "zai/glm-5.1",
+        "glm-5": "zai/glm-5",
+        "qwen3.8-max": "dashscope/qwen3.8-max",
     ]
 
     /// 最近一次成功刷新时间；nil = 从未刷新过
@@ -174,6 +244,35 @@ final class PricingService: @unchecked Sendable {
                 + Double(b.output) * p.output
                 + Double(b.cacheRead) * p.cacheRead
                 + Double(b.cacheWrite) * p.cacheWrite) / 1_000_000
+            result.merge(CostEstimate(value: value, complete: true, available: true))
+        }
+        if hasUnpricedModel, result.available { result.complete = false }
+        return result
+    }
+
+    /// Request-granular pricing for providers whose price depends on context size or speed.
+    func cost(of requests: [ModelUsageRequest]) -> CostEstimate {
+        guard !requests.isEmpty else { return .zero }
+        var result = CostEstimate.unavailable
+        var hasUnpricedModel = false
+        for request in requests {
+            guard let price = price(forModel: request.model) else {
+                hasUnpricedModel = true
+                continue
+            }
+            let isLongContext = price.longContextThreshold.map {
+                request.contextInputTokens > $0
+            } ?? false
+            let inputRate = isLongContext ? (price.longInput ?? price.input) : price.input
+            let outputRate = isLongContext ? (price.longOutput ?? price.output) : price.output
+            let cacheReadRate = isLongContext ? (price.longCacheRead ?? price.cacheRead) : price.cacheRead
+            let cacheWriteRate = isLongContext ? (price.longCacheWrite ?? price.cacheWrite) : price.cacheWrite
+            let multiplier = request.serviceTier == .priority ? price.priorityMultiplier : 1
+            let buckets = request.buckets
+            let value = (Double(buckets.input) * inputRate
+                + Double(buckets.output) * outputRate
+                + Double(buckets.cacheRead) * cacheReadRate
+                + Double(buckets.cacheWrite) * cacheWriteRate) / 1_000_000 * multiplier
             result.merge(CostEstimate(value: value, complete: true, available: true))
         }
         if hasUnpricedModel, result.available { result.complete = false }
@@ -301,11 +400,16 @@ final class PricingService: @unchecked Sendable {
               let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let models = obj["models"] as? [String: [String: Any]] else { return false }
         var next: [String: ModelPrice] = merging ? catalog : [:]
+        let incomingGeneratedAt = (obj["_meta"] as? [String: Any])?["generatedAt"] as? String
+        // A cache downloaded by an older app must be allowed to add missing models, but it
+        // must never overwrite newer prices shipped in the current bundle.
+        let canOverrideExisting = !merging || generatedAt == nil
+            || (incomingGeneratedAt.map { $0 > (generatedAt ?? "") } ?? false)
         var index: [String: String] = [:]
         var suffixSeen = Set<String>()
         for (key, entry) in models {
             guard let p = ModelPrice(entry: entry) else { continue }
-            next[key] = p
+            if canOverrideExisting || next[key] == nil { next[key] = p }
         }
         guard !next.isEmpty else { return false }
 
@@ -321,7 +425,6 @@ final class PricingService: @unchecked Sendable {
         }
         catalog = next
         suffixIndex = index
-        let incomingGeneratedAt = (obj["_meta"] as? [String: Any])?["generatedAt"] as? String
         if !merging || generatedAt == nil
             || (incomingGeneratedAt.map { $0 > (generatedAt ?? "") } ?? false) {
             generatedAt = incomingGeneratedAt

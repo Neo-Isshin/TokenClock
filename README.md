@@ -39,7 +39,7 @@ Click the clock for session and model details. Right-click it to change the face
 - **A clearer usage total.** Reused prompt-cache reads stay out of the main number, while new input, cache creation, output, and reasoning still count.
 - **8 carefully designed clock faces.** Glass, Classic, Glacier, Midnight, Luxe, Antique, Railgun, and Sky, plus saved custom faces.
 - **Useful details without leaving the desktop.** Group usage by session or model, expand individual rows, and sort by percentage.
-- **Cost estimation.** Today's token usage converted to USD at API list prices (catalog from LiteLLM, auto-refreshed weekly); custom proxy models can be priced manually in Settings.
+- **API-equivalent cost.** Today's token usage converted to USD at current public API rates (LiteLLM catalog with official-provider overrides, refreshed weekly). This is not a subscription bill; custom proxy models can be priced manually in Settings.
 - **Subscription quotas in one panel.** View Codex, Claude Code, Antigravity, and Cursor limits and reset times when those local accounts are available. Checks run only when you open the panel.
 - **Weather without a location permission popup.** Automatic weather uses an approximate city from your public IP, or you can choose a city yourself.
 - **A native experience on each platform.** macOS uses SwiftUI/AppKit, Windows uses Win32, and Linux uses GTK3. The workflow is shared while controls keep their native appearance.
@@ -108,7 +108,7 @@ Windows may show a reputation warning for an unsigned first release. Check that 
 
 - **Left-click the clock:** show or hide usage details.
 - **Subscription Quota:** show Codex, Claude Code, Antigravity, and Cursor limits and reset times.
-- **Cost column:** estimated USD cost of today's usage at API list prices (customize prices in Settings).
+- **API-equivalent column:** estimated USD value at public API rates, not the amount charged by a subscription (customize proxy prices in Settings).
 - **By Session / By Model:** change how details are grouped.
 - **By Percent:** compare which tools consumed the most.
 - **Click a detail row:** expand its sessions or models.
@@ -163,6 +163,7 @@ http://127.0.0.1:9988/api/history?days=30
 ```
 
 The server is loopback-only, so other computers cannot connect to it directly.
+Cost-bearing responses include `"costBasis": "api_equivalent_public_list"` so clients do not mistake estimates for subscription billing.
 
 ## Troubleshooting
 
