@@ -5,7 +5,7 @@ struct AboutView: View {
     let onDone: () -> Void
 
     // ⚠️ 发版时同步版本号（与 cli/install.sh 的 RELEASE_TAG、cli/tokenclock 的 CLI_VERSION 一致）
-    private let version = "v1.5.1"
+    private let version = "v1.5.2"
     private let issuesURL = URL(string: "https://github.com/Neo-Isshin/TokenClock/issues")!
     // 作者 GitHub 头像（置顶居中展示）。github.com/<user>.png 会 302 跳转到 avatars.githubusercontent.com 的真实头像。
     private let avatarURL = URL(string: "https://github.com/Neo-Isshin.png")!
