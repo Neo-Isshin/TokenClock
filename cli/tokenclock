@@ -9,7 +9,7 @@
 #
 set -u
 
-CLI_VERSION="1.5.1"
+CLI_VERSION="1.5.2"
 # Process name (comm) of the running clock. **The executable of every variant must be named TokenClock**
 # (placed in a glass/ or normal/ subdir to distinguish variants), so that no matter which variant is
 # launched the process name is TokenClock — the pgrep/pkill -x below hits it precisely and never
