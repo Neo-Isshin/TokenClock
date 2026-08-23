@@ -12,6 +12,7 @@ final class CodexUsageReplayTests: XCTestCase {
 
     func testSubagentReplayAndUnchangedCumulativeTotalsAreNotCountedTwice() throws {
         let home = try makeRoot()
+        try write("service_tier = \"priority\"\n", to: home.appendingPathComponent("config.toml"))
         let directory = home.appendingPathComponent("sessions/2026/08/23", isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let parentId = "019fa671-a3fc-7902-8b91-6077ac1b28c3"
@@ -62,7 +63,8 @@ final class CodexUsageReplayTests: XCTestCase {
         )
         let child = [
             metadata(id: childId, parent: parentId, at: fork),
-            turn(model: "gpt-5.6-sol"), childFirst, childDuplicate, childSecond, own,
+            turn(model: "gpt-5.6-sol"), settings(tier: "default"),
+            childFirst, childDuplicate, childSecond, own,
         ].joined(separator: "\n") + "\n"
         try write(child, to: directory.appendingPathComponent(
             "rollout-2026-08-23T12-01-00-\(childId).jsonl"
@@ -74,6 +76,7 @@ final class CodexUsageReplayTests: XCTestCase {
         XCTAssertEqual(result.tokens, 140) // parent 60 + 40; child own 40
         XCTAssertEqual(result.messages, 3)
         XCTAssertEqual(result.cacheRate, 110.0 / 250.0, accuracy: 0.000_001)
+        XCTAssertEqual(service.todayCost().value, 0.002808, accuracy: 0.000_000_1)
 
         service.incrementalScan()
         XCTAssertEqual(service.todayUsage().tokens, 140)
@@ -179,6 +182,16 @@ final class CodexUsageReplayTests: XCTestCase {
 
     private func turn(model: String) -> String {
         json(["type": "turn_context", "payload": ["type": "turn_context", "model": model]])
+    }
+
+    private func settings(tier: String) -> String {
+        json([
+            "type": "event_msg",
+            "payload": [
+                "type": "thread_settings_applied",
+                "thread_settings": ["service_tier": tier],
+            ],
+        ])
     }
 
     private func usage(

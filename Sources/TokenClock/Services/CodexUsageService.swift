@@ -338,7 +338,13 @@ final class CodexUsageService: @unchecked Sendable {
             return
         }
         if payloadType == "thread_settings_applied" {
-            if let tier = codexServiceTier(fromPayload: payload) { state.currentServiceTier = tier }
+            // A child rollout replays its parent's settings alongside inherited usage.
+            // Do not let those records overwrite the child's configured tier before the
+            // replay boundary has been established.
+            if state.replaySignature.parentSessionId == nil || state.replayFallbackResolved,
+               let tier = codexServiceTier(fromPayload: payload) {
+                state.currentServiceTier = tier
+            }
             return
         }
         guard payloadType == "token_count",
@@ -364,7 +370,10 @@ final class CodexUsageService: @unchecked Sendable {
         state.usageSequence.append(sequenceEvent)
         if state.replayMatching, eventIndex < replayPrefix.count {
             if replayPrefix[eventIndex].usage == usage {
-                if eventIndex + 1 == replayPrefix.count { state.replayMatching = false }
+                if eventIndex + 1 == replayPrefix.count {
+                    state.replayMatching = false
+                    state.replayFallbackResolved = true
+                }
                 return
             }
             state.replayMatching = false
