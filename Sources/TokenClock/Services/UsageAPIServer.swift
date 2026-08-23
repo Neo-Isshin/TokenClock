@@ -173,6 +173,7 @@ final class UsageAPIServer: @unchecked Sendable {
                 "usageIncludesCacheRead": vm.usageIncludesCache,
                 "totalMessages": UsageAggregator.totalMessages(vm.tools),
                 "totalCost": vm.totalCost.value,
+                "costBasis": "api_equivalent_public_list",
                 "costComplete": vm.totalCost.complete,
                 "costAvailable": vm.totalCost.available,
                 "rateEmoji": UsageAggregator.rateEmoji(vm.tools),
@@ -266,6 +267,7 @@ final class UsageAPIServer: @unchecked Sendable {
 
         let body: [String: Any] = [
             "windowDays": days,
+            "costBasis": "api_equivalent_public_list",
             "days": padded,
         ]
         self.sendJSON(connection, status: 200, body: body)

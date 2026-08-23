@@ -9,7 +9,7 @@ final class PricingServiceTests: XCTestCase {
         let summary = PricingService.shared.catalogSummary
         XCTAssertGreaterThan(summary.count, 100, "内置快照应加载出 100+ 模型，实际 \(summary.count)")
         XCTAssertNotNil(summary.generatedAt, "快照应带 generatedAt 元数据")
-        XCTAssertGreaterThanOrEqual(summary.generatedAt ?? "", "2026-08-21T11:30:00Z")
+        XCTAssertGreaterThanOrEqual(summary.generatedAt ?? "", "2026-08-23T00:00:00Z")
         // 核心模型必须能查到价（脚本侧也有同样的保底断言）
         XCTAssertNotNil(PricingService.shared.price(forModel: "claude-sonnet-4-5"))
         XCTAssertNotNil(PricingService.shared.price(forModel: "gpt-5-codex"))
@@ -17,6 +17,27 @@ final class PricingServiceTests: XCTestCase {
             PricingService.shared.price(forModel: "MiniMax-M2.7-highspeed"),
             ModelPrice(input: 0.6, output: 2.4, cacheRead: 0.06, cacheWrite: 0.375)
         )
+    }
+
+    func testOfficialCatalogSentinelsAcrossProviders() throws {
+        let sol = try XCTUnwrap(PricingService.shared.price(forModel: "gpt-5.6-sol"))
+        XCTAssertEqual(sol.input, 4)
+        XCTAssertEqual(sol.cacheRead, 0.4)
+        XCTAssertEqual(sol.output, 20)
+        XCTAssertEqual(sol.longContextThreshold, 272_000)
+        XCTAssertEqual(sol.longInput, 8)
+        XCTAssertEqual(sol.longOutput, 30)
+        XCTAssertEqual(sol.priorityMultiplier, 2)
+
+        XCTAssertEqual(PricingService.shared.price(forModel: "claude-sonnet-5")?.input, 2)
+        XCTAssertEqual(PricingService.shared.price(forModel: "claude-sonnet-5")?.output, 10)
+        XCTAssertEqual(PricingService.shared.price(forModel: "gemini-3.5-flash")?.output, 9)
+        XCTAssertEqual(PricingService.shared.price(forModel: "grok-4.6")?.cacheRead, 0.5)
+        XCTAssertEqual(PricingService.shared.price(forModel: "deepseek-v4-pro")?.output, 0.87)
+        XCTAssertEqual(PricingService.shared.price(forModel: "kimi-k3")?.input, 3)
+        XCTAssertEqual(PricingService.shared.price(forModel: "MiniMax-M2.7")?.cacheRead, 0.06)
+        XCTAssertEqual(PricingService.shared.price(forModel: "glm-5.1")?.output, 4.4)
+        XCTAssertEqual(PricingService.shared.price(forModel: "qwen3.8-max")?.output, 6)
     }
 
     /// Antigravity appends the thinking level to Gemini's official model ID. Thinking level
@@ -126,6 +147,35 @@ final class PricingServiceTests: XCTestCase {
         let outputCost = 400.0 * 10.0
         let expected = (inputCost + cacheReadCost + outputCost) / 1_000_000.0
         XCTAssertEqual(result.value, expected, accuracy: 0.000001)
+    }
+
+    func testRequestPricingSelectsLongContextAndPriorityRates() {
+        let price = ModelPrice(
+            input: 4, output: 20, cacheRead: 0.4, cacheWrite: 5,
+            longContextThreshold: 272_000,
+            longInput: 8, longOutput: 30, longCacheRead: 0.8, longCacheWrite: 10,
+            priorityMultiplier: 2
+        )
+        PricingService.shared.setCustomPrice(model: "request-priced-model", price: price)
+        defer { PricingService.shared.setCustomPrice(model: "request-priced-model", price: nil) }
+        let buckets = ModelBuckets(input: 400, output: 100, cacheRead: 600, cacheWrite: 0)
+
+        let short = PricingService.shared.cost(of: [ModelUsageRequest(
+            model: "request-priced-model", buckets: buckets, contextInputTokens: 1_000
+        )])
+        XCTAssertEqual(short.value, (400 * 4.0 + 100 * 20.0 + 600 * 0.4) / 1_000_000, accuracy: 0.000_000_1)
+
+        let long = PricingService.shared.cost(of: [ModelUsageRequest(
+            model: "request-priced-model", buckets: buckets, contextInputTokens: 272_001
+        )])
+        let longExpected = (400 * 8.0 + 100 * 30.0 + 600 * 0.8) / 1_000_000
+        XCTAssertEqual(long.value, longExpected, accuracy: 0.000_000_1)
+
+        let priority = PricingService.shared.cost(of: [ModelUsageRequest(
+            model: "request-priced-model", buckets: buckets, contextInputTokens: 272_001,
+            serviceTier: .priority
+        )])
+        XCTAssertEqual(priority.value, longExpected * 2, accuracy: 0.000_000_1)
     }
 
     /// Opt-in integration: exercises each platform's real network stack against the catalog
