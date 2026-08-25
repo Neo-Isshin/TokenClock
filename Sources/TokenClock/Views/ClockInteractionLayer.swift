@@ -1,7 +1,7 @@
 import AppKit
 import SwiftUI
 
-/// AppKit owns the primary mouse sequence so click and native window dragging remain compatible
+/// AppKit owns the complete primary mouse sequence so click and window dragging remain compatible
 /// across SwiftUI/runtime changes. Transparent corners stay click-through by using a circular
 /// hit test instead of a full rectangular content shape.
 /// （自 main 分支移植：SwiftUI 的 tap 手势会吞掉窗口拖拽的鼠标序列，点击/拖动改由 AppKit 分发；
@@ -53,31 +53,6 @@ final class ClockInteractionNSView: NSView {
 
     override func mouseDown(with event: NSEvent) {
         guard let window else { return }
-
-        // Production mouse events carry the real window number. Let AppKit own that tracking
-        // sequence: performDrag survives SwiftUI/runtime changes and nonactivating NSPanel quirks
-        // better than rebuilding the window drag from mouseDragged callbacks.
-        if event.windowNumber != 0 {
-            let startMouse = NSEvent.mouseLocation
-            let startOrigin = window.frame.origin
-            let startedAt = ProcessInfo.processInfo.systemUptime
-            window.performDrag(with: event)
-            let endMouse = NSEvent.mouseLocation
-            let endOrigin = window.frame.origin
-            let pointerDistance = max(abs(endMouse.x - startMouse.x), abs(endMouse.y - startMouse.y))
-            let windowDistance = max(abs(endOrigin.x - startOrigin.x), abs(endOrigin.y - startOrigin.y))
-            let distance = max(pointerDistance, windowDistance)
-            let duration = ProcessInfo.processInfo.systemUptime - startedAt
-            if distance > dragThreshold {
-                onDragStart()
-            } else if duration <= clickDurationLimit {
-                onClick()
-            }
-            resetDragState()
-            return
-        }
-
-        // Synthetic windowNumber=0 events are retained for deterministic unit tests.
         dragStartMouse = screenPoint(for: event, in: window)
         dragStartOrigin = window.frame.origin
         mouseDownTime = event.timestamp
@@ -89,9 +64,6 @@ final class ClockInteractionNSView: NSView {
     }
 
     override func mouseUp(with event: NSEvent) {
-        // `performDrag(with:)` owns the complete production tracking sequence. Newer AppKit
-        // runtimes can still deliver its trailing mouseUp to this view after mouseDown returns.
-        // With no synthetic press state that event is already handled and must not toggle again.
         guard dragStartMouse != nil, dragStartOrigin != nil else { return }
 
         // A very fast gesture may contain no intermediate dragged event. Inspect the final
@@ -128,7 +100,8 @@ final class ClockInteractionNSView: NSView {
     }
 
     private func screenPoint(for event: NSEvent, in window: NSWindow) -> NSPoint {
-        window.convertPoint(toScreen: event.locationInWindow)
+        if event.windowNumber != 0 { return NSEvent.mouseLocation }
+        return window.convertPoint(toScreen: event.locationInWindow)
     }
 
     private func resetDragState() {

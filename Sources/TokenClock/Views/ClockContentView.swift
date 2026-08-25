@@ -42,9 +42,7 @@ struct ClockContentView: View {
                     Text(viewModel.dateString)
                         .font(.system(size: 11 * s, weight: .medium))
                         .foregroundColor(viewModel.effectiveDialSecondary)
-                    Text(viewModel.weatherString)
-                        .font(.system(size: 13 * s))
-                        .foregroundColor(viewModel.effectiveDialPrimary)
+                    Color.clear.frame(height: 16 * s)
                 }
                 .padding(.top, 55 * s)
 
@@ -97,13 +95,15 @@ struct ClockContentView: View {
             .frame(width: d, height: d)
             .accessibilityHidden(true)
 
-            VStack {
-                HStack {
-                    Spacer()
+            VStack(spacing: 0) {
+                HStack(spacing: 4 * s) {
+                    Text(viewModel.weatherString)
+                        .font(.system(size: 13 * s))
+                        .foregroundColor(viewModel.effectiveDialPrimary)
+                        .allowsHitTesting(false)
                     notificationButton(scale: s)
-                        .padding(.top, 30 * s)
-                        .padding(.trailing, 42 * s)
                 }
+                .padding(.top, 70 * s)
                 Spacer()
             }
         }
@@ -131,13 +131,11 @@ struct ClockContentView: View {
         Button(action: onNotificationClick) {
             ZStack(alignment: .topTrailing) {
                 Image(systemName: viewModel.unreadNotificationCount > 0 ? "bell.fill" : "bell")
-                    .font(.system(size: 16 * s, weight: .semibold))
-                    .foregroundColor(Color.white.opacity(
-                        viewModel.unreadNotificationCount > 0 ? 1 : 0.9
+                    .font(.system(size: 14 * s, weight: .semibold))
+                    .foregroundColor(viewModel.effectiveDialPrimary.opacity(
+                        viewModel.unreadNotificationCount > 0 ? 0.95 : 0.62
                     ))
-                    .frame(width: 28 * s, height: 28 * s)
-                    .background(Circle().fill(Color.black.opacity(0.2)))
-                    .overlay(Circle().stroke(Color.white.opacity(0.22), lineWidth: 0.7 * s))
+                    .frame(width: 20 * s, height: 20 * s)
                     .contentShape(Circle())
 
                 if viewModel.unreadNotificationCount > 0 {

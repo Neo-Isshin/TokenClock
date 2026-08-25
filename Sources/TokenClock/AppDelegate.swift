@@ -923,7 +923,7 @@ private struct NotificationCenterView: View {
                 Button(action: onClose) {
                     Image(systemName: "xmark.circle.fill")
                         .font(.system(size: 16, weight: .semibold))
-                        .foregroundColor(viewModel.selectedTheme.dropdownTextColor.opacity(0.5))
+                        .foregroundColor(Color.black.opacity(0.5))
                 }
                 .buttonStyle(.plain)
                 .help(L10n.shared.tr("about.close"))
@@ -933,7 +933,7 @@ private struct NotificationCenterView: View {
                 Spacer()
                 Text(L10n.shared.tr("notification.empty"))
                     .font(.system(size: 12))
-                    .foregroundColor(viewModel.selectedTheme.dropdownSubtextColor)
+                    .foregroundColor(Color.black.opacity(0.65))
                     .frame(maxWidth: .infinity, alignment: .center)
                 Spacer()
             } else {
@@ -957,7 +957,7 @@ private struct NotificationCenterView: View {
                         .stroke(viewModel.selectedTheme.dropdownBorderColor, lineWidth: 1)
                 )
         )
-        .foregroundColor(viewModel.selectedTheme.dropdownTextColor)
+        .foregroundColor(.black)
     }
 
     private func notificationRow(_ notification: TokenClockNotification) -> some View {
@@ -965,7 +965,7 @@ private struct NotificationCenterView: View {
             HStack(spacing: 6) {
                 Image(systemName: iconName(for: notification.kind))
                     .font(.system(size: 11, weight: .semibold))
-                    .foregroundColor(viewModel.selectedTheme.dropdownTextColor.opacity(0.72))
+                    .foregroundColor(Color.black.opacity(0.72))
                     .frame(width: 14)
                 Text(notification.title)
                     .font(.system(size: 12, weight: .semibold))
@@ -973,17 +973,17 @@ private struct NotificationCenterView: View {
                 Spacer(minLength: 8)
                 Text(timeLabel(notification.createdAt))
                     .font(.system(size: 10))
-                    .foregroundColor(viewModel.selectedTheme.dropdownSubtextColor)
+                    .foregroundColor(Color.black.opacity(0.58))
             }
             Text(notification.message)
                 .font(.system(size: 11))
-                .foregroundColor(viewModel.selectedTheme.dropdownSubtextColor)
+                .foregroundColor(Color.black.opacity(0.65))
                 .fixedSize(horizontal: false, vertical: true)
         }
         .padding(10)
         .background(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(viewModel.selectedTheme.dropdownTextColor.opacity(0.06))
+                .fill(Color.black.opacity(0.06))
         )
     }
 
