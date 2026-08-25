@@ -247,8 +247,8 @@ tarball_name() {
 }
 tarball_sha256() {
   case "$1" in
-    glass)  echo "1bdef4131c24997f4df53aa368a62711168cfefa4816ad9f853b7a449023b0b1" ;;
-    normal) echo "e3e322d0eaf4af16a892c3e8c5d1a824bd018e679990cbc7570eae96b1f3bf28" ;;
+    glass)  echo "716881d6cfbb96a2ae398a17b1c6fd998e09da70b51d0087a528cace0fc7434c" ;;
+    normal) echo "d1da7ce515d83c6059ed31478dd645938b4b8cc7a183289987841ed428bb605f" ;;
   esac
 }
 
