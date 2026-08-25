@@ -137,7 +137,9 @@ struct ClockContentView: View {
                         .font(.system(size: 13 * s))
                         .foregroundColor(viewModel.effectiveDialPrimary)
                         .allowsHitTesting(false)
-                    notificationButton(scale: s)
+                    if viewModel.unreadNotificationCount > 0 {
+                        notificationButton(scale: s)
+                    }
                 }
                 .padding(.top, 70 * s)
                 Spacer()
