@@ -6,6 +6,7 @@ import CoreGraphics
 final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var panel: FloatingPanel!
     private var dropdownPanel: DropdownPanel!
+    private var notificationPanel: NotificationPanel!
     private var viewModel: ViewModel!
     private var settingsWindow: NSWindow?
     private var overviewWindow: NSWindow?
@@ -28,8 +29,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         viewModel = ViewModel()
         panel = FloatingPanel(viewModel: viewModel)
         dropdownPanel = DropdownPanel()
+        notificationPanel = NotificationPanel()
 
-        let mainView = MainView(viewModel: viewModel)
+        let mainView = MainView(
+            viewModel: viewModel,
+            onNotificationClick: { [weak self] in self?.toggleNotificationCenter() },
+            onClockDragStart: { [weak self] in self?.notificationPanel.hide() }
+        )
         let contentView = NSHostingView(rootView: mainView)
         contentView.frame = NSRect(
             x: 0,
@@ -67,6 +73,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         detailContentView.autoresizingMask = [.width, .height]
         dropdownPanel.contentView = detailContentView
 
+        let notificationView = NotificationCenterView(
+            viewModel: viewModel,
+            onClose: { [weak self] in self?.notificationPanel.hide() }
+        )
+        let notificationContentView = NSHostingView(rootView: notificationView)
+        notificationContentView.frame = NSRect(x: 0, y: 0, width: 280, height: 240)
+        notificationContentView.autoresizingMask = [.width, .height]
+        notificationPanel.contentView = notificationContentView
+
         // 同步 alwaysOnTop 状态到面板
         if viewModel.alwaysOnTop {
             panel.level = .statusBar
@@ -79,6 +94,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             startFullscreenDetection()
         }
         dropdownPanel.configureLevel(alwaysOnTop: viewModel.alwaysOnTop)
+        notificationPanel.configureLevel(alwaysOnTop: viewModel.alwaysOnTop)
 
         // 绑定展开/收起直接回调，绕过 NotificationCenter 延迟
         viewModel.onExpandChanged = { [weak self] expanded in
@@ -90,6 +106,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             )
             if expanded {
                 self.showDropdownPanel()
+                self.notificationPanel.hide()
             } else {
                 self.dropdownPanel.hide()
             }
@@ -159,6 +176,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         )
     }
 
+    private func toggleNotificationCenter() {
+        if notificationPanel.isVisible {
+            notificationPanel.hide()
+            return
+        }
+        viewModel.isExpanded = false
+        notificationPanel.show(near: panel.frame)
+        viewModel.markNotificationsRead()
+    }
+
     nonisolated func applicationWillTerminate(_ notification: Notification) {
         // AppKit delivers this callback on the main thread. A detached MainActor Task can be
         // discarded as the process exits, which previously lost the final window position.
@@ -167,6 +194,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             viewModel?.shutdown()
             UsageAPIServer.shared.stop()
             panel?.savePosition()
+            notificationPanel?.hide()
             removeThemePickerMonitor()
         }
     }
@@ -446,12 +474,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             panel.level = .normal
             panel.collectionBehavior = [.canJoinAllSpaces]
             dropdownPanel.configureLevel(alwaysOnTop: false)
+            notificationPanel.configureLevel(alwaysOnTop: false)
             viewModel.alwaysOnTop = false
         } else {
             sender.state = .on
             panel.level = .statusBar
             panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
             dropdownPanel.configureLevel(alwaysOnTop: true)
+            notificationPanel.configureLevel(alwaysOnTop: true)
             viewModel.alwaysOnTop = true
         }
         // 以新属性重显（用 orderFront 而非 orderFrontRegardless：后者会无视 collectionBehavior
@@ -491,7 +521,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     private func evaluateFullscreenHide() {
         guard let panel = self.panel else { return }
-        if dropdownPanel.isVisible { return }   // 用户正在看下拉详情，不打断
+        if dropdownPanel.isVisible || notificationPanel.isVisible { return }   // 用户正在看面板，不打断
         let center = NSPoint(x: panel.frame.midX, y: panel.frame.midY)
         guard let clockScreen = (NSScreen.screens.first { $0.frame.contains(center) }) ?? NSScreen.main else { return }
         let screenFrameCG = nsToCG(clockScreen.frame)
@@ -867,10 +897,110 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
 struct MainView: View {
     @ObservedObject var viewModel: ViewModel
+    let onNotificationClick: () -> Void
+    let onClockDragStart: () -> Void
 
     var body: some View {
-        ClockContentView(viewModel: viewModel)
+        ClockContentView(
+            viewModel: viewModel,
+            onNotificationClick: onNotificationClick,
+            onClockDragStart: onClockDragStart
+        )
             .frame(width: FloatingPanel.panelWidth, height: FloatingPanel.collapsedHeight)
+    }
+}
+
+private struct NotificationCenterView: View {
+    @ObservedObject var viewModel: ViewModel
+    let onClose: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Label(L10n.shared.tr("notification.title"), systemImage: "bell.fill")
+                    .font(.system(size: 14, weight: .semibold))
+                Spacer()
+                Button(action: onClose) {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundColor(viewModel.selectedTheme.dropdownTextColor.opacity(0.5))
+                }
+                .buttonStyle(.plain)
+                .help(L10n.shared.tr("about.close"))
+            }
+
+            if viewModel.notifications.isEmpty {
+                Spacer()
+                Text(L10n.shared.tr("notification.empty"))
+                    .font(.system(size: 12))
+                    .foregroundColor(viewModel.selectedTheme.dropdownSubtextColor)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                Spacer()
+            } else {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 10) {
+                        ForEach(viewModel.notifications) { notification in
+                            notificationRow(notification)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+        }
+        .padding(14)
+        .frame(width: 280, height: 240)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(viewModel.selectedTheme.dropdownBgColor)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .stroke(viewModel.selectedTheme.dropdownBorderColor, lineWidth: 1)
+                )
+        )
+        .foregroundColor(viewModel.selectedTheme.dropdownTextColor)
+    }
+
+    private func notificationRow(_ notification: TokenClockNotification) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 6) {
+                Image(systemName: iconName(for: notification.kind))
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(viewModel.selectedTheme.dropdownTextColor.opacity(0.72))
+                    .frame(width: 14)
+                Text(notification.title)
+                    .font(.system(size: 12, weight: .semibold))
+                    .lineLimit(1)
+                Spacer(minLength: 8)
+                Text(timeLabel(notification.createdAt))
+                    .font(.system(size: 10))
+                    .foregroundColor(viewModel.selectedTheme.dropdownSubtextColor)
+            }
+            Text(notification.message)
+                .font(.system(size: 11))
+                .foregroundColor(viewModel.selectedTheme.dropdownSubtextColor)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(10)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(viewModel.selectedTheme.dropdownTextColor.opacity(0.06))
+        )
+    }
+
+    private func iconName(for kind: TokenClockNotification.Kind) -> String {
+        switch kind {
+        case .dailyReport: return "doc.text"
+        case .modelDetection: return "sparkle.magnifyingglass"
+        case .system: return "info.circle"
+        }
+    }
+
+    private func timeLabel(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: L10n.shared.language.rawValue)
+        formatter.timeStyle = .short
+        formatter.dateStyle = Calendar.current.isDateInToday(date) ? .none : .short
+        return formatter.string(from: date)
     }
 }
 

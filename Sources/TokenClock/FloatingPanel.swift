@@ -211,3 +211,54 @@ final class DropdownPanel: NSPanel {
         )
     }
 }
+
+final class NotificationPanel: NSPanel {
+    init() {
+        super.init(
+            contentRect: NSRect(x: 0, y: 0, width: 280, height: 240),
+            styleMask: [.borderless, .nonactivatingPanel],
+            backing: .buffered,
+            defer: false
+        )
+
+        level = .normal
+        isOpaque = false
+        backgroundColor = .clear
+        hasShadow = true
+        isMovableByWindowBackground = false
+        becomesKeyOnlyIfNeeded = true
+        collectionBehavior = []
+    }
+
+    override var canBecomeKey: Bool { false }
+    override var canBecomeMain: Bool { false }
+
+    func configureLevel(alwaysOnTop: Bool) {
+        if alwaysOnTop {
+            level = .statusBar
+            collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        } else {
+            level = .normal
+            collectionBehavior = []
+        }
+    }
+
+    func show(near clockFrame: NSRect) {
+        let targetSize = NSSize(width: 280, height: 240)
+        let screenFrame = (screen ?? NSScreen.main)?.visibleFrame ?? .zero
+        let margin: CGFloat = 10
+        var x = clockFrame.maxX - targetSize.width
+        var y = clockFrame.minY - targetSize.height - margin
+        if y < screenFrame.minY {
+            y = clockFrame.maxY + margin
+        }
+        x = min(max(x, screenFrame.minX), screenFrame.maxX - targetSize.width)
+        y = min(max(y, screenFrame.minY), screenFrame.maxY - targetSize.height)
+        setFrame(NSRect(origin: NSPoint(x: x, y: y), size: targetSize), display: true)
+        orderFront(nil)
+    }
+
+    func hide() {
+        orderOut(nil)
+    }
+}

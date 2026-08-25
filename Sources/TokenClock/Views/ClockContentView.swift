@@ -4,9 +4,17 @@ import SwiftUI
 struct ClockContentView: View {
     @ObservedObject var viewModel: ViewModel
     @ObservedObject private var clockTicker: ClockTicker
+    let onNotificationClick: () -> Void
+    let onClockDragStart: () -> Void
 
-    init(viewModel: ViewModel) {
+    init(
+        viewModel: ViewModel,
+        onNotificationClick: @escaping () -> Void = {},
+        onClockDragStart: @escaping () -> Void = {}
+    ) {
         self.viewModel = viewModel
+        self.onNotificationClick = onNotificationClick
+        self.onClockDragStart = onClockDragStart
         self._clockTicker = ObservedObject(wrappedValue: viewModel.clockTicker)
     }
 
@@ -82,9 +90,22 @@ struct ClockContentView: View {
             // 点击/拖动改由 AppKit 层分发：>3pt 位移 = 拖动窗口，否则 = 点击展开详情。
             ClockInteractionLayer {
                 viewModel.isExpanded.toggle()
+            } onDragStart: {
+                viewModel.isExpanded = false
+                onClockDragStart()
             }
             .frame(width: d, height: d)
             .accessibilityHidden(true)
+
+            VStack {
+                HStack {
+                    Spacer()
+                    notificationButton(scale: s)
+                        .padding(.top, 30 * s)
+                        .padding(.trailing, 42 * s)
+                }
+                Spacer()
+            }
         }
         .frame(width: d, height: d)
         // 无障碍：表盘是纯视觉（指针/emoji/格式化数字），VoiceOver 读不出含义。
@@ -103,5 +124,31 @@ struct ClockContentView: View {
                               time,
                               viewModel.totalTokensFormatted,
                               viewModel.totalMessagesFormatted)
+    }
+
+    @ViewBuilder
+    private func notificationButton(scale s: CGFloat) -> some View {
+        Button(action: onNotificationClick) {
+            ZStack(alignment: .topTrailing) {
+                Image(systemName: viewModel.unreadNotificationCount > 0 ? "bell.fill" : "bell")
+                    .font(.system(size: 14 * s, weight: .semibold))
+                    .foregroundColor(viewModel.selectedTheme.textPrimaryColor.opacity(
+                        viewModel.unreadNotificationCount > 0 ? 0.95 : 0.62
+                    ))
+                    .frame(width: 24 * s, height: 24 * s)
+                    .contentShape(Circle())
+
+                if viewModel.unreadNotificationCount > 0 {
+                    Circle()
+                        .fill(Color.red)
+                        .frame(width: 6 * s, height: 6 * s)
+                        .overlay(Circle().stroke(viewModel.selectedTheme.dialColor, lineWidth: 1 * s))
+                        .offset(x: -2 * s, y: 2 * s)
+                }
+            }
+        }
+        .buttonStyle(.plain)
+        .help(L10n.shared.tr("notification.open"))
+        .accessibilityLabel(Text(L10n.shared.tr("notification.open")))
     }
 }

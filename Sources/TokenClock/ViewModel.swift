@@ -103,6 +103,8 @@ final class ViewModel: ObservableObject {
     @Published private(set) var claudeQuota = ClaudeQuotaSnapshot.idle
     @Published private(set) var antigravityQuota = ProviderQuotaSnapshot.idle(source: "Antigravity local service")
     @Published private(set) var cursorQuota = ProviderQuotaSnapshot.idle(source: "Cursor dashboard")
+    @Published private(set) var notifications: [TokenClockNotification] = []
+    var unreadNotificationCount: Int { notifications.filter { !$0.isRead }.count }
 
     @Published var windowOpacity: Double = 1.0 { didSet { UserDefaults.standard.set(windowOpacity, forKey: SettingsKey.windowOpacity.rawValue) } }
     @Published var alwaysOnTop: Bool = {
@@ -280,8 +282,26 @@ final class ViewModel: ObservableObject {
         codexQuotaTask = nil
         claudeQuotaTask?.cancel()
         claudeQuotaTask = nil
-        antigravityQuotaTask?.cancel(); antigravityQuotaTask = nil
-        cursorQuotaTask?.cancel(); cursorQuotaTask = nil
+        antigravityQuotaTask?.cancel()
+        antigravityQuotaTask = nil
+        cursorQuotaTask?.cancel()
+        cursorQuotaTask = nil
+    }
+
+    func markNotificationsRead() {
+        guard unreadNotificationCount > 0 else { return }
+        notifications = notifications.map {
+            var notification = $0
+            notification.isRead = true
+            return notification
+        }
+    }
+
+    private func appendNotification(kind: TokenClockNotification.Kind, title: String, message: String) {
+        notifications.insert(TokenClockNotification(kind: kind, title: title, message: message), at: 0)
+        if notifications.count > 20 {
+            notifications = Array(notifications.prefix(20))
+        }
     }
 
     func toggleCodexQuota() {
@@ -781,11 +801,11 @@ final class ViewModel: ObservableObject {
     /// 午夜定时器只确保新一天已有记录。前一天已经由每次成功扫描持续覆盖到最新值，
     /// 不能在 00:01 再用已经切到新日期的统计反向覆盖昨天。
     private func performDailySettlement() {
-        persistCurrentUsage()
+        persistCurrentUsage(notifyDailyReport: true)
     }
 
     /// 把当前日统计写入历史库。总览窗口因此能展示“今天”，异常退出也不会丢掉整天。
-    func persistCurrentUsage(synchronously: Bool = true) {
+    func persistCurrentUsage(synchronously: Bool = true, notifyDailyReport: Bool = false) {
         let dateKey = DateHelper.todayKey()
         let snapshots: [TokenClock.ToolSnapshot] = tools.map { tool in
             let sessions: [SessionSnapshot] = tool.sessions.map {
@@ -818,6 +838,18 @@ final class ViewModel: ObservableObject {
                 let totalTokens = snapshots.reduce(0) { $0 + $1.tokens }
                 print("[History] 落盘 \(dateKey): \(snapshots.count) 工具,\(totalTokens) tokens")
             }
+        }
+        if notifyDailyReport {
+            appendNotification(
+                kind: .dailyReport,
+                title: L10n.shared.tr("notification.dailyReportTitle"),
+                message: L10n.shared.tr(
+                    "notification.dailyReportMessage",
+                    dateKey,
+                    TokenFormat.compact(snapshots.reduce(0) { $0 + $1.tokens }),
+                    snapshots.reduce(0) { $0 + $1.messages }
+                )
+            )
         }
     }
 
