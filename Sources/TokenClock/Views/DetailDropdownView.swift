@@ -238,6 +238,7 @@ struct DetailDropdownView: View {
                         action: { onValueModeChange?(valueMode.next) }
                     )
                     .frame(width: 82)
+                    .help(L10n.shared.tr("detail.valueModeHelp"))
                     .onHover { percentHovered = $0 }
                 }
                 .padding(.horizontal, 4)
