@@ -105,6 +105,7 @@ struct ClockContentView: View {
                         notificationButton(scale: s)
                     }
                 }
+                .frame(maxWidth: .infinity, alignment: .center)
                 .padding(.top, 70 * s)
                 Spacer()
             }
