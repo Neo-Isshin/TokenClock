@@ -607,11 +607,9 @@ final class UsageServicePerformanceTests: XCTestCase {
     }
 
     private func elapsedMilliseconds(_ body: () -> Void) -> Double {
-        let start = ContinuousClock.now
+        let start = Date()
         body()
-        let duration = start.duration(to: .now)
-        return Double(duration.components.seconds) * 1_000
-            + Double(duration.components.attoseconds) / 1_000_000_000_000_000
+        return Date().timeIntervalSince(start) * 1_000
     }
 
     /// Test-only reproduction of the e7611ea Codex line-buffer/date path. It is

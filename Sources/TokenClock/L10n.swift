@@ -146,6 +146,15 @@ final class L10n: @unchecked Sendable {
                               .zhHant: "點按展開或收起詳情",
                               .en:     "Tap to expand or collapse details"],
 
+        // MARK: Notifications
+        "notification.open":  [.zhHans: "查看通知", .zhHant: "查看通知", .en: "Show notifications"],
+        "notification.title": [.zhHans: "通知", .zhHant: "通知", .en: "Notifications"],
+        "notification.empty": [.zhHans: "暂无通知", .zhHant: "暫無通知", .en: "No notifications"],
+        "notification.dailyReportTitle": [.zhHans: "日报已生成", .zhHant: "日報已生成", .en: "Daily report generated"],
+        "notification.dailyReportMessage": [.zhHans: "%@ 的用量报告已落盘：%@ tokens，%d 条消息。",
+                                            .zhHant: "%@ 的用量報告已落盤：%@ tokens，%d 條訊息。",
+                                            .en: "%@ usage report was saved: %@ tokens, %d messages."],
+
         // MARK: Detail dropdown
         "detail.instance":  [.zhHans: "实例",     .zhHant: "實例",     .en: "Instance"],
         "detail.todayUsage":[.zhHans: "今日消耗",  .zhHant: "今日消耗",  .en: "Usage"],

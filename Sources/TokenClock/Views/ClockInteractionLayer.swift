@@ -8,23 +8,30 @@ import SwiftUI
 /// 拖动超过 3pt 判定为拖拽并移动窗口，否则视为点击切换详情面板。）
 struct ClockInteractionLayer: NSViewRepresentable {
     let onClick: () -> Void
+    var onDragStart: () -> Void = {}
 
     func makeNSView(context: Context) -> ClockInteractionNSView {
-        ClockInteractionNSView(onClick: onClick)
+        ClockInteractionNSView(onClick: onClick, onDragStart: onDragStart)
     }
 
     func updateNSView(_ nsView: ClockInteractionNSView, context: Context) {
         nsView.onClick = onClick
+        nsView.onDragStart = onDragStart
     }
 }
 final class ClockInteractionNSView: NSView {
     var onClick: () -> Void
+    var onDragStart: () -> Void
     private var dragStartMouse: NSPoint?
     private var dragStartOrigin: NSPoint?
+    private var mouseDownTime: TimeInterval?
     private var isDragging = false
+    private let dragThreshold: CGFloat = 5
+    private let clickDurationLimit: TimeInterval = 0.35
 
-    init(onClick: @escaping () -> Void) {
+    init(onClick: @escaping () -> Void, onDragStart: @escaping () -> Void) {
         self.onClick = onClick
+        self.onDragStart = onDragStart
         super.init(frame: .zero)
     }
 
@@ -51,9 +58,14 @@ final class ClockInteractionNSView: NSView {
         // better than rebuilding the window drag from mouseDragged callbacks.
         if event.windowNumber != 0 {
             let startMouse = NSEvent.mouseLocation
+            let startedAt = ProcessInfo.processInfo.systemUptime
             window.performDrag(with: event)
             let endMouse = NSEvent.mouseLocation
-            if max(abs(endMouse.x - startMouse.x), abs(endMouse.y - startMouse.y)) <= 3 {
+            let distance = max(abs(endMouse.x - startMouse.x), abs(endMouse.y - startMouse.y))
+            let duration = ProcessInfo.processInfo.systemUptime - startedAt
+            if distance > dragThreshold {
+                onDragStart()
+            } else if duration <= clickDurationLimit {
                 onClick()
             }
             resetDragState()
@@ -63,6 +75,7 @@ final class ClockInteractionNSView: NSView {
         // Synthetic windowNumber=0 events are retained for deterministic unit tests.
         dragStartMouse = screenPoint(for: event, in: window)
         dragStartOrigin = window.frame.origin
+        mouseDownTime = event.timestamp
         isDragging = false
     }
 
@@ -79,7 +92,8 @@ final class ClockInteractionNSView: NSView {
         // A very fast gesture may contain no intermediate dragged event. Inspect the final
         // pointer position before deciding whether this was a click.
         updateDrag(with: event)
-        if !isDragging {
+        let pressDuration = event.timestamp - (mouseDownTime ?? event.timestamp)
+        if !isDragging && pressDuration <= clickDurationLimit {
             onClick()
         }
         resetDragState()
@@ -96,8 +110,9 @@ final class ClockInteractionNSView: NSView {
         let currentMouse = screenPoint(for: event, in: window)
         let deltaX = currentMouse.x - startMouse.x
         let deltaY = currentMouse.y - startMouse.y
-        if !isDragging, max(abs(deltaX), abs(deltaY)) > 3 {
+        if !isDragging, max(abs(deltaX), abs(deltaY)) > dragThreshold {
             isDragging = true
+            onDragStart()
         }
         if isDragging {
             window.setFrameOrigin(NSPoint(
@@ -114,6 +129,7 @@ final class ClockInteractionNSView: NSView {
     private func resetDragState() {
         dragStartMouse = nil
         dragStartOrigin = nil
+        mouseDownTime = nil
         isDragging = false
     }
 }
