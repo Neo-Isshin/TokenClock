@@ -30,7 +30,7 @@ final class ClockInteractionNSView: NSView {
     private let dragThreshold: CGFloat = 5
     private let clickDurationLimit: TimeInterval = 0.35
 
-    init(onClick: @escaping () -> Void, onDragStart: @escaping () -> Void) {
+    init(onClick: @escaping () -> Void, onDragStart: @escaping () -> Void = {}) {
         self.onClick = onClick
         self.onDragStart = onDragStart
         super.init(frame: .zero)
@@ -59,10 +59,14 @@ final class ClockInteractionNSView: NSView {
         // better than rebuilding the window drag from mouseDragged callbacks.
         if event.windowNumber != 0 {
             let startMouse = NSEvent.mouseLocation
+            let startOrigin = window.frame.origin
             let startedAt = ProcessInfo.processInfo.systemUptime
             window.performDrag(with: event)
             let endMouse = NSEvent.mouseLocation
-            let distance = max(abs(endMouse.x - startMouse.x), abs(endMouse.y - startMouse.y))
+            let endOrigin = window.frame.origin
+            let pointerDistance = max(abs(endMouse.x - startMouse.x), abs(endMouse.y - startMouse.y))
+            let windowDistance = max(abs(endOrigin.x - startOrigin.x), abs(endOrigin.y - startOrigin.y))
+            let distance = max(pointerDistance, windowDistance)
             let duration = ProcessInfo.processInfo.systemUptime - startedAt
             if distance > dragThreshold {
                 onDragStart()
