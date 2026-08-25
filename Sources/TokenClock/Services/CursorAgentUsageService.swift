@@ -29,6 +29,12 @@ final class CursorAgentUsageService: @unchecked Sendable {
     private(set) var dailyData: [String: DayUsage] = [:]
     private(set) var hourlyData: [String: HourlyUsage] = [:]
     private(set) var dailyCache: [String: Int] = [:]
+    /// Cursor Dashboard 的 usage event 自带模型与四类 token。这里保留模型维度，
+    /// 避免汇总后退化成一个无法计价、也无法辨认的 `cursor` 占位项。
+    private(set) var dailyModelBuckets: [String: [String: ModelBuckets]] = [:]
+    private var dailyModelUsage: [String: [String: DayUsage]] = [:]
+    private var dailyModelCache: [String: [String: Int]] = [:]
+    private var dailyModelLatestActivity: [String: [String: Date]] = [:]
     private var recentEntries: [RecentEntry] = []
 
 #if !os(Windows)
@@ -74,6 +80,18 @@ final class CursorAgentUsageService: @unchecked Sendable {
         let total = d?.tokens ?? 0
         let rate = TokenAccounting.cacheReadShare(freshTokens: total, cacheRead: cache)
         return (total, d?.messages ?? 0, rate)
+    }
+
+    func todayModelBuckets() -> [String: ModelBuckets] {
+        dailyModelBuckets[DateHelper.todayKey()] ?? [:]
+    }
+
+    func todayCost() -> CostEstimate {
+        PricingService.shared.cost(of: todayModelBuckets())
+    }
+
+    func todayCacheReadTokens() -> Int {
+        dailyCache[DateHelper.todayKey()] ?? 0
     }
 
     func currentHourTokens() -> Int {
@@ -298,12 +316,17 @@ final class CursorAgentUsageService: @unchecked Sendable {
 
     /// 把 API 返回的事件合并到本地缓存
     /// rangeDays > 2 时（fullScan），先清空再重建；否则增量覆盖当日
-    private func applyEvents(_ events: [[String: Any]], rangeDays: Int) {
+    /// internal 便于用真实 API 响应形状做解析回归测试。
+    func applyEvents(_ events: [[String: Any]], rangeDays: Int) {
         if rangeDays >= 30 {
             // 全量重建
             dailyData.removeAll()
             hourlyData.removeAll()
             dailyCache.removeAll()
+            dailyModelBuckets.removeAll()
+            dailyModelUsage.removeAll()
+            dailyModelCache.removeAll()
+            dailyModelLatestActivity.removeAll()
             recentEntries = []
         } else {
             // 增量窗口覆盖最近 rangeDays 天（cursorIncrementalDays=2 = 今天 + 昨天）。
@@ -314,6 +337,10 @@ final class CursorAgentUsageService: @unchecked Sendable {
                 let day = DateHelper.dateKey(from: Date().addingTimeInterval(-Double(dayOffset) * 24 * 60 * 60))
                 dailyData[day] = nil
                 dailyCache[day] = nil
+                dailyModelBuckets[day] = nil
+                dailyModelUsage[day] = nil
+                dailyModelCache[day] = nil
+                dailyModelLatestActivity[day] = nil
                 hourlyData = hourlyData.filter { !$0.key.hasPrefix(day) }
                 recentEntries = recentEntries.filter { DateHelper.dateKey(from: $0.timestamp) != day }
             }
@@ -328,6 +355,8 @@ final class CursorAgentUsageService: @unchecked Sendable {
                 timestampMs = ts
             } else if let ts = event["timestamp"] as? Int {
                 timestampMs = ts
+            } else if let ts = event["timestamp"] as? Double {
+                timestampMs = Int(ts)
             }
             guard timestampMs > 0 else { continue }
 
@@ -360,6 +389,29 @@ final class CursorAgentUsageService: @unchecked Sendable {
 
             dailyCache[dateKey, default: 0] += cacheRead
 
+            if let model = ModelNormalizer.normalize(event["model"] as? String) {
+                dailyModelBuckets[dateKey, default: [:]][model, default: ModelBuckets()].merge(
+                    ModelBuckets(
+                        input: inputTokens,
+                        output: outputTokens,
+                        cacheRead: cacheRead,
+                        cacheWrite: cacheWrite
+                    )
+                )
+
+                if var usage = dailyModelUsage[dateKey, default: [:]][model] {
+                    usage.tokens += total
+                    usage.messages += 1
+                    dailyModelUsage[dateKey, default: [:]][model] = usage
+                } else {
+                    dailyModelUsage[dateKey, default: [:]][model] = DayUsage(tokens: total, messages: 1)
+                }
+                dailyModelCache[dateKey, default: [:]][model, default: 0] += cacheRead
+                if date > (dailyModelLatestActivity[dateKey, default: [:]][model] ?? .distantPast) {
+                    dailyModelLatestActivity[dateKey, default: [:]][model] = date
+                }
+            }
+
             if dateKey == today {
                 recentEntries.append(RecentEntry(timestamp: date, tokens: total))
                 // L4: 限制 recentEntries 增长，只保留 active 窗口 3 倍内的条目
@@ -381,26 +433,23 @@ final class CursorAgentUsageService: @unchecked Sendable {
     // MARK: - Session 列表
 
     func todaySessions() -> [SessionInfo] {
-        // Cursor API 不按 session 划分，按 model 聚合展示今日活动
+        // Cursor API 带 conversationId，但同一模型可能跨很多短会话。详情面板按模型聚合，
+        // 与 Dashboard 的模型筛选口径一致，也避免产生数百个低价值 session 行。
         let today = DateHelper.todayKey()
-        var byModel: [String: (tokens: Int, messages: Int)] = [:]
-        var modelOrder: [String] = []
-
-        // 重新扫一次 dailyData 不够（没存 model 信息），这里直接返回按 hour 聚合的简化列表
-        // 真实场景下 ViewModel 会用其他维度展示，这里给出一个合理的近似
-        let tokens = dailyData[today]?.tokens ?? 0
-        let messages = dailyData[today]?.messages ?? 0
-        guard tokens > 0 else { return [] }
-
-        byModel["cursor"] = (tokens, messages)
-        modelOrder.append("cursor")
-
-        return modelOrder.compactMap { name in
-            guard let s = byModel[name] else { return nil }
+        let activeCutoff = Date().addingTimeInterval(-AppConfig.Scan.activeThresholdSeconds)
+        return (dailyModelUsage[today] ?? [:]).map { model, usage in
+            let buckets = dailyModelBuckets[today]?[model]
             return SessionInfo(
-                rawId: name, displayName: name, detail: nil,
-                todayTokens: s.tokens, todayMessages: s.messages, isActive: true
+                rawId: "cursor:\(model)",
+                displayName: model,
+                detail: nil,
+                todayTokens: usage.tokens,
+                todayMessages: usage.messages,
+                isActive: (dailyModelLatestActivity[today]?[model] ?? .distantPast) >= activeCutoff,
+                model: model,
+                todayCost: buckets.map { PricingService.shared.cost(of: [model: $0]) } ?? .zero,
+                cacheReadTokens: dailyModelCache[today]?[model] ?? 0
             )
-        }
+        }.sorted { $0.todayTokens > $1.todayTokens }
     }
 }

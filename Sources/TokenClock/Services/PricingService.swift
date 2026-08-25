@@ -212,22 +212,54 @@ final class PricingService: @unchecked Sendable {
     func price(forModel raw: String) -> ModelPrice? {
         let name = ModelNormalizer.normalize(raw) ?? raw.trimmingCharacters(in: .whitespaces)
         guard !name.isEmpty else { return nil }
+        let candidates = pricingCandidates(for: name)
 
         lock.lock(); defer { lock.unlock() }
         // 1. 用户自定义（原始名与归一名都试）
         if let p = customPrices[name] ?? customPrices[raw] { return p }
+        for candidate in candidates where candidate != name {
+            if let p = customPrices[candidate] { return p }
+        }
         // 2. 目录精确命中（一方模型是无前缀规范名，与归一化结果直接对齐）
-        if let p = catalog[name] { return p }
+        for candidate in candidates {
+            if let p = catalog[candidate] { return p }
+        }
         if let p = catalog[raw] { return p }
         // 3. Harness-only inference-level suffixes → official billable model ID. A custom
         // override on the official ID still wins over the built-in/online catalog.
         if let alias = Self.pricingAliases[name],
            let p = customPrices[alias] ?? catalog[alias] { return p }
         // 4. 路由前缀索引：dashscope/glm-5.2 ← glm-5.2
-        if let key = suffixIndex[name], let p = catalog[key] { return p }
+        for candidate in candidates {
+            if let key = suffixIndex[candidate], let p = catalog[key] { return p }
+        }
         // 5. 未命中记账
         unpriced.insert(name)
         return nil
+    }
+
+    /// Cursor 的 usage API 会在厂商模型后附加推理档位，例如
+    /// `claude-sonnet-5-medium` / `claude-4.6-opus-high-thinking`。
+    /// 这些是路由选项而非不同的厂商 API 单价，计价时回退到基础模型；展示仍保留原名。
+    private func pricingCandidates(for name: String) -> [String] {
+        var result = [name]
+        let effortPattern = #"-(?:low|medium|high|xhigh|max)(?:-thinking)?$"#
+        let base = name.replacingOccurrences(of: effortPattern, with: "", options: .regularExpression)
+        if base != name { result.append(base) }
+
+        // Cursor 也使用 `claude-4.6-opus` 次序，而价格目录采用 `claude-opus-4-6`。
+        if let match = base.range(
+            of: #"^claude-(\d+(?:\.\d+)?)-(opus|sonnet|haiku)$"#,
+            options: .regularExpression
+        ) {
+            let value = String(base[match])
+            let parts = value.split(separator: "-")
+            if parts.count == 3 {
+                let version = parts[1].replacingOccurrences(of: ".", with: "-")
+                result.append("claude-\(parts[2])-\(version)")
+            }
+        }
+        return result
     }
 
     /// 按模型分桶计费。任一模型无价 → 该模型金额计 0 且 complete=false。

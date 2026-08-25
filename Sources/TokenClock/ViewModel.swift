@@ -1015,7 +1015,7 @@ final class ViewModel: ObservableObject {
             }
             if enabled.contains("Cursor Agent") {
                 let u = self.cursorAgentService.todayUsage()
-                results["Cursor Agent"] = ToolSnapshot(tokens: u.tokens, messages: u.messages, recent: self.cursorAgentService.recentUsage(minutes: rateWindow).tokens, hourly: self.cursorAgentService.currentHourTokens(), active: self.cursorAgentService.isActive(), cacheRate: u.cacheRate, sessions: self.cursorAgentService.todaySessions())
+                results["Cursor Agent"] = ToolSnapshot(tokens: u.tokens, messages: u.messages, recent: self.cursorAgentService.recentUsage(minutes: rateWindow).tokens, hourly: self.cursorAgentService.currentHourTokens(), active: self.cursorAgentService.isActive(), cacheRate: u.cacheRate, cost: self.cursorAgentService.todayCost(), cacheRead: self.cursorAgentService.todayCacheReadTokens(), sessions: self.cursorAgentService.todaySessions())
             }
 
             // 主线程：批量更新 @Published tools
