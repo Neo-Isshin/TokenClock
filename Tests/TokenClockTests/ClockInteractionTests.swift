@@ -65,7 +65,11 @@ final class ClockInteractionTests: XCTestCase {
 
     func testDragMovesWindowWithoutToggling() throws {
         var clickCount = 0
-        let (window, view) = makeWindow { clickCount += 1 }
+        var dragStartCount = 0
+        let (window, view) = makeWindow(
+            onClick: { clickCount += 1 },
+            onDragStart: { dragStartCount += 1 }
+        )
 
         view.mouseDown(with: try event(.leftMouseDown, at: NSPoint(x: 120, y: 120)))
         view.mouseDragged(with: try event(.leftMouseDragged, at: NSPoint(x: 170, y: 150)))
@@ -74,6 +78,7 @@ final class ClockInteractionTests: XCTestCase {
         view.mouseUp(with: try event(.leftMouseUp, at: NSPoint(x: 120, y: 120)))
 
         XCTAssertEqual(clickCount, 0)
+        XCTAssertEqual(dragStartCount, 1)
         XCTAssertEqual(window.frame.origin.x, 150, accuracy: 0.001)
         XCTAssertEqual(window.frame.origin.y, 130, accuracy: 0.001)
     }
@@ -90,14 +95,17 @@ final class ClockInteractionTests: XCTestCase {
         XCTAssertEqual(window.frame.origin.y, 130, accuracy: 0.001)
     }
 
-    private func makeWindow(onClick: @escaping () -> Void) -> (NSWindow, ClockInteractionNSView) {
+    private func makeWindow(
+        onClick: @escaping () -> Void,
+        onDragStart: @escaping () -> Void = {}
+    ) -> (NSWindow, ClockInteractionNSView) {
         let window = NSWindow(
             contentRect: NSRect(x: 100, y: 100, width: 240, height: 240),
             styleMask: .borderless,
             backing: .buffered,
             defer: false
         )
-        let view = ClockInteractionNSView(onClick: onClick)
+        let view = ClockInteractionNSView(onClick: onClick, onDragStart: onDragStart)
         view.frame = NSRect(x: 0, y: 0, width: 240, height: 240)
         window.contentView = view
         return (window, view)
