@@ -167,11 +167,13 @@ struct ClockContentView: View {
         Button(action: onNotificationClick) {
             ZStack(alignment: .topTrailing) {
                 Image(systemName: viewModel.unreadNotificationCount > 0 ? "bell.fill" : "bell")
-                    .font(.system(size: 14 * s, weight: .semibold))
-                    .foregroundColor(viewModel.selectedTheme.textPrimaryColor.opacity(
-                        viewModel.unreadNotificationCount > 0 ? 0.95 : 0.62
+                    .font(.system(size: 16 * s, weight: .semibold))
+                    .foregroundColor(Color.white.opacity(
+                        viewModel.unreadNotificationCount > 0 ? 1 : 0.9
                     ))
-                    .frame(width: 24 * s, height: 24 * s)
+                    .frame(width: 28 * s, height: 28 * s)
+                    .background(Circle().fill(Color.black.opacity(0.2)))
+                    .overlay(Circle().stroke(Color.white.opacity(0.22), lineWidth: 0.7 * s))
                     .contentShape(Circle())
 
                 if viewModel.unreadNotificationCount > 0 {
