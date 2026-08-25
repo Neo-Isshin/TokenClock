@@ -192,7 +192,7 @@ final class LinuxUsageModel: @unchecked Sendable {
         }
         if enabled.contains("Cursor Agent") {
             let usage = cursorAgentService.todayUsage()
-            results["Cursor Agent"] = snapshot(usage, cursorAgentService.recentUsage(minutes: rateWindow).tokens, cursorAgentService.currentHourTokens(), cursorAgentService.isActive(), cursorAgentService.todaySessions())
+            results["Cursor Agent"] = snapshot(usage, cursorAgentService.recentUsage(minutes: rateWindow).tokens, cursorAgentService.currentHourTokens(), cursorAgentService.isActive(), cursorAgentService.todaySessions(), cost: cursorAgentService.todayCost(), cacheRead: cursorAgentService.todayCacheReadTokens())
         }
 
         lock.lock()

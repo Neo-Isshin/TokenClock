@@ -36,6 +36,24 @@ final class PricingServiceTests: XCTestCase {
         XCTAssertEqual(dated, bare, "带日期后缀的模型名应折算到同一目录条目")
     }
 
+    func testCursorEffortSuffixPricingFallback() {
+        let base = "cursor-pricing-test"
+        let price = ModelPrice(input: 2, output: 10, cacheRead: 0.2, cacheWrite: 2.5)
+        PricingService.shared.setCustomPrice(model: base, price: price)
+        defer { PricingService.shared.setCustomPrice(model: base, price: nil) }
+
+        XCTAssertEqual(PricingService.shared.price(forModel: "\(base)-medium"), price)
+        XCTAssertEqual(PricingService.shared.price(forModel: "\(base)-high-thinking"), price)
+    }
+
+    func testCursorClaudeVersionOrderPricingFallback() {
+        let price = ModelPrice(input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25)
+        PricingService.shared.setCustomPrice(model: "claude-opus-9-9", price: price)
+        defer { PricingService.shared.setCustomPrice(model: "claude-opus-9-9", price: nil) }
+
+        XCTAssertEqual(PricingService.shared.price(forModel: "claude-9.9-opus-high-thinking"), price)
+    }
+
     /// 计费数学：四桶 × 单价（USD/MTok）÷ 1e6
     func testCostMath() {
         let price = ModelPrice(input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75)
