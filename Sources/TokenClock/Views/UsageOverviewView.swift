@@ -10,6 +10,20 @@ struct UsageOverviewView: View {
     private enum ChartStyle: String, CaseIterable, Identifiable {
         case automatic, line, stacked
         var id: String { rawValue }
+
+        var glyph: String {
+            switch self {
+            case .automatic: return "▦"
+            case .line: return "📈"
+            case .stacked: return "📊"
+            }
+        }
+    }
+
+    private struct MonthBoundary: Identifiable {
+        let index: Int
+        let label: String
+        var id: Int { index }
     }
 
     @State private var period: Period = .week
@@ -194,17 +208,18 @@ struct UsageOverviewView: View {
 
     private func chartStyleButton(_ style: ChartStyle, _ key: String) -> some View {
         Button { chartStyle = style } label: {
-            Text(L10n.shared.tr(key))
-                .font(.system(size: 9.5, weight: chartStyle == style ? .semibold : .regular))
+            Text(style.glyph)
+                .font(.system(size: 12, weight: chartStyle == style ? .semibold : .regular))
                 .foregroundColor(chartStyle == style ? .white : .secondary)
-                .padding(.horizontal, 9)
-                .padding(.vertical, 3)
+                .frame(width: 30, height: 21)
                 .background(
                     Capsule(style: .continuous)
                         .fill(chartStyle == style ? Color.accentColor : Color.clear)
                 )
         }
         .buttonStyle(.plain)
+        .help(L10n.shared.tr(key))
+        .accessibilityLabel(Text(L10n.shared.tr(key)))
     }
 
     @ViewBuilder
@@ -246,25 +261,41 @@ struct UsageOverviewView: View {
     }
 
     private var lineChart: some View {
-        VStack(spacing: 3) {
+        let days = overview.days
+        let boundaries = monthBoundaries(in: days)
+        let activeDayKey = selectedDayKey ?? hoveredDayKey
+        return VStack(spacing: 3) {
             GeometryReader { proxy in
-                let values = overview.days.map { displayedTokens($0.metrics) }
+                let values = days.map { displayedTokens($0.metrics) }
                 let maxValue = max(1, values.max() ?? 1)
-                let plotHeight = max(1, proxy.size.height - 6)
-                let step = overview.days.count > 1 ? proxy.size.width / CGFloat(overview.days.count - 1) : 0
+                let topInset: CGFloat = boundaries.isEmpty ? 4 : 16
+                let plotHeight = max(1, proxy.size.height - topInset - 3)
+                let step = days.isEmpty ? 0 : proxy.size.width / CGFloat(days.count)
 
                 ZStack(alignment: .topLeading) {
                     ForEach(0..<4, id: \.self) { index in
                         Rectangle()
                             .fill(Color.primary.opacity(0.055))
                             .frame(height: 0.5)
-                            .offset(y: plotHeight * CGFloat(index) / 3)
+                            .offset(y: topInset + plotHeight * CGFloat(index) / 3)
+                    }
+                    ForEach(boundaries) { boundary in
+                        let x = CGFloat(boundary.index) * step
+                        Path { path in
+                            path.move(to: CGPoint(x: x, y: 0))
+                            path.addLine(to: CGPoint(x: x, y: proxy.size.height))
+                        }
+                        .stroke(Color.secondary.opacity(0.45), style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
+                        Text(boundary.label)
+                            .font(.system(size: 8.5, weight: .semibold))
+                            .foregroundColor(.secondary)
+                            .position(x: min(proxy.size.width - 15, x + 15), y: 6)
                     }
                     Path { path in
                         for (index, value) in values.enumerated() {
                             let point = CGPoint(
-                                x: CGFloat(index) * step,
-                                y: plotHeight - CGFloat(value) / CGFloat(maxValue) * plotHeight
+                                x: (CGFloat(index) + 0.5) * step,
+                                y: topInset + plotHeight - CGFloat(value) / CGFloat(maxValue) * plotHeight
                             )
                             if index == 0 { path.move(to: point) }
                             else { path.addLine(to: point) }
@@ -273,19 +304,26 @@ struct UsageOverviewView: View {
                     .stroke(Color.accentColor, style: StrokeStyle(lineWidth: 2, lineJoin: .round))
 
                     ForEach(Array(values.enumerated()), id: \.offset) { index, value in
-                        Circle()
-                            .fill(Color.accentColor)
-                            .frame(width: 5, height: 5)
+                        ZStack {
+                            Circle().fill(Color.accentColor).frame(width: 6, height: 6)
+                            if activeDayKey == days[index].dateKey {
+                                Circle().stroke(Color.primary.opacity(0.75), lineWidth: 1.2).frame(width: 12, height: 12)
+                            }
+                        }
+                            .frame(width: 16, height: 16)
+                            .contentShape(Circle())
                             .position(
-                                x: CGFloat(index) * step,
-                                y: plotHeight - CGFloat(value) / CGFloat(maxValue) * plotHeight
+                                x: (CGFloat(index) + 0.5) * step,
+                                y: topInset + plotHeight - CGFloat(value) / CGFloat(maxValue) * plotHeight
                             )
-                            .help("\(overview.days[index].dateKey) · \(TokenFormat.compact(value)) tokens")
+                            .onTapGesture { selectDay(days[index].dateKey) }
+                            .onHover { handleDayHover($0, dateKey: days[index].dateKey) }
+                            .help("\(days[index].dateKey) · \(TokenFormat.compact(value)) tokens")
                     }
                 }
             }
             .frame(height: 82)
-            chartDateLabels(overview.days)
+            compactDayLabels(days)
         }
         .padding(.horizontal, 10)
         .padding(.top, 8)
@@ -295,6 +333,8 @@ struct UsageOverviewView: View {
 
     private var stackedModelChart: some View {
         let days = modelOverview.days
+        let boundaries = monthBoundaries(in: days)
+        let activeDayKey = selectedDayKey ?? hoveredDayKey
         let maxValue = max(1, days.map { displayedTokens($0.metrics) }.max() ?? 1)
         return VStack(spacing: 3) {
             HStack(spacing: 9) {
@@ -309,34 +349,61 @@ struct UsageOverviewView: View {
             .font(.system(size: 8.5))
             .foregroundColor(.secondary)
 
-            HStack(alignment: .bottom, spacing: days.count > 20 ? 3 : 7) {
-                ForEach(Array(days.enumerated()), id: \.element.id) { index, day in
-                    let total = displayedTokens(day.metrics)
-                    let barHeight = max(total > 0 ? 2 : 0, CGFloat(total) / CGFloat(maxValue) * 72)
-                    VStack(spacing: 4) {
-                        Spacer(minLength: 0)
-                        if total > 0 {
+            GeometryReader { proxy in
+                let step = days.isEmpty ? 0 : proxy.size.width / CGFloat(days.count)
+                ZStack(alignment: .topLeading) {
+                    ForEach(boundaries) { boundary in
+                        let x = CGFloat(boundary.index) * step
+                        Path { path in
+                            path.move(to: CGPoint(x: x, y: 0))
+                            path.addLine(to: CGPoint(x: x, y: proxy.size.height))
+                        }
+                        .stroke(Color.secondary.opacity(0.45), style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
+                        Text(boundary.label)
+                            .font(.system(size: 8.5, weight: .semibold))
+                            .foregroundColor(.secondary)
+                            .position(x: min(proxy.size.width - 15, x + 15), y: 6)
+                    }
+
+                    HStack(alignment: .bottom, spacing: days.count > 20 ? 3 : 7) {
+                        ForEach(days) { day in
+                            let total = displayedTokens(day.metrics)
+                            let barHeight = max(total > 0 ? 2 : 0, CGFloat(total) / CGFloat(maxValue) * 58)
                             VStack(spacing: 0) {
-                                ForEach(day.rows) { row in
-                                    let value = displayedTokens(row.metrics)
-                                    Rectangle()
-                                        .fill(modelColor(row.name))
-                                        .frame(height: CGFloat(value) / CGFloat(max(1, total)) * barHeight)
-                                        .help("\(day.dateKey) · \(displayName(row.name)) · \(TokenFormat.compact(value)) tokens")
+                                Spacer(minLength: 0)
+                                if total > 0 {
+                                    VStack(spacing: 0) {
+                                        ForEach(day.rows) { row in
+                                            let value = displayedTokens(row.metrics)
+                                            Rectangle()
+                                                .fill(modelColor(row.name))
+                                                .frame(height: CGFloat(value) / CGFloat(max(1, total)) * barHeight)
+                                                .help("\(day.dateKey) · \(displayName(row.name)) · \(TokenFormat.compact(value)) tokens")
+                                        }
+                                    }
+                                    .frame(height: barHeight, alignment: .bottom)
+                                    .clipShape(RoundedRectangle(cornerRadius: 3))
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 3)
+                                            .stroke(activeDayKey == day.dateKey ? Color.primary.opacity(0.75) : Color.clear, lineWidth: 1.2)
+                                    )
+                                } else {
+                                    RoundedRectangle(cornerRadius: 2)
+                                        .fill(Color.secondary.opacity(0.08))
+                                        .frame(height: 2)
                                 }
                             }
-                            .frame(height: barHeight, alignment: .bottom)
-                            .clipShape(RoundedRectangle(cornerRadius: 3))
-                        } else {
-                            RoundedRectangle(cornerRadius: 2)
-                                .fill(Color.secondary.opacity(0.08))
-                                .frame(height: 2)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .contentShape(Rectangle())
+                            .onTapGesture { selectDay(day.dateKey) }
+                            .onHover { handleDayHover($0, dateKey: day.dateKey) }
                         }
-                        chartDateLabel(day.dateKey, at: index)
                     }
-                    .frame(maxWidth: .infinity)
+                    .padding(.top, boundaries.isEmpty ? 0 : 14)
                 }
             }
+            .frame(height: 72)
+            compactDayLabels(days)
         }
         .padding(.horizontal, 7)
         .padding(.top, 6)
@@ -356,10 +423,13 @@ struct UsageOverviewView: View {
         }
     }
 
-    private func chartDateLabels(_ days: [UsageOverviewDay]) -> some View {
+    private func compactDayLabels(_ days: [UsageOverviewDay]) -> some View {
         HStack(spacing: 0) {
-            ForEach(Array(days.enumerated()), id: \.element.id) { index, day in
-                chartDateLabel(day.dateKey, at: index)
+            ForEach(days) { day in
+                Text(dayNumber(day.dateKey))
+                    .font(.system(size: 8.5))
+                    .foregroundColor(.secondary)
+                    .lineLimit(1)
                     .frame(maxWidth: .infinity)
             }
         }
@@ -369,6 +439,42 @@ struct UsageOverviewView: View {
         let palette: [Color] = [.blue, .purple, .orange, .green, .pink, .cyan, .indigo, .mint, .red]
         let index = modelOverview.rows.firstIndex(where: { $0.name == model }) ?? 0
         return palette[index % palette.count]
+    }
+
+    private func selectDay(_ dateKey: String) {
+        selectedDayKey = dateKey
+        hoveredDayKey = nil
+    }
+
+    private func handleDayHover(_ hovering: Bool, dateKey: String) {
+        if hovering, selectedDayKey == nil {
+            hoveredDayKey = dateKey
+        } else if hoveredDayKey == dateKey {
+            hoveredDayKey = nil
+        }
+    }
+
+    private func monthBoundaries(in days: [UsageOverviewDay]) -> [MonthBoundary] {
+        guard days.count > 1 else { return [] }
+        return days.indices.dropFirst().compactMap { index in
+            let previous = days[index - 1].dateKey.split(separator: "-")
+            let current = days[index].dateKey.split(separator: "-")
+            guard previous.count == 3, current.count == 3, previous[1] != current[1] else { return nil }
+            return MonthBoundary(index: index, label: monthLabel(days[index].dateKey))
+        }
+    }
+
+    private func monthLabel(_ dateKey: String) -> String {
+        guard let date = date(from: dateKey) else { return "" }
+        let formatter = DateFormatter()
+        formatter.locale = Locale.current
+        formatter.dateFormat = "MMM"
+        return formatter.string(from: date)
+    }
+
+    private func dayNumber(_ dateKey: String) -> String {
+        guard let value = dateKey.split(separator: "-").last, let day = Int(value) else { return dateKey }
+        return "\(day)"
     }
 
     private var monthlyHeatmap: some View {
@@ -406,17 +512,8 @@ struct UsageOverviewView: View {
                                             )
                                     )
                                     .contentShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
-                                    .onTapGesture {
-                                        selectedDayKey = day.dateKey
-                                        hoveredDayKey = nil
-                                    }
-                                    .onHover { hovering in
-                                        if hovering, selectedDayKey == nil {
-                                            hoveredDayKey = day.dateKey
-                                        } else if hoveredDayKey == day.dateKey {
-                                            hoveredDayKey = nil
-                                        }
-                                    }
+                                    .onTapGesture { selectDay(day.dateKey) }
+                                    .onHover { handleDayHover($0, dateKey: day.dateKey) }
                             } else {
                                 Color.clear.frame(width: cellSize, height: cellSize)
                             }
@@ -541,45 +638,19 @@ struct UsageOverviewView: View {
     }
 
     private var breakdown: some View {
-        VStack(alignment: .leading, spacing: 7) {
-            Text(L10n.shared.tr("overview.breakdown")).font(.headline)
+        let activeDayKey = selectedDayKey ?? hoveredDayKey
+        let activeDay = overview.days.first { $0.dateKey == activeDayKey }
+        return VStack(alignment: .leading, spacing: 7) {
             HStack {
-                Text(L10n.shared.tr("overview.name")).frame(maxWidth: .infinity, alignment: .leading)
-                column(tokenColumnHeader)
-                column(L10n.shared.tr("overview.messages"))
-                column(L10n.shared.tr("overview.cost"))
-                column(L10n.shared.tr("overview.averageCache"))
+                Text(L10n.shared.tr("overview.breakdown")).font(.headline)
+                overviewButton
+                Spacer()
             }
-            .font(.caption2.weight(.semibold))
-            .foregroundColor(.secondary)
-            .padding(.horizontal, 10)
-
-            ScrollView {
-                LazyVStack(spacing: 0) {
-                    if overview.rows.isEmpty {
-                        Text(L10n.shared.tr("overview.noData"))
-                            .foregroundColor(.secondary)
-                            .frame(maxWidth: .infinity, minHeight: 70)
-                    }
-                    ForEach(overview.rows) { row in
-                        HStack {
-                            HStack(spacing: 7) {
-                                Text(row.emoji)
-                                Text(displayName(row.name)).lineLimit(1)
-                            }
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            column(TokenFormat.compact(displayedTokens(row.metrics)))
-                            column(integer(row.metrics.messages))
-                            column(CostFormat.estimate(row.metrics.cost))
-                            column(String(format: "%@%.1f%%", row.metrics.cacheIsExact ? "" : "≈", row.metrics.averageCacheRate * 100))
-                        }
-                        .font(.system(size: 12))
-                        .padding(.horizontal, 10)
-                        .frame(height: 34)
-                        Divider()
-                    }
-                }
+            Group {
+                if let activeDay { inlineBreakdown(activeDay.dateKey, metrics: activeDay.metrics, rows: activeDay.rows) }
+                else { inlineBreakdown(L10n.shared.tr("overview.overview"), metrics: overview.summary, rows: overview.rows) }
             }
+            .padding(10)
             .frame(minHeight: 110)
             .background(RoundedRectangle(cornerRadius: 10).fill(Color(nsColor: .controlBackgroundColor)))
             .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.primary.opacity(0.06)))
