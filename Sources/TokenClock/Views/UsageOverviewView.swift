@@ -168,7 +168,7 @@ struct UsageOverviewView: View {
         HStack(spacing: 14) {
             Text(L10n.shared.tr("overview.daily"))
                 .font(.headline)
-                .frame(width: 182, alignment: .leading)
+                .frame(width: 246, alignment: .leading)
             Text(L10n.shared.tr("overview.breakdown"))
                 .font(.headline)
             overviewButton
@@ -478,8 +478,8 @@ struct UsageOverviewView: View {
     }
 
     private var monthlyHeatmap: some View {
-        let cellSize: CGFloat = 18
-        let rowSpacing: CGFloat = 5
+        let cellSize: CGFloat = 27
+        let rowSpacing: CGFloat = 6
         let maxValue = max(1, overview.days.map { displayedTokens($0.metrics) }.max() ?? 1)
         let rows = Array(repeating: GridItem(.fixed(cellSize), spacing: rowSpacing), count: 7)
         let slots = heatmapSlots
@@ -492,9 +492,9 @@ struct UsageOverviewView: View {
                     VStack(spacing: rowSpacing) {
                         ForEach(Array(weekdaySymbols.enumerated()), id: \.offset) { _, symbol in
                             Text(symbol)
-                                .font(.system(size: 8, weight: .medium))
+                                .font(.system(size: 10, weight: .medium))
                                 .foregroundColor(.secondary)
-                                .frame(width: 12, height: cellSize)
+                                .frame(width: 16, height: cellSize)
                         }
                     }
 
@@ -523,17 +523,17 @@ struct UsageOverviewView: View {
                 }
                 HStack(spacing: 5) {
                     Text(L10n.shared.tr("overview.hoverDay"))
-                        .font(.system(size: 8.5))
+                        .font(.system(size: 10))
                         .foregroundColor(.secondary)
                     Spacer(minLength: 4)
                     ForEach(0..<5, id: \.self) { level in
                         RoundedRectangle(cornerRadius: 2)
                             .fill(level == 0 ? Color.secondary.opacity(0.08) : Color.accentColor.opacity(0.16 + Double(level) * 0.19))
-                            .frame(width: 10, height: 10)
+                            .frame(width: 12, height: 12)
                     }
                 }
             }
-            .frame(width: 156, alignment: .leading)
+            .frame(width: 220, alignment: .leading)
 
             Divider().padding(.vertical, 2)
 
@@ -541,7 +541,7 @@ struct UsageOverviewView: View {
             else { inlineBreakdown(L10n.shared.tr("overview.overview"), metrics: overview.summary, rows: overview.rows) }
         }
         .padding(12)
-        .frame(maxWidth: .infinity, minHeight: 210, maxHeight: 210, alignment: .leading)
+        .frame(maxWidth: .infinity, minHeight: 300, maxHeight: 300, alignment: .leading)
         .background(RoundedRectangle(cornerRadius: 12).fill(Color(nsColor: .controlBackgroundColor)))
     }
 
@@ -556,17 +556,17 @@ struct UsageOverviewView: View {
     ) -> some View {
         VStack(alignment: .leading, spacing: 5) {
             HStack(alignment: .firstTextBaseline) {
-                Text(title).font(.system(size: 11, weight: .semibold))
+                Text(title).font(.system(size: 14, weight: .semibold))
                 Spacer()
                 Text(TokenFormat.compact(displayedTokens(metrics)))
-                    .font(.system(size: 12, weight: .bold, design: .rounded))
+                    .font(.system(size: 14, weight: .bold, design: .rounded))
             }
             HStack(spacing: 10) {
                 Text("\(integer(metrics.messages)) \(L10n.shared.tr("overview.messages"))")
                 Text(CostFormat.estimate(metrics.cost))
                 Text(String(format: "%@%.1f%%", metrics.cacheIsExact ? "" : "≈", metrics.averageCacheRate * 100))
             }
-            .font(.system(size: 9.5))
+            .font(.system(size: 11))
             .foregroundColor(.secondary)
 
             HStack(spacing: 0) {
@@ -576,12 +576,12 @@ struct UsageOverviewView: View {
                 Text(L10n.shared.tr("overview.cost")).frame(width: 62, alignment: .trailing)
                 Text(L10n.shared.tr("overview.averageCache")).frame(width: 52, alignment: .trailing)
             }
-            .font(.system(size: 8.5, weight: .semibold))
+            .font(.system(size: 10, weight: .semibold))
             .foregroundColor(.secondary)
 
             if rows.isEmpty {
                 Text(L10n.shared.tr("overview.noData"))
-                    .font(.system(size: 10))
+                    .font(.system(size: 11))
                     .foregroundColor(.secondary)
             } else {
                 ScrollView {
@@ -600,8 +600,8 @@ struct UsageOverviewView: View {
                                 Text(String(format: "%@%.0f%%", row.metrics.cacheIsExact ? "" : "≈", row.metrics.averageCacheRate * 100))
                                     .frame(width: 52, alignment: .trailing)
                             }
-                            .font(.system(size: 10))
-                            .frame(height: 25)
+                            .font(.system(size: 12))
+                            .frame(height: 32)
                             Divider()
                         }
                     }
