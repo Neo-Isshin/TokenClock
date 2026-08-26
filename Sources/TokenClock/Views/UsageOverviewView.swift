@@ -7,16 +7,26 @@ struct UsageOverviewView: View {
         var id: String { rawValue }
     }
 
+    private enum ChartStyle: String, CaseIterable, Identifiable {
+        case automatic, line, stacked
+        var id: String { rawValue }
+    }
+
     @State private var period: Period = .week
     @State private var grouping: UsageOverviewGrouping = .tool
     @State private var includesCacheRead = false
     @State private var hoveredDayKey: String?
     @State private var selectedDayKey: String?
+    @State private var chartStyle: ChartStyle = .automatic
     @State private var customStart = Calendar.current.date(byAdding: .day, value: -6, to: Date()) ?? Date()
     @State private var customEnd = Date()
     @State private var overview = UsageOverviewBuilder.load(
         startDate: Calendar.current.date(byAdding: .day, value: -6, to: Date()) ?? Date(),
         endDate: Date(), grouping: .tool
+    )
+    @State private var modelOverview = UsageOverviewBuilder.load(
+        startDate: Calendar.current.date(byAdding: .day, value: -6, to: Date()) ?? Date(),
+        endDate: Date(), grouping: .model
     )
 
     var body: some View {
@@ -25,7 +35,7 @@ struct UsageOverviewView: View {
             if period == .custom { customRange }
             metricCards
             dailyChart
-            if period != .month { breakdown }
+            if period != .month || chartStyle != .automatic { breakdown }
             notes
         }
         .padding(22)
@@ -56,6 +66,9 @@ struct UsageOverviewView: View {
             .labelsHidden()
             .pickerStyle(.segmented)
             .frame(width: 270)
+            Divider()
+                .frame(height: 22)
+                .padding(.horizontal, 8)
             Picker("", selection: $grouping) {
                 Text(L10n.shared.tr("overview.byTool")).tag(UsageOverviewGrouping.tool)
                 Text(L10n.shared.tr("overview.byModel")).tag(UsageOverviewGrouping.model)
@@ -119,44 +132,16 @@ struct UsageOverviewView: View {
 
     private var dailyChart: some View {
         VStack(alignment: .leading, spacing: 9) {
-            if period == .month {
+            if period == .month, chartStyle == .automatic {
                 monthlySectionHeader
                 monthlyHeatmap
             } else {
-                Text(L10n.shared.tr("overview.daily")).font(.headline)
-                GeometryReader { proxy in
-                    let maxValue = max(1, overview.days.map { displayedTokens($0.metrics) }.max() ?? 1)
-                    HStack(alignment: .bottom, spacing: overview.days.count > 20 ? 3 : 7) {
-                        ForEach(Array(overview.days.enumerated()), id: \.element.id) { index, day in
-                            VStack(spacing: 4) {
-                                Spacer(minLength: 0)
-                                RoundedRectangle(cornerRadius: 3)
-                                    .fill(
-                                        LinearGradient(
-                                            colors: [.accentColor.opacity(0.55), .accentColor],
-                                            startPoint: .bottom, endPoint: .top
-                                        )
-                                    )
-                                    .frame(height: max(2, CGFloat(displayedTokens(day.metrics)) / CGFloat(maxValue) * 82))
-                                if shouldShowDate(at: index) {
-                                    Text(shortDate(day.dateKey))
-                                        .font(.system(size: 9))
-                                        .foregroundColor(.secondary)
-                                        .lineLimit(1)
-                                } else {
-                                    Text(" ").font(.system(size: 9))
-                                }
-                            }
-                            .help("\(day.dateKey) · \(TokenFormat.compact(displayedTokens(day.metrics))) tokens")
-                            .frame(maxWidth: .infinity)
-                        }
-                    }
-                    .frame(width: proxy.size.width, height: proxy.size.height)
+                HStack {
+                    Text(L10n.shared.tr("overview.daily")).font(.headline)
+                    Spacer()
+                    chartStylePicker
                 }
-                .frame(height: 112)
-                .padding(.horizontal, 6)
-                .padding(.top, 4)
-                .background(RoundedRectangle(cornerRadius: 12).fill(Color(nsColor: .controlBackgroundColor)))
+                chartForCurrentStyle
             }
         }
     }
@@ -168,23 +153,218 @@ struct UsageOverviewView: View {
                 .frame(width: 182, alignment: .leading)
             Text(L10n.shared.tr("overview.breakdown"))
                 .font(.headline)
+            overviewButton
             Spacer()
-            Button {
-                selectedDayKey = nil
-                hoveredDayKey = nil
-            } label: {
-                Text(L10n.shared.tr("overview.overview"))
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundColor(selectedDayKey == nil ? .white : .secondary)
-                    .padding(.horizontal, 11)
-                    .padding(.vertical, 4)
-                    .background(
-                        Capsule(style: .continuous)
-                            .fill(selectedDayKey == nil ? Color.accentColor : Color.secondary.opacity(0.13))
-                    )
-            }
-            .buttonStyle(.plain)
+            chartStylePicker
         }
+    }
+
+    private var overviewButton: some View {
+        Button {
+            selectedDayKey = nil
+            hoveredDayKey = nil
+        } label: {
+            Text(L10n.shared.tr("overview.overview"))
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundColor(selectedDayKey == nil ? .white : .secondary)
+                .padding(.horizontal, 11)
+                .padding(.vertical, 4)
+                .background(
+                    Capsule(style: .continuous)
+                        .fill(selectedDayKey == nil ? Color.accentColor : Color.secondary.opacity(0.13))
+                )
+        }
+        .buttonStyle(.plain)
+        .padding(.leading, 2)
+    }
+
+    private var chartStylePicker: some View {
+        HStack(spacing: 2) {
+            chartStyleButton(.automatic, "overview.chartDefault")
+            chartStyleButton(.line, "overview.chartLine")
+            chartStyleButton(.stacked, "overview.chartBars")
+        }
+        .padding(2)
+        .background(Capsule(style: .continuous).fill(Color.secondary.opacity(0.09)))
+    }
+
+    private func chartStyleButton(_ style: ChartStyle, _ key: String) -> some View {
+        Button { chartStyle = style } label: {
+            Text(L10n.shared.tr(key))
+                .font(.system(size: 9.5, weight: chartStyle == style ? .semibold : .regular))
+                .foregroundColor(chartStyle == style ? .white : .secondary)
+                .padding(.horizontal, 9)
+                .padding(.vertical, 3)
+                .background(
+                    Capsule(style: .continuous)
+                        .fill(chartStyle == style ? Color.accentColor : Color.clear)
+                )
+        }
+        .buttonStyle(.plain)
+    }
+
+    @ViewBuilder
+    private var chartForCurrentStyle: some View {
+        switch chartStyle {
+        case .automatic: defaultBarChart
+        case .line: lineChart
+        case .stacked: stackedModelChart
+        }
+    }
+
+    private var defaultBarChart: some View {
+        GeometryReader { proxy in
+            let maxValue = max(1, overview.days.map { displayedTokens($0.metrics) }.max() ?? 1)
+            HStack(alignment: .bottom, spacing: overview.days.count > 20 ? 3 : 7) {
+                ForEach(Array(overview.days.enumerated()), id: \.element.id) { index, day in
+                    VStack(spacing: 4) {
+                        Spacer(minLength: 0)
+                        RoundedRectangle(cornerRadius: 3)
+                            .fill(
+                                LinearGradient(
+                                    colors: [.accentColor.opacity(0.55), .accentColor],
+                                    startPoint: .bottom, endPoint: .top
+                                )
+                            )
+                            .frame(height: max(2, CGFloat(displayedTokens(day.metrics)) / CGFloat(maxValue) * 82))
+                        chartDateLabel(day.dateKey, at: index)
+                    }
+                    .help("\(day.dateKey) · \(TokenFormat.compact(displayedTokens(day.metrics))) tokens")
+                    .frame(maxWidth: .infinity)
+                }
+            }
+            .frame(width: proxy.size.width, height: proxy.size.height)
+        }
+        .frame(height: 112)
+        .padding(.horizontal, 6)
+        .padding(.top, 4)
+        .chartPanel()
+    }
+
+    private var lineChart: some View {
+        VStack(spacing: 3) {
+            GeometryReader { proxy in
+                let values = overview.days.map { displayedTokens($0.metrics) }
+                let maxValue = max(1, values.max() ?? 1)
+                let plotHeight = max(1, proxy.size.height - 6)
+                let step = overview.days.count > 1 ? proxy.size.width / CGFloat(overview.days.count - 1) : 0
+
+                ZStack(alignment: .topLeading) {
+                    ForEach(0..<4, id: \.self) { index in
+                        Rectangle()
+                            .fill(Color.primary.opacity(0.055))
+                            .frame(height: 0.5)
+                            .offset(y: plotHeight * CGFloat(index) / 3)
+                    }
+                    Path { path in
+                        for (index, value) in values.enumerated() {
+                            let point = CGPoint(
+                                x: CGFloat(index) * step,
+                                y: plotHeight - CGFloat(value) / CGFloat(maxValue) * plotHeight
+                            )
+                            if index == 0 { path.move(to: point) }
+                            else { path.addLine(to: point) }
+                        }
+                    }
+                    .stroke(Color.accentColor, style: StrokeStyle(lineWidth: 2, lineJoin: .round))
+
+                    ForEach(Array(values.enumerated()), id: \.offset) { index, value in
+                        Circle()
+                            .fill(Color.accentColor)
+                            .frame(width: 5, height: 5)
+                            .position(
+                                x: CGFloat(index) * step,
+                                y: plotHeight - CGFloat(value) / CGFloat(maxValue) * plotHeight
+                            )
+                            .help("\(overview.days[index].dateKey) · \(TokenFormat.compact(value)) tokens")
+                    }
+                }
+            }
+            .frame(height: 82)
+            chartDateLabels(overview.days)
+        }
+        .padding(.horizontal, 10)
+        .padding(.top, 8)
+        .frame(height: 112)
+        .chartPanel()
+    }
+
+    private var stackedModelChart: some View {
+        let days = modelOverview.days
+        let maxValue = max(1, days.map { displayedTokens($0.metrics) }.max() ?? 1)
+        return VStack(spacing: 3) {
+            HStack(spacing: 9) {
+                ForEach(Array(modelOverview.rows.prefix(6))) { row in
+                    HStack(spacing: 3) {
+                        Circle().fill(modelColor(row.name)).frame(width: 6, height: 6)
+                        Text(displayName(row.name)).lineLimit(1)
+                    }
+                }
+                Spacer(minLength: 0)
+            }
+            .font(.system(size: 8.5))
+            .foregroundColor(.secondary)
+
+            HStack(alignment: .bottom, spacing: days.count > 20 ? 3 : 7) {
+                ForEach(Array(days.enumerated()), id: \.element.id) { index, day in
+                    let total = displayedTokens(day.metrics)
+                    let barHeight = max(total > 0 ? 2 : 0, CGFloat(total) / CGFloat(maxValue) * 72)
+                    VStack(spacing: 4) {
+                        Spacer(minLength: 0)
+                        if total > 0 {
+                            VStack(spacing: 0) {
+                                ForEach(day.rows) { row in
+                                    let value = displayedTokens(row.metrics)
+                                    Rectangle()
+                                        .fill(modelColor(row.name))
+                                        .frame(height: CGFloat(value) / CGFloat(max(1, total)) * barHeight)
+                                        .help("\(day.dateKey) · \(displayName(row.name)) · \(TokenFormat.compact(value)) tokens")
+                                }
+                            }
+                            .frame(height: barHeight, alignment: .bottom)
+                            .clipShape(RoundedRectangle(cornerRadius: 3))
+                        } else {
+                            RoundedRectangle(cornerRadius: 2)
+                                .fill(Color.secondary.opacity(0.08))
+                                .frame(height: 2)
+                        }
+                        chartDateLabel(day.dateKey, at: index)
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+            }
+        }
+        .padding(.horizontal, 7)
+        .padding(.top, 6)
+        .frame(height: 125)
+        .chartPanel()
+    }
+
+    @ViewBuilder
+    private func chartDateLabel(_ dateKey: String, at index: Int) -> some View {
+        if shouldShowDate(at: index) {
+            Text(shortDate(dateKey))
+                .font(.system(size: 9))
+                .foregroundColor(.secondary)
+                .lineLimit(1)
+        } else {
+            Text(" ").font(.system(size: 9))
+        }
+    }
+
+    private func chartDateLabels(_ days: [UsageOverviewDay]) -> some View {
+        HStack(spacing: 0) {
+            ForEach(Array(days.enumerated()), id: \.element.id) { index, day in
+                chartDateLabel(day.dateKey, at: index)
+                    .frame(maxWidth: .infinity)
+            }
+        }
+    }
+
+    private func modelColor(_ model: String) -> Color {
+        let palette: [Color] = [.blue, .purple, .orange, .green, .pink, .cyan, .indigo, .mint, .red]
+        let index = modelOverview.rows.firstIndex(where: { $0.name == model }) ?? 0
+        return palette[index % palette.count]
     }
 
     private var monthlyHeatmap: some View {
@@ -451,6 +631,10 @@ struct UsageOverviewView: View {
             self.selectedDayKey = nil
         }
         overview = next
+        modelOverview = grouping == .model ? next : UsageOverviewBuilder.load(
+            startDate: dates.0, endDate: dates.1, grouping: .model,
+            includingCacheRead: includesCacheRead
+        )
     }
 
     private var tokenColumnTitle: String {
@@ -502,6 +686,12 @@ struct UsageOverviewView: View {
 
     private func displayName(_ value: String) -> String {
         value == "Unknown" ? L10n.shared.tr("detail.unknownModel") : value
+    }
+}
+
+private extension View {
+    func chartPanel() -> some View {
+        background(RoundedRectangle(cornerRadius: 12).fill(Color(nsColor: .controlBackgroundColor)))
     }
 }
 #endif
