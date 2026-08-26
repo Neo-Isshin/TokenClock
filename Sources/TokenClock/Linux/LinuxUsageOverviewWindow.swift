@@ -156,7 +156,7 @@ final class LinuxUsageOverviewWindow: @unchecked Sendable {
         appendCard("🔢", tokenColumnTitle, TokenFormat.compact(displayedTokens(metrics)), to: row)
         appendCard("💬", L10n.shared.tr("overview.messages"), number(metrics.messages), to: row)
         appendCard("💵", L10n.shared.tr("overview.cost"), CostFormat.estimate(metrics.cost), to: row)
-        appendCard("⚡", L10n.shared.tr("overview.averageCache"), String(format: "%@%.1f%%", metrics.cacheIsExact ? "" : "≈", metrics.averageCacheRate * 100), to: row)
+        appendCard("⚡", L10n.shared.tr("overview.averageCache"), String(format: "%@%.2f%%", metrics.cacheIsExact ? "" : "≈", metrics.averageCacheRate * 100), to: row)
         gtk_box_pack_start(tc_gtk_box(root), row, 0, 0, 0)
     }
 
@@ -218,7 +218,7 @@ final class LinuxUsageOverviewWindow: @unchecked Sendable {
         }
         for row in rows {
             let name = row.name == "Unknown" ? L10n.shared.tr("detail.unknownModel") : row.name
-            appendDataRow(name: "\(row.emoji)  \(name)", tokens: TokenFormat.compact(displayedTokens(row.metrics)), messages: number(row.metrics.messages), cost: CostFormat.estimate(row.metrics.cost), cache: String(format: "%@%.1f%%", row.metrics.cacheIsExact ? "" : "≈", row.metrics.averageCacheRate * 100), header: false, to: list)
+            appendDataRow(name: "\(row.emoji)  \(name)", tokens: TokenFormat.compact(displayedTokens(row.metrics)), messages: number(row.metrics.messages), cost: CostFormat.estimate(row.metrics.cost), cache: String(format: "%@%.2f%%", row.metrics.cacheIsExact ? "" : "≈", row.metrics.averageCacheRate * 100), header: false, to: list)
         }
         gtk_box_pack_start(tc_gtk_box(root), list, 0, 0, 0)
     }
