@@ -2,7 +2,19 @@ import SwiftUI
 
 /// 独立的订阅额度窗口。所有网络/本地服务读取都由用户打开窗口或点击刷新时触发。
 struct SubscriptionQuotaWindowView: View {
+    private enum QuotaProvider: String, CaseIterable, Identifiable {
+        case codex, claude, antigravity, cursor
+        var id: String { rawValue }
+    }
+
     @ObservedObject var viewModel: ViewModel
+    @State private var isEditingOrder = false
+    @State private var providerOrder: [QuotaProvider]
+
+    init(viewModel: ViewModel) {
+        self.viewModel = viewModel
+        _providerOrder = State(initialValue: Self.loadProviderOrder())
+    }
 
     private var isLoading: Bool {
         viewModel.codexQuota.status == .loading ||
@@ -22,6 +34,15 @@ struct SubscriptionQuotaWindowView: View {
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
+                Button {
+                    isEditingOrder.toggle()
+                } label: {
+                    Label(
+                        L10n.shared.tr(isEditingOrder ? "quota.finishOrder" : "quota.editOrder"),
+                        systemImage: isEditingOrder ? "checkmark" : "arrow.up.arrow.down"
+                    )
+                }
+                .buttonStyle(.bordered)
                 Button { viewModel.refreshSubscriptionQuotas() } label: {
                     Label(L10n.shared.tr("quota.retry"), systemImage: "arrow.clockwise")
                 }
@@ -35,24 +56,81 @@ struct SubscriptionQuotaWindowView: View {
 
             ScrollView(.vertical, showsIndicators: true) {
                 LazyVStack(spacing: 14) {
-                    codexSection
-                    claudeSection
-                    providerSection(
-                        title: "🛸 Antigravity",
-                        snapshot: viewModel.antigravityQuota,
-                        unavailableKey: "quota.antigravityUnavailable"
-                    )
-                    providerSection(
-                        title: "🖱️ Cursor",
-                        snapshot: viewModel.cursorQuota,
-                        unavailableKey: "quota.cursorUnavailable"
-                    )
+                    ForEach(Array(providerOrder.enumerated()), id: \.element.id) { index, provider in
+                        HStack(alignment: .top, spacing: 8) {
+                            if isEditingOrder {
+                                reorderControls(for: provider, at: index)
+                            }
+                            providerView(provider)
+                                .frame(maxWidth: .infinity)
+                        }
+                    }
                 }
                 .padding(18)
             }
         }
         .frame(minWidth: 380, idealWidth: 430, minHeight: 480, idealHeight: 650)
         .background(Color(nsColor: .windowBackgroundColor))
+    }
+
+    @ViewBuilder
+    private func providerView(_ provider: QuotaProvider) -> some View {
+        switch provider {
+        case .codex: codexSection
+        case .claude: claudeSection
+        case .antigravity:
+            providerSection(
+                title: "🛸 Antigravity",
+                snapshot: viewModel.antigravityQuota,
+                unavailableKey: "quota.antigravityUnavailable"
+            )
+        case .cursor:
+            providerSection(
+                title: "🖱️ Cursor",
+                snapshot: viewModel.cursorQuota,
+                unavailableKey: "quota.cursorUnavailable"
+            )
+        }
+    }
+
+    private func reorderControls(for provider: QuotaProvider, at index: Int) -> some View {
+        VStack(spacing: 4) {
+            reorderButton("chevron.up", disabled: index == 0) { move(provider, by: -1) }
+            reorderButton("chevron.down", disabled: index == providerOrder.count - 1) { move(provider, by: 1) }
+        }
+        .padding(.top, 8)
+    }
+
+    private func reorderButton(_ symbol: String, disabled: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: 9, weight: .bold))
+                .frame(width: 20, height: 18)
+                .background(Capsule().fill(Color.primary.opacity(disabled ? 0.035 : 0.09)))
+        }
+        .buttonStyle(.plain)
+        .disabled(disabled)
+        .opacity(disabled ? 0.35 : 1)
+    }
+
+    private func move(_ provider: QuotaProvider, by offset: Int) {
+        guard let source = providerOrder.firstIndex(of: provider) else { return }
+        let destination = source + offset
+        guard providerOrder.indices.contains(destination) else { return }
+        providerOrder.swapAt(source, destination)
+        UserDefaults.standard.set(
+            providerOrder.map(\.rawValue),
+            forKey: SettingsKey.subscriptionQuotaOrder.rawValue
+        )
+    }
+
+    private static func loadProviderOrder() -> [QuotaProvider] {
+        let saved = UserDefaults.standard.stringArray(forKey: SettingsKey.subscriptionQuotaOrder.rawValue) ?? []
+        var result = saved.compactMap(QuotaProvider.init(rawValue:))
+        for provider in QuotaProvider.allCases where !result.contains(provider) {
+            result.append(provider)
+        }
+        return result
     }
 
     private var codexSection: some View {
