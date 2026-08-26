@@ -205,6 +205,7 @@ final class L10n: @unchecked Sendable {
         "overview.cost":         [.zhHans: "API 等价费用", .zhHant: "API 等價費用", .en: "API-Equivalent"],
         "overview.averageCache": [.zhHans: "平均缓存率", .zhHant: "平均緩存率", .en: "Avg. Cache"],
         "overview.daily":        [.zhHans: "每日用量", .zhHant: "每日用量", .en: "Daily Usage"],
+        "overview.hoverDay":     [.zhHans: "将鼠标悬停在日期格上查看当天明细", .zhHant: "將滑鼠懸停在日期格上查看當天明細", .en: "Hover a day to see its breakdown"],
         "overview.breakdown":    [.zhHans: "用量明细", .zhHant: "用量明細", .en: "Breakdown"],
         "overview.from":         [.zhHans: "从", .zhHant: "從", .en: "From"],
         "overview.to":           [.zhHans: "到", .zhHant: "到", .en: "To"],

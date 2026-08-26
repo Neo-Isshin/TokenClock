@@ -39,6 +39,8 @@ struct UsageOverviewDay: Identifiable, Sendable {
     var id: String { dateKey }
     let dateKey: String
     let metrics: UsageOverviewMetrics
+    /// 当天按当前 grouping 聚合的明细，供 30 天热力格悬停展示。
+    let rows: [UsageOverviewRow]
 }
 
 struct UsageOverviewData: Sendable {
@@ -84,28 +86,63 @@ enum UsageOverviewBuilder {
     ) -> UsageOverviewData {
         var summary = Accumulator()
         var dayMetrics: [String: UsageOverviewMetrics] = [:]
+        var dayRows: [String: [UsageOverviewRow]] = [:]
         var grouped: [String: Accumulator] = [:]
         var unknownModel = false
 
         for day in snapshots {
             var dayTotal = Accumulator()
+            var dayGrouped: [String: Accumulator] = [:]
             for tool in day.tools {
                 summary.add(tool: tool)
                 dayTotal.add(tool: tool)
                 switch grouping {
                 case .tool:
                     grouped[tool.name, default: Accumulator()].add(tool: tool)
+                    dayGrouped[tool.name, default: Accumulator()].add(tool: tool)
                 case .model:
                     unknownModel = addModels(from: tool, to: &grouped) || unknownModel
+                    unknownModel = addModels(from: tool, to: &dayGrouped) || unknownModel
                 }
             }
             dayMetrics[day.date] = dayTotal.metrics
+            dayRows[day.date] = makeRows(
+                from: dayGrouped, grouping: grouping,
+                includingCacheRead: includingCacheRead
+            )
         }
 
         let days = dateKeys(from: startDate, through: endDate).map { key in
-            UsageOverviewDay(dateKey: key, metrics: dayMetrics[key] ?? .zero)
+            UsageOverviewDay(
+                dateKey: key,
+                metrics: dayMetrics[key] ?? .zero,
+                rows: dayRows[key] ?? []
+            )
         }
-        let rows = grouped.map { name, accumulator in
+        let rows = makeRows(
+            from: grouped, grouping: grouping,
+            includingCacheRead: includingCacheRead
+        )
+        let finalSummary = summary.metrics
+        return UsageOverviewData(
+            startDate: startDate,
+            endDate: endDate,
+            summary: finalSummary,
+            days: days,
+            rows: rows,
+            containsLegacyCacheEstimate: !finalSummary.cacheIsExact,
+            containsUnavailableCost: finalSummary.displayedTokens(includingCacheRead: includingCacheRead) > 0 &&
+                (!finalSummary.cost.available || !finalSummary.cost.complete),
+            containsUnknownModel: grouping == .model && unknownModel
+        )
+    }
+
+    private static func makeRows(
+        from grouped: [String: Accumulator],
+        grouping: UsageOverviewGrouping,
+        includingCacheRead: Bool
+    ) -> [UsageOverviewRow] {
+        grouped.map { name, accumulator in
             UsageOverviewRow(
                 name: name,
                 emoji: grouping == .tool ? toolEmoji(name) : ModelEmoji.emoji(for: name),
@@ -120,18 +157,6 @@ enum UsageOverviewBuilder {
             if lhs == rhs { return $0.name < $1.name }
             return lhs > rhs
         }
-        let finalSummary = summary.metrics
-        return UsageOverviewData(
-            startDate: startDate,
-            endDate: endDate,
-            summary: finalSummary,
-            days: days,
-            rows: rows,
-            containsLegacyCacheEstimate: !finalSummary.cacheIsExact,
-            containsUnavailableCost: finalSummary.displayedTokens(includingCacheRead: includingCacheRead) > 0 &&
-                (!finalSummary.cost.available || !finalSummary.cost.complete),
-            containsUnknownModel: grouping == .model && unknownModel
-        )
     }
 
     /// model 行以 session 为数据源，tool 总量是权威边界；不能归属的残差放进 Unknown。
