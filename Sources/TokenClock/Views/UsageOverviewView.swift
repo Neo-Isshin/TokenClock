@@ -39,7 +39,11 @@ struct UsageOverviewView: View {
             notes
         }
         .padding(22)
-        .frame(minWidth: 780, idealWidth: 840, minHeight: 560, idealHeight: 640)
+        .frame(
+            minWidth: 780, idealWidth: 840, maxWidth: .infinity,
+            minHeight: 560, idealHeight: 640, maxHeight: .infinity,
+            alignment: .topLeading
+        )
         .background(Color(nsColor: .windowBackgroundColor))
         .onChange(of: period) { _ in reload() }
         .onChange(of: grouping) { _ in reload() }
