@@ -11,6 +11,7 @@ struct UsageOverviewView: View {
     @State private var grouping: UsageOverviewGrouping = .tool
     @State private var includesCacheRead = false
     @State private var hoveredDayKey: String?
+    @State private var selectedDayKey: String?
     @State private var customStart = Calendar.current.date(byAdding: .day, value: -6, to: Date()) ?? Date()
     @State private var customEnd = Date()
     @State private var overview = UsageOverviewBuilder.load(
@@ -118,10 +119,11 @@ struct UsageOverviewView: View {
 
     private var dailyChart: some View {
         VStack(alignment: .leading, spacing: 9) {
-            Text(L10n.shared.tr("overview.daily")).font(.headline)
             if period == .month {
+                monthlySectionHeader
                 monthlyHeatmap
             } else {
+                Text(L10n.shared.tr("overview.daily")).font(.headline)
                 GeometryReader { proxy in
                     let maxValue = max(1, overview.days.map { displayedTokens($0.metrics) }.max() ?? 1)
                     HStack(alignment: .bottom, spacing: overview.days.count > 20 ? 3 : 7) {
@@ -159,13 +161,40 @@ struct UsageOverviewView: View {
         }
     }
 
+    private var monthlySectionHeader: some View {
+        HStack(spacing: 14) {
+            Text(L10n.shared.tr("overview.daily"))
+                .font(.headline)
+                .frame(width: 182, alignment: .leading)
+            Text(L10n.shared.tr("overview.breakdown"))
+                .font(.headline)
+            Spacer()
+            Button {
+                selectedDayKey = nil
+                hoveredDayKey = nil
+            } label: {
+                Text(L10n.shared.tr("overview.overview"))
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundColor(selectedDayKey == nil ? .white : .secondary)
+                    .padding(.horizontal, 11)
+                    .padding(.vertical, 4)
+                    .background(
+                        Capsule(style: .continuous)
+                            .fill(selectedDayKey == nil ? Color.accentColor : Color.secondary.opacity(0.13))
+                    )
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
     private var monthlyHeatmap: some View {
         let cellSize: CGFloat = 18
         let rowSpacing: CGFloat = 5
         let maxValue = max(1, overview.days.map { displayedTokens($0.metrics) }.max() ?? 1)
         let rows = Array(repeating: GridItem(.fixed(cellSize), spacing: rowSpacing), count: 7)
         let slots = heatmapSlots
-        let hoveredDay = overview.days.first { $0.dateKey == hoveredDayKey }
+        let activeDayKey = selectedDayKey ?? hoveredDayKey
+        let activeDay = overview.days.first { $0.dateKey == activeDayKey }
 
         return HStack(alignment: .top, spacing: 14) {
             VStack(alignment: .leading, spacing: 9) {
@@ -188,12 +217,17 @@ struct UsageOverviewView: View {
                                     .overlay(
                                         RoundedRectangle(cornerRadius: 4, style: .continuous)
                                             .stroke(
-                                                hoveredDayKey == day.dateKey ? Color.primary.opacity(0.7) : Color.primary.opacity(0.05),
-                                                lineWidth: hoveredDayKey == day.dateKey ? 1.2 : 0.5
+                                                activeDayKey == day.dateKey ? Color.primary.opacity(0.7) : Color.primary.opacity(0.05),
+                                                lineWidth: activeDayKey == day.dateKey ? 1.2 : 0.5
                                             )
                                     )
+                                    .contentShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+                                    .onTapGesture {
+                                        selectedDayKey = day.dateKey
+                                        hoveredDayKey = nil
+                                    }
                                     .onHover { hovering in
-                                        if hovering {
+                                        if hovering, selectedDayKey == nil {
                                             hoveredDayKey = day.dateKey
                                         } else if hoveredDayKey == day.dateKey {
                                             hoveredDayKey = nil
@@ -222,8 +256,8 @@ struct UsageOverviewView: View {
 
             Divider().padding(.vertical, 2)
 
-            if let hoveredDay { dayBreakdown(hoveredDay) }
-            else { inlineBreakdown(L10n.shared.tr("overview.breakdown"), metrics: overview.summary, rows: overview.rows) }
+            if let activeDay { dayBreakdown(activeDay) }
+            else { inlineBreakdown(L10n.shared.tr("overview.overview"), metrics: overview.summary, rows: overview.rows) }
         }
         .padding(12)
         .frame(maxWidth: .infinity, minHeight: 210, maxHeight: 210, alignment: .leading)
@@ -408,10 +442,15 @@ struct UsageOverviewView: View {
 
     private func reload() {
         hoveredDayKey = nil
-        overview = UsageOverviewBuilder.load(
+        if period != .month { selectedDayKey = nil }
+        let next = UsageOverviewBuilder.load(
             startDate: dates.0, endDate: dates.1, grouping: grouping,
             includingCacheRead: includesCacheRead
         )
+        if let selectedDayKey, !next.days.contains(where: { $0.dateKey == selectedDayKey }) {
+            self.selectedDayKey = nil
+        }
+        overview = next
     }
 
     private var tokenColumnTitle: String {
