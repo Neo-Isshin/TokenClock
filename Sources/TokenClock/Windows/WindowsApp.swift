@@ -1137,7 +1137,7 @@ final class WindowsApp: @unchecked Sendable {
         appendOverviewMetricCard(dlg, x: 22, y: y, width: 184, title: tokenTitle, value: TokenFormat.compact(data.summary.displayedTokens(includingCacheRead: overviewIncludesCacheRead)))
         appendOverviewMetricCard(dlg, x: 214, y: y, width: 184, title: L10n.shared.tr("overview.messages"), value: overviewNumber(data.summary.messages))
         appendOverviewMetricCard(dlg, x: 406, y: y, width: 184, title: L10n.shared.tr("overview.cost"), value: CostFormat.estimate(data.summary.cost))
-        appendOverviewMetricCard(dlg, x: 598, y: y, width: 184, title: L10n.shared.tr("overview.averageCache"), value: String(format: "%@%.1f%%", data.summary.cacheIsExact ? "" : "≈", data.summary.averageCacheRate * 100))
+        appendOverviewMetricCard(dlg, x: 598, y: y, width: 184, title: L10n.shared.tr("overview.averageCache"), value: String(format: "%@%.2f%%", data.summary.cacheIsExact ? "" : "≈", data.summary.averageCacheRate * 100))
         y += 86
 
         dlg_add_section(dlg, L10n.shared.tr("overview.daily"), 24, y, 200, 24)
@@ -1170,7 +1170,7 @@ final class WindowsApp: @unchecked Sendable {
                 tokens: TokenFormat.compact(row.metrics.displayedTokens(includingCacheRead: overviewIncludesCacheRead)),
                 messages: overviewNumber(row.metrics.messages),
                 cost: CostFormat.estimate(row.metrics.cost),
-                cache: String(format: "%@%.1f%%", row.metrics.cacheIsExact ? "" : "≈", row.metrics.averageCacheRate * 100)
+                cache: String(format: "%@%.2f%%", row.metrics.cacheIsExact ? "" : "≈", row.metrics.averageCacheRate * 100)
             )
         }
         y += listHeight + 12
