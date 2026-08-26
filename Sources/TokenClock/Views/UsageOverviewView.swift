@@ -10,6 +10,7 @@ struct UsageOverviewView: View {
     @State private var period: Period = .week
     @State private var grouping: UsageOverviewGrouping = .tool
     @State private var includesCacheRead = false
+    @State private var hoveredDayKey: String?
     @State private var customStart = Calendar.current.date(byAdding: .day, value: -6, to: Date()) ?? Date()
     @State private var customEnd = Date()
     @State private var overview = UsageOverviewBuilder.load(
@@ -118,40 +119,183 @@ struct UsageOverviewView: View {
     private var dailyChart: some View {
         VStack(alignment: .leading, spacing: 9) {
             Text(L10n.shared.tr("overview.daily")).font(.headline)
-            GeometryReader { proxy in
-                let maxValue = max(1, overview.days.map { displayedTokens($0.metrics) }.max() ?? 1)
-                HStack(alignment: .bottom, spacing: overview.days.count > 20 ? 3 : 7) {
-                    ForEach(Array(overview.days.enumerated()), id: \.element.id) { index, day in
-                        VStack(spacing: 4) {
-                            Spacer(minLength: 0)
-                            RoundedRectangle(cornerRadius: 3)
-                                .fill(
-                                    LinearGradient(
-                                        colors: [.accentColor.opacity(0.55), .accentColor],
-                                        startPoint: .bottom, endPoint: .top
+            if period == .month {
+                monthlyHeatmap
+            } else {
+                GeometryReader { proxy in
+                    let maxValue = max(1, overview.days.map { displayedTokens($0.metrics) }.max() ?? 1)
+                    HStack(alignment: .bottom, spacing: overview.days.count > 20 ? 3 : 7) {
+                        ForEach(Array(overview.days.enumerated()), id: \.element.id) { index, day in
+                            VStack(spacing: 4) {
+                                Spacer(minLength: 0)
+                                RoundedRectangle(cornerRadius: 3)
+                                    .fill(
+                                        LinearGradient(
+                                            colors: [.accentColor.opacity(0.55), .accentColor],
+                                            startPoint: .bottom, endPoint: .top
+                                        )
                                     )
-                                )
-                                .frame(height: max(2, CGFloat(displayedTokens(day.metrics)) / CGFloat(maxValue) * 82))
-                            if shouldShowDate(at: index) {
-                                Text(shortDate(day.dateKey))
-                                    .font(.system(size: 9))
-                                    .foregroundColor(.secondary)
-                                    .lineLimit(1)
-                            } else {
-                                Text(" ").font(.system(size: 9))
+                                    .frame(height: max(2, CGFloat(displayedTokens(day.metrics)) / CGFloat(maxValue) * 82))
+                                if shouldShowDate(at: index) {
+                                    Text(shortDate(day.dateKey))
+                                        .font(.system(size: 9))
+                                        .foregroundColor(.secondary)
+                                        .lineLimit(1)
+                                } else {
+                                    Text(" ").font(.system(size: 9))
+                                }
                             }
+                            .help("\(day.dateKey) · \(TokenFormat.compact(displayedTokens(day.metrics))) tokens")
+                            .frame(maxWidth: .infinity)
                         }
-                        .help("\(day.dateKey) · \(TokenFormat.compact(displayedTokens(day.metrics))) tokens")
-                        .frame(maxWidth: .infinity)
+                    }
+                    .frame(width: proxy.size.width, height: proxy.size.height)
+                }
+                .frame(height: 112)
+                .padding(.horizontal, 6)
+                .padding(.top, 4)
+                .background(RoundedRectangle(cornerRadius: 12).fill(Color(nsColor: .controlBackgroundColor)))
+            }
+        }
+    }
+
+    private var monthlyHeatmap: some View {
+        let cellSize: CGFloat = 14
+        let rowSpacing: CGFloat = 4
+        let maxValue = max(1, overview.days.map { displayedTokens($0.metrics) }.max() ?? 1)
+        let rows = Array(repeating: GridItem(.fixed(cellSize), spacing: rowSpacing), count: 7)
+        let slots = heatmapSlots
+        let hoveredDay = overview.days.first { $0.dateKey == hoveredDayKey }
+
+        return HStack(alignment: .top, spacing: 14) {
+            VStack(spacing: rowSpacing) {
+                ForEach(Array(weekdaySymbols.enumerated()), id: \.offset) { _, symbol in
+                    Text(symbol)
+                        .font(.system(size: 8, weight: .medium))
+                        .foregroundColor(.secondary)
+                        .frame(width: 12, height: cellSize)
+                }
+            }
+
+            LazyHGrid(rows: rows, alignment: .top, spacing: rowSpacing) {
+                ForEach(slots.indices, id: \.self) { index in
+                    if let day = slots[index] {
+                        RoundedRectangle(cornerRadius: 3, style: .continuous)
+                            .fill(heatColor(for: day, maxValue: maxValue))
+                            .frame(width: cellSize, height: cellSize)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 3, style: .continuous)
+                                    .stroke(
+                                        hoveredDayKey == day.dateKey ? Color.primary.opacity(0.7) : Color.primary.opacity(0.05),
+                                        lineWidth: hoveredDayKey == day.dateKey ? 1.2 : 0.5
+                                    )
+                            )
+                            .onHover { hovering in
+                                if hovering {
+                                    hoveredDayKey = day.dateKey
+                                } else if hoveredDayKey == day.dateKey {
+                                    hoveredDayKey = nil
+                                }
+                            }
+                    } else {
+                        Color.clear.frame(width: cellSize, height: cellSize)
                     }
                 }
-                .frame(width: proxy.size.width, height: proxy.size.height)
             }
-            .frame(height: 112)
-            .padding(.horizontal, 6)
-            .padding(.top, 4)
-            .background(RoundedRectangle(cornerRadius: 12).fill(Color(nsColor: .controlBackgroundColor)))
+            .fixedSize()
+
+            Divider().padding(.vertical, 2)
+
+            if let hoveredDay {
+                dayBreakdown(hoveredDay)
+            } else {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(L10n.shared.tr("overview.hoverDay"))
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(.secondary)
+                    HStack(spacing: 4) {
+                        ForEach(0..<5, id: \.self) { level in
+                            RoundedRectangle(cornerRadius: 2)
+                                .fill(level == 0 ? Color.secondary.opacity(0.08) : Color.accentColor.opacity(0.16 + Double(level) * 0.19))
+                                .frame(width: 12, height: 12)
+                        }
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .padding(.top, 4)
+            }
         }
+        .padding(12)
+        .frame(maxWidth: .infinity, minHeight: 146, maxHeight: 146, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 12).fill(Color(nsColor: .controlBackgroundColor)))
+    }
+
+    private func dayBreakdown(_ day: UsageOverviewDay) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(day.dateKey).font(.system(size: 11, weight: .semibold))
+                Spacer()
+                Text(TokenFormat.compact(displayedTokens(day.metrics)))
+                    .font(.system(size: 12, weight: .bold, design: .rounded))
+            }
+            HStack(spacing: 10) {
+                Text("\(integer(day.metrics.messages)) \(L10n.shared.tr("overview.messages"))")
+                Text(CostFormat.estimate(day.metrics.cost))
+                Text(String(format: "%@%.1f%%", day.metrics.cacheIsExact ? "" : "≈", day.metrics.averageCacheRate * 100))
+            }
+            .font(.system(size: 9.5))
+            .foregroundColor(.secondary)
+
+            Divider()
+            if day.rows.isEmpty {
+                Text(L10n.shared.tr("overview.noData"))
+                    .font(.system(size: 10))
+                    .foregroundColor(.secondary)
+            } else {
+                ForEach(Array(day.rows.prefix(4))) { row in
+                    HStack(spacing: 5) {
+                        Text(row.emoji)
+                        Text(displayName(row.name)).lineLimit(1)
+                        Spacer(minLength: 4)
+                        Text(TokenFormat.compact(displayedTokens(row.metrics)))
+                            .font(.system(size: 10, weight: .semibold, design: .rounded))
+                    }
+                    .font(.system(size: 10))
+                }
+                if day.rows.count > 4 {
+                    Text("+\(day.rows.count - 4)")
+                        .font(.system(size: 9, weight: .medium))
+                        .foregroundColor(.secondary)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    private var heatmapSlots: [UsageOverviewDay?] {
+        guard let first = overview.days.first, let date = date(from: first.dateKey) else {
+            return overview.days.map(Optional.some)
+        }
+        let calendar = Calendar.current
+        let weekday = calendar.component(.weekday, from: date)
+        let leading = (weekday - calendar.firstWeekday + 7) % 7
+        return Array(repeating: UsageOverviewDay?.none, count: leading) + overview.days.map(Optional.some)
+    }
+
+    private var weekdaySymbols: [String] {
+        let formatter = DateFormatter()
+        formatter.locale = Locale.current
+        let symbols = formatter.veryShortStandaloneWeekdaySymbols ?? formatter.veryShortWeekdaySymbols ?? []
+        guard symbols.count == 7 else { return ["S", "M", "T", "W", "T", "F", "S"] }
+        let start = max(0, min(6, Calendar.current.firstWeekday - 1))
+        return Array(symbols[start...]) + Array(symbols[..<start])
+    }
+
+    private func heatColor(for day: UsageOverviewDay, maxValue: Int) -> Color {
+        let value = displayedTokens(day.metrics)
+        guard value > 0 else { return Color.secondary.opacity(0.08) }
+        let intensity = log(Double(value) + 1) / log(Double(maxValue) + 1)
+        return Color.accentColor.opacity(0.18 + intensity * 0.82)
     }
 
     private var breakdown: some View {
@@ -239,6 +383,7 @@ struct UsageOverviewView: View {
     }
 
     private func reload() {
+        hoveredDayKey = nil
         overview = UsageOverviewBuilder.load(
             startDate: dates.0, endDate: dates.1, grouping: grouping,
             includingCacheRead: includesCacheRead
@@ -268,6 +413,14 @@ struct UsageOverviewView: View {
         let parts = key.split(separator: "-")
         guard parts.count == 3 else { return key }
         return "\(parts[1])/\(parts[2])"
+    }
+
+    private func date(from key: String) -> Date? {
+        let parts = key.split(separator: "-").compactMap { Int($0) }
+        guard parts.count == 3 else { return nil }
+        return Calendar.current.date(from: DateComponents(
+            year: parts[0], month: parts[1], day: parts[2]
+        ))
     }
 
     private func mediumDate(_ date: Date) -> String {

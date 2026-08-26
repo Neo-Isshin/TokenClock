@@ -44,6 +44,8 @@ final class UsageOverviewTests: XCTestCase {
         XCTAssertEqual(data.summary.cost.value, 4, accuracy: 0.000_1)
         XCTAssertFalse(data.summary.cost.complete)
         XCTAssertEqual(data.rows.map(\.name), ["Codex", "OpenCode"])
+        XCTAssertEqual(data.days[0].rows.map(\.name), ["Codex"])
+        XCTAssertEqual(data.days[1].rows.map(\.name), ["Codex", "OpenCode"])
     }
 
     func testIncludeCacheChangesDisplayedTotalsAndBreakdownOrder() {
@@ -91,6 +93,8 @@ final class UsageOverviewTests: XCTestCase {
         XCTAssertEqual(data.rows.first(where: { $0.name == "gpt-5" })?.metrics.tokens, 70)
         XCTAssertEqual(data.rows.first(where: { $0.name == "Unknown" })?.metrics.tokens, 30)
         XCTAssertEqual(data.rows.first(where: { $0.name == "Unknown" })?.metrics.cacheReadTokens, 10)
+        XCTAssertEqual(data.days.first?.rows.reduce(0) { $0 + $1.metrics.tokens }, 100)
+        XCTAssertEqual(data.days.first?.rows.first(where: { $0.name == "Unknown" })?.metrics.tokens, 30)
     }
 
     func testHistoryStoreRoundTripsExtendedFieldsAndReadsLegacySessions() throws {
