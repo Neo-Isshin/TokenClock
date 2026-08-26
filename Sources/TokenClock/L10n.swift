@@ -207,6 +207,7 @@ final class L10n: @unchecked Sendable {
         "overview.daily":        [.zhHans: "每日用量", .zhHant: "每日用量", .en: "Daily Usage"],
         "overview.hoverDay":     [.zhHans: "将鼠标悬停在日期格上查看当天明细", .zhHant: "將滑鼠懸停在日期格上查看當天明細", .en: "Hover a day to see its breakdown"],
         "overview.breakdown":    [.zhHans: "用量明细", .zhHant: "用量明細", .en: "Breakdown"],
+        "overview.overview":     [.zhHans: "总览", .zhHant: "總覽", .en: "Overview"],
         "overview.from":         [.zhHans: "从", .zhHant: "從", .en: "From"],
         "overview.to":           [.zhHans: "到", .zhHant: "到", .en: "To"],
         "overview.noData":       [.zhHans: "所选时间内暂无用量", .zhHant: "所選時間內暫無用量", .en: "No usage in this period"],
