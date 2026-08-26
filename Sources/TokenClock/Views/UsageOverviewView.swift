@@ -252,21 +252,21 @@ struct UsageOverviewView: View {
                     .font(.system(size: 10))
                     .foregroundColor(.secondary)
             } else {
-                ForEach(Array(day.rows.prefix(4))) { row in
-                    HStack(spacing: 5) {
-                        Text(row.emoji)
-                        Text(displayName(row.name)).lineLimit(1)
-                        Spacer(minLength: 4)
-                        Text(TokenFormat.compact(displayedTokens(row.metrics)))
-                            .font(.system(size: 10, weight: .semibold, design: .rounded))
+                ScrollView {
+                    LazyVStack(spacing: 3) {
+                        ForEach(day.rows) { row in
+                            HStack(spacing: 5) {
+                                Text(row.emoji)
+                                Text(displayName(row.name)).lineLimit(1)
+                                Spacer(minLength: 4)
+                                Text(TokenFormat.compact(displayedTokens(row.metrics)))
+                                    .font(.system(size: 10, weight: .semibold, design: .rounded))
+                            }
+                            .font(.system(size: 10))
+                        }
                     }
-                    .font(.system(size: 10))
                 }
-                if day.rows.count > 4 {
-                    Text("+\(day.rows.count - 4)")
-                        .font(.system(size: 9, weight: .medium))
-                        .foregroundColor(.secondary)
-                }
+                .frame(maxHeight: 72)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
