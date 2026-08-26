@@ -24,7 +24,7 @@ struct UsageOverviewView: View {
             if period == .custom { customRange }
             metricCards
             dailyChart
-            breakdown
+            if period != .month { breakdown }
             notes
         }
         .padding(22)
@@ -160,113 +160,137 @@ struct UsageOverviewView: View {
     }
 
     private var monthlyHeatmap: some View {
-        let cellSize: CGFloat = 14
-        let rowSpacing: CGFloat = 4
+        let cellSize: CGFloat = 18
+        let rowSpacing: CGFloat = 5
         let maxValue = max(1, overview.days.map { displayedTokens($0.metrics) }.max() ?? 1)
         let rows = Array(repeating: GridItem(.fixed(cellSize), spacing: rowSpacing), count: 7)
         let slots = heatmapSlots
         let hoveredDay = overview.days.first { $0.dateKey == hoveredDayKey }
 
         return HStack(alignment: .top, spacing: 14) {
-            VStack(spacing: rowSpacing) {
-                ForEach(Array(weekdaySymbols.enumerated()), id: \.offset) { _, symbol in
-                    Text(symbol)
-                        .font(.system(size: 8, weight: .medium))
-                        .foregroundColor(.secondary)
-                        .frame(width: 12, height: cellSize)
-                }
-            }
+            VStack(alignment: .leading, spacing: 9) {
+                HStack(alignment: .top, spacing: 5) {
+                    VStack(spacing: rowSpacing) {
+                        ForEach(Array(weekdaySymbols.enumerated()), id: \.offset) { _, symbol in
+                            Text(symbol)
+                                .font(.system(size: 8, weight: .medium))
+                                .foregroundColor(.secondary)
+                                .frame(width: 12, height: cellSize)
+                        }
+                    }
 
-            LazyHGrid(rows: rows, alignment: .top, spacing: rowSpacing) {
-                ForEach(slots.indices, id: \.self) { index in
-                    if let day = slots[index] {
-                        RoundedRectangle(cornerRadius: 3, style: .continuous)
-                            .fill(heatColor(for: day, maxValue: maxValue))
-                            .frame(width: cellSize, height: cellSize)
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 3, style: .continuous)
-                                    .stroke(
-                                        hoveredDayKey == day.dateKey ? Color.primary.opacity(0.7) : Color.primary.opacity(0.05),
-                                        lineWidth: hoveredDayKey == day.dateKey ? 1.2 : 0.5
+                    LazyHGrid(rows: rows, alignment: .top, spacing: rowSpacing) {
+                        ForEach(slots.indices, id: \.self) { index in
+                            if let day = slots[index] {
+                                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                                    .fill(heatColor(for: day, maxValue: maxValue))
+                                    .frame(width: cellSize, height: cellSize)
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 4, style: .continuous)
+                                            .stroke(
+                                                hoveredDayKey == day.dateKey ? Color.primary.opacity(0.7) : Color.primary.opacity(0.05),
+                                                lineWidth: hoveredDayKey == day.dateKey ? 1.2 : 0.5
+                                            )
                                     )
-                            )
-                            .onHover { hovering in
-                                if hovering {
-                                    hoveredDayKey = day.dateKey
-                                } else if hoveredDayKey == day.dateKey {
-                                    hoveredDayKey = nil
-                                }
+                                    .onHover { hovering in
+                                        if hovering {
+                                            hoveredDayKey = day.dateKey
+                                        } else if hoveredDayKey == day.dateKey {
+                                            hoveredDayKey = nil
+                                        }
+                                    }
+                            } else {
+                                Color.clear.frame(width: cellSize, height: cellSize)
                             }
-                    } else {
-                        Color.clear.frame(width: cellSize, height: cellSize)
+                        }
+                    }
+                    .fixedSize()
+                }
+                HStack(spacing: 5) {
+                    Text(L10n.shared.tr("overview.hoverDay"))
+                        .font(.system(size: 8.5))
+                        .foregroundColor(.secondary)
+                    Spacer(minLength: 4)
+                    ForEach(0..<5, id: \.self) { level in
+                        RoundedRectangle(cornerRadius: 2)
+                            .fill(level == 0 ? Color.secondary.opacity(0.08) : Color.accentColor.opacity(0.16 + Double(level) * 0.19))
+                            .frame(width: 10, height: 10)
                     }
                 }
             }
-            .fixedSize()
+            .frame(width: 156, alignment: .leading)
 
             Divider().padding(.vertical, 2)
 
-            if let hoveredDay {
-                dayBreakdown(hoveredDay)
-            } else {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(L10n.shared.tr("overview.hoverDay"))
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundColor(.secondary)
-                    HStack(spacing: 4) {
-                        ForEach(0..<5, id: \.self) { level in
-                            RoundedRectangle(cornerRadius: 2)
-                                .fill(level == 0 ? Color.secondary.opacity(0.08) : Color.accentColor.opacity(0.16 + Double(level) * 0.19))
-                                .frame(width: 12, height: 12)
-                        }
-                    }
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                .padding(.top, 4)
-            }
+            if let hoveredDay { dayBreakdown(hoveredDay) }
+            else { inlineBreakdown(L10n.shared.tr("overview.breakdown"), metrics: overview.summary, rows: overview.rows) }
         }
         .padding(12)
-        .frame(maxWidth: .infinity, minHeight: 146, maxHeight: 146, alignment: .leading)
+        .frame(maxWidth: .infinity, minHeight: 210, maxHeight: 210, alignment: .leading)
         .background(RoundedRectangle(cornerRadius: 12).fill(Color(nsColor: .controlBackgroundColor)))
     }
 
     private func dayBreakdown(_ day: UsageOverviewDay) -> some View {
+        inlineBreakdown(day.dateKey, metrics: day.metrics, rows: day.rows)
+    }
+
+    private func inlineBreakdown(
+        _ title: String,
+        metrics: UsageOverviewMetrics,
+        rows: [UsageOverviewRow]
+    ) -> some View {
         VStack(alignment: .leading, spacing: 5) {
             HStack(alignment: .firstTextBaseline) {
-                Text(day.dateKey).font(.system(size: 11, weight: .semibold))
+                Text(title).font(.system(size: 11, weight: .semibold))
                 Spacer()
-                Text(TokenFormat.compact(displayedTokens(day.metrics)))
+                Text(TokenFormat.compact(displayedTokens(metrics)))
                     .font(.system(size: 12, weight: .bold, design: .rounded))
             }
             HStack(spacing: 10) {
-                Text("\(integer(day.metrics.messages)) \(L10n.shared.tr("overview.messages"))")
-                Text(CostFormat.estimate(day.metrics.cost))
-                Text(String(format: "%@%.1f%%", day.metrics.cacheIsExact ? "" : "≈", day.metrics.averageCacheRate * 100))
+                Text("\(integer(metrics.messages)) \(L10n.shared.tr("overview.messages"))")
+                Text(CostFormat.estimate(metrics.cost))
+                Text(String(format: "%@%.1f%%", metrics.cacheIsExact ? "" : "≈", metrics.averageCacheRate * 100))
             }
             .font(.system(size: 9.5))
             .foregroundColor(.secondary)
 
-            Divider()
-            if day.rows.isEmpty {
+            HStack(spacing: 0) {
+                Text(L10n.shared.tr("overview.name")).frame(maxWidth: .infinity, alignment: .leading)
+                Text(tokenColumnHeader).frame(width: 62, alignment: .trailing)
+                Text(L10n.shared.tr("overview.messages")).frame(width: 48, alignment: .trailing)
+                Text(L10n.shared.tr("overview.cost")).frame(width: 62, alignment: .trailing)
+                Text(L10n.shared.tr("overview.averageCache")).frame(width: 52, alignment: .trailing)
+            }
+            .font(.system(size: 8.5, weight: .semibold))
+            .foregroundColor(.secondary)
+
+            if rows.isEmpty {
                 Text(L10n.shared.tr("overview.noData"))
                     .font(.system(size: 10))
                     .foregroundColor(.secondary)
             } else {
                 ScrollView {
-                    LazyVStack(spacing: 3) {
-                        ForEach(day.rows) { row in
-                            HStack(spacing: 5) {
-                                Text(row.emoji)
-                                Text(displayName(row.name)).lineLimit(1)
-                                Spacer(minLength: 4)
+                    LazyVStack(spacing: 0) {
+                        ForEach(rows) { row in
+                            HStack(spacing: 0) {
+                                HStack(spacing: 5) {
+                                    Text(row.emoji)
+                                    Text(displayName(row.name)).lineLimit(1)
+                                }
+                                .frame(maxWidth: .infinity, alignment: .leading)
                                 Text(TokenFormat.compact(displayedTokens(row.metrics)))
-                                    .font(.system(size: 10, weight: .semibold, design: .rounded))
+                                    .frame(width: 62, alignment: .trailing)
+                                Text(integer(row.metrics.messages)).frame(width: 48, alignment: .trailing)
+                                Text(CostFormat.estimate(row.metrics.cost)).frame(width: 62, alignment: .trailing)
+                                Text(String(format: "%@%.0f%%", row.metrics.cacheIsExact ? "" : "≈", row.metrics.averageCacheRate * 100))
+                                    .frame(width: 52, alignment: .trailing)
                             }
                             .font(.system(size: 10))
+                            .frame(height: 25)
+                            Divider()
                         }
                     }
                 }
-                .frame(maxHeight: 72)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
