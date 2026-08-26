@@ -127,7 +127,7 @@ struct UsageOverviewView: View {
             metricCard(L10n.shared.tr("overview.cost"), CostFormat.estimate(overview.summary.cost), "dollarsign.circle.fill", .green)
             metricCard(
                 L10n.shared.tr("overview.averageCache"),
-                String(format: "%@%.1f%%", overview.summary.cacheIsExact ? "" : "≈", overview.summary.averageCacheRate * 100),
+                String(format: "%@%.2f%%", overview.summary.cacheIsExact ? "" : "≈", overview.summary.averageCacheRate * 100),
                 "bolt.horizontal.circle.fill", .orange
             )
         }
@@ -564,7 +564,7 @@ struct UsageOverviewView: View {
             HStack(spacing: 10) {
                 Text("\(integer(metrics.messages)) \(L10n.shared.tr("overview.messages"))")
                 Text(CostFormat.estimate(metrics.cost))
-                Text(String(format: "%@%.1f%%", metrics.cacheIsExact ? "" : "≈", metrics.averageCacheRate * 100))
+                Text(String(format: "%@%.2f%%", metrics.cacheIsExact ? "" : "≈", metrics.averageCacheRate * 100))
             }
             .font(.system(size: 11))
             .foregroundColor(.secondary)
@@ -597,7 +597,7 @@ struct UsageOverviewView: View {
                                     .frame(width: 62, alignment: .trailing)
                                 Text(integer(row.metrics.messages)).frame(width: 48, alignment: .trailing)
                                 Text(CostFormat.estimate(row.metrics.cost)).frame(width: 62, alignment: .trailing)
-                                Text(String(format: "%@%.0f%%", row.metrics.cacheIsExact ? "" : "≈", row.metrics.averageCacheRate * 100))
+                                Text(String(format: "%@%.2f%%", row.metrics.cacheIsExact ? "" : "≈", row.metrics.averageCacheRate * 100))
                                     .frame(width: 52, alignment: .trailing)
                             }
                             .font(.system(size: 12))
