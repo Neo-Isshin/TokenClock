@@ -571,10 +571,10 @@ struct UsageOverviewView: View {
 
             HStack(spacing: 0) {
                 Text(L10n.shared.tr("overview.name")).frame(maxWidth: .infinity, alignment: .leading)
-                Text(tokenColumnHeader).frame(width: 62, alignment: .trailing)
-                Text(L10n.shared.tr("overview.messages")).frame(width: 48, alignment: .trailing)
-                Text(L10n.shared.tr("overview.cost")).frame(width: 62, alignment: .trailing)
-                Text(L10n.shared.tr("overview.averageCache")).frame(width: 52, alignment: .trailing)
+                inlineHeader(tokenColumnHeader, width: 82)
+                inlineHeader(L10n.shared.tr("overview.messages"), width: 70)
+                inlineHeader(L10n.shared.tr("overview.cost"), width: 100)
+                inlineHeader(L10n.shared.tr("overview.averageCache"), width: 84)
             }
             .font(.system(size: 10, weight: .semibold))
             .foregroundColor(.secondary)
@@ -594,11 +594,11 @@ struct UsageOverviewView: View {
                                 }
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 Text(TokenFormat.compact(displayedTokens(row.metrics)))
-                                    .frame(width: 62, alignment: .trailing)
-                                Text(integer(row.metrics.messages)).frame(width: 48, alignment: .trailing)
-                                Text(CostFormat.estimate(row.metrics.cost)).frame(width: 62, alignment: .trailing)
+                                    .frame(width: 82, alignment: .trailing)
+                                Text(integer(row.metrics.messages)).frame(width: 70, alignment: .trailing)
+                                Text(CostFormat.estimate(row.metrics.cost)).frame(width: 100, alignment: .trailing)
                                 Text(String(format: "%@%.2f%%", row.metrics.cacheIsExact ? "" : "≈", row.metrics.averageCacheRate * 100))
-                                    .frame(width: 52, alignment: .trailing)
+                                    .frame(width: 84, alignment: .trailing)
                             }
                             .font(.system(size: 12))
                             .frame(height: 32)
@@ -609,6 +609,13 @@ struct UsageOverviewView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    private func inlineHeader(_ text: String, width: CGFloat) -> some View {
+        Text(text)
+            .lineLimit(1)
+            .minimumScaleFactor(0.72)
+            .frame(width: width, alignment: .trailing)
     }
 
     private var heatmapSlots: [UsageOverviewDay?] {
