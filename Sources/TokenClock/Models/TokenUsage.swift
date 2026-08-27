@@ -118,6 +118,45 @@ struct SessionInfo: Identifiable, Hashable {
     }
 }
 
+/// Historical Usage navigation target carried by report notifications.
+enum UsageOverviewRoute: Hashable {
+    case last30Days(selectedDateKey: String)
+    case custom(startDateKey: String, endDateKey: String)
+}
+
+/// Lightweight report notification shared by all platform implementations.
+struct TokenClockNotification: Identifiable, Hashable {
+    enum Kind: String {
+        case dailyReport
+        case weeklyReport
+        case monthlyReport
+        case modelDetection
+        case system
+    }
+
+    let id: UUID
+    let kind: Kind
+    let title: String
+    let message: String
+    let createdAt: Date
+    let route: UsageOverviewRoute?
+    var isRead: Bool
+
+    init(
+        id: UUID = UUID(), kind: Kind, title: String, message: String,
+        createdAt: Date = Date(), route: UsageOverviewRoute? = nil,
+        isRead: Bool = false
+    ) {
+        self.id = id
+        self.kind = kind
+        self.title = title
+        self.message = message
+        self.createdAt = createdAt
+        self.route = route
+        self.isRead = isRead
+    }
+}
+
 /// 下拉面板的数值展示模式（两态，chip 点击切换）：
 /// - tokens：经典三列 用量 | 消息数 | 缓存率
 /// - costPercent：用量列→费用、消息数列→占比，缓存率列不变

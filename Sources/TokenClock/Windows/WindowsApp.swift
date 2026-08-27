@@ -88,6 +88,7 @@ final class WindowsApp: @unchecked Sendable {
     private let cmdTzBase: Int32 = 90      // + 索引 → timezones[i]
     private let cmdApi: Int32 = 100         // copy endpoint (same action as macOS normal)
     private let cmdOverview: Int32 = 110
+    private let cmdNotifications: Int32 = 115
     private let cmdSettings: Int32 = 120
     private let cmdThemePicker: Int32 = 125
     private let cmdEditCustom: Int32 = 140
@@ -128,8 +129,10 @@ final class WindowsApp: @unchecked Sendable {
     fileprivate var editorDlg: UnsafeMutableRawPointer?
     fileprivate var settingsDlg: UnsafeMutableRawPointer?
     fileprivate var overviewDlg: UnsafeMutableRawPointer?
+    fileprivate var notificationsDlg: UnsafeMutableRawPointer?
     fileprivate var quotaDlg: UnsafeMutableRawPointer?
     fileprivate var aboutDlg: UnsafeMutableRawPointer?
+    private var pendingNotificationRoute: UsageOverviewRoute?
     fileprivate var editingSavedThemeId: String?
     private var settingsDraft: SettingsDraft?
     private var expandedSettingsSection: SettingsSection?
@@ -877,6 +880,10 @@ final class WindowsApp: @unchecked Sendable {
             addSubmenu(menu, L.tr("menu.language"), lm)
         }
         addMenuItem(menu, cmdRefresh, L.language == .en ? "Refresh Now" : "立即刷新", false)
+        let unread = model.unreadNotificationCount
+        if unread > 0 {
+            addMenuItem(menu, cmdNotifications, "🔔 \(L.tr("notification.title")) (\(unread))", false)
+        }
         addSeparator(menu)
         addMenuItem(menu, cmdSettings, L.tr("menu.settings"), false)
         addSeparator(menu)
@@ -903,6 +910,7 @@ final class WindowsApp: @unchecked Sendable {
         case cmdAbout:      showAbout()
         case cmdSettings:   openSettings()
         case cmdOverview:   openUsageOverview()
+        case cmdNotifications: openNotifications()
         case cmdThemePicker: openThemePicker()
         case cmdEditCustom: openCustomThemeEditor()
         case cmdTempC:      setUseFahrenheit(false)
@@ -1115,14 +1123,79 @@ final class WindowsApp: @unchecked Sendable {
         UserDefaults.standard.set(quotaProviderOrder.map(\.rawValue), forKey: SettingsKey.subscriptionQuotaOrder.rawValue)
     }
 
-    private func openUsageOverview() {
+    private func openUsageOverview(route: UsageOverviewRoute? = nil) {
         model.persistCurrentUsage()
+        if let route {
+            switch route {
+            case .last30Days(let selectedDateKey):
+                overviewPeriod = .month
+                overviewSelectedDayKey = selectedDateKey
+            case .custom(let startDateKey, let endDateKey):
+                overviewPeriod = .custom
+                overviewCustomStart = parseOverviewDate(startDateKey) ?? overviewCustomStart
+                overviewCustomEnd = min(Date(), parseOverviewDate(endDateKey) ?? overviewCustomEnd)
+                overviewSelectedDayKey = nil
+            }
+        }
         guard let dlg = dlg_create(L10n.shared.tr("overview.title"), 820, 680) else { return }
         overviewDlg = dlg
         renderUsageOverview(scrollToTop: true)
         _ = dlg_modal_cb(dlg, overviewCmdCb, nil)
         overviewDlg = nil
         dlg_destroy(dlg)
+    }
+
+    private func openNotifications() {
+        guard notificationsDlg == nil,
+              let dialog = dlg_create(L10n.shared.tr("notification.title"), 520, 460) else { return }
+        notificationsDlg = dialog
+        pendingNotificationRoute = nil
+        renderNotifications(dialog)
+        model.markNotificationsRead()
+        _ = dlg_modal_cb(dialog, notificationsCmdCb, nil)
+        notificationsDlg = nil
+        dlg_destroy(dialog)
+        if let route = pendingNotificationRoute {
+            pendingNotificationRoute = nil
+            openUsageOverview(route: route)
+        }
+        render()
+    }
+
+    private func renderNotifications(_ dialog: UnsafeMutableRawPointer) {
+        let reports = model.notifications.filter { $0.route != nil }
+        let height = max(180, 90 + Int32(reports.count) * 68)
+        dlg_reset_content(dialog, height)
+        dlg_add_title(dialog, L10n.shared.tr("notification.title"), 24, 16, 300, 30)
+        if reports.isEmpty {
+            dlg_add_subtitle(dialog, L10n.shared.tr("notification.empty"), 24, 64, 460, 28)
+        } else {
+            for (index, report) in reports.enumerated() {
+                let y = Int32(58 + index * 68)
+                dlg_add_push(dialog, 1300 + Int32(index), notificationTitle(report), 24, y, 460, 28)
+                dlg_add_subtitle(dialog, report.message, 30, y + 31, 450, 28)
+            }
+        }
+        dlg_add_push(dialog, 2, L10n.shared.tr("about.close"), 394, height - 42, 90, 30)
+    }
+
+    fileprivate func handleNotificationsCmd(_ id: Int32) {
+        guard id >= 1300, id < 1400 else { return }
+        let reports = model.notifications.filter { $0.route != nil }
+        let index = Int(id - 1300)
+        guard reports.indices.contains(index), let route = reports[index].route else { return }
+        pendingNotificationRoute = route
+        if let dialog = notificationsDlg { dlg_end(dialog, 0) }
+    }
+
+    private func notificationTitle(_ notification: TokenClockNotification) -> String {
+        switch notification.kind {
+        case .dailyReport: return "📄  \(notification.title)  ›"
+        case .weeklyReport: return "🗓️  \(notification.title)  ›"
+        case .monthlyReport: return "📅  \(notification.title)  ›"
+        case .modelDetection: return "✨  \(notification.title)  ›"
+        case .system: return "ⓘ  \(notification.title)"
+        }
     }
 
     fileprivate func handleOverviewCmd(_ id: Int32) {
@@ -2496,6 +2569,9 @@ private let settingsCmdCb: @convention(c) (UnsafeMutableRawPointer?, Int32) -> V
 }
 private let overviewCmdCb: @convention(c) (UnsafeMutableRawPointer?, Int32) -> Void = { _, id in
     WindowsApp.shared.handleOverviewCmd(id)
+}
+private let notificationsCmdCb: @convention(c) (UnsafeMutableRawPointer?, Int32) -> Void = { _, id in
+    WindowsApp.shared.handleNotificationsCmd(id)
 }
 private let quotaCmdCb: @convention(c) (UnsafeMutableRawPointer?, Int32) -> Void = { _, id in
     WindowsApp.shared.handleQuotaCmd(id)

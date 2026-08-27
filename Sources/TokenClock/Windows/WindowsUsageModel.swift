@@ -7,6 +7,7 @@ final class WindowsUsageModel: @unchecked Sendable {
     private let lock = NSLock()
     private var storedTools: [ToolUsage]
     private var scanning = false
+    private var storedNotifications: [TokenClockNotification] = []
 
     private var openclawService = OpenClawUsageService()
     private var claudeCodeService = ClaudeCodeUsageService()
@@ -215,7 +216,36 @@ final class WindowsUsageModel: @unchecked Sendable {
         lock.unlock()
 
         persistToday(current)
+        appendPendingReports()
         return true
+    }
+
+    var notifications: [TokenClockNotification] {
+        lock.lock(); defer { lock.unlock() }
+        return storedNotifications
+    }
+
+    var unreadNotificationCount: Int {
+        lock.lock(); defer { lock.unlock() }
+        return storedNotifications.filter { !$0.isRead }.count
+    }
+
+    func markNotificationsRead() {
+        lock.lock(); defer { lock.unlock() }
+        storedNotifications = storedNotifications.map { notification in
+            var copy = notification
+            copy.isRead = true
+            return copy
+        }
+    }
+
+    private func appendPendingReports() {
+        let reports = UsageReportScheduler.generatePendingReports()
+        guard !reports.isEmpty else { return }
+        lock.lock()
+        storedNotifications.insert(contentsOf: reports.reversed(), at: 0)
+        if storedNotifications.count > 20 { storedNotifications = Array(storedNotifications.prefix(20)) }
+        lock.unlock()
     }
 
     private func recreateServices() {
