@@ -15,12 +15,21 @@ final class AntigravityModelParsingTests: XCTestCase {
     }
 
     func testNormalizesGeminiThinkingLevelsAsOneOfficialModel() {
-        for level in ["low", "medium", "high"] {
+        for level in ["low", "medium", "high", "xhigh"] {
             XCTAssertEqual(
                 ModelNormalizer.normalize("gemini-3.7-flash-\(level)"),
                 "gemini-3.7-flash"
             )
         }
+        XCTAssertEqual(ModelNormalizer.normalize("claude-opus-5-high-thinking"), "claude-opus-5")
+        XCTAssertEqual(ModelNormalizer.normalize("gpt-5.6-sol-max"), "gpt-5.6-sol")
+        XCTAssertEqual(ModelNormalizer.normalize("gemini-3.6-flash-max-thinking"), "gemini-3.6-flash")
+    }
+
+    func testPreservesOfficialNamesThatOnlyLookLikeEffortSuffixes() {
+        XCTAssertEqual(ModelNormalizer.normalize("qwen3.8-max"), "qwen3.8-max")
+        XCTAssertEqual(ModelNormalizer.normalize("MiniMax-M2.7-highspeed"), "MiniMax-M2.7-highspeed")
+        XCTAssertEqual(ModelNormalizer.normalize("my-medium-model"), "my-medium-model")
     }
 
     func testIgnoresModelLookingTextOutsideExecutorConfigPath() {
