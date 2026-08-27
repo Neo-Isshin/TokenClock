@@ -273,6 +273,7 @@ final class LinuxDetailsPanel: @unchecked Sendable {
         if let valueControl {
             gtk_widget_set_size_request(valueControl, 86, -1)
             tc_gtk_add_class(valueControl, "tokenclock-detail-third-chip")
+            gtk_widget_set_tooltip_text(valueControl, tr("detail.valueModeHelp"))
         }
 
         gtk_box_pack_start(tc_gtk_box(card), separator(), 0, 0, 0)
