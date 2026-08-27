@@ -272,7 +272,11 @@ final class LinuxUsageOverviewWindow: @unchecked Sendable {
             gtk_box_pack_start(tc_gtk_box(row), date, 0, 0, 0)
             gtk_box_pack_start(tc_gtk_box(row), bar, 1, 1, 0)
             gtk_box_pack_start(tc_gtk_box(row), value, 0, 0, 0)
-            gtk_box_pack_start(tc_gtk_box(chart), row, 0, 0, 0)
+            if let button = dayButton(day, label: nil) {
+                gtk_button_set_relief(tc_gtk_button(button), GTK_RELIEF_NONE)
+                gtk_container_add(tc_gtk_container(button), row)
+                gtk_box_pack_start(tc_gtk_box(chart), button, 0, 0, 0)
+            }
         }
         gtk_box_pack_start(tc_gtk_box(root), chart, 0, 0, 0)
     }
