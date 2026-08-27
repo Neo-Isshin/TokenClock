@@ -556,19 +556,30 @@ final class CodexUsageService: @unchecked Sendable {
     }
 
     private func topologicallySorted(_ descriptors: [RolloutDescriptor]) -> [RolloutDescriptor] {
-        let byId = Dictionary(uniqueKeysWithValues: descriptors.map { ($0.session.sessionId, $0) })
+        // A resumed rollout can retain the original session_meta id while its filename
+        // carries a new suffix. Multiple descriptors may therefore share sessionId;
+        // never use uniqueKeysWithValues here because it traps on that valid input.
+        let byId = Dictionary(
+            descriptors.map { ($0.session.sessionId, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
         var visiting = Set<String>()
         var visited = Set<String>()
         var result: [RolloutDescriptor] = []
 
-        func visit(_ id: String) {
-            guard !visited.contains(id), visiting.insert(id).inserted, let descriptor = byId[id] else { return }
-            if let parent = descriptor.session.parentSessionId { visit(parent) }
-            visiting.remove(id)
-            visited.insert(id)
+        func visit(_ descriptor: RolloutDescriptor) {
+            // Path is the physical rollout identity; sessionId is not unique for resumes.
+            guard !visited.contains(descriptor.path),
+                  visiting.insert(descriptor.path).inserted else { return }
+            if let parent = descriptor.session.parentSessionId,
+               let parentDescriptor = byId[parent] {
+                visit(parentDescriptor)
+            }
+            visiting.remove(descriptor.path)
+            visited.insert(descriptor.path)
             result.append(descriptor)
         }
-        for id in byId.keys.sorted() { visit(id) }
+        for descriptor in descriptors.sorted(by: { $0.path < $1.path }) { visit(descriptor) }
         return result
     }
 
