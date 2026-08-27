@@ -258,6 +258,9 @@ struct UsageOverviewView: View {
                     }
                     .help("\(day.dateKey) · \(TokenFormat.compact(displayedTokens(day.metrics))) tokens")
                     .frame(maxWidth: .infinity)
+                    .contentShape(Rectangle())
+                    .onTapGesture { selectDay(day.dateKey) }
+                    .onHover { handleDayHover($0, dateKey: day.dateKey) }
                 }
             }
             .frame(width: proxy.size.width, height: proxy.size.height)
