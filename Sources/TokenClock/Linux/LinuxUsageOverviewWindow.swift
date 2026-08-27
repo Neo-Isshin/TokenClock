@@ -4,6 +4,7 @@ import CGtk
 /// GTK 原生用量总览。数据口径与 macOS/Windows 共用 UsageOverviewBuilder。
 final class LinuxUsageOverviewWindow: @unchecked Sendable {
     private enum Period { case week, month, custom }
+    private enum ChartStyle { case automatic, line, stacked }
 
     private let model: LinuxUsageModel
     private var window: UnsafeMutablePointer<GtkWidget>?
@@ -11,6 +12,8 @@ final class LinuxUsageOverviewWindow: @unchecked Sendable {
     private var period: Period = .week
     private var grouping: UsageOverviewGrouping = .tool
     private var includesCacheRead = false
+    private var chartStyle: ChartStyle = .automatic
+    private var selectedDayKey: String?
     private var customStart = Calendar.current.date(byAdding: .day, value: -6, to: Date()) ?? Date()
     private var customEnd = Date()
     private var startEntry: UnsafeMutablePointer<GtkWidget>?
@@ -43,6 +46,22 @@ final class LinuxUsageOverviewWindow: @unchecked Sendable {
         .tc-overview-header { color: alpha(currentColor, .62); font-size: 11px; font-weight: 600; }
         .tc-overview-row { padding: 6px 8px; border-bottom: 1px solid alpha(currentColor, .07); }
         .tc-overview-note { color: alpha(currentColor, .62); font-size: 11px; }
+        .tc-overview-sparkline { color: #1683f3; font: 700 26px Monospace; letter-spacing: 4px; }
+        .tc-overview-axis { color: alpha(currentColor, .62); font-size: 9px; }
+        .tc-day-selected { border: 2px solid #1683f3; }
+        .tc-heat-0 { background: alpha(currentColor, .06); }
+        .tc-heat-1 { background: #d9ebff; }
+        .tc-heat-2 { background: #9dccff; }
+        .tc-heat-3 { background: #56a8ff; }
+        .tc-heat-4 { background: #1683f3; }
+        .tc-model-0 { background: #1683f3; } .tc-model-text-0 { color: #1683f3; }
+        .tc-model-1 { background: #8b5cf6; } .tc-model-text-1 { color: #8b5cf6; }
+        .tc-model-2 { background: #f59e0b; } .tc-model-text-2 { color: #f59e0b; }
+        .tc-model-3 { background: #22c55e; } .tc-model-text-3 { color: #22c55e; }
+        .tc-model-4 { background: #ec4899; } .tc-model-text-4 { color: #ec4899; }
+        .tc-model-5 { background: #06b6d4; } .tc-model-text-5 { color: #06b6d4; }
+        .tc-model-6 { background: #6366f1; } .tc-model-text-6 { color: #6366f1; }
+        .tc-model-7 { background: #ef4444; } .tc-model-text-7 { color: #ef4444; }
         """)
     }
 
@@ -66,12 +85,16 @@ final class LinuxUsageOverviewWindow: @unchecked Sendable {
     fileprivate func handleAction(widget: UnsafeMutablePointer<GtkWidget>) {
         let name = String(cString: tc_gtk_widget_name(widget))
         switch name {
-        case "overview:period:week": period = .week
-        case "overview:period:month": period = .month
-        case "overview:period:custom": period = .custom
+        case "overview:period:week": period = .week; selectedDayKey = nil
+        case "overview:period:month": period = .month; selectedDayKey = nil
+        case "overview:period:custom": period = .custom; selectedDayKey = nil
         case "overview:group:tool": grouping = .tool
         case "overview:group:model": grouping = .model
         case "overview:include-cache": includesCacheRead.toggle()
+        case "overview:chart:default": chartStyle = .automatic
+        case "overview:chart:line": chartStyle = .line
+        case "overview:chart:bars": chartStyle = .stacked
+        case "overview:overview": selectedDayKey = nil
         case "overview:apply":
             if let startEntry, let parsed = parseDate(String(cString: gtk_entry_get_text(tc_gtk_entry(startEntry)))) {
                 customStart = parsed
@@ -79,7 +102,10 @@ final class LinuxUsageOverviewWindow: @unchecked Sendable {
             if let endEntry, let parsed = parseDate(String(cString: gtk_entry_get_text(tc_gtk_entry(endEntry)))) {
                 customEnd = min(Date(), parsed)
             }
-        default: return
+        default:
+            if name.hasPrefix("overview:day:") {
+                selectedDayKey = String(name.dropFirst("overview:day:".count))
+            } else { return }
         }
         render()
     }
@@ -94,11 +120,20 @@ final class LinuxUsageOverviewWindow: @unchecked Sendable {
             startDate: dates.0, endDate: dates.1, grouping: grouping,
             includingCacheRead: includesCacheRead
         )
+        let modelData = grouping == .model ? data : UsageOverviewBuilder.load(
+            startDate: dates.0, endDate: dates.1, grouping: .model,
+            includingCacheRead: includesCacheRead
+        )
         appendHeader(data, to: root)
         if period == .custom { appendCustomRange(to: root) }
         appendMetricCards(data.summary, to: root)
-        appendDaily(data.days, to: root)
-        appendBreakdown(data.rows, to: root)
+        appendDaily(data, modelData: modelData, to: root)
+        let selected = selectedDayKey.flatMap { key in data.days.first { $0.dateKey == key } }
+        appendBreakdown(
+            selected?.rows ?? data.rows,
+            title: selected?.dateKey ?? L10n.shared.tr("overview.overview"),
+            to: root
+        )
         appendNotes(data, to: root)
         gtk_widget_show_all(root)
     }
@@ -128,6 +163,15 @@ final class LinuxUsageOverviewWindow: @unchecked Sendable {
         appendButton(grouping == .model ? "✓  \(L10n.shared.tr("overview.byModel"))" : L10n.shared.tr("overview.byModel"), name: "overview:group:model", to: controls)
         appendButton(includesCacheRead ? "✓  \(L10n.shared.tr("overview.includeCache"))" : L10n.shared.tr("overview.includeCache"), name: "overview:include-cache", to: controls)
         gtk_box_pack_start(tc_gtk_box(root), controls, 0, 0, 0)
+
+        let chartControls = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6)
+        let chartSpacer = gtk_label_new("")
+        gtk_widget_set_hexpand(chartSpacer, 1)
+        gtk_box_pack_start(tc_gtk_box(chartControls), chartSpacer, 1, 1, 0)
+        appendButton(chartStyle == .automatic ? "✓  ▦" : "▦", name: "overview:chart:default", to: chartControls)
+        appendButton(chartStyle == .line ? "✓  📈" : "📈", name: "overview:chart:line", to: chartControls)
+        appendButton(chartStyle == .stacked ? "✓  📊" : "📊", name: "overview:chart:bars", to: chartControls)
+        gtk_box_pack_start(tc_gtk_box(root), chartControls, 0, 0, 0)
     }
 
     private func appendCustomRange(to root: UnsafeMutablePointer<GtkWidget>) {
@@ -179,8 +223,25 @@ final class LinuxUsageOverviewWindow: @unchecked Sendable {
         gtk_box_pack_start(tc_gtk_box(row), card, 1, 1, 0)
     }
 
-    private func appendDaily(_ days: [UsageOverviewDay], to root: UnsafeMutablePointer<GtkWidget>) {
+    private func appendDaily(
+        _ data: UsageOverviewData,
+        modelData: UsageOverviewData,
+        to root: UnsafeMutablePointer<GtkWidget>
+    ) {
         appendSection(L10n.shared.tr("overview.daily"), to: root)
+        switch chartStyle {
+        case .automatic where period == .month:
+            appendHeatmap(data.days, to: root)
+            return
+        case .line:
+            appendLineChart(data.days, to: root)
+            return
+        case .stacked:
+            appendStackedChart(modelData, to: root)
+            return
+        default: break
+        }
+        let days = data.days
         let maxTokens = max(1, days.map { displayedTokens($0.metrics) }.max() ?? 1)
         let chart = gtk_box_new(GTK_ORIENTATION_VERTICAL, 4)
         tc_gtk_add_class(chart, "tc-overview-card")
@@ -204,10 +265,156 @@ final class LinuxUsageOverviewWindow: @unchecked Sendable {
         gtk_box_pack_start(tc_gtk_box(root), chart, 0, 0, 0)
     }
 
-    private func appendBreakdown(_ rows: [UsageOverviewRow], to root: UnsafeMutablePointer<GtkWidget>) {
-        appendSection(L10n.shared.tr("overview.breakdown"), to: root)
+    private func appendHeatmap(_ days: [UsageOverviewDay], to root: UnsafeMutablePointer<GtkWidget>) {
+        let chart = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 14)
+        tc_gtk_add_class(chart, "tc-overview-card")
+        let grid = gtk_grid_new()
+        gtk_grid_set_row_spacing(tc_gtk_grid(grid), 5)
+        gtk_grid_set_column_spacing(tc_gtk_grid(grid), 5)
+        let maxTokens = max(1, days.map { displayedTokens($0.metrics) }.max() ?? 1)
+        let leading: Int
+        if let first = days.first, let date = parseDate(first.dateKey) {
+            let weekday = Calendar.current.component(.weekday, from: date)
+            leading = (weekday - Calendar.current.firstWeekday + 7) % 7
+        } else { leading = 0 }
+        for (index, day) in days.enumerated() {
+            let slot = leading + index
+            let button = dayButton(day, label: " ")
+            let value = displayedTokens(day.metrics)
+            let ratio = value > 0 ? log(Double(value) + 1) / log(Double(maxTokens) + 1) : 0
+            tc_gtk_add_class(button, "tc-heat-\(min(4, Int((ratio * 4).rounded())))")
+            gtk_widget_set_size_request(button, 25, 25)
+            gtk_grid_attach(tc_gtk_grid(grid), button, gint(slot / 7), gint(slot % 7), 1, 1)
+        }
+        gtk_box_pack_start(tc_gtk_box(chart), grid, 0, 0, 0)
+        let hint = gtk_label_new(L10n.shared.tr("overview.hoverDay"))
+        gtk_label_set_xalign(tc_gtk_label(hint), 0)
+        tc_gtk_add_class(hint, "tc-overview-subtitle")
+        gtk_box_pack_start(tc_gtk_box(chart), hint, 1, 1, 0)
+        gtk_box_pack_start(tc_gtk_box(root), chart, 0, 0, 0)
+    }
+
+    private func appendLineChart(_ days: [UsageOverviewDay], to root: UnsafeMutablePointer<GtkWidget>) {
+        let chart = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6)
+        tc_gtk_add_class(chart, "tc-overview-card")
+        let maxTokens = max(1, days.map { displayedTokens($0.metrics) }.max() ?? 1)
+        let glyphs = Array("▁▂▃▄▅▆▇█")
+        let sparkline = days.map { day -> Character in
+            let ratio = Double(displayedTokens(day.metrics)) / Double(maxTokens)
+            return glyphs[min(glyphs.count - 1, Int((ratio * Double(glyphs.count - 1)).rounded()))]
+        }
+        let line = gtk_label_new(String(sparkline))
+        tc_gtk_add_class(line, "tc-overview-sparkline")
+        gtk_box_pack_start(tc_gtk_box(chart), line, 0, 0, 0)
+        appendDaySelector(days, to: chart)
+        gtk_box_pack_start(tc_gtk_box(root), chart, 0, 0, 0)
+    }
+
+    private func appendStackedChart(_ data: UsageOverviewData, to root: UnsafeMutablePointer<GtkWidget>) {
+        let chart = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6)
+        tc_gtk_add_class(chart, "tc-overview-card")
+        let legend = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8)
+        for (index, row) in data.rows.prefix(6).enumerated() {
+            let label = gtk_label_new("■ \(row.name)")
+            tc_gtk_add_class(label, "tc-model-text-\(index % 8)")
+            gtk_box_pack_start(tc_gtk_box(legend), label, 0, 0, 0)
+        }
+        gtk_box_pack_start(tc_gtk_box(chart), legend, 0, 0, 0)
+        let bars = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, data.days.count > 20 ? 2 : 5)
+        gtk_box_set_homogeneous(tc_gtk_box(bars), 1)
+        let maxTokens = max(1, data.days.map { displayedTokens($0.metrics) }.max() ?? 1)
+        for day in data.days {
+            let button = dayButton(day, label: nil)
+            let column = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0)
+            let total = displayedTokens(day.metrics)
+            let totalHeight = max(total > 0 ? 2 : 0, Int(Double(total) / Double(maxTokens) * 72))
+            let spacer = gtk_label_new("")
+            gtk_widget_set_vexpand(spacer, 1)
+            gtk_box_pack_start(tc_gtk_box(column), spacer, 1, 1, 0)
+            for row in day.rows {
+                let segment = gtk_label_new("")
+                let globalIndex = data.rows.firstIndex(where: { $0.name == row.name }) ?? 0
+                tc_gtk_add_class(segment, "tc-model-\(globalIndex % 8)")
+                let height = max(1, Int(Double(displayedTokens(row.metrics)) / Double(max(1, total)) * Double(totalHeight)))
+                gtk_widget_set_size_request(segment, 12, gint(height))
+                gtk_box_pack_start(tc_gtk_box(column), segment, 0, 0, 0)
+            }
+            let dayLabel = gtk_label_new(axisDayLabel(day.dateKey, previous: previousDay(before: day, in: data.days)))
+            tc_gtk_add_class(dayLabel, "tc-overview-axis")
+            gtk_box_pack_start(tc_gtk_box(column), dayLabel, 0, 0, 0)
+            gtk_container_add(tc_gtk_container(button), column)
+            gtk_box_pack_start(tc_gtk_box(bars), button, 1, 1, 0)
+        }
+        gtk_box_pack_start(tc_gtk_box(chart), bars, 1, 1, 0)
+        gtk_box_pack_start(tc_gtk_box(root), chart, 0, 0, 0)
+    }
+
+    private func appendDaySelector(_ days: [UsageOverviewDay], to chart: UnsafeMutablePointer<GtkWidget>) {
+        let row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 2)
+        gtk_box_set_homogeneous(tc_gtk_box(row), 1)
+        for (index, day) in days.enumerated() {
+            let previous = index > 0 ? days[index - 1] : nil
+            let button = dayButton(day, label: axisDayLabel(day.dateKey, previous: previous))
+            gtk_box_pack_start(tc_gtk_box(row), button, 1, 1, 0)
+        }
+        gtk_box_pack_start(tc_gtk_box(chart), row, 0, 0, 0)
+    }
+
+    private func dayButton(_ day: UsageOverviewDay, label: String?) -> UnsafeMutablePointer<GtkWidget>? {
+        let button = label != nil ? gtk_button_new_with_label(label!) : gtk_button_new()
+        gtk_widget_set_name(button, "overview:day:\(day.dateKey)")
+        gtk_widget_set_tooltip_text(button, dayTooltip(day))
+        if selectedDayKey == day.dateKey { tc_gtk_add_class(button, "tc-day-selected") }
+        _ = tc_gtk_on_clicked(button, linuxOverviewAction, opaque)
+        return button
+    }
+
+    private func previousDay(
+        before day: UsageOverviewDay,
+        in days: [UsageOverviewDay]
+    ) -> UsageOverviewDay? {
+        guard let index = days.firstIndex(where: { $0.dateKey == day.dateKey }), index > 0 else { return nil }
+        return days[index - 1]
+    }
+
+    private func axisDayLabel(_ dateKey: String, previous: UsageOverviewDay?) -> String {
+        let parts = dateKey.split(separator: "-")
+        guard parts.count == 3 else { return dateKey }
+        let day = Int(parts[2]).map(String.init) ?? String(parts[2])
+        guard let previous else { return day }
+        let previousParts = previous.dateKey.split(separator: "-")
+        guard previousParts.count == 3, previousParts[1] != parts[1], let date = parseDate(dateKey) else {
+            return day
+        }
+        let formatter = DateFormatter()
+        formatter.locale = Locale.current
+        formatter.dateFormat = "MMM"
+        return "\(formatter.string(from: date))\n\(day)"
+    }
+
+    private func dayTooltip(_ day: UsageOverviewDay) -> String {
+        var lines = ["\(day.dateKey) · \(TokenFormat.compact(displayedTokens(day.metrics))) tokens"]
+        lines += day.rows.map { "\($0.emoji) \($0.name): \(TokenFormat.compact(displayedTokens($0.metrics)))" }
+        return lines.joined(separator: "\n")
+    }
+
+    private func appendBreakdown(
+        _ rows: [UsageOverviewRow], title: String,
+        to root: UnsafeMutablePointer<GtkWidget>
+    ) {
+        let heading = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8)
+        let section = gtk_label_new(L10n.shared.tr("overview.breakdown"))
+        gtk_label_set_xalign(tc_gtk_label(section), 0)
+        tc_gtk_add_class(section, "tc-overview-section")
+        gtk_box_pack_start(tc_gtk_box(heading), section, 0, 0, 0)
+        appendButton(selectedDayKey == nil ? "✓  \(L10n.shared.tr("overview.overview"))" : L10n.shared.tr("overview.overview"), name: "overview:overview", to: heading)
+        gtk_box_pack_start(tc_gtk_box(root), heading, 0, 0, 0)
         let list = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0)
         tc_gtk_add_class(list, "tc-overview-card")
+        let selectedTitle = gtk_label_new(title)
+        gtk_label_set_xalign(tc_gtk_label(selectedTitle), 0)
+        tc_gtk_add_class(selectedTitle, "tc-overview-value")
+        gtk_box_pack_start(tc_gtk_box(list), selectedTitle, 0, 0, 4)
         appendDataRow(name: L10n.shared.tr("overview.name"), tokens: tokenColumnHeader, messages: L10n.shared.tr("overview.messages"), cost: L10n.shared.tr("overview.cost"), cache: L10n.shared.tr("overview.averageCache"), header: true, to: list)
         if rows.isEmpty {
             let empty = gtk_label_new(L10n.shared.tr("overview.noData"))

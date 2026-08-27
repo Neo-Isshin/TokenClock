@@ -6,6 +6,10 @@ private enum LinuxGroupingMode: Int {
     case model = 1
 }
 
+private enum LinuxQuotaProvider: String, CaseIterable {
+    case codex, claude, antigravity, cursor
+}
+
 /// Theme-aware Linux counterpart of macOS `DetailDropdownView`.
 final class LinuxDetailsPanel: @unchecked Sendable {
     private static let panelWidth = 320
@@ -53,6 +57,13 @@ final class LinuxDetailsPanel: @unchecked Sendable {
     private var claudeQuotaFetchInFlight = false
     private var antigravityQuotaFetchInFlight = false
     private var cursorQuotaFetchInFlight = false
+    private var quotaOrderEditing = false
+    private var quotaProviderOrder: [LinuxQuotaProvider] = {
+        let saved = UserDefaults.standard.stringArray(forKey: SettingsKey.subscriptionQuotaOrder.rawValue) ?? []
+        var order = saved.compactMap(LinuxQuotaProvider.init(rawValue:))
+        for provider in LinuxQuotaProvider.allCases where !order.contains(provider) { order.append(provider) }
+        return order
+    }()
     private var rebuildScheduled = false
 
     private lazy var opaque = Unmanaged.passUnretained(self).toOpaque()
@@ -150,6 +161,10 @@ final class LinuxDetailsPanel: @unchecked Sendable {
             onHistoryUsage()
         case "details:quota-refresh", "details:quota-retry":
             refreshQuota(force: true)
+        case "details:quota-edit":
+            quotaOrderEditing.toggle()
+            rebuildQuotaWindow()
+            return
         default:
             if name.hasPrefix("details:tool:") {
                 let value = String(name.dropFirst("details:tool:".count))
@@ -157,6 +172,14 @@ final class LinuxDetailsPanel: @unchecked Sendable {
             } else if name.hasPrefix("details:model-row:") {
                 let value = String(name.dropFirst("details:model-row:".count))
                 if expandedModels.contains(value) { expandedModels.remove(value) } else { expandedModels.insert(value) }
+            } else if name.hasPrefix("details:quota-up:") {
+                moveQuotaProvider(String(name.dropFirst("details:quota-up:".count)), by: -1)
+                rebuildQuotaWindow()
+                return
+            } else if name.hasPrefix("details:quota-down:") {
+                moveQuotaProvider(String(name.dropFirst("details:quota-down:".count)), by: 1)
+                rebuildQuotaWindow()
+                return
             }
         }
         UserDefaults.standard.synchronize()
@@ -594,83 +617,118 @@ final class LinuxDetailsPanel: @unchecked Sendable {
         gtk_label_set_xalign(tc_gtk_label(title), 0)
         tc_gtk_add_class(title, "tokenclock-quota-title")
         gtk_box_pack_start(tc_gtk_box(heading), title, 1, 1, 0)
+        _ = appendControl(
+            tr(quotaOrderEditing ? "quota.finishOrder" : "quota.editOrder"),
+            name: "details:quota-edit", to: heading
+        )
         _ = appendControl("↻", name: "details:quota-refresh", to: heading)
         gtk_box_pack_start(tc_gtk_box(content), heading, 0, 0, 0)
 
-        appendQuotaProviderHeading(
-            "🤖 Codex", plan: codexQuota.planType,
-            loading: codexQuota.status == .loading, to: content
-        )
+        for (index, provider) in quotaProviderOrder.enumerated() {
+            if index > 0 { gtk_box_pack_start(tc_gtk_box(content), separator(), 0, 0, 4) }
+            guard let row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 7),
+                  let section = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8) else { continue }
+            if quotaOrderEditing {
+                let arrows = gtk_box_new(GTK_ORIENTATION_VERTICAL, 3)
+                _ = appendControl("↑", name: "details:quota-up:\(provider.rawValue)", to: arrows)
+                _ = appendControl("↓", name: "details:quota-down:\(provider.rawValue)", to: arrows)
+                gtk_box_pack_start(tc_gtk_box(row), arrows, 0, 0, 0)
+            }
+            appendQuotaProvider(provider, to: section)
+            gtk_box_pack_start(tc_gtk_box(row), section, 1, 1, 0)
+            gtk_box_pack_start(tc_gtk_box(content), row, 0, 0, 0)
+        }
+    }
 
+    private func appendQuotaProvider(
+        _ provider: LinuxQuotaProvider,
+        to content: UnsafeMutablePointer<GtkWidget>
+    ) {
+        switch provider {
+        case .codex: appendCodexQuota(to: content)
+        case .claude: appendClaudeQuota(to: content)
+        case .antigravity:
+            appendProviderQuotaSection("🛸 Antigravity", snapshot: antigravityQuota,
+                unavailable: tr("quota.antigravityUnavailable"), to: content)
+        case .cursor:
+            appendProviderQuotaSection("🖱️ Cursor", snapshot: cursorQuota,
+                unavailable: tr("quota.cursorUnavailable"), to: content)
+        }
+    }
+
+    private func appendCodexQuota(to content: UnsafeMutablePointer<GtkWidget>) {
+        appendQuotaProviderHeading("🤖 Codex", plan: codexQuota.planType,
+            loading: codexQuota.status == .loading, to: content)
         if codexQuota.buckets.isEmpty {
             appendQuotaUnavailable(
                 tr(codexQuota.status == .loading ? "quota.loadingCodex" : "quota.codexUnavailable"),
-                to: content
-            )
+                to: content)
         } else {
             for bucket in codexQuota.buckets { appendQuotaCard(bucket, to: content) }
         }
-
         let metadata = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 5)
-        if codexQuota.hasUnlimitedCredits {
-            appendQuotaChip(tr("quota.unlimited"), to: metadata)
-        } else if let balance = codexQuota.creditBalance, balance != "0" {
+        if codexQuota.hasUnlimitedCredits { appendQuotaChip(tr("quota.unlimited"), to: metadata) }
+        else if let balance = codexQuota.creditBalance, balance != "0" {
             appendQuotaChip(tr("quota.creditBalance", balance), to: metadata)
         }
         if codexQuota.resetCreditCount > 0 {
             appendQuotaChip(tr("quota.resetCredits", codexQuota.resetCreditCount), to: metadata)
         }
-        let hasCodexMetadata = codexQuota.hasUnlimitedCredits
+        let hasMetadata = codexQuota.hasUnlimitedCredits
             || (codexQuota.creditBalance.map { $0 != "0" } ?? false)
             || codexQuota.resetCreditCount > 0
-        if !codexQuota.buckets.isEmpty, hasCodexMetadata {
+        if !codexQuota.buckets.isEmpty, hasMetadata {
             gtk_box_pack_start(tc_gtk_box(content), metadata, 0, 0, 0)
         }
-
-        var source = tr(codexQuota.source == .appServer ? "quota.liveSource" : "quota.logSource")
-        if let refreshedAt = codexQuota.refreshedAt {
-            source += "  ·  " + tr("quota.updated", quotaUpdatedLabel(refreshedAt))
-        }
         if !codexQuota.buckets.isEmpty {
-            let sourceLabel = gtk_label_new("●  \(source)")
-            gtk_label_set_xalign(tc_gtk_label(sourceLabel), 0)
-            tc_gtk_add_class(sourceLabel, "tokenclock-quota-source")
-            gtk_box_pack_start(tc_gtk_box(content), sourceLabel, 0, 0, 2)
+            var source = tr(codexQuota.source == .appServer ? "quota.liveSource" : "quota.logSource")
+            if let refreshedAt = codexQuota.refreshedAt {
+                source += "  ·  " + tr("quota.updated", quotaUpdatedLabel(refreshedAt))
+            }
+            appendQuotaSource(source, to: content)
         }
+    }
 
-        gtk_box_pack_start(tc_gtk_box(content), separator(), 0, 0, 4)
-        appendQuotaProviderHeading(
-            "✳️ Claude Code", plan: claudeQuota.planType,
-            loading: claudeQuota.status == .loading, to: content
-        )
+    private func appendClaudeQuota(to content: UnsafeMutablePointer<GtkWidget>) {
+        appendQuotaProviderHeading("✳️ Claude Code", plan: claudeQuota.planType,
+            loading: claudeQuota.status == .loading, to: content)
         if claudeQuota.buckets.isEmpty {
             appendQuotaUnavailable(
                 tr(claudeQuota.status == .loading ? "quota.loadingClaude" : "quota.claudeUnavailable"),
-                to: content
-            )
+                to: content)
         } else {
             for bucket in claudeQuota.buckets { appendQuotaCard(bucket, to: content) }
-            var claudeSource = tr("quota.claudeSource")
+            var source = tr("quota.claudeSource")
             if let refreshedAt = claudeQuota.refreshedAt {
-                claudeSource += "  ·  " + tr("quota.updated", quotaUpdatedLabel(refreshedAt))
+                source += "  ·  " + tr("quota.updated", quotaUpdatedLabel(refreshedAt))
             }
-            let label = gtk_label_new("●  \(claudeSource)")
-            gtk_label_set_xalign(tc_gtk_label(label), 0)
-            tc_gtk_add_class(label, "tokenclock-quota-source")
-            gtk_box_pack_start(tc_gtk_box(content), label, 0, 0, 2)
+            appendQuotaSource(source, to: content)
         }
+    }
 
-        appendProviderQuotaSection("🛸 Antigravity", snapshot: antigravityQuota,
-            unavailable: tr("quota.antigravityUnavailable"), to: content)
-        appendProviderQuotaSection("🖱️ Cursor", snapshot: cursorQuota,
-            unavailable: tr("quota.cursorUnavailable"), to: content)
+    private func appendQuotaSource(_ source: String, to content: UnsafeMutablePointer<GtkWidget>) {
+        let label = gtk_label_new("●  \(source)")
+        gtk_label_set_xalign(tc_gtk_label(label), 0)
+        tc_gtk_add_class(label, "tokenclock-quota-source")
+        gtk_box_pack_start(tc_gtk_box(content), label, 0, 0, 2)
+    }
+
+    private func moveQuotaProvider(_ rawValue: String, by offset: Int) {
+        guard let provider = LinuxQuotaProvider(rawValue: rawValue),
+              let source = quotaProviderOrder.firstIndex(of: provider) else { return }
+        let destination = source + offset
+        guard quotaProviderOrder.indices.contains(destination) else { return }
+        quotaProviderOrder.swapAt(source, destination)
+        UserDefaults.standard.set(
+            quotaProviderOrder.map(\.rawValue),
+            forKey: SettingsKey.subscriptionQuotaOrder.rawValue
+        )
     }
 
     private func appendProviderQuotaSection(
         _ title: String, snapshot: ProviderQuotaSnapshot, unavailable: String,
         to content: UnsafeMutablePointer<GtkWidget>
     ) {
-        gtk_box_pack_start(tc_gtk_box(content), separator(), 0, 0, 4)
         appendQuotaProviderHeading(title, plan: snapshot.planType,
             loading: snapshot.status == .loading, to: content)
         if snapshot.groups.isEmpty {
