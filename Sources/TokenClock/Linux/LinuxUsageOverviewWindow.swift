@@ -295,7 +295,7 @@ final class LinuxUsageOverviewWindow: @unchecked Sendable {
     }
 
     private func appendLineChart(_ days: [UsageOverviewDay], to root: UnsafeMutablePointer<GtkWidget>) {
-        let chart = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6)
+        guard let chart = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6) else { return }
         tc_gtk_add_class(chart, "tc-overview-card")
         let maxTokens = max(1, days.map { displayedTokens($0.metrics) }.max() ?? 1)
         let glyphs = Array("▁▂▃▄▅▆▇█")
@@ -311,7 +311,7 @@ final class LinuxUsageOverviewWindow: @unchecked Sendable {
     }
 
     private func appendStackedChart(_ data: UsageOverviewData, to root: UnsafeMutablePointer<GtkWidget>) {
-        let chart = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6)
+        guard let chart = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6) else { return }
         tc_gtk_add_class(chart, "tc-overview-card")
         let legend = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8)
         for (index, row) in data.rows.prefix(6).enumerated() {

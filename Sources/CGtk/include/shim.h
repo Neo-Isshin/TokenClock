@@ -10,6 +10,8 @@ typedef gboolean (*TCGtkDrawCallback)(GtkWidget *, cairo_t *, gpointer);
 typedef gboolean (*TCGtkButtonCallback)(GtkWidget *, GdkEventButton *, gpointer);
 typedef gboolean (*TCGtkMotionCallback)(GtkWidget *, GdkEventMotion *, gpointer);
 
+static inline GtkGrid *tc_gtk_grid(GtkWidget *widget) { return GTK_GRID(widget); }
+
 static inline GtkWindow *tc_gtk_window(GtkWidget *widget) {
     return GTK_WINDOW(widget);
 }
