@@ -31,16 +31,16 @@ final class CursorAgentUsageServiceTests: XCTestCase {
         XCTAssertEqual(usage.cacheRate, 400.0 / 640.0, accuracy: 0.000_001)
 
         let buckets = service.todayModelBuckets()
-        XCTAssertEqual(buckets[sonnet]?.input, 110)
-        XCTAssertEqual(buckets[sonnet]?.output, 22)
-        XCTAssertEqual(buckets[sonnet]?.cacheRead, 330)
-        XCTAssertEqual(buckets[sonnet]?.cacheWrite, 44)
-        XCTAssertEqual(buckets[opus]?.input, 50)
+        XCTAssertEqual(buckets["cursor-test-sonnet"]?.input, 110)
+        XCTAssertEqual(buckets["cursor-test-sonnet"]?.output, 22)
+        XCTAssertEqual(buckets["cursor-test-sonnet"]?.cacheRead, 330)
+        XCTAssertEqual(buckets["cursor-test-sonnet"]?.cacheWrite, 44)
+        XCTAssertEqual(buckets["cursor-test-opus"]?.input, 50)
 
         let sessions = service.todaySessions()
-        XCTAssertEqual(sessions.map(\.model).compactMap { $0 }.sorted(), [opus, sonnet])
-        XCTAssertEqual(sessions.first(where: { $0.model == sonnet })?.todayTokens, 176)
-        XCTAssertEqual(sessions.first(where: { $0.model == sonnet })?.cacheReadTokens, 330)
+        XCTAssertEqual(sessions.map(\.model).compactMap { $0 }.sorted(), ["cursor-test-opus", "cursor-test-sonnet"])
+        XCTAssertEqual(sessions.first(where: { $0.model == "cursor-test-sonnet" })?.todayTokens, 176)
+        XCTAssertEqual(sessions.first(where: { $0.model == "cursor-test-sonnet" })?.cacheReadTokens, 330)
         XCTAssertTrue(service.todayCost().complete)
         XCTAssertGreaterThan(service.todayCost().value, 0)
     }
@@ -56,7 +56,7 @@ final class CursorAgentUsageServiceTests: XCTestCase {
 
         XCTAssertEqual(service.todayUsage().tokens, 10)
         XCTAssertEqual(service.todaySessions().first?.todayTokens, 10)
-        XCTAssertEqual(service.todayModelBuckets()["cursor-replace-medium"]?.input, 7)
+        XCTAssertEqual(service.todayModelBuckets()["cursor-replace"]?.input, 7)
     }
 
     private func event(
