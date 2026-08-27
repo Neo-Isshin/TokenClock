@@ -368,8 +368,16 @@ final class ViewModel: ObservableObject {
         }
     }
 
-    private func appendNotification(kind: TokenClockNotification.Kind, title: String, message: String) {
-        notifications.insert(TokenClockNotification(kind: kind, title: title, message: message), at: 0)
+    private func appendNotification(
+        kind: TokenClockNotification.Kind,
+        title: String,
+        message: String,
+        route: UsageOverviewRoute? = nil
+    ) {
+        notifications.insert(
+            TokenClockNotification(kind: kind, title: title, message: message, route: route),
+            at: 0
+        )
         if notifications.count > 20 {
             notifications = Array(notifications.prefix(20))
         }
@@ -861,10 +869,13 @@ final class ViewModel: ObservableObject {
 
     /// 前一天已经由每次扫描持续覆盖到最新值；午夜只确保新一天已有记录。
     private func performDailySettlement() {
-        persistCurrentUsage(notifyDailyReport: true)
+        persistCurrentUsage()
+        if let yesterday = Calendar.current.date(byAdding: .day, value: -1, to: Date()) {
+            generatePendingReports(through: Calendar.current.startOfDay(for: yesterday))
+        }
     }
 
-    func persistCurrentUsage(synchronously: Bool = true, notifyDailyReport: Bool = false) {
+    func persistCurrentUsage(synchronously: Bool = true) {
         let dateKey = DateHelper.todayKey()
         let snapshots: [TokenClock.ToolSnapshot] = tools.map { tool in
             let sessions: [SessionSnapshot] = tool.sessions.map {
@@ -897,22 +908,13 @@ final class ViewModel: ObservableObject {
                 print("[History] 落盘 \(dateKey): \(snapshots.count) 工具,\(totalTokens) tokens")
             }
         }
-        if notifyDailyReport {
-            appendNotification(
-                kind: .dailyReport,
-                title: L10n.shared.tr("notification.dailyReportTitle"),
-                message: L10n.shared.tr(
-                    "notification.dailyReportMessage",
-                    dateKey,
-                    TokenFormat.compact(snapshots.reduce(0) { $0 + $1.tokens }),
-                    snapshots.reduce(0) { $0 + $1.messages }
-                )
-            )
-        }
     }
 
     /// 启动时检查上次结算日;按用户决定"漏了就漏了",不补打
     private func performStartupHistoryCatchup() {
+        if let yesterday = Calendar.current.date(byAdding: .day, value: -1, to: Date()) {
+            generatePendingReports(through: Calendar.current.startOfDay(for: yesterday))
+        }
         let lastSettled = UserDefaults.standard.string(for: .historyLastSettledDateKey)
         let today = DateHelper.todayKey()
         guard let last = lastSettled, last < today else { return }
@@ -922,6 +924,131 @@ final class ViewModel: ObservableObject {
                                                       day: Int(last.suffix(2)))) ?? Date()
         let daysBehind = cal.dateComponents([.day], from: lastDate, to: Date()).day ?? 0
         print("[History] 启动检测:上次结算 \(last),今天 \(today),缺 \(max(0, daysBehind)) 天(不补打,SQLite 有啥返回啥)")
+    }
+
+    private func generatePendingReports(through completedDate: Date) {
+        generatePendingDailyReports(through: completedDate)
+        generatePendingWeeklyReports(through: completedDate)
+        generatePendingMonthlyReports(through: completedDate)
+    }
+
+    private func generatePendingDailyReports(through completedDate: Date) {
+        let calendar = Calendar.current
+        let lastKey = UserDefaults.standard.string(forKey: SettingsKey.lastDailyReportDateKey.rawValue)
+        var cursor = lastKey.flatMap(historyDate).flatMap {
+            calendar.date(byAdding: .day, value: 1, to: $0)
+        } ?? completedDate
+        var guardCount = 0
+        while cursor <= completedDate, guardCount < 400 {
+            let key = DateHelper.dateKey(from: cursor)
+            appendUsageReport(
+                kind: .dailyReport,
+                titleKey: "notification.dailyReportTitle",
+                startDateKey: key,
+                endDateKey: key,
+                route: .last30Days(selectedDateKey: key)
+            )
+            UserDefaults.standard.setString(key, for: .lastDailyReportDateKey)
+            guard let next = calendar.date(byAdding: .day, value: 1, to: cursor) else { break }
+            cursor = next
+            guardCount += 1
+        }
+    }
+
+    private func generatePendingWeeklyReports(through completedDate: Date) {
+        let calendar = Calendar.current
+        let lastKey = UserDefaults.standard.string(forKey: SettingsKey.lastWeeklyReportEndDateKey.rawValue)
+        var weekEnd: Date
+        if let last = lastKey.flatMap(historyDate),
+           let next = calendar.date(byAdding: .day, value: 7, to: last) {
+            weekEnd = next
+        } else {
+            let weekday = calendar.component(.weekday, from: completedDate)
+            weekEnd = calendar.date(byAdding: .day, value: -(weekday - 1), to: completedDate) ?? completedDate
+        }
+        while weekEnd <= completedDate {
+            let start = calendar.date(byAdding: .day, value: -6, to: weekEnd) ?? weekEnd
+            let startKey = DateHelper.dateKey(from: start)
+            let endKey = DateHelper.dateKey(from: weekEnd)
+            appendUsageReport(
+                kind: .weeklyReport,
+                titleKey: "notification.weeklyReportTitle",
+                startDateKey: startKey,
+                endDateKey: endKey,
+                route: .custom(startDateKey: startKey, endDateKey: endKey)
+            )
+            UserDefaults.standard.setString(endKey, for: .lastWeeklyReportEndDateKey)
+            guard let next = calendar.date(byAdding: .day, value: 7, to: weekEnd) else { break }
+            weekEnd = next
+        }
+    }
+
+    private func generatePendingMonthlyReports(through completedDate: Date) {
+        let calendar = Calendar.current
+        let lastKey = UserDefaults.standard.string(forKey: SettingsKey.lastMonthlyReportEndDateKey.rawValue)
+        var monthEnd: Date
+        if let last = lastKey.flatMap(historyDate),
+           let nextMonth = calendar.date(byAdding: .day, value: 1, to: last),
+           let followingMonth = calendar.date(byAdding: .month, value: 1, to: nextMonth),
+           let nextEnd = calendar.date(byAdding: .day, value: -1, to: followingMonth) {
+            monthEnd = nextEnd
+        } else {
+            let tomorrow = calendar.date(byAdding: .day, value: 1, to: completedDate) ?? completedDate
+            if calendar.component(.month, from: tomorrow) != calendar.component(.month, from: completedDate) {
+                monthEnd = completedDate
+            } else {
+                let monthStart = calendar.date(from: calendar.dateComponents([.year, .month], from: completedDate)) ?? completedDate
+                monthEnd = calendar.date(byAdding: .day, value: -1, to: monthStart) ?? completedDate
+            }
+        }
+        while monthEnd <= completedDate {
+            let monthStart = calendar.date(from: calendar.dateComponents([.year, .month], from: monthEnd)) ?? monthEnd
+            let startKey = DateHelper.dateKey(from: monthStart)
+            let endKey = DateHelper.dateKey(from: monthEnd)
+            appendUsageReport(
+                kind: .monthlyReport,
+                titleKey: "notification.monthlyReportTitle",
+                startDateKey: startKey,
+                endDateKey: endKey,
+                route: .custom(startDateKey: startKey, endDateKey: endKey)
+            )
+            UserDefaults.standard.setString(endKey, for: .lastMonthlyReportEndDateKey)
+            guard let nextMonth = calendar.date(byAdding: .day, value: 1, to: monthEnd),
+                  let followingMonth = calendar.date(byAdding: .month, value: 1, to: nextMonth),
+                  let nextEnd = calendar.date(byAdding: .day, value: -1, to: followingMonth) else { break }
+            monthEnd = nextEnd
+        }
+    }
+
+    private func appendUsageReport(
+        kind: TokenClockNotification.Kind,
+        titleKey: String,
+        startDateKey: String,
+        endDateKey: String,
+        route: UsageOverviewRoute
+    ) {
+        let snapshots = HistoryStore.shared.query(from: startDateKey, through: endDateKey)
+        guard !snapshots.isEmpty else { return }
+        let tokens = snapshots.reduce(0) { $0 + $1.totalTokens }
+        let messages = snapshots.reduce(0) { $0 + $1.totalMessages }
+        let label = startDateKey == endDateKey ? startDateKey : "\(startDateKey) – \(endDateKey)"
+        appendNotification(
+            kind: kind,
+            title: L10n.shared.tr(titleKey),
+            message: L10n.shared.tr(
+                "notification.dailyReportMessage",
+                label,
+                TokenFormat.compact(tokens),
+                messages
+            ),
+            route: route
+        )
+    }
+
+    private func historyDate(_ key: String) -> Date? {
+        let parts = key.split(separator: "-").compactMap { Int($0) }
+        guard parts.count == 3 else { return nil }
+        return Calendar.current.date(from: DateComponents(year: parts[0], month: parts[1], day: parts[2]))
     }
 
     private func stopTimers() {

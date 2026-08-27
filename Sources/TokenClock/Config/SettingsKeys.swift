@@ -103,6 +103,9 @@ enum SettingsKey: String {
 
     // MARK: - 日结历史
     case historyLastSettledDateKey = "TC_historyLastSettledDateKey"
+    case lastDailyReportDateKey = "TC_lastDailyReportDateKey"
+    case lastWeeklyReportEndDateKey = "TC_lastWeeklyReportEndDateKey"
+    case lastMonthlyReportEndDateKey = "TC_lastMonthlyReportEndDateKey"
 
     // MARK: - 费用估算
     /// 最近一次价格目录成功刷新的 Unix 时间戳

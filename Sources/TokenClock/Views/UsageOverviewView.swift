@@ -26,12 +26,15 @@ struct UsageOverviewView: View {
         var id: Int { index }
     }
 
+    private let initialRoute: UsageOverviewRoute?
+
     @State private var period: Period = .week
     @State private var grouping: UsageOverviewGrouping = .tool
     @State private var includesCacheRead = false
     @State private var hoveredDayKey: String?
     @State private var selectedDayKey: String?
     @State private var chartStyle: ChartStyle = .automatic
+    @State private var routeApplied = false
     @State private var customStart = Calendar.current.date(byAdding: .day, value: -6, to: Date()) ?? Date()
     @State private var customEnd = Date()
     @State private var overview = UsageOverviewBuilder.load(
@@ -42,6 +45,10 @@ struct UsageOverviewView: View {
         startDate: Calendar.current.date(byAdding: .day, value: -6, to: Date()) ?? Date(),
         endDate: Date(), grouping: .model
     )
+
+    init(route: UsageOverviewRoute? = nil) {
+        initialRoute = route
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -59,6 +66,7 @@ struct UsageOverviewView: View {
             alignment: .topLeading
         )
         .background(Color(nsColor: .windowBackgroundColor))
+        .onAppear { applyInitialRouteIfNeeded() }
         .onChange(of: period) { _ in reload() }
         .onChange(of: grouping) { _ in reload() }
         .onChange(of: includesCacheRead) { _ in reload() }
@@ -717,6 +725,26 @@ struct UsageOverviewView: View {
             startDate: dates.0, endDate: dates.1, grouping: .model,
             includingCacheRead: includesCacheRead
         )
+    }
+
+    private func applyInitialRouteIfNeeded() {
+        guard !routeApplied else { return }
+        routeApplied = true
+        guard let initialRoute else { return }
+
+        switch initialRoute {
+        case .last30Days(let selectedDateKey):
+            period = .month
+            selectedDayKey = selectedDateKey
+        case .custom(let startDateKey, let endDateKey):
+            guard let start = date(from: startDateKey),
+                  let end = date(from: endDateKey) else { return }
+            customStart = start
+            customEnd = end
+            selectedDayKey = nil
+            period = .custom
+        }
+        reload()
     }
 
     private var tokenColumnTitle: String {

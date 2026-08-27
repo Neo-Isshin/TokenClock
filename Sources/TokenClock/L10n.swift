@@ -151,6 +151,8 @@ final class L10n: @unchecked Sendable {
         "notification.title": [.zhHans: "通知", .zhHant: "通知", .en: "Notifications"],
         "notification.empty": [.zhHans: "暂无通知", .zhHant: "暫無通知", .en: "No notifications"],
         "notification.dailyReportTitle": [.zhHans: "日报已生成", .zhHant: "日報已生成", .en: "Daily report generated"],
+        "notification.weeklyReportTitle": [.zhHans: "周报已生成", .zhHant: "週報已生成", .en: "Weekly report generated"],
+        "notification.monthlyReportTitle": [.zhHans: "月报已生成", .zhHant: "月報已生成", .en: "Monthly report generated"],
         "notification.dailyReportMessage": [.zhHans: "%@ 的用量报告已落盘：%@ tokens，%d 条消息。",
                                             .zhHant: "%@ 的用量報告已落盤：%@ tokens，%d 條訊息。",
                                             .en: "%@ usage report was saved: %@ tokens, %d messages."],

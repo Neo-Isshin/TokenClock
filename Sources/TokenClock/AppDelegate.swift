@@ -75,7 +75,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
         let notificationView = NotificationCenterView(
             viewModel: viewModel,
-            onClose: { [weak self] in self?.notificationPanel.hide() }
+            onClose: { [weak self] in self?.notificationPanel.hide() },
+            onOpen: { [weak self] notification in
+                guard let route = notification.route else { return }
+                self?.notificationPanel.hide()
+                self?.showUsageOverviewWindow(route: route)
+            }
         )
         let notificationContentView = NSHostingView(rootView: notificationView)
         notificationContentView.frame = NSRect(x: 0, y: 0, width: 280, height: 240)
@@ -796,10 +801,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     // MARK: - 设置窗口
 
-    private func showUsageOverviewWindow() {
+    private func showUsageOverviewWindow(route: UsageOverviewRoute? = nil) {
         NSApp.activate(ignoringOtherApps: true)
         viewModel.persistCurrentUsage()
         if let window = overviewWindow {
+            if let route {
+                window.contentView = NSHostingView(rootView: UsageOverviewView(route: route))
+            }
             window.level = .floating
             window.makeKeyAndOrderFront(nil)
             return
@@ -813,7 +821,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         window.minSize = NSSize(width: 780, height: 560)
         window.isReleasedWhenClosed = false
         window.delegate = self
-        window.contentView = NSHostingView(rootView: UsageOverviewView())
+        window.contentView = NSHostingView(rootView: UsageOverviewView(route: route))
         window.level = .floating
         window.center()
         window.makeKeyAndOrderFront(nil)
@@ -1007,6 +1015,7 @@ struct MainView: View {
 private struct NotificationCenterView: View {
     @ObservedObject var viewModel: ViewModel
     let onClose: () -> Void
+    let onOpen: (TokenClockNotification) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -1034,7 +1043,15 @@ private struct NotificationCenterView: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 10) {
                         ForEach(viewModel.notifications) { notification in
-                            notificationRow(notification)
+                            if notification.route != nil {
+                                Button { onOpen(notification) } label: {
+                                    notificationRow(notification, showsDisclosure: true)
+                                }
+                                .buttonStyle(.plain)
+                                .help(notification.message)
+                            } else {
+                                notificationRow(notification, showsDisclosure: false)
+                            }
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -1054,7 +1071,10 @@ private struct NotificationCenterView: View {
         .foregroundColor(.black)
     }
 
-    private func notificationRow(_ notification: TokenClockNotification) -> some View {
+    private func notificationRow(
+        _ notification: TokenClockNotification,
+        showsDisclosure: Bool
+    ) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 6) {
                 Image(systemName: iconName(for: notification.kind))
@@ -1068,6 +1088,11 @@ private struct NotificationCenterView: View {
                 Text(timeLabel(notification.createdAt))
                     .font(.system(size: 10))
                     .foregroundColor(Color.black.opacity(0.58))
+                if showsDisclosure {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundColor(Color.black.opacity(0.45))
+                }
             }
             Text(notification.message)
                 .font(.system(size: 11))
@@ -1084,6 +1109,8 @@ private struct NotificationCenterView: View {
     private func iconName(for kind: TokenClockNotification.Kind) -> String {
         switch kind {
         case .dailyReport: return "doc.text"
+        case .weeklyReport: return "calendar.badge.clock"
+        case .monthlyReport: return "calendar"
         case .modelDetection: return "sparkle.magnifyingglass"
         case .system: return "info.circle"
         }

@@ -118,10 +118,17 @@ struct SessionInfo: Identifiable, Hashable {
     }
 }
 
-/// 表盘铃铛里的轻量通知。当前用于日结报告，后续 model detect 也可以复用同一入口。
+enum UsageOverviewRoute: Hashable {
+    case last30Days(selectedDateKey: String)
+    case custom(startDateKey: String, endDateKey: String)
+}
+
+/// 表盘铃铛里的轻量通知。报告通知可携带 Historical Usage 导航目标。
 struct TokenClockNotification: Identifiable, Hashable {
     enum Kind: String {
         case dailyReport
+        case weeklyReport
+        case monthlyReport
         case modelDetection
         case system
     }
@@ -131,6 +138,7 @@ struct TokenClockNotification: Identifiable, Hashable {
     let title: String
     let message: String
     let createdAt: Date
+    let route: UsageOverviewRoute?
     var isRead: Bool
 
     init(
@@ -139,6 +147,7 @@ struct TokenClockNotification: Identifiable, Hashable {
         title: String,
         message: String,
         createdAt: Date = Date(),
+        route: UsageOverviewRoute? = nil,
         isRead: Bool = false
     ) {
         self.id = id
@@ -146,6 +155,7 @@ struct TokenClockNotification: Identifiable, Hashable {
         self.title = title
         self.message = message
         self.createdAt = createdAt
+        self.route = route
         self.isRead = isRead
     }
 }
