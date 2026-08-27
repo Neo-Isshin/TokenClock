@@ -140,11 +140,22 @@ final class WindowsApp: @unchecked Sendable {
     private var requestedCustomSection: CustomSection?
 
     private enum OverviewPeriod { case week, month, custom }
+    private enum OverviewChartStyle { case automatic, line, stacked }
+    private enum QuotaProvider: String, CaseIterable { case codex, claude, antigravity, cursor }
     private var overviewPeriod: OverviewPeriod = .week
+    private var overviewChartStyle: OverviewChartStyle = .automatic
+    private var overviewSelectedDayKey: String?
     private var overviewGrouping: UsageOverviewGrouping = .tool
     private var overviewIncludesCacheRead = false
     private var overviewCustomStart = Calendar.current.date(byAdding: .day, value: -6, to: Date()) ?? Date()
     private var overviewCustomEnd = Date()
+    private var quotaOrderEditing = false
+    private var quotaProviderOrder: [QuotaProvider] = {
+        let saved = UserDefaults.standard.stringArray(forKey: SettingsKey.subscriptionQuotaOrder.rawValue) ?? []
+        var order = saved.compactMap(QuotaProvider.init(rawValue:))
+        for provider in QuotaProvider.allCases where !order.contains(provider) { order.append(provider) }
+        return order
+    }()
 
     private enum SettingsSection { case autoDetect, tools, paths, thresholds, pricing, customFace, localAPI }
     private enum CustomSection { case colors, geometry }
@@ -1006,6 +1017,15 @@ final class WindowsApp: @unchecked Sendable {
             rebuildSubscriptionQuotaDialog()
         case 982:
             if let dialog = quotaDlg { dlg_end(dialog, 0) }
+        case 983:
+            quotaOrderEditing.toggle()
+            rebuildSubscriptionQuotaDialog()
+        case 990...993:
+            moveQuotaProvider(atDefaultIndex: Int(id - 990), by: -1)
+            rebuildSubscriptionQuotaDialog()
+        case 994...997:
+            moveQuotaProvider(atDefaultIndex: Int(id - 994), by: 1)
+            rebuildSubscriptionQuotaDialog()
         default: break
         }
     }
@@ -1021,30 +1041,46 @@ final class WindowsApp: @unchecked Sendable {
         dlg_reset_content(dialog, Int32(contentHeight))
         dlg_add_title(dialog, L10n.shared.tr("quota.windowTitle"), 24, 16, 270, 30)
         dlg_add_subtitle(dialog, L10n.shared.tr("quota.windowSubtitle"), 24, 47, 390, 22)
+        dlg_add_push(dialog, 983, L10n.shared.tr(quotaOrderEditing ? "quota.finishOrder" : "quota.editOrder"), 254, 16, 76, 30)
         dlg_add_push(dialog, 981, L10n.shared.tr("quota.retry"), 338, 16, 98, 30)
         var y: Int32 = 82
-        y = appendQuotaDialogProvider(dialog, title: "🤖 Codex", plan: codex.planType,
-            status: codex.status, buckets: codex.buckets,
-            unavailable: L10n.shared.tr("quota.codexUnavailable"), y: y)
-        y = appendQuotaDialogProvider(dialog, title: "✳️ Claude Code", plan: claude.planType,
-            status: claude.status, buckets: claude.buckets,
-            unavailable: L10n.shared.tr("quota.claudeUnavailable"), y: y)
-        y = appendQuotaDialogProvider(dialog, title: "🛸 Antigravity", plan: antigravity.planType,
-            status: antigravity.status, buckets: antigravity.groups.flatMap(\.buckets),
-            unavailable: L10n.shared.tr("quota.antigravityUnavailable"), y: y)
-        y = appendQuotaDialogProvider(dialog, title: "🖱️ Cursor", plan: cursor.planType,
-            status: cursor.status, buckets: cursor.groups.flatMap(\.buckets),
-            unavailable: L10n.shared.tr("quota.cursorUnavailable"), y: y)
+        for provider in quotaProviderOrder {
+            switch provider {
+            case .codex:
+                y = appendQuotaDialogProvider(dialog, provider: provider, title: "🤖 Codex", plan: codex.planType,
+                    status: codex.status, buckets: codex.buckets,
+                    unavailable: L10n.shared.tr("quota.codexUnavailable"), y: y)
+            case .claude:
+                y = appendQuotaDialogProvider(dialog, provider: provider, title: "✳️ Claude Code", plan: claude.planType,
+                    status: claude.status, buckets: claude.buckets,
+                    unavailable: L10n.shared.tr("quota.claudeUnavailable"), y: y)
+            case .antigravity:
+                y = appendQuotaDialogProvider(dialog, provider: provider, title: "🛸 Antigravity", plan: antigravity.planType,
+                    status: antigravity.status, buckets: antigravity.groups.flatMap(\.buckets),
+                    unavailable: L10n.shared.tr("quota.antigravityUnavailable"), y: y)
+            case .cursor:
+                y = appendQuotaDialogProvider(dialog, provider: provider, title: "🖱️ Cursor", plan: cursor.planType,
+                    status: cursor.status, buckets: cursor.groups.flatMap(\.buckets),
+                    unavailable: L10n.shared.tr("quota.cursorUnavailable"), y: y)
+            }
+        }
         dlg_add_push(dialog, 982, L10n.shared.language == .en ? "Close" : "关闭", 336, y + 8, 100, 30)
     }
 
     private func appendQuotaDialogProvider(
-        _ dialog: UnsafeMutableRawPointer, title: String, plan: String?,
+        _ dialog: UnsafeMutableRawPointer, provider: QuotaProvider, title: String, plan: String?,
         status: CodexQuotaStatus, buckets: [CodexQuotaBucket], unavailable: String, y: Int32
     ) -> Int32 {
         var cursorY = y
         let planText = plan.map { " · \(displayPlan($0))" } ?? ""
-        dlg_add_section(dialog, title + planText, 28, cursorY, 390, 22)
+        if quotaOrderEditing, let defaultIndex = QuotaProvider.allCases.firstIndex(of: provider) {
+            let current = quotaProviderOrder.firstIndex(of: provider) ?? 0
+            dlg_add_push(dialog, 990 + Int32(defaultIndex), current == 0 ? "·" : "↑", 22, cursorY - 2, 24, 22)
+            dlg_add_push(dialog, 994 + Int32(defaultIndex), current == quotaProviderOrder.count - 1 ? "·" : "↓", 50, cursorY - 2, 24, 22)
+            dlg_add_section(dialog, title + planText, 82, cursorY, 336, 22)
+        } else {
+            dlg_add_section(dialog, title + planText, 28, cursorY, 390, 22)
+        }
         cursorY += 28
         if buckets.isEmpty {
             dlg_add_card(dialog, 22, cursorY, 414, 66)
@@ -1069,6 +1105,16 @@ final class WindowsApp: @unchecked Sendable {
         return cursorY + 4
     }
 
+    private func moveQuotaProvider(atDefaultIndex index: Int, by offset: Int) {
+        guard QuotaProvider.allCases.indices.contains(index) else { return }
+        let provider = QuotaProvider.allCases[index]
+        guard let source = quotaProviderOrder.firstIndex(of: provider) else { return }
+        let destination = source + offset
+        guard quotaProviderOrder.indices.contains(destination) else { return }
+        quotaProviderOrder.swapAt(source, destination)
+        UserDefaults.standard.set(quotaProviderOrder.map(\.rawValue), forKey: SettingsKey.subscriptionQuotaOrder.rawValue)
+    }
+
     private func openUsageOverview() {
         model.persistCurrentUsage()
         guard let dlg = dlg_create(L10n.shared.tr("overview.title"), 820, 680) else { return }
@@ -1081,12 +1127,25 @@ final class WindowsApp: @unchecked Sendable {
 
     fileprivate func handleOverviewCmd(_ id: Int32) {
         switch id {
-        case 900: overviewPeriod = .week
-        case 901: overviewPeriod = .month
-        case 902: overviewPeriod = .custom
+        case 900: overviewPeriod = .week; overviewSelectedDayKey = nil
+        case 901: overviewPeriod = .month; overviewSelectedDayKey = nil
+        case 902: overviewPeriod = .custom; overviewSelectedDayKey = nil
         case 903: overviewGrouping = .tool
         case 904: overviewGrouping = .model
         case 905: overviewIncludesCacheRead.toggle()
+        case 906: overviewChartStyle = .automatic
+        case 907: overviewChartStyle = .line
+        case 908: overviewChartStyle = .stacked
+        case 909: overviewSelectedDayKey = nil
+        case 1000...1099:
+            let dates = overviewDates
+            let data = UsageOverviewBuilder.load(
+                startDate: dates.0, endDate: dates.1, grouping: overviewGrouping,
+                includingCacheRead: overviewIncludesCacheRead
+            )
+            let index = Int(id - 1000)
+            let visibleDays = Array(data.days.suffix(30))
+            if visibleDays.indices.contains(index) { overviewSelectedDayKey = visibleDays[index].dateKey }
         case 914:
             guard let dlg = overviewDlg else { return }
             if let value = parseOverviewDate(settingsEditText(dlg, 912)) { overviewCustomStart = value }
@@ -1103,6 +1162,10 @@ final class WindowsApp: @unchecked Sendable {
             startDate: dates.0, endDate: dates.1, grouping: overviewGrouping,
             includingCacheRead: overviewIncludesCacheRead
         )
+        let modelData = overviewGrouping == .model ? data : UsageOverviewBuilder.load(
+            startDate: dates.0, endDate: dates.1, grouping: .model,
+            includingCacheRead: overviewIncludesCacheRead
+        )
         let tokenTitle = L10n.shared.tr(
             overviewIncludesCacheRead ? "overview.tokensWithCache" : "overview.tokens"
         )
@@ -1110,9 +1173,13 @@ final class WindowsApp: @unchecked Sendable {
             overviewIncludesCacheRead ? "overview.tokensWithCacheShort" : "overview.tokens"
         )
         let dayRows = min(30, data.days.count)
-        let rowCount = max(1, data.rows.count)
+        let activeDay = overviewSelectedDayKey.flatMap { key in data.days.first { $0.dateKey == key } }
+        let displayRows = activeDay?.rows ?? data.rows
+        let rowCount = max(1, displayRows.count)
         let customHeight: Int32 = overviewPeriod == .custom ? 46 : 0
-        let contentHeight = Int32(330 + dayRows * 26 + rowCount * 30) + customHeight
+        let chartHeight: Int32 = overviewChartStyle == .automatic && overviewPeriod != .month
+            ? Int32(dayRows * 26 + 46) : 210
+        let contentHeight = Int32(330 + rowCount * 30) + chartHeight + customHeight
         dlg_reset_content(dlg, contentHeight)
 
         dlg_add_title(dlg, L10n.shared.tr("overview.title"), 24, 14, 260, 30)
@@ -1123,8 +1190,11 @@ final class WindowsApp: @unchecked Sendable {
         dlg_add_push(dlg, 903, overviewGrouping == .tool ? "✓  \(L10n.shared.tr("overview.byTool"))" : L10n.shared.tr("overview.byTool"), 606, 54, 88, 28)
         dlg_add_push(dlg, 904, overviewGrouping == .model ? "✓  \(L10n.shared.tr("overview.byModel"))" : L10n.shared.tr("overview.byModel"), 700, 54, 88, 28)
         dlg_add_push(dlg, 905, overviewIncludesCacheRead ? "✓  \(L10n.shared.tr("overview.includeCache"))" : L10n.shared.tr("overview.includeCache"), 474, 54, 126, 28)
+        dlg_add_push(dlg, 906, overviewChartStyle == .automatic ? "✓ ▦" : "▦", 24, 86, 48, 26)
+        dlg_add_push(dlg, 907, overviewChartStyle == .line ? "✓ 📈" : "📈", 78, 86, 54, 26)
+        dlg_add_push(dlg, 908, overviewChartStyle == .stacked ? "✓ 📊" : "📊", 138, 86, 54, 26)
 
-        var y: Int32 = 92
+        var y: Int32 = 122
         if overviewPeriod == .custom {
             dlg_add_static(dlg, L10n.shared.tr("overview.from"), 380, y + 3, 28, 22)
             dlg_add_edit(dlg, 912, DateHelper.dateKey(from: overviewCustomStart), 410, y, 112, 26)
@@ -1140,30 +1210,20 @@ final class WindowsApp: @unchecked Sendable {
         appendOverviewMetricCard(dlg, x: 598, y: y, width: 184, title: L10n.shared.tr("overview.averageCache"), value: String(format: "%@%.2f%%", data.summary.cacheIsExact ? "" : "≈", data.summary.averageCacheRate * 100))
         y += 86
 
-        dlg_add_section(dlg, L10n.shared.tr("overview.daily"), 24, y, 200, 24)
-        y += 28
-        dlg_add_card(dlg, 22, y, 760, Int32(dayRows * 26 + 18))
-        let visibleDays = Array(data.days.suffix(30))
-        let maxTokens = max(1, visibleDays.map { $0.metrics.displayedTokens(includingCacheRead: overviewIncludesCacheRead) }.max() ?? 1)
-        for (index, day) in visibleDays.enumerated() {
-            let rowY = y + 8 + Int32(index * 26)
-            let tokens = day.metrics.displayedTokens(includingCacheRead: overviewIncludesCacheRead)
-            dlg_add_static(dlg, String(day.dateKey.suffix(5)), 34, rowY, 52, 20)
-            dlg_add_static(dlg, overviewBar(tokens, maximum: maxTokens), 90, rowY, 566, 20)
-            dlg_add_static(dlg, TokenFormat.compact(tokens), 676, rowY, 88, 20)
-        }
-        y += Int32(dayRows * 26 + 32)
+        y = appendWindowsOverviewChart(dlg, data: data, modelData: modelData, y: y)
 
         dlg_add_section(dlg, L10n.shared.tr("overview.breakdown"), 24, y, 200, 24)
+        dlg_add_push(dlg, 909, overviewSelectedDayKey == nil ? "✓ \(L10n.shared.tr("overview.overview"))" : L10n.shared.tr("overview.overview"), 222, y - 2, 96, 26)
         y += 28
-        let listHeight = Int32(34 + rowCount * 30)
+        let listHeight = Int32(56 + rowCount * 30)
         dlg_add_card(dlg, 22, y, 760, listHeight)
-        appendOverviewColumns(dlg, y: y + 7, name: L10n.shared.tr("overview.name"), tokens: tokenHeader, messages: L10n.shared.tr("overview.messages"), cost: L10n.shared.tr("overview.cost"), cache: L10n.shared.tr("overview.averageCache"))
-        if data.rows.isEmpty {
+        dlg_add_static(dlg, activeDay?.dateKey ?? L10n.shared.tr("overview.overview"), 36, y + 7, 220, 22)
+        appendOverviewColumns(dlg, y: y + 29, name: L10n.shared.tr("overview.name"), tokens: tokenHeader, messages: L10n.shared.tr("overview.messages"), cost: L10n.shared.tr("overview.cost"), cache: L10n.shared.tr("overview.averageCache"))
+        if displayRows.isEmpty {
             dlg_add_subtitle(dlg, L10n.shared.tr("overview.noData"), 42, y + 38, 700, 24)
         }
-        for (index, row) in data.rows.enumerated() {
-            let rowY = y + 34 + Int32(index * 30)
+        for (index, row) in displayRows.enumerated() {
+            let rowY = y + 56 + Int32(index * 30)
             let name = row.name == "Unknown" ? L10n.shared.tr("detail.unknownModel") : row.name
             appendOverviewColumns(
                 dlg, y: rowY, name: "\(row.emoji)  \(name)",
@@ -1192,6 +1252,105 @@ final class WindowsApp: @unchecked Sendable {
         dlg_add_card(dlg, x, y, width, 72)
         dlg_add_subtitle(dlg, title, x + 14, y + 10, width - 28, 20)
         dlg_add_title(dlg, value, x + 14, y + 32, width - 28, 26)
+    }
+
+    private func appendWindowsOverviewChart(
+        _ dlg: UnsafeMutableRawPointer,
+        data: UsageOverviewData,
+        modelData: UsageOverviewData,
+        y: Int32
+    ) -> Int32 {
+        dlg_add_section(dlg, L10n.shared.tr("overview.daily"), 24, y, 200, 24)
+        let cardY = y + 28
+        let days = Array(data.days.suffix(30))
+        let maxTokens = max(1, days.map { $0.metrics.displayedTokens(includingCacheRead: overviewIncludesCacheRead) }.max() ?? 1)
+
+        if overviewChartStyle == .automatic, overviewPeriod != .month {
+            dlg_add_card(dlg, 22, cardY, 760, Int32(days.count * 26 + 18))
+            for (index, day) in days.enumerated() {
+                let rowY = cardY + 8 + Int32(index * 26)
+                let tokens = day.metrics.displayedTokens(includingCacheRead: overviewIncludesCacheRead)
+                dlg_add_push(dlg, 1000 + Int32(index), String(day.dateKey.suffix(5)), 30, rowY - 2, 58, 23)
+                dlg_add_static(dlg, overviewBar(tokens, maximum: maxTokens), 96, rowY, 558, 20)
+                dlg_add_static(dlg, TokenFormat.compact(tokens), 676, rowY, 88, 20)
+            }
+            return cardY + Int32(days.count * 26 + 32)
+        }
+
+        let chartHeight: Int32 = 174
+        dlg_add_card(dlg, 22, cardY, 760, chartHeight)
+        switch overviewChartStyle {
+        case .automatic:
+            let leading = days.first.flatMap { overviewDate($0.dateKey) }.map {
+                (Calendar.current.component(.weekday, from: $0) - Calendar.current.firstWeekday + 7) % 7
+            } ?? 0
+            for (index, day) in days.enumerated() {
+                let slot = leading + index
+                let column = slot / 7, row = slot % 7
+                let tokens = day.metrics.displayedTokens(includingCacheRead: overviewIncludesCacheRead)
+                let ratio = tokens > 0 ? log(Double(tokens) + 1) / log(Double(maxTokens) + 1) : 0
+                let glyphs = ["·", "▫", "▪", "◼", "■"]
+                let glyph = glyphs[min(4, Int((ratio * 4).rounded()))]
+                dlg_add_push(dlg, 1000 + Int32(index), glyph, 42 + Int32(column * 36), cardY + 18 + Int32(row * 20), 30, 19)
+            }
+            dlg_add_subtitle(dlg, L10n.shared.tr("overview.hoverDay"), 270, cardY + 18, 470, 22)
+        case .line:
+            let glyphs = Array("▁▂▃▄▅▆▇█")
+            let sparkline = days.map { day -> Character in
+                let ratio = Double(day.metrics.displayedTokens(includingCacheRead: overviewIncludesCacheRead)) / Double(maxTokens)
+                return glyphs[min(glyphs.count - 1, Int((ratio * Double(glyphs.count - 1)).rounded()))]
+            }
+            dlg_add_title(dlg, String(sparkline), 36, cardY + 18, 728, 48)
+            appendWindowsDayButtons(dlg, days: days, y: cardY + 86)
+        case .stacked:
+            let modelDays = Array(modelData.days.suffix(30))
+            for (index, day) in modelDays.enumerated() {
+                let x = 30 + Int32(index * 24)
+                let label = overviewStackGlyph(day, models: modelData.rows)
+                    + "\n" + overviewAxisLabel(day.dateKey, previous: index > 0 ? modelDays[index - 1].dateKey : nil)
+                dlg_add_push(dlg, 1000 + Int32(index), label, x, cardY + 24, 23, 112)
+            }
+        }
+        return cardY + chartHeight + 14
+    }
+
+    private func appendWindowsDayButtons(
+        _ dlg: UnsafeMutableRawPointer,
+        days: [UsageOverviewDay],
+        y: Int32
+    ) {
+        for (index, day) in days.enumerated() {
+            let label = overviewAxisLabel(day.dateKey, previous: index > 0 ? days[index - 1].dateKey : nil)
+            dlg_add_push(dlg, 1000 + Int32(index), label, 30 + Int32(index * 24), y, 23, 48)
+        }
+    }
+
+    private func overviewStackGlyph(_ day: UsageOverviewDay, models: [UsageOverviewRow]) -> String {
+        let palette = ["🟦", "🟪", "🟧", "🟩", "🟥", "🟨", "🟫", "⬛"]
+        let total = max(1, day.metrics.displayedTokens(includingCacheRead: overviewIncludesCacheRead))
+        var blocks: [String] = []
+        for row in day.rows {
+            let index = models.firstIndex(where: { $0.name == row.name }) ?? 0
+            let count = max(1, Int((Double(row.metrics.displayedTokens(includingCacheRead: overviewIncludesCacheRead)) / Double(total) * 5).rounded()))
+            blocks.append(contentsOf: Array(repeating: palette[index % palette.count], count: count))
+        }
+        return blocks.prefix(5).joined(separator: "\n")
+    }
+
+    private func overviewAxisLabel(_ key: String, previous: String?) -> String {
+        let parts = key.split(separator: "-")
+        guard parts.count == 3 else { return key }
+        let day = Int(parts[2]).map(String.init) ?? String(parts[2])
+        guard let previous else { return day }
+        let previousParts = previous.split(separator: "-")
+        guard previousParts.count == 3, previousParts[1] != parts[1], let date = overviewDate(key) else { return day }
+        let formatter = DateFormatter(); formatter.locale = Locale.current; formatter.dateFormat = "MMM"
+        return "\(formatter.string(from: date))\n\(day)"
+    }
+
+    private func overviewDate(_ key: String) -> Date? {
+        let formatter = DateFormatter(); formatter.locale = Locale(identifier: "en_US_POSIX"); formatter.dateFormat = "yyyy-MM-dd"
+        return formatter.date(from: key)
     }
 
     private func appendOverviewColumns(
