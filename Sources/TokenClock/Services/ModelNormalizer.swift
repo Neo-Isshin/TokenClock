@@ -1,6 +1,6 @@
 import Foundation
 
-/// AI 模型名归一化：去掉厂商在 model 名尾部附加的日期/快照后缀，只保留稳定的官方模型名。
+/// AI 模型名归一化：去掉日期/快照后缀和路由器附加的推理等级，只保留稳定的官方模型名。
 ///
 /// 用于「按模型」分组视图，避免同一模型因日期不同（如 `claude-sonnet-4-5-20250929`
 /// 与 `claude-sonnet-4-5-20251027`）被拆成多行。
@@ -13,13 +13,15 @@ enum ModelNormalizer {
     /// 尾部日期后缀：`-20250929` / `-2025-09-29` 等固定在串末的 8 位日期（可带连字符）。
     private static let dateSuffixPattern = #"-\d{4}-?\d{2}-?\d{2}$"#
 
-    /// 已知别名兜底表（手动维护）。键 = 工具日志里的展示别名，值 = 官方模型名。
-    /// Antigravity 把思考强度附加在 Gemini 3.7 Flash 后面；low / medium / high
-    /// 是推理设置而不是不同模型，分组、显示和计费均应归入同一个官方模型。
-    private static let aliases: [String: String] = [
-        "gemini-3.7-flash-low": "gemini-3.7-flash",
-        "gemini-3.7-flash-medium": "gemini-3.7-flash",
-        "gemini-3.7-flash-high": "gemini-3.7-flash",
+    /// Cursor / Antigravity 等路由器在模型 ID 尾部附加的推理等级。
+    /// `highspeed` 等单词不会命中；只有完整的末尾段才移除。
+    private static let effortSuffixPattern = #"-(?:low|medium|high|xhigh)(?:-thinking)?$"#
+    private static let maxThinkingSuffixPattern = #"-max-thinking$"#
+
+    /// `max` 也是部分厂商正式模型名（如 qwen3.8-max），不能全局移除。
+    /// 仅在已知会把 max 当作推理档位的模型族中处理裸 `-max`。
+    private static let maxEffortFamilies = [
+        "gpt-", "claude-", "gemini-", "grok-", "composer-", "o1-", "o3-", "o4-",
     ]
 
     /// 把原始 model 名归一成官方模型名。
@@ -31,7 +33,11 @@ enum ModelNormalizer {
             return nil
         }
         s = s.replacingOccurrences(of: dateSuffixPattern, with: "", options: .regularExpression)
-        if let mapped = aliases[s] { s = mapped }
+        s = s.replacingOccurrences(of: effortSuffixPattern, with: "", options: .regularExpression)
+        s = s.replacingOccurrences(of: maxThinkingSuffixPattern, with: "", options: .regularExpression)
+        if s.hasSuffix("-max"), maxEffortFamilies.contains(where: { s.lowercased().hasPrefix($0) }) {
+            s.removeLast(4)
+        }
         return s
     }
 }
