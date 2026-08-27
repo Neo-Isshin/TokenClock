@@ -14,6 +14,7 @@ final class LinuxApp: @unchecked Sendable {
     private var themePicker: LinuxThemePicker?
     private var settingsWindow: LinuxSettingsWindow?
     private var overviewWindow: LinuxUsageOverviewWindow?
+    private var notificationWindow: LinuxNotificationWindow?
     private var themeItems: [LinuxClockTheme: UnsafeMutablePointer<GtkWidget>] = [:]
     private var sizeItems: [LinuxClockSize: UnsafeMutablePointer<GtkWidget>] = [:]
     private var opacityItems: [Int: UnsafeMutablePointer<GtkWidget>] = [:]
@@ -162,6 +163,7 @@ final class LinuxApp: @unchecked Sendable {
         detailsPanel = LinuxDetailsPanel(
             parent: createdWindow,
             onHistoryUsage: { [weak self] in self?.overviewWindow?.show() },
+            onNotifications: { [weak self] in self?.showNotifications() },
             onQuickContrast: { [weak self] in self?.refreshUI() },
             onUsageIncludesCache: { [weak self] value in
                 self?.model.setUsageIncludesCacheRead(value)
@@ -172,6 +174,10 @@ final class LinuxApp: @unchecked Sendable {
         themePicker = LinuxThemePicker(parent: createdWindow, owner: self)
         settingsWindow = LinuxSettingsWindow(parent: createdWindow, owner: self, model: model)
         overviewWindow = LinuxUsageOverviewWindow(parent: createdWindow, model: model)
+        notificationWindow = LinuxNotificationWindow(parent: createdWindow) { [weak self] route in
+            self?.notificationWindow?.hide()
+            self?.overviewWindow?.show(route: route)
+        }
         buildContextMenu()
 
         gtk_widget_show_all(createdWindow)
@@ -372,11 +378,18 @@ final class LinuxApp: @unchecked Sendable {
     private func updateDetailsPanel() {
         detailsPanel?.update(
             tools: model.tools,
+            notifications: model.notifications,
             weather: weatherService.weather,
             useFahrenheit: useFahrenheit,
             theme: selectedTheme,
             size: selectedSize
         )
+    }
+
+    private func showNotifications() {
+        notificationWindow?.show(model.notifications)
+        model.markNotificationsRead()
+        updateDetailsPanel()
     }
 
     fileprivate func refreshClock() {

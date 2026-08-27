@@ -21,10 +21,12 @@ final class LinuxDetailsPanel: @unchecked Sendable {
     private var quotaWindow: UnsafeMutablePointer<GtkWidget>?
     private var quotaContent: UnsafeMutablePointer<GtkWidget>?
     private let onHistoryUsage: () -> Void
+    private let onNotifications: () -> Void
     private let onQuickContrast: () -> Void
     private let onUsageIncludesCache: (Bool) -> Void
 
     private var tools: [ToolUsage] = []
+    private var notifications: [TokenClockNotification] = []
     private var weather = WeatherInfo()
     private var useFahrenheit = false
     private var theme: LinuxClockTheme = .classic
@@ -71,11 +73,13 @@ final class LinuxDetailsPanel: @unchecked Sendable {
     init(
         parent: UnsafeMutablePointer<GtkWidget>,
         onHistoryUsage: @escaping () -> Void,
+        onNotifications: @escaping () -> Void,
         onQuickContrast: @escaping () -> Void,
         onUsageIncludesCache: @escaping (Bool) -> Void
     ) {
         self.parent = parent
         self.onHistoryUsage = onHistoryUsage
+        self.onNotifications = onNotifications
         self.onQuickContrast = onQuickContrast
         self.onUsageIncludesCache = onUsageIncludesCache
         buildWindow(parent: parent)
@@ -88,12 +92,14 @@ final class LinuxDetailsPanel: @unchecked Sendable {
 
     func update(
         tools: [ToolUsage],
+        notifications: [TokenClockNotification],
         weather: WeatherInfo,
         useFahrenheit: Bool,
         theme: LinuxClockTheme,
         size: LinuxClockSize
     ) {
         self.tools = tools
+        self.notifications = notifications
         self.weather = weather
         self.useFahrenheit = useFahrenheit
         self.theme = theme
@@ -153,6 +159,8 @@ final class LinuxDetailsPanel: @unchecked Sendable {
             onUsageIncludesCache(!UserDefaults.standard.bool(for: .usageIncludesCacheRead))
         case "details:quota":
             showQuotaWindow()
+        case "details:notifications":
+            onNotifications()
         case "details:text-color":
             cycleQuickContrast()
             onQuickContrast()
@@ -232,6 +240,10 @@ final class LinuxDetailsPanel: @unchecked Sendable {
             "◔  \(tr("detail.subscriptionQuotaLine1"))\n   \(tr("detail.subscriptionQuotaLine2"))",
             name: "details:quota", expands: true, prominent: true, to: launcherRow
         )
+        let unread = notifications.filter { !$0.isRead }.count
+        if unread > 0 {
+            _ = appendControl("🔔  \(unread)", name: "details:notifications", prominent: true, to: launcherRow)
+        }
 
         let groupingRow = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6)
         gtk_box_pack_start(tc_gtk_box(controls), groupingRow, 0, 0, 0)

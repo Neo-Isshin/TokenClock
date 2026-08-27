@@ -65,8 +65,20 @@ final class LinuxUsageOverviewWindow: @unchecked Sendable {
         """)
     }
 
-    func show() {
+    func show(route: UsageOverviewRoute? = nil) {
         model.persistCurrentUsage()
+        if let route {
+            switch route {
+            case .last30Days(let selectedDateKey):
+                period = .month
+                selectedDayKey = selectedDateKey
+            case .custom(let startDateKey, let endDateKey):
+                period = .custom
+                customStart = parseDate(startDateKey) ?? customStart
+                customEnd = min(Date(), parseDate(endDateKey) ?? customEnd)
+                selectedDayKey = nil
+            }
+        }
         render()
         guard let window else { return }
         gtk_widget_show_all(window)
