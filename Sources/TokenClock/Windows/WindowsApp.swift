@@ -1271,6 +1271,7 @@ final class WindowsApp: @unchecked Sendable {
                 let rowY = cardY + 8 + Int32(index * 26)
                 let tokens = day.metrics.displayedTokens(includingCacheRead: overviewIncludesCacheRead)
                 dlg_add_push(dlg, 1000 + Int32(index), String(day.dateKey.suffix(5)), 30, rowY - 2, 58, 23)
+                dlg_add_tooltip(dlg, 1000 + Int32(index), overviewDayTooltip(day))
                 dlg_add_static(dlg, overviewBar(tokens, maximum: maxTokens), 96, rowY, 558, 20)
                 dlg_add_static(dlg, TokenFormat.compact(tokens), 676, rowY, 88, 20)
             }
@@ -1292,6 +1293,7 @@ final class WindowsApp: @unchecked Sendable {
                 let glyphs = ["·", "▫", "▪", "◼", "■"]
                 let glyph = glyphs[min(4, Int((ratio * 4).rounded()))]
                 dlg_add_push(dlg, 1000 + Int32(index), glyph, 42 + Int32(column * 36), cardY + 18 + Int32(row * 20), 30, 19)
+                dlg_add_tooltip(dlg, 1000 + Int32(index), overviewDayTooltip(day))
             }
             dlg_add_subtitle(dlg, L10n.shared.tr("overview.hoverDay"), 270, cardY + 18, 470, 22)
         case .line:
@@ -1309,6 +1311,7 @@ final class WindowsApp: @unchecked Sendable {
                 let label = overviewStackGlyph(day, models: modelData.rows)
                     + "\n" + overviewAxisLabel(day.dateKey, previous: index > 0 ? modelDays[index - 1].dateKey : nil)
                 dlg_add_push(dlg, 1000 + Int32(index), label, x, cardY + 24, 23, 112)
+                dlg_add_tooltip(dlg, 1000 + Int32(index), overviewDayTooltip(day))
             }
         }
         return cardY + chartHeight + 14
@@ -1322,6 +1325,7 @@ final class WindowsApp: @unchecked Sendable {
         for (index, day) in days.enumerated() {
             let label = overviewAxisLabel(day.dateKey, previous: index > 0 ? days[index - 1].dateKey : nil)
             dlg_add_push(dlg, 1000 + Int32(index), label, 30 + Int32(index * 24), y, 23, 48)
+            dlg_add_tooltip(dlg, 1000 + Int32(index), overviewDayTooltip(day))
         }
     }
 
@@ -1335,6 +1339,14 @@ final class WindowsApp: @unchecked Sendable {
             blocks.append(contentsOf: Array(repeating: palette[index % palette.count], count: count))
         }
         return blocks.prefix(5).joined(separator: "\n")
+    }
+
+    private func overviewDayTooltip(_ day: UsageOverviewDay) -> String {
+        var lines = ["\(day.dateKey) · \(TokenFormat.compact(day.metrics.displayedTokens(includingCacheRead: overviewIncludesCacheRead))) tokens"]
+        lines += day.rows.map {
+            "\($0.emoji) \($0.name): \(TokenFormat.compact($0.metrics.displayedTokens(includingCacheRead: overviewIncludesCacheRead)))"
+        }
+        return lines.joined(separator: "\n")
     }
 
     private func overviewAxisLabel(_ key: String, previous: String?) -> String {

@@ -133,6 +133,7 @@ void  dlg_add_disclosure(void *dlg, int id, const char *title_utf8, const char *
                          int x, int y, int w, int h, int expanded);                    /* accordion header */
 void  dlg_add_sep(void *dlg, int x, int y, int w);                                   /* 凹陷横线 */
 void  dlg_add_push(void *dlg, int id, const char *text_utf8, int x, int y, int w, int h);
+void  dlg_add_tooltip(void *dlg, int control_id, const char *text_utf8);
 void  dlg_add_brand_logo(void *dlg, int x, int y, int w, int h); /* TokenClock clock mark */
 int   dlg_check_get(void *dlg, int id);                 /* 1 if checked */
 void  dlg_set_check(void *dlg, int id, int checked);

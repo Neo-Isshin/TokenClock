@@ -1348,6 +1348,31 @@ void dlg_add_push(void *dlg, int id, const char *text_utf8, int x, int y, int w,
     dlg_child((HWND)dlg, L"BUTTON", BS_OWNERDRAW | WS_TABSTOP, id, t, x, y, w, h);
 }
 
+void dlg_add_tooltip(void *dlg, int control_id, const char *text_utf8) {
+    HWND dialog = (HWND)dlg;
+    HWND control = dialog ? GetDlgItem(dialog, control_id) : NULL;
+    if (!dialog || !control || !text_utf8 || !text_utf8[0]) return;
+    HWND tooltip = CreateWindowExW(
+        WS_EX_TOPMOST, TOOLTIPS_CLASSW, NULL,
+        WS_POPUP | TTS_ALWAYSTIP | TTS_NOPREFIX,
+        CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
+        dialog, NULL, GetModuleHandleW(NULL), NULL
+    );
+    if (!tooltip) return;
+    wchar_t buffer[2048];
+    if (to_wide(text_utf8, buffer, 2048) == 0) return;
+    wchar_t *text = _wcsdup(buffer);
+    if (!text) return;
+    TOOLINFOW info = {0};
+    info.cbSize = sizeof(info);
+    info.uFlags = TTF_IDISHWND | TTF_SUBCLASS;
+    info.hwnd = dialog;
+    info.uId = (UINT_PTR)control;
+    info.lpszText = text;
+    SendMessageW(tooltip, TTM_SETMAXTIPWIDTH, 0, 520);
+    SendMessageW(tooltip, TTM_ADDTOOLW, 0, (LPARAM)&info);
+}
+
 static LRESULT CALLBACK brand_logo_proc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
     (void)lp;
     if (msg == WM_PAINT) {
