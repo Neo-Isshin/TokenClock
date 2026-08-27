@@ -242,6 +242,7 @@ struct UsageOverviewView: View {
     private var defaultBarChart: some View {
         GeometryReader { proxy in
             let maxValue = max(1, overview.days.map { displayedTokens($0.metrics) }.max() ?? 1)
+            let activeDayKey = selectedDayKey ?? hoveredDayKey
             HStack(alignment: .bottom, spacing: overview.days.count > 20 ? 3 : 7) {
                 ForEach(Array(overview.days.enumerated()), id: \.element.id) { index, day in
                     VStack(spacing: 4) {
@@ -254,6 +255,10 @@ struct UsageOverviewView: View {
                                 )
                             )
                             .frame(height: max(2, CGFloat(displayedTokens(day.metrics)) / CGFloat(maxValue) * 82))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 3)
+                                    .stroke(activeDayKey == day.dateKey ? Color.primary.opacity(0.75) : Color.clear, lineWidth: 1.2)
+                            )
                         chartDateLabel(day.dateKey, at: index)
                     }
                     .help("\(day.dateKey) · \(TokenFormat.compact(displayedTokens(day.metrics))) tokens")
