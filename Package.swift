@@ -74,6 +74,7 @@ let package = Package(
             exclude: [
                 "AppDelegate.swift",
                 "FloatingPanel.swift",
+                "StatusBarIcon.swift",
                 "Models/ClockFaceTheme.swift",
                 "Models/ClockSize.swift",
                 "Models/CustomThemeConfig.swift",
@@ -133,6 +134,7 @@ let package = Package(
             exclude: [
                 "AppDelegate.swift",
                 "FloatingPanel.swift",
+                "StatusBarIcon.swift",
                 "ViewModel.swift",
                 "main.swift",
                 "Views",

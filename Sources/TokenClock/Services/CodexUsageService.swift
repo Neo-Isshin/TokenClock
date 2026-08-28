@@ -556,19 +556,29 @@ final class CodexUsageService: @unchecked Sendable {
     }
 
     private func topologicallySorted(_ descriptors: [RolloutDescriptor]) -> [RolloutDescriptor] {
-        let byId = Dictionary(uniqueKeysWithValues: descriptors.map { ($0.session.sessionId, $0) })
+        // Resumed rollout 文件的文件名带新 id，但 session_meta 里保留原会话 id，
+        // 两个 descriptor 可能共享 session.sessionId，不能再用 uniqueKeysWithValues（会 trap）。
+        let byId = Dictionary(
+            descriptors.map { ($0.session.sessionId, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
         var visiting = Set<String>()
         var visited = Set<String>()
         var result: [RolloutDescriptor] = []
 
-        func visit(_ id: String) {
-            guard !visited.contains(id), visiting.insert(id).inserted, let descriptor = byId[id] else { return }
-            if let parent = descriptor.session.parentSessionId { visit(parent) }
-            visiting.remove(id)
-            visited.insert(id)
+        func visit(_ descriptor: RolloutDescriptor) {
+            // 以 path 为去重键（sessionId 会重复），保证共享 id 的文件不会被静默丢弃
+            guard !visited.contains(descriptor.path),
+                  visiting.insert(descriptor.path).inserted else { return }
+            if let parent = descriptor.session.parentSessionId,
+               let parentDescriptor = byId[parent] {
+                visit(parentDescriptor)
+            }
+            visiting.remove(descriptor.path)
+            visited.insert(descriptor.path)
             result.append(descriptor)
         }
-        for id in byId.keys.sorted() { visit(id) }
+        for descriptor in descriptors.sorted(by: { $0.path < $1.path }) { visit(descriptor) }
         return result
     }
 

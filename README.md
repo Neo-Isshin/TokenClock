@@ -43,6 +43,7 @@ Click the clock for session and model details. Right-click it to change the face
 - **Subscription quotas in one panel.** View Codex, Claude Code, Antigravity, and Cursor limits and reset times when those local accounts are available. Checks run only when you open the panel.
 - **Weather without a location permission popup.** Automatic weather uses an approximate city from your public IP, or you can choose a city yourself.
 - **A native experience on each platform.** macOS uses SwiftUI/AppKit, Windows uses Win32, and Linux uses GTK3. The workflow is shared while controls keep their native appearance.
+- **Hide the widget in one click.** On macOS, use the menu-bar gauge to hide or restore TokenClock. On Windows, choose **Hide TokenClock** from the clock's right-click menu and click the tray icon to bring it back.
 
 ## Platform support
 
@@ -107,6 +108,7 @@ Windows may show a reputation warning for an unsigned first release. Check that 
 ## Everyday use
 
 - **Left-click the clock:** show or hide usage details.
+- **Hide or restore the widget:** use the menu-bar gauge on macOS; on Windows, choose **Hide TokenClock** and restore it from the system tray.
 - **Subscription Quota:** show Codex, Claude Code, Antigravity, and Cursor limits and reset times.
 - **API-equivalent column:** estimated USD value at public API rates, not the amount charged by a subscription (customize proxy prices in Settings).
 - **By Session / By Model:** change how details are grouped.

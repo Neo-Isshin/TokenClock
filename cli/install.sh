@@ -228,9 +228,9 @@ release_tag_for_variant() {
     return
   fi
   case "$1" in
-    glass)  echo "v1.5.3" ;;
-    normal) echo "v1.5.3" ;;
-    linux)  echo "v1.5.3" ;;
+    glass)  echo "v1.5.4" ;;
+    normal) echo "v1.5.4" ;;
+    linux)  echo "v1.5.4" ;;
   esac
 }
 release_base_for_tag() {
@@ -247,8 +247,8 @@ tarball_name() {
 }
 tarball_sha256() {
   case "$1" in
-    glass)  echo "716881d6cfbb96a2ae398a17b1c6fd998e09da70b51d0087a528cace0fc7434c" ;;
-    normal) echo "d1da7ce515d83c6059ed31478dd645938b4b8cc7a183289987841ed428bb605f" ;;
+    glass)  echo "db92a434e7f9022b5e1f7d8e82d85c350752e605c897bc6f0d392c826c7cbdcb" ;;
+    normal) echo "b12e166a403897b377d3807083ab33ba2665e679132da9673b32232e56700d81" ;;
   esac
 }
 
@@ -541,7 +541,7 @@ enable_linux_autostart() {
   local desktop_path="$autostart_dir/tokenclock.desktop"
   local exec_line="$binary_path"
   if [ ! -e /dev/fuse ] || ! ldconfig -p 2>/dev/null | grep -q 'libfuse\.so\.2'; then
-    exec_line="env APPIMAGE_EXTRACT_AND_RUN=1 $binary_path"
+    exec_line="\"$BIN_DIR/tokenclock\" start --normal"
   fi
   mkdir -p "$autostart_dir" || die "Failed to create $autostart_dir"
   cat > "$desktop_path" <<EOF || die "Failed to write $desktop_path"

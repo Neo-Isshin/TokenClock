@@ -9,7 +9,7 @@
 #
 set -u
 
-CLI_VERSION="1.5.3"
+CLI_VERSION="1.5.4"
 # Process name (comm) of the running clock. **The executable of every variant must be named TokenClock**
 # (placed in a glass/ or normal/ subdir to distinguish variants), so that no matter which variant is
 # launched the process name is TokenClock — the pgrep/pkill -x below hits it precisely and never
@@ -137,6 +137,27 @@ find_normal() {
     ${repo:+"$repo"}
 }
 
+# FUSE-less AppImage fallback. Some current Type-2 runtimes return ENOEXEC from
+# APPIMAGE_EXTRACT_AND_RUN even when AppRun is a valid ELF. Explicit extraction is
+# deterministic; the private temp tree stays alive with the process and is removed on exit.
+launch_extracted_appimage() {
+  local image="$1" root
+  root="$(mktemp -d "${TMPDIR:-/tmp}/tokenclock-appimage.XXXXXX" 2>/dev/null)" || return 1
+  if ! (cd "$root" && "$image" --appimage-extract >/dev/null 2>&1); then
+    rm -rf "$root"
+    return 1
+  fi
+  nohup sh -c '
+    root="$1"
+    cd "$root/squashfs-root" || exit 1
+    APPDIR="$root/squashfs-root" ./usr/bin/TokenClock
+    status=$?
+    cd /
+    rm -rf "$root"
+    exit "$status"
+  ' sh "$root" >/dev/null 2>&1 &
+}
+
 # Launch a given path: .app via open (auto-dedupes/activates), bare binary via nohup in the background.
 launch_path() {
   case "$1" in
@@ -144,9 +165,9 @@ launch_path() {
     *)
       if [ "$PLATFORM" = Linux ] \
          && { [ ! -e /dev/fuse ] || ! ldconfig -p 2>/dev/null | grep -q 'libfuse\.so\.2'; }; then
-        # Type-2 AppImages can self-extract without FUSE. This keeps the public one-liner
-        # working on Debian 13 / Ubuntu 24.04 minimal desktops without requiring a root install.
-        APPIMAGE_EXTRACT_AND_RUN=1 nohup "$1" >/dev/null 2>&1 &
+        # Explicit extraction keeps Debian/Ubuntu minimal desktops working without
+        # a root FUSE install, including runtimes whose extract-and-run mode is broken.
+        launch_extracted_appimage "$1" || die "failed to extract and launch AppImage: $1"
       else
         nohup "$1" >/dev/null 2>&1 &
       fi

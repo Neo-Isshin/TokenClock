@@ -14,6 +14,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var aboutWindow: NSWindow?
     private var themePickerPanel: NSPanel?
     private var themePickerEventMonitor: Any?
+    private var statusItem: NSStatusItem?
+    private var statusBarVisibility = StatusBarVisibilityState()
 
     // 全屏智能隐藏（仅 alwaysOnTop=OFF 时启用）：见下方 MARK 区
     private var fullscreenCheckTimer: Timer?
@@ -149,6 +151,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             UsageAPIServer.shared.start()
         }
 
+        setupStatusBarItem()
         panel.makeKeyAndOrderFront(nil)
         setupRightClickMenu()
         // 兜底迁移：清理旧的 installer plist / SMAppService 残留
@@ -191,6 +194,68 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         viewModel.markNotificationsRead()
     }
 
+    // MARK: - macOS menu-bar visibility toggle
+
+    private func setupStatusBarItem() {
+        guard statusItem == nil else { return }
+        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+        guard let button = item.button else { return }
+
+        button.image = StatusBarIcon.makeImage()
+        button.imagePosition = .imageOnly
+        button.imageScaling = .scaleProportionallyDown
+        button.target = self
+        button.action = #selector(toggleStatusBarVisibility(_:))
+        statusItem = item
+
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleApplicationDidHide(_:)),
+            name: NSApplication.didHideNotification,
+            object: NSApp
+        )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleApplicationDidUnhide(_:)),
+            name: NSApplication.didUnhideNotification,
+            object: NSApp
+        )
+        updateStatusBarItemPresentation()
+    }
+
+    private func updateStatusBarItemPresentation() {
+        guard let button = statusItem?.button else { return }
+        let actionKey = statusBarVisibility.isHidden ? "status.show" : "status.hide"
+        let actionLabel = L10n.shared.tr(actionKey)
+        button.toolTip = actionLabel
+        button.setAccessibilityLabel("TokenClock — \(actionLabel)")
+    }
+
+    @objc private func toggleStatusBarVisibility(_ sender: Any?) {
+        if statusBarVisibility.isHidden {
+            statusBarVisibility.setHidden(false)
+            NSApp.unhideWithoutActivation()
+            panel.orderFront(nil)
+        } else {
+            statusBarVisibility.setHidden(true)
+            // Close transient picker tracking before hiding the app. NSApp.hide
+            // then hides every TokenClock window while preserving its state.
+            hideThemePicker()
+            NSApp.hide(nil)
+        }
+        updateStatusBarItemPresentation()
+    }
+
+    @objc private func handleApplicationDidHide(_ notification: Notification) {
+        statusBarVisibility.setHidden(true)
+        updateStatusBarItemPresentation()
+    }
+
+    @objc private func handleApplicationDidUnhide(_ notification: Notification) {
+        statusBarVisibility.setHidden(false)
+        updateStatusBarItemPresentation()
+    }
+
     nonisolated func applicationWillTerminate(_ notification: Notification) {
         // AppKit delivers this callback on the main thread. A detached MainActor Task can be
         // discarded as the process exits, which previously lost the final window position.
@@ -200,6 +265,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             UsageAPIServer.shared.stop()
             panel?.savePosition()
             notificationPanel?.hide()
+            if let statusItem {
+                NSStatusBar.system.removeStatusItem(statusItem)
+                self.statusItem = nil
+            }
             removeThemePickerMonitor()
         }
     }
@@ -525,6 +594,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     private func evaluateFullscreenHide() {
+        guard !statusBarVisibility.isHidden else { return }
         guard let panel = self.panel else { return }
         if dropdownPanel.isVisible || notificationPanel.isVisible { return }   // 用户正在看面板，不打断
         let center = NSPoint(x: panel.frame.midX, y: panel.frame.midY)
@@ -648,6 +718,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         viewModel.language = lang
         viewModel.refreshWeather()
         setupRightClickMenu()
+        updateStatusBarItemPresentation()
         settingsWindow?.title = L10n.shared.tr("settings.title")
         overviewWindow?.title = L10n.shared.tr("overview.title")
         subscriptionQuotaWindow?.title = L10n.shared.tr("quota.windowTitle")
