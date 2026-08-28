@@ -166,8 +166,54 @@ final class CodexUsageReplayTests: XCTestCase {
 
         let service = CodexUsageService(codexHome: home.path)
         service.fullScan()
-        let expected = ((73_000 * 8.0) + (1_000 * 30.0) + (200_000 * 0.8)) / 1_000_000 * 2
+        let freshInputCost: Double = 73_000 * 8.0
+        let outputCost: Double = 1_000 * 30.0
+        let cacheReadCost: Double = 200_000 * 0.8
+        let expected = (freshInputCost + outputCost + cacheReadCost) / 1_000_000 * 2
         XCTAssertEqual(service.todayCost().value, expected, accuracy: 0.000_000_1)
+    }
+
+    func testResumedRolloutSharingSessionMetaIdDoesNotTrapAndCountsBothFiles() throws {
+        // Codex resume 会生成 rollout-<新时间戳>-<原id>_<新id>.jsonl，其 session_meta
+        // 仍写原会话 id：两个 descriptor 共享 session.sessionId，曾让
+        // Dictionary(uniqueKeysWithValues:) 直接 trap（SIGTRAP 崩溃循环）。
+        let home = try makeRoot()
+        let directory = home.appendingPathComponent("sessions/2026/08/27", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let sessionId = "01a02c64-4be9-7251-8dd1-cef7bfc9ce44"
+        let resumeId = "01a04347-af92-7751-87ca-517ea9edda0d"
+        let now = Date()
+
+        let original = usage(
+            at: now.addingTimeInterval(-30), input: 100, cached: 60, output: 20, total: 120,
+            cumulativeInput: 100, cumulativeCached: 60, cumulativeOutput: 20, cumulativeTotal: 120
+        )
+        try write([
+            metadata(id: sessionId, at: now.addingTimeInterval(-31)),
+            turn(model: "gpt-5.6-sol"), original,
+        ].joined(separator: "\n") + "\n", to: directory.appendingPathComponent(
+            "rollout-2026-08-22T19-12-45-\(sessionId).jsonl"
+        ))
+
+        let resumedOwn = usage(
+            at: now.addingTimeInterval(-5), input: 40, cached: 10, output: 10, total: 50,
+            cumulativeInput: 40, cumulativeCached: 10, cumulativeOutput: 10, cumulativeTotal: 50
+        )
+        try write([
+            metadata(id: sessionId, at: now.addingTimeInterval(-6)),
+            turn(model: "gpt-5.6-sol"), resumedOwn,
+        ].joined(separator: "\n") + "\n", to: directory.appendingPathComponent(
+            "rollout-2026-08-27T05-52-46-\(sessionId)_\(resumeId).jsonl"
+        ))
+
+        let service = CodexUsageService(codexHome: home.path)
+        service.fullScan()
+        XCTAssertEqual(service.todayUsage().tokens, 100) // 60 (原文件) + 40 (续开会话)
+        XCTAssertEqual(service.todayUsage().messages, 2)
+
+        service.incrementalScan()
+        XCTAssertEqual(service.todayUsage().tokens, 100)
+        XCTAssertEqual(service.todayUsage().messages, 2)
     }
 
     private func metadata(id: String, parent: String? = nil, at date: Date) -> String {

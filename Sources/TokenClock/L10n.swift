@@ -117,6 +117,10 @@ final class L10n: @unchecked Sendable {
         "menu.quit":             [.zhHans: "关闭 TokenClock",       .zhHant: "關閉 TokenClock",       .en: "Quit TokenClock"],
         "menu.about":            [.zhHans: "关于 TokenClock",       .zhHant: "關於 TokenClock",       .en: "About TokenClock"],
 
+        // MARK: Menu-bar status item
+        "status.hide":            [.zhHans: "隐藏 TokenClock",       .zhHant: "隱藏 TokenClock",       .en: "Hide TokenClock"],
+        "status.show":            [.zhHans: "显示 TokenClock",       .zhHant: "顯示 TokenClock",       .en: "Show TokenClock"],
+
         // MARK: About
         "about.license":         [.zhHans: "许可证：MIT",           .zhHant: "許可證：MIT",            .en: "License: MIT"],
         "about.contact":         [.zhHans: "联系方式",              .zhHant: "聯絡方式",              .en: "Contact"],
