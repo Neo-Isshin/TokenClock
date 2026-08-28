@@ -98,6 +98,10 @@ function Wait-Hidden([IntPtr]$Handle,[int]$Milliseconds = 8000) {
     for($i=0;$i-lt[Math]::Ceiling($Milliseconds/100)-and[TCWinTest]::IsWindowVisible($Handle);$i++){Start-Sleep -Milliseconds 100}
     -not [TCWinTest]::IsWindowVisible($Handle)
 }
+function Wait-Visible([IntPtr]$Handle,[int]$Milliseconds = 8000) {
+    for($i=0;$i-lt[Math]::Ceiling($Milliseconds/100)-and(-not[TCWinTest]::IsWindowVisible($Handle));$i++){Start-Sleep -Milliseconds 100}
+    [TCWinTest]::IsWindowVisible($Handle)
+}
 function Wait-Detail([uint32]$TargetPid,[int]$Milliseconds = 8000) { Wait-Dialog "TokenClockDetail" $TargetPid $Milliseconds }
 function Is-Alive([IntPtr]$Handle) {
     $p=Get-Process TokenClock -ErrorAction SilentlyContinue | Select-Object -First 1
@@ -241,6 +245,19 @@ $usage=Wait-Api; $startupApiMs=[int]((Get-Date)-$started).TotalMilliseconds
 Start-Sleep -Seconds 2;Record "startup" $h;Capture "01-startup-classic" $h;Sample "idle-stable"
 $pidApp=[uint32]$process.Id
 [void](Check-Fluent "layered-clock-dial" $h 0 -LayeredExpected)
+
+# Main-window menu command hides the widget without terminating its process/API.
+# A synthetic tray left-click then exercises the exact WM_TRAY callback used by Explorer.
+Command $h 2 "main-menu-hide" 250
+$mainHidden=Wait-Hidden $h
+if(-not$mainHidden){[void]$failures.Add("Hide TokenClock command left the main window visible")}
+$hiddenUsage=Wait-Api
+if($null-eq$hiddenUsage){[void]$failures.Add("API became unavailable while TokenClock was hidden")}
+$trayLeft=[IntPtr]0x00010202 # HIWORD=tray id 1, LOWORD=WM_LBUTTONUP
+[void][TCWinTest]::PostMessage($h,0x8001,[IntPtr]::Zero,$trayLeft)
+$mainRestored=Wait-Visible $h
+if(-not$mainRestored){[void]$failures.Add("Tray left-click did not restore the main window")}
+Start-Sleep -Milliseconds 350;Record "tray-restore" $h;Capture "01b-tray-restored" $h
 
 # Main-window drag and real left/right click paths. The round layered dial must stay compact;
 # the detail content is a separate non-layered TokenClockDetail Acrylic HWND.

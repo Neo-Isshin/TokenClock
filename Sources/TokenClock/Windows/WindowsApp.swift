@@ -76,6 +76,7 @@ final class WindowsApp: @unchecked Sendable {
 
     // MARK: - 命令 ID
     private let cmdQuit: Int32 = 1
+    private let cmdVisibility: Int32 = 2
     private let cmdTopmost: Int32 = 10
     private let cmdSizeSmall: Int32 = 20, cmdSizeMedium: Int32 = 21
     private let cmdSizeLarge: Int32 = 22, cmdSizeXL: Int32 = 23
@@ -111,6 +112,7 @@ final class WindowsApp: @unchecked Sendable {
     private var weatherInfo: WeatherInfo?     // 展开详情时复用 macOS normal 的当前天气与 12 小时趋势
     private var scanCount: Int = 0           // 天气刷新节流（每 20 次扫描≈10 分钟刷新一次）
     private var detailsVisible = false       // 左键托盘切换：展开后窗口变高，盘面下方列工具明细
+    private var mainVisible = true           // 右键菜单隐藏；托盘左键恢复
     private var currentHeight: Int32 = 280   // 当前窗口高（收起 = currentSize；展开 = +明细区）
     private var lastTrayToggle = Date.distantPast   // 左键去抖（双击连发两次）
     private var expandedDetailKeys: Set<String> = []
@@ -722,11 +724,25 @@ final class WindowsApp: @unchecked Sendable {
     }
 
     func trayClick(button: Int32) {
-        // 左键托盘图标：切换详情面板（盘面下方展开工具明细）。
-        // 双击会连发两次 LBUTTONUP，用 0.35s 去抖保证单击/双击都只切一次。
+        // 隐藏后，托盘左键始终恢复整个 TokenClock；可见时保留原有的详情切换行为。
+        // 双击会连发两次 LBUTTONUP，用 0.35s 去抖保证单击/双击都只处理一次。
         if button == 1 {
+            let now = Date()
+            guard now.timeIntervalSince(lastTrayToggle) > 0.35 else { return }
+            if !mainVisible {
+                lastTrayToggle = now
+                setMainVisible(true)
+                return
+            }
             toggleDetailsDebounced()
         }
+    }
+
+    private func setMainVisible(_ visible: Bool) {
+        guard mainVisible != visible else { return }
+        mainVisible = visible
+        win_show(win_self(), visible ? 1 : 0)
+        if visible { render() }
     }
 
     /// Main-window click callback. The upper clock toggles the dropdown; controls and parent
@@ -890,12 +906,14 @@ final class WindowsApp: @unchecked Sendable {
         addMenuItem(menu, cmdLaunch, L.tr("menu.launchAtLogin"), launchAtLogin)
         addSeparator(menu)
         addMenuItem(menu, cmdAbout, L.tr("menu.about"), false)
+        addMenuItem(menu, cmdVisibility, L.tr(mainVisible ? "menu.hide" : "menu.show"), false)
         addMenuItem(menu, cmdQuit, L.tr("menu.quit"), false)
     }
 
     func menuCmd(cmd: Int32) {
         switch cmd {
         case cmdQuit:       win_quit(win_self())
+        case cmdVisibility: setMainVisible(!mainVisible)
         case cmdTopmost:
             alwaysOnTop.toggle()
             win_set_topmost(win_self(), alwaysOnTop ? 1 : 0)
@@ -988,7 +1006,7 @@ final class WindowsApp: @unchecked Sendable {
         defer { aboutDlg = nil; dlg_destroy(dlg) }
         dlg_add_brand_logo(dlg, 136, 22, 88, 88)
         dlg_add_title(dlg, "TokenClock", 112, 120, 180, 30)
-        dlg_add_static(dlg, "v1.5.3", 154, 154, 90, 22)
+        dlg_add_static(dlg, "v1.5.4", 154, 154, 90, 22)
         dlg_add_sep(dlg, 28, 188, 304)
         dlg_add_static(dlg, "Copyright © 2026 Neo-Isshin", 78, 210, 250, 22)
         dlg_add_static(dlg, L10n.shared.tr("about.license"), 128, 238, 180, 22)

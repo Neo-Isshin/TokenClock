@@ -116,6 +116,8 @@ final class L10n: @unchecked Sendable {
         "menu.glassRefraction":  [.zhHans: "✨ 液态玻璃折射",        .zhHant: "✨ 液態玻璃折射",         .en: "✨ Liquid Glass Refraction"],
         "menu.quit":             [.zhHans: "关闭 TokenClock",       .zhHant: "關閉 TokenClock",       .en: "Quit TokenClock"],
         "menu.about":            [.zhHans: "关于 TokenClock",       .zhHant: "關於 TokenClock",       .en: "About TokenClock"],
+        "menu.hide":             [.zhHans: "隐藏 TokenClock",       .zhHant: "隱藏 TokenClock",       .en: "Hide TokenClock"],
+        "menu.show":             [.zhHans: "显示 TokenClock",       .zhHant: "顯示 TokenClock",       .en: "Show TokenClock"],
 
         // MARK: About
         "about.license":         [.zhHans: "许可证：MIT",           .zhHant: "許可證：MIT",            .en: "License: MIT"],

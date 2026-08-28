@@ -55,9 +55,8 @@ mkdir -p "$APPDIR/usr/bin" "$APPDIR/usr/lib/tokenclock-empty-modules" "$APPDIR/u
 mkdir -p "$APPDIR/usr/share/fonts/truetype/noto"
 
 cp "$BIN" "$APPDIR/usr/bin/$APP"
-cp "$ROOT/scripts/tokenclock-appimage-launcher.sh" "$APPDIR/usr/bin/$APP-launcher"
-chmod +x "$APPDIR/usr/bin/$APP" "$APPDIR/usr/bin/$APP-launcher"
-ok "isolated GLib/GIO launcher installed"
+chmod +x "$APPDIR/usr/bin/$APP"
+ok "ELF entry point includes GLib/GIO module isolation"
 
 RESOURCE_BUNDLE="$ROOT/.build/release/TokenClock_TokenClock.resources"
 [ -d "$RESOURCE_BUNDLE" ] || die "resource bundle not found: $RESOURCE_BUNDLE"
@@ -75,11 +74,37 @@ find /usr/share/fonts -type f \
   -exec cp {} "$APPDIR/usr/share/fonts/truetype/noto/" \;
 ok "CJK/emoji fallback fonts bundled"
 
+# linuxdeploy intentionally blacklists libraries commonly present on full Linux
+# desktops. Minimal Debian/Ubuntu installations do not necessarily have them,
+# even though GTK links them eagerly. Seed the AppDir before linuxdeploy runs so
+# its dependency pass resolves against the bundled copies. Keep glibc, libgcc_s
+# and libstdc++ system-provided for ABI compatibility.
+BLACKLISTED_GTK_LIBS="
+libX11.so.6
+libxcb.so.1
+libharfbuzz.so.0
+libfribidi.so.0
+libfontconfig.so.1
+libfreetype.so.6
+libwayland-client.so.0
+libexpat.so.1
+libuuid.so.1
+libz.so.1
+libgmp.so.10
+libcom_err.so.2
+"
+for lib in $BLACKLISTED_GTK_LIBS; do
+  path="$(ldconfig -p | awk -v name="$lib" '$1 == name { print $NF; exit }')"
+  [ -n "$path" ] && [ -f "$path" ] || die "required compatibility library not found: $lib"
+  cp -L "$path" "$APPDIR/usr/lib/$lib"
+done
+ok "blacklisted GTK compatibility libraries bundled"
+
 cat > "$APPDIR/usr/share/applications/$APP.desktop" <<EOF
 [Desktop Entry]
 Name=TokenClock
 Comment=Token usage clock for AI coding tools
-Exec=$APP-launcher
+Exec=$APP
 Icon=$ICON_NAME
 Type=Application
 Categories=Utility;

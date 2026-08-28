@@ -427,9 +427,15 @@ void win_get_pos(void *hwnd, int *x, int *y) { RECT rc; GetWindowRect((HWND)hwnd
 void win_set_pos(void *hwnd, int x, int y)  { SetWindowPos((HWND)hwnd, NULL, x, y, 0, 0, SWP_NOSIZE | SWP_NOZORDER); }
 void win_show(void *hwnd, int show) {
     if ((HWND)hwnd == g_hwnd) g_main_visible = show ? 1 : 0;
-    ShowWindowAsync((HWND)hwnd, show ? SW_SHOWNORMAL : SW_HIDE);
+    if (show) {
+        ShowWindow((HWND)hwnd, SW_SHOWNORMAL);
+        BringWindowToTop((HWND)hwnd);
+        SetForegroundWindow((HWND)hwnd);  /* tray click is direct user input, foreground is allowed */
+    } else {
+        ShowWindow((HWND)hwnd, SW_HIDE);
+    }
     if ((HWND)hwnd == g_hwnd && IsWindow(g_detail_hwnd))
-        ShowWindowAsync(g_detail_hwnd, show && g_detail_wanted ? SW_SHOWNOACTIVATE : SW_HIDE);
+        ShowWindow(g_detail_hwnd, show && g_detail_wanted ? SW_SHOWNOACTIVATE : SW_HIDE);
 }
 void win_quit(void *hwnd)                   { PostMessageW((HWND)hwnd, WM_CLOSE, 0, 0); }
 void win_set_dpi_aware(void) {

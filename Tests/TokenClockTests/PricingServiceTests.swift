@@ -181,12 +181,19 @@ final class PricingServiceTests: XCTestCase {
         let short = PricingService.shared.cost(of: [ModelUsageRequest(
             model: "request-priced-model", buckets: buckets, contextInputTokens: 1_000
         )])
-        XCTAssertEqual(short.value, (400 * 4.0 + 100 * 20.0 + 600 * 0.4) / 1_000_000, accuracy: 0.000_000_1)
+        let shortInputCost: Double = 400 * 4.0
+        let shortOutputCost: Double = 100 * 20.0
+        let shortCacheCost: Double = 600 * 0.4
+        let shortExpected = (shortInputCost + shortOutputCost + shortCacheCost) / 1_000_000
+        XCTAssertEqual(short.value, shortExpected, accuracy: 0.000_000_1)
 
         let long = PricingService.shared.cost(of: [ModelUsageRequest(
             model: "request-priced-model", buckets: buckets, contextInputTokens: 272_001
         )])
-        let longExpected = (400 * 8.0 + 100 * 30.0 + 600 * 0.8) / 1_000_000
+        let longInputCost: Double = 400 * 8.0
+        let longOutputCost: Double = 100 * 30.0
+        let longCacheCost: Double = 600 * 0.8
+        let longExpected = (longInputCost + longOutputCost + longCacheCost) / 1_000_000
         XCTAssertEqual(long.value, longExpected, accuracy: 0.000_000_1)
 
         let priority = PricingService.shared.cost(of: [ModelUsageRequest(

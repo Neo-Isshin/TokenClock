@@ -166,7 +166,10 @@ final class CodexUsageReplayTests: XCTestCase {
 
         let service = CodexUsageService(codexHome: home.path)
         service.fullScan()
-        let expected = ((73_000 * 8.0) + (1_000 * 30.0) + (200_000 * 0.8)) / 1_000_000 * 2
+        let freshInputCost: Double = 73_000 * 8.0
+        let outputCost: Double = 1_000 * 30.0
+        let cacheReadCost: Double = 200_000 * 0.8
+        let expected = (freshInputCost + outputCost + cacheReadCost) / 1_000_000 * 2
         XCTAssertEqual(service.todayCost().value, expected, accuracy: 0.000_000_1)
     }
 
