@@ -59,6 +59,57 @@ final class CursorAgentUsageServiceTests: XCTestCase {
         XCTAssertEqual(service.todayModelBuckets()["cursor-replace"]?.input, 7)
     }
 
+    func testBareThinkingRouteSuffixUsesOfficialCursorModelName() {
+        let service = CursorAgentUsageService()
+        let timestamp = Int(Date().timeIntervalSince1970 * 1_000)
+
+        service.applyEvents([
+            event(timestamp: timestamp, model: "claude-fable-5-thinking", input: 100, output: 20),
+        ], rangeDays: 30)
+
+        XCTAssertEqual(
+            CursorAgentUsageService.normalizeDashboardModel("claude-fable-5-thinking"),
+            "claude-fable-5"
+        )
+        XCTAssertNotNil(service.todayModelBuckets()["claude-fable-5"])
+        XCTAssertNil(service.todayModelBuckets()["claude-fable-5-thinking"])
+        XCTAssertEqual(service.todaySessions().first?.model, "claude-fable-5")
+        XCTAssertEqual(service.todaySessions().first?.displayName, "claude-fable-5")
+        XCTAssertTrue(service.todayCost().complete)
+        XCTAssertGreaterThan(service.todayCost().value, 0)
+    }
+
+    func testCursorRouteMarkerOrdersCollapseWithoutDamagingOfficialNames() {
+        let aliases = [
+            "claude-fable-5-medium",
+            "claude-fable-5-thinking-medium",
+            "claude-fable-5-medium-thinking",
+            "claude-fable-5-thinking-xhigh",
+            "claude-fable-5-thinking-max",
+            "claude-fable-5-high-thinking-fast",
+        ]
+        for alias in aliases {
+            XCTAssertEqual(CursorAgentUsageService.normalizeDashboardModel(alias), "claude-fable-5")
+        }
+        XCTAssertEqual(
+            CursorAgentUsageService.normalizeDashboardModel("claude-opus-4-7-thinking-medium-fast"),
+            "claude-opus-4-7"
+        )
+        XCTAssertEqual(
+            CursorAgentUsageService.normalizeDashboardModel("claude-4.6-opus-max-thinking-fast"),
+            "claude-4.6-opus"
+        )
+        XCTAssertEqual(
+            CursorAgentUsageService.normalizeDashboardModel("claude-4-5-sonnet-20250929-thinking"),
+            "claude-4-5-sonnet"
+        )
+        XCTAssertEqual(CursorAgentUsageService.normalizeDashboardModel("qwen3.8-max"), "qwen3.8-max")
+        XCTAssertEqual(
+            CursorAgentUsageService.normalizeDashboardModel("MiniMax-M2.7-highspeed"),
+            "MiniMax-M2.7-highspeed"
+        )
+    }
+
     private func event(
         timestamp: Any,
         model: String,

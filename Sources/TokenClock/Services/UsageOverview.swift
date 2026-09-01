@@ -177,7 +177,10 @@ enum UsageOverviewBuilder {
         var foundUnknown = false
 
         for session in tool.sessions {
-            let name = ModelNormalizer.normalize(session.model) ?? unknownModel
+            let normalizedModel = tool.name == "Cursor Agent"
+                ? CursorAgentUsageService.normalizeDashboardModel(session.model)
+                : ModelNormalizer.normalize(session.model)
+            let name = normalizedModel ?? unknownModel
             foundUnknown = foundUnknown || name == unknownModel
             grouped[name, default: Accumulator()].add(
                 tokens: session.tokens,

@@ -22,6 +22,13 @@ import CSQLite
 ///
 /// 同时覆盖 Cursor IDE 和 Cursor Agent CLI，因为两者共用同一套账户系统。
 final class CursorAgentUsageService: @unchecked Sendable {
+    private static let dashboardRouteMarkers: Set<String> = [
+        "thinking", "fast", "low", "medium", "high", "xhigh",
+    ]
+    private static let dashboardMaxEffortFamilies = [
+        "gpt-", "claude-", "gemini-", "grok-", "composer-", "o1-", "o3-", "o4-",
+    ]
+
     static var cloudFetchEnabled: Bool {
         UserDefaults.standard.bool(for: .cursorCloudFetchEnabled, default: true)
     }
@@ -389,7 +396,7 @@ final class CursorAgentUsageService: @unchecked Sendable {
 
             dailyCache[dateKey, default: 0] += cacheRead
 
-            if let model = ModelNormalizer.normalize(event["model"] as? String) {
+            if let model = Self.normalizeDashboardModel(event["model"] as? String) {
                 dailyModelBuckets[dateKey, default: [:]][model, default: ModelBuckets()].merge(
                     ModelBuckets(
                         input: inputTokens,
@@ -428,6 +435,29 @@ final class CursorAgentUsageService: @unchecked Sendable {
         if let n = dict[key] as? Double { return Int(n) }
         if let s = dict[key] as? String, let n = Int(s) { return n }
         return 0
+    }
+
+    /// Cursor appends route markers in several orders, for example
+    /// `-thinking-medium`, `-high-thinking-fast`, or after a dated model ID.
+    /// Peel those markers only on Cursor data, then let the shared normalizer
+    /// remove an exposed date suffix. Official names from other providers stay intact.
+    static func normalizeDashboardModel(_ raw: String?) -> String? {
+        guard var model = raw?.trimmingCharacters(in: .whitespacesAndNewlines), !model.isEmpty else {
+            return nil
+        }
+        var removedRouteMarker = false
+        let lowercasedModel = model.lowercased()
+        let knownMaxEffortFamily = Self.dashboardMaxEffortFamilies.contains {
+            lowercasedModel.hasPrefix($0)
+        }
+        while let separator = model.lastIndex(of: "-") {
+            let marker = model[model.index(after: separator)...].lowercased()
+            guard Self.dashboardRouteMarkers.contains(marker)
+                    || (marker == "max" && (removedRouteMarker || knownMaxEffortFamily)) else { break }
+            model.removeSubrange(separator...)
+            removedRouteMarker = true
+        }
+        return ModelNormalizer.normalize(model)
     }
 
     // MARK: - Session 列表
