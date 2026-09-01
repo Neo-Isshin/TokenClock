@@ -121,6 +121,11 @@ struct SessionInfo: Identifiable, Hashable {
 enum UsageOverviewRoute: Hashable {
     case last30Days(selectedDateKey: String)
     case custom(startDateKey: String, endDateKey: String)
+
+    /// Report notifications always open the exact report interval in Custom.
+    static func reportRange(startDateKey: String, endDateKey: String) -> Self {
+        .custom(startDateKey: startDateKey, endDateKey: endDateKey)
+    }
 }
 
 /// 表盘铃铛里的轻量通知。报告通知可携带 Historical Usage 导航目标。

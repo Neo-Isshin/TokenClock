@@ -946,7 +946,7 @@ final class ViewModel: ObservableObject {
                 titleKey: "notification.dailyReportTitle",
                 startDateKey: key,
                 endDateKey: key,
-                route: .last30Days(selectedDateKey: key)
+                route: .reportRange(startDateKey: key, endDateKey: key)
             )
             UserDefaults.standard.setString(key, for: .lastDailyReportDateKey)
             guard let next = calendar.date(byAdding: .day, value: 1, to: cursor) else { break }
@@ -975,7 +975,7 @@ final class ViewModel: ObservableObject {
                 titleKey: "notification.weeklyReportTitle",
                 startDateKey: startKey,
                 endDateKey: endKey,
-                route: .custom(startDateKey: startKey, endDateKey: endKey)
+                route: .reportRange(startDateKey: startKey, endDateKey: endKey)
             )
             UserDefaults.standard.setString(endKey, for: .lastWeeklyReportEndDateKey)
             guard let next = calendar.date(byAdding: .day, value: 7, to: weekEnd) else { break }
@@ -1010,7 +1010,7 @@ final class ViewModel: ObservableObject {
                 titleKey: "notification.monthlyReportTitle",
                 startDateKey: startKey,
                 endDateKey: endKey,
-                route: .custom(startDateKey: startKey, endDateKey: endKey)
+                route: .reportRange(startDateKey: startKey, endDateKey: endKey)
             )
             UserDefaults.standard.setString(endKey, for: .lastMonthlyReportEndDateKey)
             guard let nextMonth = calendar.date(byAdding: .day, value: 1, to: monthEnd),
