@@ -20,9 +20,9 @@ jobs:
   update-snapshot:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
 
@@ -41,18 +41,30 @@ jobs:
       - name: Create pull request
         if: steps.diff.outputs.changed == 'true'
         run: |
-          BRANCH="chore/pricing-snapshot-$(date -u +%Y%m%d)"
+          BRANCH="chore/pricing-snapshot"
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git checkout -b "$BRANCH"
+          git checkout -B "$BRANCH"
           git add Sources/TokenClock/Resources/pricing-snapshot.json
           git commit -m "chore(pricing): refresh snapshot from LiteLLM ($(date -u +%Y-%m-%d))"
-          git push origin "$BRANCH"
-          gh pr create \
+          # This branch is owned by the workflow. Reusing it keeps reruns and
+          # later weekly refreshes idempotent while an earlier PR is still open.
+          git push --force origin "$BRANCH"
+
+          PR_NUMBER=$(gh pr list \
             --base main \
             --head "$BRANCH" \
-            --title "chore(pricing): refresh snapshot $(date -u +%Y-%m-%d)" \
-            --body "由 .github/workflows/update-pricing.yml 自动生成。逐模型核对 diff 中的单价变化后合并。" \
-            --label chore
+            --state open \
+            --json number \
+            --jq '.[0].number')
+          if [ -n "$PR_NUMBER" ]; then
+            echo "Updated existing pricing PR #$PR_NUMBER"
+          else
+            gh pr create \
+              --base main \
+              --head "$BRANCH" \
+              --title "chore(pricing): refresh snapshot $(date -u +%Y-%m-%d)" \
+              --body "由 .github/workflows/update-pricing.yml 自动生成。逐模型核对 diff 中的单价变化后合并。"
+          fi
         env:
           GH_TOKEN: ${{ github.token }}
