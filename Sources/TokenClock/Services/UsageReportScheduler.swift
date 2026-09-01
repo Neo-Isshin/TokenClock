@@ -21,7 +21,7 @@ enum UsageReportScheduler {
         var count = 0
         while cursor <= completedDate, count < 400 {
             let key = DateHelper.dateKey(from: cursor)
-            if let report = report(kind: .dailyReport, titleKey: "notification.dailyReportTitle", startDateKey: key, endDateKey: key, route: .last30Days(selectedDateKey: key)) { reports.append(report) }
+            if let report = report(kind: .dailyReport, titleKey: "notification.dailyReportTitle", startDateKey: key, endDateKey: key, route: .reportRange(startDateKey: key, endDateKey: key)) { reports.append(report) }
             UserDefaults.standard.setString(key, for: .lastDailyReportDateKey)
             guard let next = calendar.date(byAdding: .day, value: 1, to: cursor) else { break }
             cursor = next
@@ -45,7 +45,7 @@ enum UsageReportScheduler {
             let start = calendar.date(byAdding: .day, value: -6, to: weekEnd) ?? weekEnd
             let startKey = DateHelper.dateKey(from: start)
             let endKey = DateHelper.dateKey(from: weekEnd)
-            if let report = report(kind: .weeklyReport, titleKey: "notification.weeklyReportTitle", startDateKey: startKey, endDateKey: endKey, route: .custom(startDateKey: startKey, endDateKey: endKey)) { reports.append(report) }
+            if let report = report(kind: .weeklyReport, titleKey: "notification.weeklyReportTitle", startDateKey: startKey, endDateKey: endKey, route: .reportRange(startDateKey: startKey, endDateKey: endKey)) { reports.append(report) }
             UserDefaults.standard.setString(endKey, for: .lastWeeklyReportEndDateKey)
             guard let next = calendar.date(byAdding: .day, value: 7, to: weekEnd) else { break }
             weekEnd = next
@@ -73,7 +73,7 @@ enum UsageReportScheduler {
             let monthStart = calendar.date(from: calendar.dateComponents([.year, .month], from: monthEnd)) ?? monthEnd
             let startKey = DateHelper.dateKey(from: monthStart)
             let endKey = DateHelper.dateKey(from: monthEnd)
-            if let report = report(kind: .monthlyReport, titleKey: "notification.monthlyReportTitle", startDateKey: startKey, endDateKey: endKey, route: .custom(startDateKey: startKey, endDateKey: endKey)) { reports.append(report) }
+            if let report = report(kind: .monthlyReport, titleKey: "notification.monthlyReportTitle", startDateKey: startKey, endDateKey: endKey, route: .reportRange(startDateKey: startKey, endDateKey: endKey)) { reports.append(report) }
             UserDefaults.standard.setString(endKey, for: .lastMonthlyReportEndDateKey)
             guard let firstOfNext = calendar.date(byAdding: .day, value: 1, to: monthEnd), let firstOfFollowing = calendar.date(byAdding: .month, value: 1, to: firstOfNext), let nextEnd = calendar.date(byAdding: .day, value: -1, to: firstOfFollowing) else { break }
             monthEnd = nextEnd

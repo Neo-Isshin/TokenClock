@@ -93,6 +93,33 @@ final class UsageOverviewTests: XCTestCase {
         XCTAssertEqual(data.rows.first(where: { $0.name == "Unknown" })?.metrics.cacheReadTokens, 10)
     }
 
+    func testHistoricalCursorModelsDropRouteMarkersWithoutRewritingHistory() {
+        let aliases = [
+            DaySnapshot.Tool.Session(
+                id: "1", displayName: "1", tokens: 60, messages: 1, isActive: false,
+                model: "claude-fable-5-thinking-medium", cost: .unavailable,
+                cacheReadTokens: 10
+            ),
+            DaySnapshot.Tool.Session(
+                id: "2", displayName: "2", tokens: 40, messages: 1, isActive: false,
+                model: "claude-fable-5-high-thinking-fast", cost: .unavailable,
+                cacheReadTokens: 5
+            ),
+        ]
+        let cursor = DaySnapshot.Tool(
+            name: "Cursor Agent", tokens: 100, messages: 2, cacheRate: 15.0 / 115.0,
+            isActive: false, cost: .unavailable, cacheReadTokens: 15, sessions: aliases
+        )
+        let data = UsageOverviewBuilder.make(
+            startDate: date("2026-08-30"), endDate: date("2026-08-30"),
+            snapshots: [day("2026-08-30", tools: [cursor])], grouping: .model
+        )
+
+        XCTAssertEqual(data.rows.map(\.name), ["claude-fable-5"])
+        XCTAssertEqual(data.rows.first?.metrics.tokens, 100)
+        XCTAssertEqual(data.rows.first?.metrics.messages, 2)
+    }
+
     func testHistoryStoreRoundTripsExtendedFieldsAndReadsLegacySessions() throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("TokenClockOverviewTests-\(UUID().uuidString)", isDirectory: true)
@@ -160,6 +187,17 @@ final class UsageOverviewTests: XCTestCase {
         XCTAssertEqual(fresh.cost.value, 1, accuracy: 0.0001)
     }
 #endif
+
+    func testReportNotificationRouteUsesExactCustomRange() {
+        XCTAssertEqual(
+            UsageOverviewRoute.reportRange(startDateKey: "2026-08-24", endDateKey: "2026-08-30"),
+            .custom(startDateKey: "2026-08-24", endDateKey: "2026-08-30")
+        )
+        XCTAssertEqual(
+            UsageOverviewRoute.reportRange(startDateKey: "2026-08-30", endDateKey: "2026-08-30"),
+            .custom(startDateKey: "2026-08-30", endDateKey: "2026-08-30")
+        )
+    }
 
     private func tool(
         _ name: String, tokens: Int, messages: Int, cache: Int,
