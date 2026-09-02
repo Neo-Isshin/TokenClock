@@ -30,6 +30,7 @@ final class MockUsageService {
             ("Cline", "CL", "🤖"),
             ("Continue", "CN", "▶️"),
             ("Cursor Agent", "CA", "🖱️"),
+            ("ZCode", "ZC", "🅉"),
         ]
         let tools: [(name: String, abbr: String, emoji: String, unit: UsageMeasurementUnit, scope: UsageMeasurementScope)] =
             tokenTools.map { ($0.name, $0.abbr, $0.emoji, .tokens, .today) }

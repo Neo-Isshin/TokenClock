@@ -176,6 +176,16 @@ final class UsageServicePerformanceTests: XCTestCase {
         XCTAssertTrue(service.todaySessions().isEmpty)
     }
 
+    func testOpenClawCronDetectionAcceptsCurrentStringAndLegacyBlockContent() {
+        XCTAssertTrue(OpenClawUsageService.isCronUserLine(
+            #"{"message":{"role":"user","content":"[cron:abc task] run"}}"#
+        ))
+        XCTAssertTrue(OpenClawUsageService.isCronUserLine(openClawCronLine()))
+        XCTAssertFalse(OpenClawUsageService.isCronUserLine(
+            #"{"message":{"role":"user","content":"normal prompt"}}"#
+        ))
+    }
+
     func testGeminiCachedDetailsPreserveJSONLPriorityAndFallbackAfterDeletion() throws {
         let home = try makeTemporaryDirectory()
         let chats = home.appendingPathComponent("tmp/project-a/chats", isDirectory: true)

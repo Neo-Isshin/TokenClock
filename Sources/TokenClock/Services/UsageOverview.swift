@@ -251,6 +251,7 @@ enum UsageOverviewBuilder {
         case "Cline": return "🤖"
         case "Continue": return "▶️"
         case "Cursor Agent": return "🖱️"
+        case "ZCode": return "🅉"
         default: return "🧰"
         }
     }
@@ -285,8 +286,11 @@ enum UsageOverviewBuilder {
             if let exactCache {
                 cacheReadTokens += max(0, exactCache)
             } else if tokens > 0 || fallbackCacheRate > 0 {
-                let rate = min(0.999_999, max(0, fallbackCacheRate))
-                if rate > 0, tokens > 0 {
+                // Legacy rows only have a ratio. A non-finite value or a ratio outside
+                // [0, 1) is not invertible and must never be clamped near 100%: doing so
+                // turns a one-million-token row into a trillion-token estimate.
+                let rate = fallbackCacheRate
+                if rate.isFinite, rate > 0, rate < 1, tokens > 0 {
                     cacheReadTokens += Int((Double(tokens) * rate / (1 - rate)).rounded())
                 }
                 cacheIsExact = false

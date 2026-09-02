@@ -3,16 +3,18 @@ import SwiftUI
 /// 独立的订阅额度窗口。所有网络/本地服务读取都由用户打开窗口或点击刷新时触发。
 struct SubscriptionQuotaWindowView: View {
     private enum QuotaProvider: String, CaseIterable, Identifiable {
-        case codex, claude, antigravity, cursor
+        case codex, claude, antigravity, cursor, zhipu
         var id: String { rawValue }
     }
 
     @ObservedObject var viewModel: ViewModel
+    var onLayoutChange: (Bool) -> Void = { _ in }
     @State private var isEditingOrder = false
     @State private var providerOrder: [QuotaProvider]
 
-    init(viewModel: ViewModel) {
+    init(viewModel: ViewModel, onLayoutChange: @escaping (Bool) -> Void = { _ in }) {
         self.viewModel = viewModel
+        self.onLayoutChange = onLayoutChange
         _providerOrder = State(initialValue: Self.loadProviderOrder())
     }
 
@@ -20,7 +22,19 @@ struct SubscriptionQuotaWindowView: View {
         viewModel.codexQuota.status == .loading ||
         viewModel.claudeQuota.status == .loading ||
         viewModel.antigravityQuota.status == .loading ||
-        viewModel.cursorQuota.status == .loading
+        viewModel.cursorQuota.status == .loading ||
+        viewModel.zhipuQuota.status == .loading
+    }
+
+    private var visibleProviders: [QuotaProvider] {
+        providerOrder.filter(hasQuotaData)
+    }
+
+    private var isTwoColumn: Bool { visibleProviders.count >= 4 }
+
+    private var quotaColumns: [GridItem] {
+        Array(repeating: GridItem(.flexible(minimum: 300), spacing: 14, alignment: .top),
+              count: isTwoColumn ? 2 : 1)
     }
 
     var body: some View {
@@ -54,23 +68,40 @@ struct SubscriptionQuotaWindowView: View {
 
             Divider()
 
-            ScrollView(.vertical, showsIndicators: true) {
-                LazyVStack(spacing: 14) {
-                    ForEach(Array(providerOrder.enumerated()), id: \.element.id) { index, provider in
+            if visibleProviders.isEmpty {
+                VStack(spacing: 10) {
+                    if isLoading { ProgressView().controlSize(.regular) }
+                    Image(systemName: isLoading ? "arrow.triangle.2.circlepath" : "person.crop.circle.badge.questionmark")
+                        .font(.system(size: 24, weight: .medium))
+                        .foregroundStyle(.secondary)
+                    Text(L10n.shared.tr(isLoading ? "quota.loadingAll" : "quota.noActiveProviders"))
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                ScrollView(.vertical, showsIndicators: true) {
+                    LazyVGrid(columns: quotaColumns, alignment: .leading, spacing: 14) {
+                        ForEach(Array(visibleProviders.enumerated()), id: \.element.id) { index, provider in
                         HStack(alignment: .top, spacing: 8) {
                             if isEditingOrder {
-                                reorderControls(for: provider, at: index)
+                                reorderControls(for: provider, at: index, count: visibleProviders.count)
                             }
                             providerView(provider)
                                 .frame(maxWidth: .infinity)
                         }
                     }
+                    }
+                    .padding(18)
                 }
-                .padding(18)
             }
         }
-        .frame(minWidth: 380, idealWidth: 430, minHeight: 480, idealHeight: 650)
+        .frame(minWidth: isTwoColumn ? 700 : 380,
+               idealWidth: isTwoColumn ? 760 : 430,
+               minHeight: 480, idealHeight: 650)
         .background(Color(nsColor: .windowBackgroundColor))
+        .onAppear { onLayoutChange(isTwoColumn) }
+        .onChange(of: isTwoColumn) { onLayoutChange($0) }
     }
 
     @ViewBuilder
@@ -90,13 +121,19 @@ struct SubscriptionQuotaWindowView: View {
                 snapshot: viewModel.cursorQuota,
                 unavailableKey: "quota.cursorUnavailable"
             )
+        case .zhipu:
+            providerSection(
+                title: "🅉 Zhipu GLM",
+                snapshot: viewModel.zhipuQuota,
+                unavailableKey: "quota.zhipuUnavailable"
+            )
         }
     }
 
-    private func reorderControls(for provider: QuotaProvider, at index: Int) -> some View {
+    private func reorderControls(for provider: QuotaProvider, at index: Int, count: Int) -> some View {
         VStack(spacing: 4) {
             reorderButton("chevron.up", disabled: index == 0) { move(provider, by: -1) }
-            reorderButton("chevron.down", disabled: index == providerOrder.count - 1) { move(provider, by: 1) }
+            reorderButton("chevron.down", disabled: index == count - 1) { move(provider, by: 1) }
         }
         .padding(.top, 8)
     }
@@ -114,14 +151,27 @@ struct SubscriptionQuotaWindowView: View {
     }
 
     private func move(_ provider: QuotaProvider, by offset: Int) {
-        guard let source = providerOrder.firstIndex(of: provider) else { return }
-        let destination = source + offset
-        guard providerOrder.indices.contains(destination) else { return }
+        let visible = visibleProviders
+        guard let visibleSource = visible.firstIndex(of: provider) else { return }
+        let visibleDestination = visibleSource + offset
+        guard visible.indices.contains(visibleDestination),
+              let source = providerOrder.firstIndex(of: provider),
+              let destination = providerOrder.firstIndex(of: visible[visibleDestination]) else { return }
         providerOrder.swapAt(source, destination)
         UserDefaults.standard.set(
             providerOrder.map(\.rawValue),
             forKey: SettingsKey.subscriptionQuotaOrder.rawValue
         )
+    }
+
+    private func hasQuotaData(_ provider: QuotaProvider) -> Bool {
+        switch provider {
+        case .codex: return !viewModel.codexQuota.buckets.isEmpty
+        case .claude: return !viewModel.claudeQuota.buckets.isEmpty
+        case .antigravity: return !viewModel.antigravityQuota.groups.isEmpty
+        case .cursor: return !viewModel.cursorQuota.groups.isEmpty
+        case .zhipu: return !viewModel.zhipuQuota.groups.isEmpty
+        }
     }
 
     private static func loadProviderOrder() -> [QuotaProvider] {

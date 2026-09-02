@@ -107,6 +107,7 @@ final class ViewModel: ObservableObject {
     @Published private(set) var claudeQuota = ClaudeQuotaSnapshot.idle
     @Published private(set) var antigravityQuota = ProviderQuotaSnapshot.idle(source: "Antigravity local service")
     @Published private(set) var cursorQuota = ProviderQuotaSnapshot.idle(source: "Cursor dashboard")
+    @Published private(set) var zhipuQuota = ProviderQuotaSnapshot.idle(source: "ZCode Coding Plan")
     @Published private(set) var notifications: [TokenClockNotification] = []
     var unreadNotificationCount: Int { notifications.filter { !$0.isRead }.count }
 
@@ -266,6 +267,7 @@ final class ViewModel: ObservableObject {
     private var claudeQuotaTask: Task<Void, Never>?
     private var antigravityQuotaTask: Task<Void, Never>?
     private var cursorQuotaTask: Task<Void, Never>?
+    private var zhipuQuotaTask: Task<Void, Never>?
     private var cachedDateFormatter: DateFormatter?
     private var cachedDateFormatterKey = ""
 
@@ -281,6 +283,7 @@ final class ViewModel: ObservableObject {
     private let claudeQuotaService = ClaudeQuotaService()
     private let antigravityQuotaService = AntigravityQuotaService()
     private let cursorQuotaService = CursorQuotaService()
+    private let zhipuQuotaService = ZhipuQuotaService()
     private let hermesService = HermesUsageService()
     private let opencodeService = OpenCodeUsageService()
     private let qwenService = QwenCodeUsageService()
@@ -291,13 +294,20 @@ final class ViewModel: ObservableObject {
     private let clineService = ClineUsageService()
     private let continueService = ContinueUsageService()
     private let cursorAgentService = CursorAgentUsageService()
+    private let zcodeService = ZCodeUsageService()
 
-    private static let allToolNames = ["OpenClaw", "Claude Code", "Gemini CLI", "Codex", "Hermes", "OpenCode", "Qwen Code", "Copilot", "Grok", "Aider", "Antigravity", "Cline", "Continue", "Cursor Agent"]
+    private static let allToolNames = ["OpenClaw", "Claude Code", "Gemini CLI", "Codex", "Hermes", "OpenCode", "Qwen Code", "Copilot", "Grok", "Aider", "Antigravity", "Cline", "Continue", "Cursor Agent", "ZCode"]
 
     init() {
         // 加载启用的工具集合
         let saved = UserDefaults.standard.stringArray(for: .enabledTools)
-        let enabledTools = Set(saved ?? Self.allToolNames)
+        var enabledTools = Set(saved ?? Self.allToolNames)
+        if !UserDefaults.standard.bool(for: .zcodeSupportMigrated) {
+            let zcodeDB = PathConfig.defaultZCodeHome() + "/cli/db/db.sqlite"
+            if FileManager.default.fileExists(atPath: zcodeDB) { enabledTools.insert("ZCode") }
+            UserDefaults.standard.setBool(true, for: .zcodeSupportMigrated)
+            UserDefaults.standard.setStringArray(Array(enabledTools), for: .enabledTools)
+        }
         self.enabledTools = enabledTools
 
         // 为启用的工具生成占位 mock 数据，禁用的工具留 0（避免误导）
@@ -357,6 +367,8 @@ final class ViewModel: ObservableObject {
         antigravityQuotaTask = nil
         cursorQuotaTask?.cancel()
         cursorQuotaTask = nil
+        zhipuQuotaTask?.cancel()
+        zhipuQuotaTask = nil
     }
 
     func markNotificationsRead() {
@@ -417,7 +429,7 @@ final class ViewModel: ObservableObject {
         refreshSubscriptionQuotas()
     }
 
-    /// 四种订阅服务都只在额度窗口打开或用户按刷新时读取，不安装后台轮询。
+    /// 订阅服务只在额度窗口打开或用户按刷新时读取，不安装后台轮询。
     func refreshSubscriptionQuotas() {
         if codexQuota.status != .loading {
             codexQuotaTask?.cancel()
@@ -457,6 +469,16 @@ final class ViewModel: ObservableObject {
                 let result = await Task.detached(priority: .utility) { service.fetch() }.value
                 guard !Task.isCancelled else { return }
                 self?.cursorQuota = result
+            }
+        }
+        if zhipuQuota.status != .loading {
+            zhipuQuotaTask?.cancel()
+            zhipuQuota = .loading(previous: zhipuQuota)
+            let service = zhipuQuotaService
+            zhipuQuotaTask = Task { [weak self] in
+                let result = await Task.detached(priority: .utility) { service.fetch() }.value
+                guard !Task.isCancelled else { return }
+                self?.zhipuQuota = result
             }
         }
     }
@@ -515,6 +537,9 @@ final class ViewModel: ObservableObject {
             case "cursorAgent":
                 PathConfig.setCursorAgentPath(result.detectedPath)
                 savedPaths.append("🖱️ Cursor Agent: \(result.detail)")
+            case "zcode":
+                PathConfig.setZCodePath(result.detectedPath)
+                savedPaths.append("🅉 ZCode: \(result.detail)")
             default:
                 break
             }
@@ -1115,6 +1140,40 @@ final class ViewModel: ObservableObject {
             if enabled.contains("Cline") { incremental ? self.clineService.incrementalScan() : self.clineService.fullScan() }
             if enabled.contains("Continue") { incremental ? self.continueService.incrementalScan() : self.continueService.fullScan() }
             if enabled.contains("Cursor Agent") { incremental ? self.cursorAgentService.incrementalScan() : self.cursorAgentService.fullScan() }
+            if enabled.contains("ZCode") { incremental ? self.zcodeService.incrementalScan() : self.zcodeService.fullScan() }
+
+            if !incremental, enabled.contains("OpenClaw"),
+               UserDefaults.standard.int(for: .openclawHistoryRepairVersion) < 1 {
+                let days = AppConfig.History.retentionDays
+                let snapshots = self.openclawService.historicalSnapshots(retentionDays: days)
+                let startDate = Calendar.current.date(
+                    byAdding: .day, value: -days + 1,
+                    to: Calendar.current.startOfDay(for: Date())
+                ) ?? Date()
+                if HistoryStore.shared.replaceToolHistory(
+                    toolName: "OpenClaw", snapshotsByDate: snapshots,
+                    from: DateHelper.dateKey(from: startDate), through: DateHelper.todayKey()
+                ) {
+                    UserDefaults.standard.setInt(
+                        1, for: .openclawHistoryRepairVersion
+                    )
+                }
+            }
+            if !incremental, enabled.contains("ZCode"),
+               UserDefaults.standard.int(for: .zcodeHistoryImportVersion) < 1 {
+                let days = AppConfig.History.retentionDays
+                let startDate = Calendar.current.date(
+                    byAdding: .day, value: -days + 1,
+                    to: Calendar.current.startOfDay(for: Date())
+                ) ?? Date()
+                if HistoryStore.shared.replaceToolHistory(
+                    toolName: "ZCode",
+                    snapshotsByDate: self.zcodeService.historicalSnapshots(retentionDays: days),
+                    from: DateHelper.dateKey(from: startDate), through: DateHelper.todayKey()
+                ) {
+                    UserDefaults.standard.setInt(1, for: .zcodeHistoryImportVersion)
+                }
+            }
 
             // 后台线程：提取数据（避免与主线程读取竞争）
             var results: [String: ToolSnapshot] = [:]
@@ -1173,6 +1232,10 @@ final class ViewModel: ObservableObject {
             if enabled.contains("Cursor Agent") {
                 let u = self.cursorAgentService.todayUsage()
                 results["Cursor Agent"] = ToolSnapshot(tokens: u.tokens, messages: u.messages, recent: self.cursorAgentService.recentUsage(minutes: rateWindow).tokens, hourly: self.cursorAgentService.currentHourTokens(), active: self.cursorAgentService.isActive(), cacheRate: u.cacheRate, cost: self.cursorAgentService.todayCost(), cacheRead: self.cursorAgentService.todayCacheReadTokens(), sessions: self.cursorAgentService.todaySessions())
+            }
+            if enabled.contains("ZCode") {
+                let u = self.zcodeService.todayUsage()
+                results["ZCode"] = ToolSnapshot(tokens: u.tokens, messages: u.messages, recent: self.zcodeService.recentUsage(minutes: rateWindow).tokens, hourly: self.zcodeService.currentHourTokens(), active: self.zcodeService.isActive(), cacheRate: u.cacheRate, cost: self.zcodeService.todayCost(), cacheRead: self.zcodeService.todayCacheReadTokens(), sessions: self.zcodeService.todaySessions())
             }
 
             // 主线程：批量更新 @Published tools

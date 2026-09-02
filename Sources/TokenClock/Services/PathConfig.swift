@@ -29,6 +29,7 @@ enum PathConfig {
     private static let envCline = "CLINE_HOME"
     private static let envContinue = "CONTINUE_HOME"
     private static let envCursorAgent = "CURSOR_AGENT_HOME"
+    private static let envZCode = "ZCODE_HOME"
     private static let envKiroHome = "KIRO_HOME"
     private static let envCodeBuddyEndpoint = "CODEBUDDY_STATS_ENDPOINT"
 
@@ -154,6 +155,10 @@ enum PathConfig {
 
     static func cursorAgentHome() -> String {
         customPath(forKey: "cursorAgentPath") ?? envPath(envCursorAgent) ?? defaultCursorAgentHome()
+    }
+
+    static func zcodeHome() -> String {
+        customPath(forKey: "zcodePath") ?? envPath(envZCode) ?? defaultZCodeHome()
     }
 
     /// KIRO_HOME is the Kiro home itself; the official CLI session contract lives below it.
@@ -302,6 +307,14 @@ enum PathConfig {
         return WindowsProviderCatalog.entry(.cursorAgent).defaultPath
         #else
         return NSHomeDirectory() + "/.cursor"
+        #endif
+    }
+
+    static func defaultZCodeHome() -> String {
+        #if os(Windows)
+        return WindowsProviderCatalog.entry(.zcode).defaultPath
+        #else
+        return NSHomeDirectory() + "/.zcode"
         #endif
     }
 
@@ -492,6 +505,13 @@ enum PathConfig {
         return candidates
     }
 
+    static func zcodeCandidates() -> [String] {
+        var candidates: [String] = []
+        if let env = envPath(envZCode) { candidates.append(env) }
+        candidates.append(defaultZCodeHome())
+        return candidates
+    }
+
     // MARK: - 写入路径
 
     static func setOpenclawPath(_ path: String) { setCustomPath(path, forKey: "openclawPath") }
@@ -508,6 +528,7 @@ enum PathConfig {
     static func setClinePath(_ path: String) { setCustomPath(path, forKey: "clinePath") }
     static func setContinuePath(_ path: String) { setCustomPath(path, forKey: "continuePath") }
     static func setCursorAgentPath(_ path: String) { setCustomPath(path, forKey: "cursorAgentPath") }
+    static func setZCodePath(_ path: String) { setCustomPath(path, forKey: "zcodePath") }
     static func setKiroSessionsPath(_ path: String) { setCustomPath(path, forKey: "kiroSessionsPath") }
     static func setCodeBuddyEndpoint(_ endpoint: String) {
         #if os(Windows)
