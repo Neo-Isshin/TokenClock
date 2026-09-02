@@ -35,12 +35,12 @@ TokenClock 是一个置顶显示在桌面的小时钟。除了时间，它还会
 
 ## 你会得到什么
 
-- **14+ 种 AI 编程工具统一统计。** TokenClock 会自动寻找本地用量数据；路径特殊时也能在设置中手动选择。
+- **15+ 种 AI 编程工具统一统计。** TokenClock 会自动寻找本地用量数据；路径特殊时也能在设置中手动选择。
 - **主用量更接近真实消耗。** 重复读取的提示词缓存不会抬高主数字；新输入、缓存创建、输出和推理仍会正常计入。
 - **8 套精心设计的表盘。** Glass、Classic、Glacier、Midnight、Luxe、Antique、Railgun、Sky，并支持保存自定义表盘。
 - **不用离开桌面就能看明细。** 可按会话或模型分组、展开单行，并按百分比比较各工具消耗。
 - **API 等价费用。** 按当前公开 API 牌价把当日 token 消耗折算成美元（LiteLLM 目录叠加厂商官方校验，每周更新）。这不是订阅实际账单；代理或自定义模型可在设置中手动补价。
-- **订阅额度集中查看。** 本机账户可用时，可在同一面板查看 Codex、Claude Code、Antigravity 与 Cursor 的额度及重置时间；只有打开面板时才会查询。
+- **订阅额度集中查看。** 本机账户可用时，可在同一面板查看 Codex、Claude Code、Antigravity、Cursor 与智谱 GLM 的额度及重置时间。Cursor 模型和非 Cursor 模型分别显示，未登录的服务不会占据空卡片。
 - **不会弹出系统定位授权。** 自动天气通过公网 IP 大致判断城市，也可以自己选择城市。
 - **各平台保留原生体验。** macOS 使用 SwiftUI/AppKit，Windows 使用 Win32，Linux 使用 GTK3；工作流程一致，控件外观遵循各自系统。
 - **一键收起桌面组件。** macOS 可通过菜单栏仪表图标隐藏或恢复 TokenClock；Windows 可在表盘右键菜单选择 **隐藏 TokenClock**，再点击系统托盘图标恢复。
@@ -109,7 +109,7 @@ Windows 可能会对尚未签名的首个版本显示信誉提示。继续前请
 
 - **左键点击表盘：** 展开或收起用量详情。
 - **隐藏或恢复组件：** macOS 使用菜单栏仪表图标；Windows 从右键菜单隐藏，再从系统托盘恢复。
-- **Subscription Quota：** 查看 Codex、Claude Code、Antigravity 与 Cursor 的额度和重置时间。
+- **Subscription Quota：** 查看 Codex、Claude Code、Antigravity、Cursor 与智谱 GLM 的额度和重置时间。
 - **API 等价费用列：** 按公开 API 牌价折算，不代表订阅实际扣费（可在 Settings 中自定义代理价格）。
 - **By Session / By Model：** 切换会话或模型分组。
 - **By Percent：** 比较各工具的消耗占比。
@@ -127,7 +127,7 @@ Settings 中可以重新探测工具、开关数据源、修改路径、调整�
 | Codex | Hermes | OpenCode |
 | Qwen Code | GitHub Copilot CLI | Grok CLI |
 | Aider | Antigravity | Cline |
-| Continue | Cursor Agent | |
+| Continue | Cursor Agent | ZCode |
 
 多数工具不需要额外配置。如果某个工具把数据放在特殊位置，请打开 **Settings → Data Source Paths**，选择对应文件夹或文件。
 
