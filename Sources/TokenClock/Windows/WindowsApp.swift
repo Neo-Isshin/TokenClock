@@ -969,7 +969,7 @@ final class WindowsApp: @unchecked Sendable {
         defer { aboutDlg = nil; dlg_destroy(dlg) }
         dlg_add_brand_logo(dlg, 136, 22, 88, 88)
         dlg_add_title(dlg, "TokenClock", 112, 120, 180, 30)
-        dlg_add_static(dlg, "v1.5.4", 154, 154, 90, 22)
+        dlg_add_static(dlg, "v1.5.5", 154, 154, 90, 22)
         dlg_add_sep(dlg, 28, 188, 304)
         dlg_add_static(dlg, "Copyright © 2026 Neo-Isshin", 78, 210, 250, 22)
         dlg_add_static(dlg, L10n.shared.tr("about.license"), 128, 238, 180, 22)

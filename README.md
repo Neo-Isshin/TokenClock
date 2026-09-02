@@ -35,12 +35,12 @@ Click the clock for session and model details. Right-click it to change the face
 
 ## What you get
 
-- **14+ AI coding tools in one place.** TokenClock finds their local usage data automatically and lets you correct a path in Settings when needed.
+- **15+ AI coding tools in one place.** TokenClock finds their local usage data automatically and lets you correct a path in Settings when needed.
 - **A clearer usage total.** Reused prompt-cache reads stay out of the main number, while new input, cache creation, output, and reasoning still count.
 - **8 carefully designed clock faces.** Glass, Classic, Glacier, Midnight, Luxe, Antique, Railgun, and Sky, plus saved custom faces.
 - **Useful details without leaving the desktop.** Group usage by session or model, expand individual rows, and sort by percentage.
 - **API-equivalent cost.** Today's token usage converted to USD at current public API rates (LiteLLM catalog with official-provider overrides, refreshed weekly). This is not a subscription bill; custom proxy models can be priced manually in Settings.
-- **Subscription quotas in one panel.** View Codex, Claude Code, Antigravity, and Cursor limits and reset times when those local accounts are available. Checks run only when you open the panel.
+- **Subscription quotas in one panel.** View Codex, Claude Code, Antigravity, Cursor, and Zhipu GLM limits and reset times when those local accounts are available. Cursor Models and Other Models are shown separately; signed-out services stay hidden.
 - **Weather without a location permission popup.** Automatic weather uses an approximate city from your public IP, or you can choose a city yourself.
 - **A native experience on each platform.** macOS uses SwiftUI/AppKit, Windows uses Win32, and Linux uses GTK3. The workflow is shared while controls keep their native appearance.
 - **Hide the widget in one click.** On macOS, use the menu-bar gauge to hide or restore TokenClock. On Windows, choose **Hide TokenClock** from the clock's right-click menu and click the tray icon to bring it back.
@@ -109,7 +109,7 @@ Windows may show a reputation warning for an unsigned first release. Check that 
 
 - **Left-click the clock:** show or hide usage details.
 - **Hide or restore the widget:** use the menu-bar gauge on macOS; on Windows, choose **Hide TokenClock** and restore it from the system tray.
-- **Subscription Quota:** show Codex, Claude Code, Antigravity, and Cursor limits and reset times.
+- **Subscription Quota:** show Codex, Claude Code, Antigravity, Cursor, and Zhipu GLM limits and reset times.
 - **API-equivalent column:** estimated USD value at public API rates, not the amount charged by a subscription (customize proxy prices in Settings).
 - **By Session / By Model:** change how details are grouped.
 - **By Percent:** compare which tools consumed the most.
@@ -127,7 +127,7 @@ Settings includes automatic detection, tool switches, custom data paths, rate th
 | Codex | Hermes | OpenCode |
 | Qwen Code | GitHub Copilot CLI | Grok CLI |
 | Aider | Antigravity | Cline |
-| Continue | Cursor Agent | |
+| Continue | Cursor Agent | ZCode |
 
 Most tools need no setup. If a tool stores data somewhere unusual, open **Settings → Data Source Paths** and choose its folder or file.
 
