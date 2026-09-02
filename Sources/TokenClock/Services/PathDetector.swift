@@ -68,6 +68,7 @@ enum PathDetector {
             detectCline(),
             detectContinue(),
             detectCursorAgent(),
+            detectZCode(),
         ]
         #if os(Windows)
         results.append(detectKiro())
@@ -251,6 +252,35 @@ enum PathDetector {
         )
     }
     #endif
+
+    private static func detectZCode() -> DetectionResult {
+        let custom = UserDefaults.standard.string(for: .zcodePath)
+        let candidates = buildCandidates(
+            custom: custom,
+            envName: PathConfig.zcodeCandidates(),
+            defaults: [PathConfig.defaultZCodeHome()],
+            alternates: []
+        )
+        let match = findFirstValid(candidates: candidates, validator: { path in
+            let database = (path.lowercased().hasSuffix(".sqlite") || path.lowercased().hasSuffix(".db"))
+                ? path : path + "/cli/db/db.sqlite"
+            #if os(Windows)
+            return windowsSQLitePrepares(database, query: """
+                SELECT session_id, model_id, started_at, input_tokens, output_tokens,
+                       reasoning_tokens, cache_creation_input_tokens, cache_read_input_tokens
+                FROM model_usage LIMIT 1
+                """)
+            #else
+            var isDirectory: ObjCBool = false
+            return FileManager.default.fileExists(atPath: database, isDirectory: &isDirectory)
+                && !isDirectory.boolValue
+            #endif
+        })
+        return buildResult(
+            service: "zcode", emoji: "🅉", match: match, custom: custom,
+            defaultPath: PathConfig.defaultZCodeHome()
+        )
+    }
 
     private static func detectHermes() -> DetectionResult {
         let custom = UserDefaults.standard.string(for: .hermesPath)

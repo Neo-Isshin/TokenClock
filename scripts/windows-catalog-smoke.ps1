@@ -84,6 +84,11 @@ $env:CURSOR_AGENT_HOME = Join-Path $outputDirectory 'cursor-global-storage'
 New-Item -ItemType Directory -Path $env:CURSOR_AGENT_HOME -Force | Out-Null
 $cursorDb = Join-Path $env:CURSOR_AGENT_HOME 'state.vscdb'
 
+$env:ZCODE_HOME = Join-Path $outputDirectory 'zcode'
+$zcodeDbDirectory = Join-Path $env:ZCODE_HOME 'cli\db'
+New-Item -ItemType Directory -Path $zcodeDbDirectory -Force | Out-Null
+$zcodeDb = Join-Path $zcodeDbDirectory 'db.sqlite'
+
 $env:KIRO_HOME = Join-Path $outputDirectory 'kiro-home'
 $kiroSessions = Join-Path $env:KIRO_HOME 'sessions\cli'
 New-Item -ItemType Directory -Path $kiroSessions -Force | Out-Null
@@ -112,8 +117,9 @@ create(sys.argv[1], "CREATE TABLE sessions(started_at REAL, input_tokens INTEGER
 create(sys.argv[2], "CREATE TABLE session(tokens_input INTEGER, tokens_output INTEGER, tokens_reasoning INTEGER, tokens_cache_read INTEGER, tokens_cache_write INTEGER, time_created INTEGER)")
 create(sys.argv[3], "CREATE TABLE steps(step_payload BLOB, metadata BLOB)")
 create(sys.argv[4], "CREATE TABLE ItemTable(key TEXT, value TEXT)", ("INSERT INTO ItemTable(key, value) VALUES (?, ?)", ("cursorAuth/accessToken", "smoke-token")))
+create(sys.argv[5], "CREATE TABLE model_usage(session_id TEXT, model_id TEXT, started_at INTEGER, input_tokens INTEGER, output_tokens INTEGER, reasoning_tokens INTEGER, cache_creation_input_tokens INTEGER, cache_read_input_tokens INTEGER)")
 '@
-& $python.Source $pythonScript $hermesDb $openCodeDb $antigravityDb $cursorDb
+& $python.Source $pythonScript $hermesDb $openCodeDb $antigravityDb $cursorDb $zcodeDb
 if ($LASTEXITCODE -ne 0) { throw "SQLite fixture creation failed with exit code $LASTEXITCODE." }
 
 function Invoke-CatalogReport([string] $Path) {
@@ -125,9 +131,9 @@ function Invoke-CatalogReport([string] $Path) {
 
 $report = Invoke-CatalogReport $Out
 if ($report.platform -ne 'windows') { throw 'Catalog report has the wrong platform.' }
-if (@($report.providers).Count -ne 16) { throw "Expected 16 providers, got $(@($report.providers).Count)." }
+if (@($report.providers).Count -ne 17) { throw "Expected 17 providers, got $(@($report.providers).Count)." }
 $ids = @($report.providers | ForEach-Object id)
-if (@($ids | Sort-Object -Unique).Count -ne 16) { throw 'Provider IDs are not unique.' }
+if (@($ids | Sort-Object -Unique).Count -ne 17) { throw 'Provider IDs are not unique.' }
 foreach ($provider in $report.providers) {
     if ([string]::IsNullOrWhiteSpace($provider.defaultPath)) { throw "$($provider.id) has no declared default path." }
     if ($null -eq $provider.pathExists) { throw "$($provider.id) omitted pathExists." }
@@ -147,7 +153,7 @@ foreach ($provider in $report.providers) {
     }
 }
 
-$validProviderIds = @('openclaw', 'claudeCode', 'gemini', 'codex', 'hermes', 'opencode', 'qwen', 'copilot', 'aider', 'antigravity', 'cline', 'continue', 'cursorAgent')
+$validProviderIds = @('openclaw', 'claudeCode', 'gemini', 'codex', 'hermes', 'opencode', 'qwen', 'copilot', 'aider', 'antigravity', 'cline', 'continue', 'cursorAgent', 'zcode')
 foreach ($id in $validProviderIds) {
     $provider = $report.providers | Where-Object id -eq $id | Select-Object -First 1
     if (-not $provider.pathExists -or -not $provider.parserReadable) {

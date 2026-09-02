@@ -66,8 +66,8 @@ $events = New-Object Collections.ArrayList
 $metrics = New-Object Collections.ArrayList
 $failures = New-Object Collections.ArrayList
 $fluentChecks = New-Object Collections.ArrayList
-$providerCount = 16
-$fileSystemProviderCount = 15
+$providerCount = 17
+$fileSystemProviderCount = 16
 
 function Window-Rect([IntPtr]$Handle) {
     $r = New-Object TCWinTest+RECT
@@ -453,7 +453,7 @@ if($inlineCustomPassed){Capture "07f2-settings-custom-editor" $inlineCustom;Clos
 if((Wait-Control $d 716)-eq[IntPtr]::Zero){[void]$failures.Add("Settings accordion did not resume after closing the custom-face editor")}
 $d=Close-Section $d 713 716
 $d=Open-Section $d $pidApp 714 411;[void](Check-Fluent "settings-api-mica" $d 1);Capture "07e-settings-api" $d;Set-Check $d 411 0;$d=Close-Section $d 714 411
-$preSave=[ordered]@{aider=$analytics;rate="15";thresholds=$preThresholds;api=0;enabled=@(for($i=0;$i-lt$providerCount;$i++){if($i-eq9){1}else{0}});providerCount=$providerCount;fileSystemProviderCount=$fileSystemProviderCount;codeBuddyPath=$paths[15]}
+$preSave=[ordered]@{aider=$analytics;rate="15";thresholds=$preThresholds;api=0;enabled=@(for($i=0;$i-lt$providerCount;$i++){if($i-eq9){1}else{0}});providerCount=$providerCount;fileSystemProviderCount=$fileSystemProviderCount;codeBuddyPath=$paths[16]}
 $preSave|ConvertTo-Json -Depth 5|Set-Content -LiteralPath "$Out\settings-before-save.json" -Encoding UTF8
 Close-Dialog $d 1;Start-Sleep -Milliseconds 900
 Copy-Item -LiteralPath "$Out\localappdata\TokenClock\settings.json" -Destination "$Out\settings-after-disable.json" -Force
@@ -520,7 +520,7 @@ $result=[ordered]@{
   overview=[ordered]@{opened=($overview-ne[IntPtr]::Zero);customRangePassed=$overviewCustomPassed;closed=$overviewClosed;groupings=@('tool','model');periods=@('last7','last30','custom')}
   gdiResize=[ordered]@{sequence='Small -> Extra Large -> Medium';rounds=10;before=$gdiCycleBefore;after=$gdiCycleAfter;delta=$gdiCycleDelta;passed=($gdiCycleDelta-le2);samples=$gdiCycles}
   fluent=$fluentChecks
-  settings=[ordered]@{providerCount=$checks.Count;allProviderControls=($checks.Count-eq$providerCount);browseButtonCount=(($browse|Where-Object{$_-ne0}).Count);allBrowseButtons=(($browse|Where-Object{$_-ne0}).Count-eq$fileSystemProviderCount);codeBuddyHasNoBrowse=($browse[15]-eq0);cancelPassed=$cancelPassed;folderPickerFound=($picker-ne[IntPtr]::Zero);mouseWheelPassed=$settingsWheelPassed;inlineCustomEditorPassed=$inlineCustomPassed;detectLabel=$detectLabel;pricingCatalogBefore=$pricingCatalogBefore;pricingCatalogAfter=$pricingCatalogAfter;pricingRefreshReturned=($pricingCatalogAfter-match'Catalog:\s+\d+\s+models');pricingAddRowPassed=$pricingAddRowPassed;pricingCustomPersisted=$pricingCustomPersisted;pricingCustomRemoved=$pricingCustomRemoved;gdiReopen=[ordered]@{rounds=20;before=$settingsGdiBefore;after=$settingsGdiAfter;delta=$settingsGdiDelta;passed=($settingsGdiDelta-le2)};apiDisabled=$apiDisabled;apiNewPort=($null-ne$newUsage);apiRebind=($null-ne$rebindUsage);aiderTokens=if($aiderUsage){$aiderUsage.todayTokens}else{$null};rate=$savedRate;thresholds=$thresholds;expandedAiderPath=$expandedAider}
+  settings=[ordered]@{providerCount=$checks.Count;allProviderControls=($checks.Count-eq$providerCount);browseButtonCount=(($browse|Where-Object{$_-ne0}).Count);allBrowseButtons=(($browse|Where-Object{$_-ne0}).Count-eq$fileSystemProviderCount);codeBuddyHasNoBrowse=($browse[16]-eq0);cancelPassed=$cancelPassed;folderPickerFound=($picker-ne[IntPtr]::Zero);mouseWheelPassed=$settingsWheelPassed;inlineCustomEditorPassed=$inlineCustomPassed;detectLabel=$detectLabel;pricingCatalogBefore=$pricingCatalogBefore;pricingCatalogAfter=$pricingCatalogAfter;pricingRefreshReturned=($pricingCatalogAfter-match'Catalog:\s+\d+\s+models');pricingAddRowPassed=$pricingAddRowPassed;pricingCustomPersisted=$pricingCustomPersisted;pricingCustomRemoved=$pricingCustomRemoved;gdiReopen=[ordered]@{rounds=20;before=$settingsGdiBefore;after=$settingsGdiAfter;delta=$settingsGdiDelta;passed=($settingsGdiDelta-le2)};apiDisabled=$apiDisabled;apiNewPort=($null-ne$newUsage);apiRebind=($null-ne$rebindUsage);aiderTokens=if($aiderUsage){$aiderUsage.todayTokens}else{$null};rate=$savedRate;thresholds=$thresholds;expandedAiderPath=$expandedAider}
   custom=[ordered]@{name=$customName;rim=$customRim;hourWidth=$customHour;hand=$handAfter;saved=($customName-eq"Smoke Face"-and$customRim-eq"9.5"-and$customHour-eq"7")}
   aboutFound=($about-ne[IntPtr]::Zero);deleteConfirmFound=($deleteConfirm-ne[IntPtr]::Zero);api100Ms=$api100Ms;historyPassed=($null-ne$apiHistory);quitPassed=$quitPassed
   restart=[ordered]@{rect=$restartRect;apiPortPersisted=($null-ne$restartApi)};metrics=$metrics;final=Is-Alive $h

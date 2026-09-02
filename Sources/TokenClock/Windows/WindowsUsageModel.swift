@@ -23,6 +23,7 @@ final class WindowsUsageModel: @unchecked Sendable {
     private var clineService = ClineUsageService()
     private var continueService = ContinueUsageService()
     private var cursorAgentService = CursorAgentUsageService()
+    private var zcodeService = ZCodeUsageService()
     private var codeBuddyService: CodeBuddyStatsService?
     private var reloadServicesBeforeNextScan = false
 
@@ -39,6 +40,12 @@ final class WindowsUsageModel: @unchecked Sendable {
     init() {
         let saved = UserDefaults.standard.stringArray(for: .enabledTools)
         _enabledTools = WindowsProviderCatalog.enabledDisplayNames(saved: saved)
+        if !UserDefaults.standard.bool(for: .zcodeSupportMigrated) {
+            let database = PathConfig.defaultZCodeHome() + "\\cli\\db\\db.sqlite"
+            if FileManager.default.fileExists(atPath: database) { _enabledTools.insert("ZCode") }
+            UserDefaults.standard.setBool(true, for: .zcodeSupportMigrated)
+            UserDefaults.standard.setStringArray(Array(_enabledTools), for: .enabledTools)
+        }
         storedTools = MockUsageService.generateInitialData(enabledTools: _enabledTools)
 
         if !PathConfig.hasRunInitialDetection {
@@ -117,6 +124,37 @@ final class WindowsUsageModel: @unchecked Sendable {
         if enabledTools.contains("Cline") { incremental ? clineService.incrementalScan() : clineService.fullScan() }
         if enabledTools.contains("Continue") { incremental ? continueService.incrementalScan() : continueService.fullScan() }
         if enabledTools.contains("Cursor Agent") { incremental ? cursorAgentService.incrementalScan() : cursorAgentService.fullScan() }
+        if enabledTools.contains("ZCode") { incremental ? zcodeService.incrementalScan() : zcodeService.fullScan() }
+        if !incremental, enabledTools.contains("OpenClaw"),
+           UserDefaults.standard.int(for: .openclawHistoryRepairVersion) < 1 {
+            let days = AppConfig.History.retentionDays
+            let startDate = Calendar.current.date(
+                byAdding: .day, value: -days + 1,
+                to: Calendar.current.startOfDay(for: Date())
+            ) ?? Date()
+            if HistoryStore.shared.replaceToolHistory(
+                toolName: "OpenClaw",
+                snapshotsByDate: openclawService.historicalSnapshots(retentionDays: days),
+                from: DateHelper.dateKey(from: startDate), through: DateHelper.todayKey()
+            ) {
+                UserDefaults.standard.setInt(1, for: .openclawHistoryRepairVersion)
+            }
+        }
+        if !incremental, enabledTools.contains("ZCode"),
+           UserDefaults.standard.int(for: .zcodeHistoryImportVersion) < 1 {
+            let days = AppConfig.History.retentionDays
+            let startDate = Calendar.current.date(
+                byAdding: .day, value: -days + 1,
+                to: Calendar.current.startOfDay(for: Date())
+            ) ?? Date()
+            if HistoryStore.shared.replaceToolHistory(
+                toolName: "ZCode",
+                snapshotsByDate: zcodeService.historicalSnapshots(retentionDays: days),
+                from: DateHelper.dateKey(from: startDate), through: DateHelper.todayKey()
+            ) {
+                UserDefaults.standard.setInt(1, for: .zcodeHistoryImportVersion)
+            }
+        }
         var codeBuddyUsage: CodeBuddyStatsService.UsageSnapshot?
         if enabledTools.contains("CodeBuddy CLI") {
             if codeBuddyService == nil { codeBuddyService = CodeBuddyStatsService(endpoint: PathConfig.codeBuddyEndpoint()) }
@@ -179,6 +217,10 @@ final class WindowsUsageModel: @unchecked Sendable {
         if enabledTools.contains("Cursor Agent") {
             let usage = cursorAgentService.todayUsage()
             results["Cursor Agent"] = snapshot(usage, cursorAgentService.recentUsage(minutes: rateWindowMinutes).tokens, cursorAgentService.currentHourTokens(), cursorAgentService.isActive(), cursorAgentService.todaySessions())
+        }
+        if enabledTools.contains("ZCode") {
+            let usage = zcodeService.todayUsage()
+            results["ZCode"] = snapshot(usage, zcodeService.recentUsage(minutes: rateWindowMinutes).tokens, zcodeService.currentHourTokens(), zcodeService.isActive(), zcodeService.todaySessions(), measurementValue: nil, measurementScope: .today, zcodeService.todayCost(), zcodeService.todayCacheReadTokens())
         }
         if enabledTools.contains("CodeBuddy CLI") {
             let value = codeBuddyUsage?.tokens ?? 0
@@ -265,6 +307,7 @@ final class WindowsUsageModel: @unchecked Sendable {
         if enabledTools.contains("Cline") { clineService = ClineUsageService() }
         if enabledTools.contains("Continue") { continueService = ContinueUsageService() }
         if enabledTools.contains("Cursor Agent") { cursorAgentService = CursorAgentUsageService() }
+        if enabledTools.contains("ZCode") { zcodeService = ZCodeUsageService() }
         if enabledTools.contains("CodeBuddy CLI") {
             codeBuddyService = CodeBuddyStatsService(endpoint: PathConfig.codeBuddyEndpoint())
         }

@@ -127,6 +127,8 @@ final class WindowsApp: @unchecked Sendable {
     private let antigravityQuotaState = ProviderQuotaStateBox(source: "Antigravity local service")
     private let cursorQuotaService = CursorQuotaService()
     private let cursorQuotaState = ProviderQuotaStateBox(source: "Cursor dashboard")
+    private let zhipuQuotaService = ZhipuQuotaService()
+    private let zhipuQuotaState = ProviderQuotaStateBox(source: "ZCode Coding Plan")
     fileprivate var customCfg = WindowsCustomTheme()   // 自定义主题编辑器在用的配置
     fileprivate var editorDlg: UnsafeMutableRawPointer?
     fileprivate var settingsDlg: UnsafeMutableRawPointer?
@@ -146,7 +148,7 @@ final class WindowsApp: @unchecked Sendable {
 
     private enum OverviewPeriod { case week, month, custom }
     private enum OverviewChartStyle { case automatic, line, stacked }
-    private enum QuotaProvider: String, CaseIterable { case codex, claude, antigravity, cursor }
+    private enum QuotaProvider: String, CaseIterable { case codex, claude, antigravity, cursor, zhipu }
     private var overviewPeriod: OverviewPeriod = .week
     private var overviewChartStyle: OverviewChartStyle = .automatic
     private var overviewSelectedDayKey: String?
@@ -547,6 +549,13 @@ final class WindowsApp: @unchecked Sendable {
         }
         if cursorQuotaState.begin(force: force) {
             let service = cursorQuotaService, state = cursorQuotaState
+            DispatchQueue.global(qos: .userInitiated).async {
+                state.finish(service.fetch())
+                if let dialog = WindowsApp.shared.quotaDlg { dlg_post_command(dialog, 980) }
+            }
+        }
+        if zhipuQuotaState.begin(force: force) {
+            let service = zhipuQuotaService, state = zhipuQuotaState
             DispatchQueue.global(qos: .userInitiated).async {
                 state.finish(service.fetch())
                 if let dialog = WindowsApp.shared.quotaDlg { dlg_post_command(dialog, 980) }
@@ -1046,11 +1055,11 @@ final class WindowsApp: @unchecked Sendable {
         case 983:
             quotaOrderEditing.toggle()
             rebuildSubscriptionQuotaDialog()
-        case 990...993:
+        case 990...994:
             moveQuotaProvider(atDefaultIndex: Int(id - 990), by: -1)
             rebuildSubscriptionQuotaDialog()
-        case 994...997:
-            moveQuotaProvider(atDefaultIndex: Int(id - 994), by: 1)
+        case 1000...1004:
+            moveQuotaProvider(atDefaultIndex: Int(id - 1000), by: 1)
             rebuildSubscriptionQuotaDialog()
         default: break
         }
@@ -1060,71 +1069,77 @@ final class WindowsApp: @unchecked Sendable {
         guard let dialog = quotaDlg else { return }
         let codex = codexQuotaState.snapshot(), claude = claudeQuotaState.snapshot()
         let antigravity = antigravityQuotaState.snapshot(), cursor = cursorQuotaState.snapshot()
-        let estimatedBuckets = codex.buckets.count + claude.buckets.count
-            + antigravity.groups.reduce(0) { $0 + $1.buckets.count }
-            + cursor.groups.reduce(0) { $0 + $1.buckets.count }
-        let contentHeight = max(680, 230 + estimatedBuckets * 82)
-        dlg_reset_content(dialog, Int32(contentHeight))
-        dlg_add_title(dialog, L10n.shared.tr("quota.windowTitle"), 24, 16, 270, 30)
-        dlg_add_subtitle(dialog, L10n.shared.tr("quota.windowSubtitle"), 24, 47, 390, 22)
-        dlg_add_push(dialog, 983, L10n.shared.tr(quotaOrderEditing ? "quota.finishOrder" : "quota.editOrder"), 254, 16, 76, 30)
-        dlg_add_push(dialog, 981, L10n.shared.tr("quota.retry"), 338, 16, 98, 30)
-        var y: Int32 = 82
-        for provider in quotaProviderOrder {
+        let zhipu = zhipuQuotaState.snapshot()
+        typealias Card = (provider: QuotaProvider, title: String, plan: String?, status: CodexQuotaStatus, buckets: [CodexQuotaBucket])
+        let allCards: [Card] = quotaProviderOrder.map { provider in
             switch provider {
-            case .codex:
-                y = appendQuotaDialogProvider(dialog, provider: provider, title: "🤖 Codex", plan: codex.planType,
-                    status: codex.status, buckets: codex.buckets,
-                    unavailable: L10n.shared.tr("quota.codexUnavailable"), y: y)
-            case .claude:
-                y = appendQuotaDialogProvider(dialog, provider: provider, title: "✳️ Claude Code", plan: claude.planType,
-                    status: claude.status, buckets: claude.buckets,
-                    unavailable: L10n.shared.tr("quota.claudeUnavailable"), y: y)
-            case .antigravity:
-                y = appendQuotaDialogProvider(dialog, provider: provider, title: "🛸 Antigravity", plan: antigravity.planType,
-                    status: antigravity.status, buckets: antigravity.groups.flatMap(\.buckets),
-                    unavailable: L10n.shared.tr("quota.antigravityUnavailable"), y: y)
-            case .cursor:
-                y = appendQuotaDialogProvider(dialog, provider: provider, title: "🖱️ Cursor", plan: cursor.planType,
-                    status: cursor.status, buckets: cursor.groups.flatMap(\.buckets),
-                    unavailable: L10n.shared.tr("quota.cursorUnavailable"), y: y)
+            case .codex: return (provider, "🤖 Codex", codex.planType, codex.status, codex.buckets)
+            case .claude: return (provider, "✳️ Claude Code", claude.planType, claude.status, claude.buckets)
+            case .antigravity: return (provider, "🛸 Antigravity", antigravity.planType, antigravity.status, antigravity.groups.flatMap(\.buckets))
+            case .cursor: return (provider, "🖱️ Cursor", cursor.planType, cursor.status, cursor.groups.flatMap(\.buckets))
+            case .zhipu: return (provider, "🅉 Zhipu GLM", zhipu.planType, zhipu.status, zhipu.groups.flatMap(\.buckets))
             }
         }
-        dlg_add_push(dialog, 982, L10n.shared.language == .en ? "Close" : "关闭", 336, y + 8, 100, 30)
+        let cards = allCards.filter { !$0.buckets.isEmpty }
+        let anyLoading = allCards.contains { $0.status == .loading }
+        let twoColumns = cards.count >= 4
+        let dialogWidth: Int32 = twoColumns ? 900 : 470
+        win_resize(dialog, dialogWidth, 700)
+        let estimatedRows = cards.reduce(0) { $0 + max(1, $1.buckets.count) }
+        let contentHeight = max(680, 220 + (twoColumns ? (estimatedRows + 1) / 2 : estimatedRows) * 82)
+        dlg_reset_content(dialog, Int32(contentHeight))
+        dlg_add_title(dialog, L10n.shared.tr("quota.windowTitle"), 24, 16, 270, 30)
+        dlg_add_subtitle(dialog, L10n.shared.tr("quota.windowSubtitle"), 24, 47, dialogWidth - 80, 22)
+        dlg_add_push(dialog, 983, L10n.shared.tr(quotaOrderEditing ? "quota.finishOrder" : "quota.editOrder"), dialogWidth - 216, 16, 76, 30)
+        dlg_add_push(dialog, 981, L10n.shared.tr("quota.retry"), dialogWidth - 132, 16, 98, 30)
+        guard !cards.isEmpty else {
+            dlg_add_card(dialog, 22, 92, dialogWidth - 56, 92)
+            dlg_add_subtitle(dialog, L10n.shared.tr(anyLoading ? "quota.loadingAll" : "quota.noActiveProviders"), 40, 122, dialogWidth - 92, 32)
+            dlg_add_push(dialog, 982, L10n.shared.language == .en ? "Close" : "关闭", dialogWidth - 134, 204, 100, 30)
+            return
+        }
+        var columnY: [Int32] = [82, 82]
+        let cardWidth: Int32 = twoColumns ? 414 : dialogWidth - 56
+        for (index, card) in cards.enumerated() {
+            let column = twoColumns ? index % 2 : 0
+            let x: Int32 = column == 0 ? 22 : 464
+            columnY[column] = appendQuotaDialogProvider(
+                dialog, provider: card.provider, title: card.title, plan: card.plan,
+                status: card.status, buckets: card.buckets,
+                x: x, width: cardWidth, y: columnY[column],
+                visibleIndex: index, visibleCount: cards.count
+            )
+        }
+        let bottom = columnY.max() ?? 82
+        dlg_add_push(dialog, 982, L10n.shared.language == .en ? "Close" : "关闭", dialogWidth - 134, bottom + 8, 100, 30)
     }
 
     private func appendQuotaDialogProvider(
         _ dialog: UnsafeMutableRawPointer, provider: QuotaProvider, title: String, plan: String?,
-        status: CodexQuotaStatus, buckets: [CodexQuotaBucket], unavailable: String, y: Int32
+        status: CodexQuotaStatus, buckets: [CodexQuotaBucket],
+        x: Int32, width: Int32, y: Int32, visibleIndex: Int, visibleCount: Int
     ) -> Int32 {
         var cursorY = y
         let planText = plan.map { " · \(displayPlan($0))" } ?? ""
         if quotaOrderEditing, let defaultIndex = QuotaProvider.allCases.firstIndex(of: provider) {
-            let current = quotaProviderOrder.firstIndex(of: provider) ?? 0
-            dlg_add_push(dialog, 990 + Int32(defaultIndex), current == 0 ? "·" : "↑", 22, cursorY - 2, 24, 22)
-            dlg_add_push(dialog, 994 + Int32(defaultIndex), current == quotaProviderOrder.count - 1 ? "·" : "↓", 50, cursorY - 2, 24, 22)
-            dlg_add_section(dialog, title + planText, 82, cursorY, 336, 22)
+            dlg_add_push(dialog, 990 + Int32(defaultIndex), visibleIndex == 0 ? "·" : "↑", x, cursorY - 2, 24, 22)
+            dlg_add_push(dialog, 1000 + Int32(defaultIndex), visibleIndex == visibleCount - 1 ? "·" : "↓", x + 28, cursorY - 2, 24, 22)
+            dlg_add_section(dialog, title + planText, x + 60, cursorY, width - 64, 22)
         } else {
-            dlg_add_section(dialog, title + planText, 28, cursorY, 390, 22)
+            dlg_add_section(dialog, title + planText, x + 6, cursorY, width - 12, 22)
         }
         cursorY += 28
-        if buckets.isEmpty {
-            dlg_add_card(dialog, 22, cursorY, 414, 66)
-            let message = status == .loading ? L10n.shared.tr("quota.loadingProvider", title) : unavailable
-            dlg_add_subtitle(dialog, message, 36, cursorY + 11, 380, 44)
-            return cursorY + 80
-        }
         for bucket in buckets {
-            dlg_add_card(dialog, 22, cursorY, 414, 72)
+            dlg_add_card(dialog, x, cursorY, width, 72)
             let label = bucket.name.isEmpty ? quotaWindowLabel(minutes: bucket.windowMinutes) : bucket.name
             let percent = String(format: "%.0f%% %@", bucket.remainingPercent, L10n.shared.tr("quota.remainingLabel"))
-            dlg_add_static(dialog, label, 36, cursorY + 8, 230, 20)
-            dlg_add_static(dialog, percent, 302, cursorY + 8, 114, 20)
-            dlg_add_progress(dialog, 36, cursorY + 32, 380, 8,
+            dlg_add_static(dialog, label, x + 14, cursorY + 8, width - 160, 20)
+            dlg_add_static(dialog, percent, x + width - 128, cursorY + 8, 114, 20)
+            dlg_add_progress(dialog, x + 14, cursorY + 32, width - 34, 8,
                              Int32(bucket.remainingPercent.rounded()))
             if let reset = bucket.resetsAt {
                 let labels = quotaResetLabels(reset)
-                dlg_add_subtitle(dialog, "\(labels.relative) · \(labels.absolute)", 36, cursorY + 49, 370, 17)
+                dlg_add_subtitle(dialog, "\(labels.relative) · \(labels.absolute)", x + 14, cursorY + 49, width - 28, 17)
             }
             cursorY += 80
         }

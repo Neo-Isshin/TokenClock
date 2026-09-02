@@ -6,14 +6,14 @@ import XCTest
 final class WindowsProviderRegistryTests: XCTestCase {
     func testRegistryRetainsExistingFourteenProvidersAndAddsScopedProviders() throws {
         let entries = WindowsProviderCatalog.orderedEntries
-        XCTAssertEqual(entries.count, 16)
+        XCTAssertEqual(entries.count, 17)
         XCTAssertEqual(Set(entries.map(\.id)).count, entries.count)
         XCTAssertEqual(Set(entries.map(\.displayName)).count, entries.count)
 
         let legacyNames: Set<String> = [
             "OpenClaw", "Claude Code", "Gemini CLI", "Codex", "Hermes", "OpenCode",
             "Qwen Code", "Copilot", "Grok", "Aider", "Antigravity", "Cline",
-            "Continue", "Cursor Agent",
+            "Continue", "Cursor Agent", "ZCode",
         ]
         XCTAssertTrue(legacyNames.isSubset(of: Set(entries.map(\.displayName))))
         for name in legacyNames {
@@ -40,7 +40,7 @@ final class WindowsProviderRegistryTests: XCTestCase {
 
     func testMissingSettingsPreferenceUsesOnlyDefaultEnabledProviders() {
         let defaults = WindowsProviderCatalog.enabledDisplayNames(saved: nil)
-        XCTAssertEqual(defaults.count, 14)
+        XCTAssertEqual(defaults.count, 15)
         XCTAssertFalse(defaults.contains("Kiro CLI"))
         XCTAssertFalse(defaults.contains("CodeBuddy CLI"))
         XCTAssertEqual(WindowsProviderCatalog.enabledDisplayNames(saved: []), [])

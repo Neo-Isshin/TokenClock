@@ -998,12 +998,17 @@ void win_render_clock(int w, int h, int hh, int mm, int ss, const win_theme *t, 
         if (icon != TC_ICON_NONE) {
             const wchar_t *label = text_after_icon(wb);
             const float iconSize = size * 1.2f;
-            draw_color_icon(gfx, icon, (float)px + iconSize / 2.0f, (float)py, iconSize);
+            const float iconRight = (float)px + 16.0f * (float)S;
+            const float labelLeft = iconRight + 0.5f * (float)S;
+            const float labelRight = (float)px + 41.0f * (float)S;
+            draw_color_icon(gfx, icon, iconRight - iconSize / 2.0f,
+                            (float)py - 0.5f * (float)S, iconSize);
             if (label[0]) {
                 Gdiplus::Font f(&fam, size, Gdiplus::FontStyleRegular, Gdiplus::UnitPixel);
                 Gdiplus::SolidBrush b(cr(argb));
-                Gdiplus::StringFormat sf; sf.SetAlignment(Gdiplus::StringAlignmentNear); sf.SetLineAlignment(Gdiplus::StringAlignmentCenter);
-                Gdiplus::RectF rect((Gdiplus::REAL)(px + iconSize + 4.0f), (Gdiplus::REAL)(py - size), 180.0f, size * 2.0f);
+                Gdiplus::StringFormat sf; sf.SetAlignment(Gdiplus::StringAlignmentFar); sf.SetLineAlignment(Gdiplus::StringAlignmentCenter);
+                Gdiplus::RectF rect(labelLeft, (Gdiplus::REAL)(py - size),
+                                    labelRight - labelLeft, size * 2.0f);
                 gfx.DrawString(label, -1, &f, rect, &sf, &b);
             }
             return;

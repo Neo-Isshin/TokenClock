@@ -199,6 +199,45 @@ final class UsageOverviewTests: XCTestCase {
         )
     }
 
+    func testInvalidLegacyCacheRateNeverExplodesDisplayedTokens() {
+        let legacy = DaySnapshot.Tool(
+            name: "OpenClaw", tokens: 901_873, messages: 39,
+            cacheRate: 1.084_587_297_768_089_3, isActive: false,
+            cost: .unavailable, cacheReadTokens: nil, sessions: []
+        )
+        let data = UsageOverviewBuilder.make(
+            startDate: date("2026-08-05"), endDate: date("2026-08-05"),
+            snapshots: [day("2026-08-05", tools: [legacy])],
+            grouping: .tool, includingCacheRead: true
+        )
+        XCTAssertEqual(data.summary.cacheReadTokens, 0)
+        XCTAssertEqual(data.summary.displayedTokens(includingCacheRead: true), 901_873)
+    }
+
+    func testProviderHistoryRepairPreservesOtherToolsAndRemovesStaleProviderDays() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("TokenClockProviderRepair-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = HistoryStore(path: directory.appendingPathComponent("history.sqlite"))
+        store.upsertDay(dateKey: "2026-08-05", snapshots: [
+            ToolSnapshot(name: "OpenClaw", tokens: 901_873, messages: 39, cacheRate: 1.08, isActive: false),
+            ToolSnapshot(name: "Codex", tokens: 123, messages: 2, cacheRate: 0, isActive: false),
+        ])
+        store.upsertDay(dateKey: "2026-08-06", snapshots: [
+            ToolSnapshot(name: "OpenClaw", tokens: 456, messages: 3, cacheRate: 0.5, isActive: false),
+            ToolSnapshot(name: "Codex", tokens: 789, messages: 4, cacheRate: 0, isActive: false),
+        ])
+        store.replaceToolHistory(
+            toolName: "OpenClaw",
+            snapshotsByDate: ["2026-08-06": ToolSnapshot(name: "OpenClaw", tokens: 10, messages: 1, cacheRate: 0.25, isActive: false, cacheReadTokens: 3)],
+            from: "2026-08-05", through: "2026-08-06"
+        )
+        let days = store.query(from: "2026-08-05", through: "2026-08-06")
+        XCTAssertNil(days.first(where: { $0.date == "2026-08-05" })?.tools.first(where: { $0.name == "OpenClaw" }))
+        XCTAssertEqual(days.first(where: { $0.date == "2026-08-06" })?.tools.first(where: { $0.name == "OpenClaw" })?.tokens, 10)
+        XCTAssertEqual(days.first(where: { $0.date == "2026-08-05" })?.tools.first(where: { $0.name == "Codex" })?.tokens, 123)
+    }
+
     private func tool(
         _ name: String, tokens: Int, messages: Int, cache: Int,
         cost: CostEstimate

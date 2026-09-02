@@ -10,6 +10,7 @@ enum WindowsProviderCatalog {
     enum ProviderID: String, CaseIterable {
         case openclaw, claudeCode, gemini, codex, hermes, opencode, qwen
         case copilot, grok, aider, antigravity, cline, `continue`, cursorAgent
+        case zcode
         case kiro, codeBuddy
     }
 
@@ -156,6 +157,10 @@ enum WindowsProviderCatalog {
                   defaultPath: roaming + "\\Cursor\\User\\globalStorage", alternatePaths: [],
                   dataKind: .cursorStateDatabase, measurementUnit: .tokens, measurementScope: .today, statisticsSupport: .parsed,
                   sourceKind: .fileSystem, defaultEnabled: true),
+            Entry(id: .zcode, displayName: "ZCode", abbreviation: "ZC", emoji: "🅉", environmentOverrides: [official("ZCODE_HOME")],
+                  defaultPath: user + "\\.zcode", alternatePaths: [], dataKind: .sqliteDirectory,
+                  measurementUnit: .tokens, measurementScope: .today, statisticsSupport: .parsed,
+                  sourceKind: .fileSystem, defaultEnabled: true),
             // Kiro documents KIRO_HOME plus this exact session location, but does not publish
             // stable usage fields in either file. Detect the contract without inventing counts.
             Entry(id: .kiro, displayName: "Kiro CLI", abbreviation: "KI", emoji: "🟦", environmentOverrides: [
@@ -219,6 +224,7 @@ enum WindowsProviderCatalog {
         case .cline: return PathConfig.clineHome()
         case .continue: return PathConfig.continueHome()
         case .cursorAgent: return PathConfig.cursorAgentHome()
+        case .zcode: return PathConfig.zcodeHome()
         case .kiro: return PathConfig.kiroSessionsHome()
         case .codeBuddy: return PathConfig.codeBuddyEndpoint()
         }
@@ -240,6 +246,7 @@ enum WindowsProviderCatalog {
         case .cline: PathConfig.setClinePath(value)
         case .continue: PathConfig.setContinuePath(value)
         case .cursorAgent: PathConfig.setCursorAgentPath(value)
+        case .zcode: PathConfig.setZCodePath(value)
         case .kiro: PathConfig.setKiroSessionsPath(value)
         case .codeBuddy: PathConfig.setCodeBuddyEndpoint(value)
         }

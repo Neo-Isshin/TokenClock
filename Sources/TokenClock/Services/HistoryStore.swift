@@ -219,6 +219,66 @@ final class HistoryStore: @unchecked Sendable {
         }
     }
 
+    /// Replace one provider's rows inside a bounded date interval without
+    /// touching any other tool. Used for repairable provider-local history.
+    @discardableResult
+    func replaceToolHistory(
+        toolName: String,
+        snapshotsByDate: [String: ToolSnapshot],
+        from startDateKey: String,
+        through endDateKey: String
+    ) -> Bool {
+        ioQueue.sync {
+            guard let db else { return false }
+            sqlite3_exec(db, "BEGIN IMMEDIATE", nil, nil, nil)
+            var committed = false
+            defer { sqlite3_exec(db, committed ? "COMMIT" : "ROLLBACK", nil, nil, nil) }
+
+            var delete: OpaquePointer?
+            guard sqlite3_prepare_v2(db, """
+                DELETE FROM daily_snapshots
+                WHERE tool_name = ?1 AND date_key BETWEEN ?2 AND ?3
+                """, -1, &delete, nil) == SQLITE_OK else { return false }
+            sqlite3_bind_text(delete, 1, toolName, -1, Self.SQLITE_TRANSIENT)
+            sqlite3_bind_text(delete, 2, startDateKey, -1, Self.SQLITE_TRANSIENT)
+            sqlite3_bind_text(delete, 3, endDateKey, -1, Self.SQLITE_TRANSIENT)
+            let deleteResult = sqlite3_step(delete)
+            sqlite3_finalize(delete)
+            guard deleteResult == SQLITE_DONE else { return false }
+
+            var insert: OpaquePointer?
+            guard sqlite3_prepare_v2(db, """
+                INSERT INTO daily_snapshots
+                  (date_key, tool_name, tokens, messages, cache_rate, is_active, settled_at,
+                   sessions_json, cache_read_tokens, cost_value, cost_complete, cost_available,
+                   accounting_version)
+                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
+                """, -1, &insert, nil) == SQLITE_OK else { return false }
+            defer { sqlite3_finalize(insert) }
+            let now = ISO8601DateFormatter().string(from: Date())
+            for (dateKey, snapshot) in snapshotsByDate.sorted(by: { $0.key < $1.key }) {
+                guard dateKey >= startDateKey, dateKey <= endDateKey else { continue }
+                sqlite3_reset(insert); sqlite3_clear_bindings(insert)
+                sqlite3_bind_text(insert, 1, dateKey, -1, Self.SQLITE_TRANSIENT)
+                sqlite3_bind_text(insert, 2, toolName, -1, Self.SQLITE_TRANSIENT)
+                sqlite3_bind_int64(insert, 3, Int64(snapshot.tokens))
+                sqlite3_bind_int64(insert, 4, Int64(snapshot.messages))
+                sqlite3_bind_double(insert, 5, snapshot.cacheRate)
+                sqlite3_bind_int(insert, 6, snapshot.isActive ? 1 : 0)
+                sqlite3_bind_text(insert, 7, now, -1, Self.SQLITE_TRANSIENT)
+                sqlite3_bind_text(insert, 8, Self.encodeSessions(snapshot.sessions), -1, Self.SQLITE_TRANSIENT)
+                sqlite3_bind_int64(insert, 9, Int64(snapshot.cacheReadTokens ?? -1))
+                sqlite3_bind_double(insert, 10, snapshot.cost.value)
+                sqlite3_bind_int(insert, 11, snapshot.cost.complete ? 1 : 0)
+                sqlite3_bind_int(insert, 12, snapshot.cost.available ? 1 : 0)
+                sqlite3_bind_int(insert, 13, Int32(Self.currentAccountingVersion))
+                guard sqlite3_step(insert) == SQLITE_DONE else { return false }
+            }
+            committed = true
+            return true
+        }
+    }
+
     /// 查询过去 N 天(返回数据库里实际存在的 date_key,缺数据日由 caller 补 0)
     /// 返回按 date_key 降序的 [DaySnapshot]
     func queryRecent(days: Int) -> [DaySnapshot] {
