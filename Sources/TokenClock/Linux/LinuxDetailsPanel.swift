@@ -40,20 +40,33 @@ final class LinuxDetailsPanel: @unchecked Sendable {
     private var claudeQuota = ClaudeQuotaSnapshot.idle
     private var antigravityQuota = ProviderQuotaSnapshot.idle(source: "Antigravity local service")
     private var cursorQuota = ProviderQuotaSnapshot.idle(source: "Cursor dashboard")
+    private var zhipuQuota = ProviderQuotaSnapshot.idle(source: "ZCode Coding Plan")
     private let quotaService = CodexQuotaService()
     private let claudeQuotaService = ClaudeQuotaService()
     private let antigravityQuotaService = AntigravityQuotaService()
     private let cursorQuotaService = CursorQuotaService()
+    private let zhipuQuotaService = ZhipuQuotaService()
     private let quotaLock = NSLock()
     private var pendingQuota: CodexQuotaSnapshot?
     private var pendingClaudeQuota: ClaudeQuotaSnapshot?
     private var pendingAntigravityQuota: ProviderQuotaSnapshot?
     private var pendingCursorQuota: ProviderQuotaSnapshot?
+    private var pendingZhipuQuota: ProviderQuotaSnapshot?
     private var quotaFetchInFlight = false
     private var claudeQuotaFetchInFlight = false
     private var antigravityQuotaFetchInFlight = false
     private var cursorQuotaFetchInFlight = false
+    private var zhipuQuotaFetchInFlight = false
     private var rebuildScheduled = false
+
+    private struct QuotaSection {
+        let title: String
+        let plan: String?
+        let status: CodexQuotaStatus
+        let buckets: [CodexQuotaBucket]
+        let source: String
+        let metadata: [String]
+    }
 
     private lazy var opaque = Unmanaged.passUnretained(self).toOpaque()
 
@@ -606,73 +619,81 @@ final class LinuxDetailsPanel: @unchecked Sendable {
         _ = appendControl("↻", name: "details:quota-refresh", to: heading)
         gtk_box_pack_start(tc_gtk_box(content), heading, 0, 0, 0)
 
-        appendQuotaProviderHeading(
-            "🤖 Codex", plan: codexQuota.planType,
-            loading: codexQuota.status == .loading, to: content
-        )
-
-        if codexQuota.buckets.isEmpty {
-            appendQuotaUnavailable(
-                tr(codexQuota.status == .loading ? "quota.loadingCodex" : "quota.codexUnavailable"),
-                to: content
-            )
-        } else {
-            for bucket in codexQuota.buckets { appendQuotaCard(bucket, to: content) }
+        let sections = quotaSections().filter { !$0.buckets.isEmpty }
+        if sections.isEmpty {
+            let loading = [codexQuota.status, claudeQuota.status, antigravityQuota.status,
+                           cursorQuota.status, zhipuQuota.status].contains(.loading)
+            appendQuotaUnavailable(tr(loading ? "quota.loadingAll" : "quota.noActiveProviders"), to: content)
+            if let quotaWindow { gtk_window_resize(tc_gtk_window(quotaWindow), 430, 650) }
+            return
         }
 
-        let metadata = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 5)
-        if codexQuota.hasUnlimitedCredits {
-            appendQuotaChip(tr("quota.unlimited"), to: metadata)
-        } else if let balance = codexQuota.creditBalance, balance != "0" {
-            appendQuotaChip(tr("quota.creditBalance", balance), to: metadata)
+        let twoColumns = sections.count >= 4
+        if let quotaWindow { gtk_window_resize(tc_gtk_window(quotaWindow), twoColumns ? 760 : 430, 650) }
+        if twoColumns, let grid = gtk_grid_new() {
+            gtk_grid_set_column_spacing(tc_gtk_grid(grid), 12)
+            gtk_grid_set_row_spacing(tc_gtk_grid(grid), 12)
+            gtk_widget_set_hexpand(grid, 1)
+            for (index, section) in sections.enumerated() {
+                guard let box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8) else { continue }
+                appendQuotaSection(section, to: box)
+                gtk_widget_set_hexpand(box, 1)
+                gtk_widget_set_valign(box, GTK_ALIGN_START)
+                gtk_grid_attach(tc_gtk_grid(grid), box, Int32(index % 2), Int32(index / 2), 1, 1)
+            }
+            gtk_box_pack_start(tc_gtk_box(content), grid, 0, 0, 0)
+        } else {
+            for (index, section) in sections.enumerated() {
+                if index > 0 { gtk_box_pack_start(tc_gtk_box(content), separator(), 0, 0, 4) }
+                appendQuotaSection(section, to: content)
+            }
+        }
+    }
+
+    private func quotaSections() -> [QuotaSection] {
+        var codexMeta: [String] = []
+        if codexQuota.hasUnlimitedCredits { codexMeta.append(tr("quota.unlimited")) }
+        else if let balance = codexQuota.creditBalance, balance != "0" {
+            codexMeta.append(tr("quota.creditBalance", balance))
         }
         if codexQuota.resetCreditCount > 0 {
-            appendQuotaChip(tr("quota.resetCredits", codexQuota.resetCreditCount), to: metadata)
+            codexMeta.append(tr("quota.resetCredits", codexQuota.resetCreditCount))
         }
-        let hasCodexMetadata = codexQuota.hasUnlimitedCredits
-            || (codexQuota.creditBalance.map { $0 != "0" } ?? false)
-            || codexQuota.resetCreditCount > 0
-        if !codexQuota.buckets.isEmpty, hasCodexMetadata {
-            gtk_box_pack_start(tc_gtk_box(content), metadata, 0, 0, 0)
+        func source(_ value: String, refreshedAt: Date?) -> String {
+            guard let refreshedAt else { return value }
+            return value + "  ·  " + tr("quota.updated", quotaUpdatedLabel(refreshedAt))
         }
+        return [
+            QuotaSection(title: "🤖 Codex", plan: codexQuota.planType, status: codexQuota.status,
+                buckets: codexQuota.buckets,
+                source: source(tr(codexQuota.source == .appServer ? "quota.liveSource" : "quota.logSource"), refreshedAt: codexQuota.refreshedAt), metadata: codexMeta),
+            QuotaSection(title: "✳️ Claude Code", plan: claudeQuota.planType, status: claudeQuota.status,
+                buckets: claudeQuota.buckets,
+                source: source(tr("quota.claudeSource"), refreshedAt: claudeQuota.refreshedAt), metadata: []),
+            QuotaSection(title: "🛸 Antigravity", plan: antigravityQuota.planType, status: antigravityQuota.status,
+                buckets: antigravityQuota.groups.flatMap(\.buckets),
+                source: source(antigravityQuota.source, refreshedAt: antigravityQuota.refreshedAt), metadata: []),
+            QuotaSection(title: "🖱️ Cursor", plan: cursorQuota.planType, status: cursorQuota.status,
+                buckets: cursorQuota.groups.flatMap(\.buckets),
+                source: source(cursorQuota.source, refreshedAt: cursorQuota.refreshedAt), metadata: []),
+            QuotaSection(title: "🅉 Zhipu GLM", plan: zhipuQuota.planType, status: zhipuQuota.status,
+                buckets: zhipuQuota.groups.flatMap(\.buckets),
+                source: source(zhipuQuota.source, refreshedAt: zhipuQuota.refreshedAt), metadata: []),
+        ]
+    }
 
-        var source = tr(codexQuota.source == .appServer ? "quota.liveSource" : "quota.logSource")
-        if let refreshedAt = codexQuota.refreshedAt {
-            source += "  ·  " + tr("quota.updated", quotaUpdatedLabel(refreshedAt))
+    private func appendQuotaSection(_ section: QuotaSection, to content: UnsafeMutablePointer<GtkWidget>) {
+        appendQuotaProviderHeading(section.title, plan: section.plan,
+            loading: section.status == .loading, to: content)
+        for bucket in section.buckets { appendQuotaCard(bucket, to: content) }
+        if !section.metadata.isEmpty, let row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 5) {
+            for value in section.metadata { appendQuotaChip(value, to: row) }
+            gtk_box_pack_start(tc_gtk_box(content), row, 0, 0, 0)
         }
-        if !codexQuota.buckets.isEmpty {
-            let sourceLabel = gtk_label_new("●  \(source)")
-            gtk_label_set_xalign(tc_gtk_label(sourceLabel), 0)
-            tc_gtk_add_class(sourceLabel, "tokenclock-quota-source")
-            gtk_box_pack_start(tc_gtk_box(content), sourceLabel, 0, 0, 2)
-        }
-
-        gtk_box_pack_start(tc_gtk_box(content), separator(), 0, 0, 4)
-        appendQuotaProviderHeading(
-            "✳️ Claude Code", plan: claudeQuota.planType,
-            loading: claudeQuota.status == .loading, to: content
-        )
-        if claudeQuota.buckets.isEmpty {
-            appendQuotaUnavailable(
-                tr(claudeQuota.status == .loading ? "quota.loadingClaude" : "quota.claudeUnavailable"),
-                to: content
-            )
-        } else {
-            for bucket in claudeQuota.buckets { appendQuotaCard(bucket, to: content) }
-            var claudeSource = tr("quota.claudeSource")
-            if let refreshedAt = claudeQuota.refreshedAt {
-                claudeSource += "  ·  " + tr("quota.updated", quotaUpdatedLabel(refreshedAt))
-            }
-            let label = gtk_label_new("●  \(claudeSource)")
-            gtk_label_set_xalign(tc_gtk_label(label), 0)
-            tc_gtk_add_class(label, "tokenclock-quota-source")
-            gtk_box_pack_start(tc_gtk_box(content), label, 0, 0, 2)
-        }
-
-        appendProviderQuotaSection("🛸 Antigravity", snapshot: antigravityQuota,
-            unavailable: tr("quota.antigravityUnavailable"), to: content)
-        appendProviderQuotaSection("🖱️ Cursor", snapshot: cursorQuota,
-            unavailable: tr("quota.cursorUnavailable"), to: content)
+        let label = gtk_label_new("●  \(section.source)")
+        gtk_label_set_xalign(tc_gtk_label(label), 0)
+        tc_gtk_add_class(label, "tokenclock-quota-source")
+        gtk_box_pack_start(tc_gtk_box(content), label, 0, 0, 2)
     }
 
     private func appendProviderQuotaSection(
@@ -883,6 +904,16 @@ final class LinuxDetailsPanel: @unchecked Sendable {
                 _ = tc_gtk_idle_add(linuxDetailsCursorQuotaReady, self.opaque)
             }
         }
+        if !zhipuQuotaFetchInFlight && (force || zhipuQuota.status != .available || zhipuQuota.isStale) {
+            zhipuQuotaFetchInFlight = true
+            zhipuQuota = .loading(previous: zhipuQuota)
+            DispatchQueue.global(qos: .utility).async { [weak self] in
+                guard let self else { return }
+                let snapshot = self.zhipuQuotaService.fetch()
+                self.quotaLock.lock(); self.pendingZhipuQuota = snapshot; self.quotaLock.unlock()
+                _ = tc_gtk_idle_add(linuxDetailsZhipuQuotaReady, self.opaque)
+            }
+        }
         rebuildQuotaWindow()
     }
 
@@ -917,6 +948,13 @@ final class LinuxDetailsPanel: @unchecked Sendable {
         quotaLock.lock(); let snapshot = pendingCursorQuota; pendingCursorQuota = nil; quotaLock.unlock()
         cursorQuotaFetchInFlight = false
         if let snapshot { cursorQuota = snapshot }
+        rebuildQuotaWindow()
+    }
+
+    fileprivate func applyPendingZhipuQuota() {
+        quotaLock.lock(); let snapshot = pendingZhipuQuota; pendingZhipuQuota = nil; quotaLock.unlock()
+        zhipuQuotaFetchInFlight = false
+        if let snapshot { zhipuQuota = snapshot }
         rebuildQuotaWindow()
     }
 
@@ -1099,5 +1137,10 @@ private func linuxDetailsAntigravityQuotaReady(_ data: gpointer?) -> gboolean {
 
 private func linuxDetailsCursorQuotaReady(_ data: gpointer?) -> gboolean {
     detailsPanel(from: data)?.applyPendingCursorQuota()
+    return 0
+}
+
+private func linuxDetailsZhipuQuotaReady(_ data: gpointer?) -> gboolean {
+    detailsPanel(from: data)?.applyPendingZhipuQuota()
     return 0
 }

@@ -157,6 +157,7 @@ enum PathDetector {
         case .cline: key = .clinePath
         case .continue: key = .continuePath
         case .cursorAgent: key = .cursorAgentPath
+        case .zcode: key = .zcodePath
         }
         guard let rawValue = UserDefaults.standard.string(for: key), !rawValue.isEmpty else { return nil }
         return LinuxProviderCatalog.normalizedPath(rawValue)
@@ -230,6 +231,16 @@ enum PathDetector {
                 || containsReadableJSON(in: home + "/sessions", extensions: ["jsonl"])
         case .cursorAgent:
             return cursorCredentialsAreReadable(at: home)
+        case .zcode:
+            return sqliteHasColumns(
+                path: (home.hasSuffix(".sqlite") || home.hasSuffix(".db"))
+                    ? home : home + "/cli/db/db.sqlite",
+                table: "model_usage",
+                columns: [
+                    "session_id", "model_id", "started_at", "input_tokens", "output_tokens",
+                    "reasoning_tokens", "cache_creation_input_tokens", "cache_read_input_tokens",
+                ]
+            )
         }
     }
 

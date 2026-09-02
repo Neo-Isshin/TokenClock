@@ -19,6 +19,7 @@ enum LinuxProviderCatalog {
         case cline
         case `continue`
         case cursorAgent
+        case zcode
     }
 
     enum CandidateOrigin: Sendable {
@@ -197,6 +198,14 @@ enum LinuxProviderCatalog {
                 parserInput: "state.vscdb (cursorAuth/accessToken), then Cursor usage API",
                 limitation: "Local detection only verifies credentials; usage still comes from Cursor's authenticated network API."
             )
+        case .zcode:
+            return Entry(
+                provider: provider, service: "zcode", displayName: "ZCode", emoji: "🅉",
+                defaultPath: home(".zcode"), defaultOrigin: .officialDefault,
+                environmentVariables: ["ZCODE_HOME"], compatibilityEnvironmentVariables: [],
+                parserInput: "cli/db/db.sqlite (model_usage table)",
+                limitation: nil
+            )
         }
     }
 
@@ -341,6 +350,8 @@ enum LinuxProviderCatalog {
                 EnvironmentRule(name: "CURSOR_AGENT_HOME", transform: .directory, official: false),
                 EnvironmentRule(name: "XDG_CONFIG_HOME", transform: .child("Cursor/User/globalStorage"), official: true),
             ]
+        case .zcode:
+            return [EnvironmentRule(name: "ZCODE_HOME", transform: .directory, official: true)]
         }
     }
 

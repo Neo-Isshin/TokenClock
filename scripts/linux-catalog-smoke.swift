@@ -15,7 +15,7 @@ struct LinuxCatalogSmoke {
         try? FileManager.default.removeItem(atPath: root)
         try FileManager.default.createDirectory(atPath: root, withIntermediateDirectories: true)
 
-        expect(LinuxProviderCatalog.Provider.allCases.count == 14, "catalog contains 14 providers")
+        expect(LinuxProviderCatalog.Provider.allCases.count == 15, "catalog contains 15 providers")
         testPathExpansion(root: root)
         try testDetectionStates(root: root)
         try testDetectionBudget(root: root)
@@ -23,7 +23,7 @@ struct LinuxCatalogSmoke {
         testPlatformBoundaries()
 
         if failures.isEmpty {
-            print("PASS linux catalog smoke (14 providers, expansion, JSONL/JSON/SQLite, TC_* keys)")
+            print("PASS linux catalog smoke (15 providers, expansion, JSONL/JSON/SQLite, TC_* keys)")
             return
         }
         for failure in failures { fputs("FAIL: \(failure)\n", stderr) }
@@ -78,6 +78,8 @@ struct LinuxCatalogSmoke {
         try write("{\"messages\":[]}", to: geminiJSON)
         let hermesDB = home + "/.hermes/state.db"
         try createHermesDatabase(at: hermesDB)
+        let zcodeDB = home + "/.zcode/cli/db/db.sqlite"
+        try createZCodeDatabase(at: zcodeDB)
         let opencodeDB = root + "/direct/opencode-custom.sqlite"
         try createOpenCodeDatabase(at: opencodeDB)
         setenv("OPENCODE_DB", opencodeDB, 1)
@@ -94,9 +96,10 @@ struct LinuxCatalogSmoke {
         assertReadable("hermes", in: summary, format: "SQLite")
         assertReadable("opencode", in: summary, format: "OPENCODE_DB SQLite")
         assertReadable("copilot", in: summary, format: "direct OTel JSONL")
+        assertReadable("zcode", in: summary, format: "model_usage SQLite")
         expect(PathConfig.opencodeDatabasePath() == opencodeDB, "OPENCODE_DB reaches parser adapter")
         expect(PathConfig.copilotOtelFile() == copilotOtel, "Copilot OTel file reaches parser adapter")
-        expect(summary.declaredCount == 14, "summary declares all 14 providers")
+        expect(summary.declaredCount == 15, "summary declares all 15 providers")
     }
 
     private static func testSettingsKeyCompatibility(root: String) {
@@ -115,6 +118,7 @@ struct LinuxCatalogSmoke {
             (.clinePath, PathConfig.setClinePath),
             (.continuePath, PathConfig.setContinuePath),
             (.cursorAgentPath, PathConfig.setCursorAgentPath),
+            (.zcodePath, PathConfig.setZCodePath),
         ]
         for (index, item) in cases.enumerated() {
             let path = root + "/saved/\(index)"
@@ -188,6 +192,25 @@ struct LinuxCatalogSmoke {
         guard sqlite3_exec(database, sql, nil, nil, nil) == SQLITE_OK else {
             throw NSError(domain: "LinuxCatalogSmoke", code: 2)
         }
+    }
+
+    private static func createZCodeDatabase(at path: String) throws {
+        try FileManager.default.createDirectory(
+            at: URL(fileURLWithPath: path).deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        var database: OpaquePointer?
+        guard sqlite3_open(path, &database) == SQLITE_OK, let database else {
+            throw NSError(domain: "LinuxCatalogSmoke", code: 3)
+        }
+        defer { sqlite3_close(database) }
+        sqlite3_exec(database, """
+            CREATE TABLE model_usage(
+              session_id TEXT, model_id TEXT, started_at INTEGER,
+              input_tokens INTEGER, output_tokens INTEGER, reasoning_tokens INTEGER,
+              cache_creation_input_tokens INTEGER, cache_read_input_tokens INTEGER
+            );
+            """, nil, nil, nil)
     }
 
     private static func createOpenCodeDatabase(at path: String) throws {

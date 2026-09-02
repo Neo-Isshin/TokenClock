@@ -198,16 +198,43 @@ final class CursorQuotaService: @unchecked Sendable {
         let individual = payload["individualUsage"] as? [String: Any] ?? payload
         let plan = individual["plan"] as? [String: Any] ?? individual
         let used = number(plan["used"]), limit = number(plan["limit"])
-        let percent = number(individual["totalPercentUsed"]) ?? number(plan["totalPercentUsed"]) ?? {
+        let cursorPercent = number(plan["totalPercentUsed"])
+            ?? number(individual["totalPercentUsed"])
+        let otherPercent = number(plan["apiPercentUsed"]) ?? {
             guard let used, let limit, limit > 0 else { return nil }; return used / limit * 100
         }()
-        guard let percent else { return nil }
         let reset = date(payload["billingCycleEnd"]), start = date(payload["billingCycleStart"])
         let minutes = start.flatMap { start in reset.map { max(0, Int($0.timeIntervalSince(start) / 60)) } } ?? 43_200
-        let bucket = CodexQuotaBucket(id: "cursor:included", name: "Included usage",
-            usedPercent: min(100, max(0, percent)), windowMinutes: minutes, resetsAt: reset)
+        var buckets: [CodexQuotaBucket] = []
+        if let cursorPercent {
+            buckets.append(CodexQuotaBucket(
+                id: "cursor:first-party", name: "Cursor Models",
+                usedPercent: min(100, max(0, cursorPercent)),
+                windowMinutes: minutes, resetsAt: reset
+            ))
+        }
+        let membership = (payload["membershipType"] as? String ?? "").lowercased()
+        if membership != "start", let otherPercent {
+            buckets.append(CodexQuotaBucket(
+                id: "cursor:other-models", name: "Other Models",
+                usedPercent: min(100, max(0, otherPercent)),
+                windowMinutes: minutes, resetsAt: reset
+            ))
+        }
+        guard !buckets.isEmpty else { return nil }
+        // Cursor's two monthly pools share the account billing-cycle boundary.
+        // Normalize it onto every bucket so an exhausted secondary pool does not
+        // lose its reset label when the dashboard omits pool-local reset metadata.
+        if let sharedReset = reset ?? buckets.compactMap(\.resetsAt).first {
+            buckets = buckets.map {
+                CodexQuotaBucket(
+                    id: $0.id, name: $0.name, usedPercent: $0.usedPercent,
+                    windowMinutes: $0.windowMinutes, resetsAt: sharedReset
+                )
+            }
+        }
         return ProviderQuotaSnapshot(status: .available,
-            groups: [ProviderQuotaGroup(id: "cursor:plan", name: "Subscription", buckets: [bucket])],
+            groups: [ProviderQuotaGroup(id: "cursor:plan", name: "Subscription", buckets: buckets)],
             planType: payload["membershipType"] as? String, refreshedAt: now, source: "Cursor dashboard", message: nil)
     }
 
@@ -283,6 +310,171 @@ final class CursorQuotaService: @unchecked Sendable {
         if let value = value as? NSNumber { return Date(timeIntervalSince1970: value.doubleValue / 1_000) }
         guard let value = value as? String else { return nil }
         if let milliseconds = Double(value), milliseconds > 10_000_000_000 { return Date(timeIntervalSince1970: milliseconds / 1_000) }
-        return ISO8601DateFormatter().date(from: value)
+        let plain = ISO8601DateFormatter()
+        if let parsed = plain.date(from: value) { return parsed }
+        let fractional = ISO8601DateFormatter()
+        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return fractional.date(from: value)
+    }
+}
+
+/// Reads the active ZCode Z.ai / BigModel Coding Plan configuration and queries
+/// the same quota endpoint used by ZCode's Coding Plan usage screen.
+final class ZhipuQuotaService: @unchecked Sendable {
+    private struct Credential {
+        let apiKey: String
+        let baseURL: String
+        let providerID: String
+    }
+
+    private let fileManager: FileManager
+    private let zcodeHome: String
+
+    init(fileManager: FileManager = .default, zcodeHome: String = PathConfig.zcodeHome()) {
+        self.fileManager = fileManager
+        self.zcodeHome = zcodeHome
+    }
+
+    func fetch() -> ProviderQuotaSnapshot {
+        let source = "ZCode Coding Plan"
+        guard let credential = credentialFromConfig() else {
+            return .unavailable("ZCode Coding Plan login was not found.", source: source)
+        }
+        guard let data = request(credential: credential),
+              let snapshot = Self.decodeResponse(data, providerID: credential.providerID) else {
+            return .unavailable("GLM Coding Plan quota was not available.", source: source)
+        }
+        return snapshot
+    }
+
+    static func decodeResponse(
+        _ data: Data,
+        providerID: String = "bigmodel",
+        now: Date = Date()
+    ) -> ProviderQuotaSnapshot? {
+        guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              (root["success"] as? Bool) == true,
+              let payload = root["data"] as? [String: Any],
+              let rawLimits = payload["limits"] as? [[String: Any]] else { return nil }
+
+        var buckets: [CodexQuotaBucket] = []
+        for (index, raw) in rawLimits.enumerated() {
+            let type = (raw["type"] as? String ?? "quota").uppercased()
+            let unit = integer(raw["unit"])
+            let number = integer(raw["number"])
+            let suppliedPercent = double(raw["percentage"])
+            let limit = double(raw["usage"])
+            let used = double(raw["currentValue"])
+            let usedPercent = suppliedPercent ?? {
+                guard let limit, limit > 0, let used else { return nil }
+                return used / limit * 100
+            }()
+            guard let usedPercent else { continue }
+
+            let windowMinutes: Int
+            let name: String
+            if type == "TOKENS_LIMIT", unit == 3, number == 5 {
+                windowMinutes = 300; name = "5-hour quota"
+            } else if type == "TOKENS_LIMIT", unit == 6, number == 1 {
+                windowMinutes = 10_080; name = "Weekly quota"
+            } else if type == "TIME_LIMIT" {
+                windowMinutes = 43_200; name = "Monthly MCP quota"
+            } else {
+                windowMinutes = 0; name = type.replacingOccurrences(of: "_", with: " ").capitalized
+            }
+            let reset = milliseconds(raw["nextResetTime"])
+            buckets.append(CodexQuotaBucket(
+                id: "zhipu:\(type):\(unit):\(number):\(index)",
+                name: name,
+                usedPercent: min(100, max(0, usedPercent)),
+                windowMinutes: windowMinutes,
+                resetsAt: reset
+            ))
+        }
+        guard !buckets.isEmpty else { return nil }
+        let level = payload["level"] as? String
+        let providerName = providerID.contains("zai") ? "Z.ai Coding Plan" : "BigModel Coding Plan"
+        return ProviderQuotaSnapshot(
+            status: .available,
+            groups: [ProviderQuotaGroup(id: "zhipu:plan", name: "Subscription", buckets: buckets)],
+            planType: level,
+            refreshedAt: now,
+            source: providerName,
+            message: nil
+        )
+    }
+
+    private func credentialFromConfig() -> Credential? {
+        let path = zcodeHome.lowercased().hasSuffix("config.json")
+            ? zcodeHome : zcodeHome + "/v2/config.json"
+        guard fileManager.fileExists(atPath: path),
+              let data = fileManager.contents(atPath: path),
+              let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let providers = root["provider"] as? [String: Any] else { return nil }
+        let priority = [
+            "builtin:bigmodel-coding-plan", "builtin:zai-coding-plan",
+            "builtin:bigmodel-start-plan", "builtin:zai-start-plan",
+        ]
+        let ordered = priority + providers.keys.filter { !priority.contains($0) }.sorted()
+        for id in ordered {
+            guard id.contains("coding-plan") || id.contains("start-plan"),
+                  let provider = providers[id] as? [String: Any],
+                  (provider["enabled"] as? Bool) != false,
+                  let options = provider["options"] as? [String: Any],
+                  let apiKey = options["apiKey"] as? String, !apiKey.isEmpty,
+                  let baseURL = options["baseURL"] as? String, !baseURL.isEmpty else { continue }
+            return Credential(apiKey: apiKey, baseURL: baseURL, providerID: id)
+        }
+        return nil
+    }
+
+    private func request(credential: Credential) -> Data? {
+        let host = credential.baseURL.contains("api.z.ai")
+            ? "https://api.z.ai" : "https://open.bigmodel.cn"
+        let url = host + "/api/monitor/usage/quota/limit"
+        let headers = [
+            "Accept": "application/json, text/plain, */*",
+            "Authorization": "Bearer \(credential.apiKey)",
+        ]
+        #if os(Windows)
+        guard let response = try? WindowsNativeHTTP.request(
+            url: url, headers: headers,
+            connectTimeout: 8, sendTimeout: 8, receiveTimeout: 15
+        ), response.statusCode == 200 else { return nil }
+        return response.body
+        #else
+        guard let endpoint = URL(string: url) else { return nil }
+        var request = URLRequest(url: endpoint); request.timeoutInterval = 15
+        for (name, value) in headers { request.setValue(value, forHTTPHeaderField: name) }
+        let semaphore = DispatchSemaphore(value: 0); let box = HTTPResultBox()
+        URLSession.shared.dataTask(with: request) { data, response, _ in
+            box.store(data: data, response: response); semaphore.signal()
+        }.resume()
+        guard semaphore.wait(timeout: .now() + 16) == .success,
+              let response = box.load(), response.statusCode == 200 else { return nil }
+        return response.data
+        #endif
+    }
+
+    #if !os(Windows)
+    private final class HTTPResultBox: @unchecked Sendable {
+        private let lock = NSLock(); private var result: (data: Data, statusCode: Int)?
+        func store(data: Data?, response: URLResponse?) {
+            guard let data, let response = response as? HTTPURLResponse else { return }
+            lock.withLock { result = (data, response.statusCode) }
+        }
+        func load() -> (data: Data, statusCode: Int)? { lock.withLock { result } }
+    }
+    #endif
+
+    private static func double(_ value: Any?) -> Double? {
+        if let value = value as? NSNumber { return value.doubleValue }
+        if let value = value as? String { return Double(value) }
+        return nil
+    }
+    private static func integer(_ value: Any?) -> Int { Int(double(value) ?? 0) }
+    private static func milliseconds(_ value: Any?) -> Date? {
+        guard let value = double(value), value > 0 else { return nil }
+        return Date(timeIntervalSince1970: value / 1_000)
     }
 }

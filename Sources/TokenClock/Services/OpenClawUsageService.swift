@@ -367,18 +367,67 @@ final class OpenClawUsageService: @unchecked Sendable {
 
     /// 返回今日每个活跃 agent 的数据（用于展开展示）
     func todaySessions() -> [SessionInfo] {
-        let today = DateHelper.todayKey()
+        sessions(for: DateHelper.todayKey())
+    }
+
+    /// Rebuildable daily snapshots used by the one-time history repair. This
+    /// keeps legitimate interactive OpenClaw work while removing cron sessions
+    /// from rows written by older TokenClock versions.
+    func historicalSnapshots(retentionDays: Int) -> [String: ToolSnapshot] {
+        let cutoffDate = Calendar.current.date(
+            byAdding: .day, value: -max(1, retentionDays) + 1,
+            to: Calendar.current.startOfDay(for: Date())
+        ) ?? .distantPast
+        let cutoff = DateHelper.dateKey(from: cutoffDate)
+        var result: [String: ToolSnapshot] = [:]
+        for (dateKey, usage) in dailyData where dateKey >= cutoff {
+            let cache = dailyCache[dateKey] ?? 0
+            let sessionInfos = sessions(for: dateKey)
+            result[dateKey] = ToolSnapshot(
+                name: "OpenClaw",
+                tokens: usage.tokens,
+                messages: usage.messages,
+                cacheRate: TokenAccounting.cacheReadShare(
+                    freshTokens: usage.tokens, cacheRead: cache
+                ),
+                isActive: dateKey == DateHelper.todayKey() && isActive(),
+                cost: PricingService.shared.cost(of: modelBuckets(for: dateKey)),
+                cacheReadTokens: cache,
+                sessions: sessionInfos.map {
+                    SessionSnapshot(
+                        id: $0.rawId, displayName: $0.displayName,
+                        tokens: $0.todayTokens, messages: $0.todayMessages,
+                        isActive: $0.isActive, model: $0.model,
+                        cost: $0.todayCost, cacheReadTokens: $0.cacheReadTokens
+                    )
+                }
+            )
+        }
+        return result
+    }
+
+    private func modelBuckets(for dateKey: String) -> [String: ModelBuckets] {
+        var result: [String: ModelBuckets] = [:]
+        for dates in fileModelBucketContrib.values {
+            for (model, buckets) in dates[dateKey] ?? [:] {
+                result[model, default: ModelBuckets()].merge(buckets)
+            }
+        }
+        return result
+    }
+
+    private func sessions(for dateKey: String) -> [SessionInfo] {
         var agents: [String: (tokens: Int, messages: Int, models: [String: Int])] = [:]
         var agentBuckets: [String: [String: ModelBuckets]] = [:]
         for (path, dates) in fileDailyContrib {
-            guard let usage = dates[today], let agentName = fileAgentNames[path] else { continue }
+            guard let usage = dates[dateKey], let agentName = fileAgentNames[path] else { continue }
             var summary = agents[agentName] ?? (0, 0, [:])
             summary.tokens += usage.tokens
             summary.messages += usage.messages
-            for (model, tokens) in fileModelContrib[path]?[today] ?? [:] {
+            for (model, tokens) in fileModelContrib[path]?[dateKey] ?? [:] {
                 summary.models[model, default: 0] += tokens
             }
-            for (model, buckets) in fileModelBucketContrib[path]?[today] ?? [:] {
+            for (model, buckets) in fileModelBucketContrib[path]?[dateKey] ?? [:] {
                 agentBuckets[agentName, default: [:]][model, default: ModelBuckets()].merge(buckets)
             }
             agents[agentName] = summary
@@ -391,7 +440,7 @@ final class OpenClawUsageService: @unchecked Sendable {
                 detail: nil,
                 todayTokens: summary.tokens,
                 todayMessages: summary.messages,
-                isActive: true,
+                isActive: dateKey == DateHelper.todayKey() && isActive(),
                 model: summary.models.max(by: { $0.value < $1.value })?.key,
                 todayCost: PricingService.shared.cost(of: agentBuckets[agentName] ?? [:]),
                 cacheReadTokens: (agentBuckets[agentName] ?? [:]).values.reduce(0) { $0 + $1.cacheRead }
@@ -420,31 +469,34 @@ final class OpenClawUsageService: @unchecked Sendable {
                 let lineData = lineBuf[lineBuf.startIndex..<nlRange.lowerBound]
                 lineBuf = lineBuf[nlRange.upperBound...]
                 guard !lineData.isEmpty else { continue }
-                if let line = String(data: lineData, encoding: .utf8),
-                   line.contains("\"user\""),
-                   let data = line.data(using: .utf8),
-                   let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                   let msg = obj["message"] as? [String: Any],
-                   msg["role"] as? String == "user",
-                   let content = msg["content"] as? [[String: Any]],
-                   let firstText = content.first?["text"] as? String {
-                    return firstText.hasPrefix("[cron:")
+                if let line = String(data: lineData, encoding: .utf8), Self.isCronUserLine(line) {
+                    return true
                 }
             }
         }
 
         if !lineBuf.isEmpty,
            let line = String(data: lineBuf, encoding: .utf8),
-           line.contains("\"user\""),
-           let data = line.data(using: .utf8),
-           let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-           let msg = obj["message"] as? [String: Any],
-           msg["role"] as? String == "user",
-           let content = msg["content"] as? [[String: Any]],
-           let firstText = content.first?["text"] as? String {
-            return firstText.hasPrefix("[cron:")
+           Self.isCronUserLine(line) {
+            return true
         }
 
+        return false
+    }
+
+    /// OpenClaw 2026.8 changed user `content` from an array of text blocks to a
+    /// plain string. Accept both contracts so scheduled sessions never enter usage.
+    static func isCronUserLine(_ line: String) -> Bool {
+        guard line.contains("\"user\""),
+              let data = line.data(using: .utf8),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let message = object["message"] as? [String: Any],
+              message["role"] as? String == "user" else { return false }
+        let content = message["content"]
+        if let text = content as? String { return text.hasPrefix("[cron:") }
+        if let blocks = content as? [[String: Any]] {
+            return blocks.contains { ($0["text"] as? String)?.hasPrefix("[cron:") == true }
+        }
         return false
     }
 

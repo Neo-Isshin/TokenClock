@@ -33,16 +33,23 @@ final class LinuxUsageModel: @unchecked Sendable {
     private lazy var clineService = ClineUsageService()
     private lazy var continueService = ContinueUsageService()
     private lazy var cursorAgentService = CursorAgentUsageService()
+    private lazy var zcodeService = ZCodeUsageService()
 
     static let allToolNames = Set([
         "OpenClaw", "Claude Code", "Gemini CLI", "Codex", "Hermes", "OpenCode",
         "Qwen Code", "Copilot", "Grok", "Aider", "Antigravity", "Cline",
-        "Continue", "Cursor Agent",
+        "Continue", "Cursor Agent", "ZCode",
     ])
 
     init() {
         let saved = UserDefaults.standard.stringArray(for: .enabledTools)
-        let enabled = Set(saved ?? Array(Self.allToolNames))
+        var enabled = Set(saved ?? Array(Self.allToolNames))
+        if !UserDefaults.standard.bool(for: .zcodeSupportMigrated) {
+            let db = PathConfig.defaultZCodeHome() + "/cli/db/db.sqlite"
+            if FileManager.default.fileExists(atPath: db) { enabled.insert("ZCode") }
+            UserDefaults.standard.setBool(true, for: .zcodeSupportMigrated)
+            UserDefaults.standard.setStringArray(Array(enabled), for: .enabledTools)
+        }
         let savedWindow = UserDefaults.standard.int(for: .rateWindow)
         let rateWindow = savedWindow > 0 ? savedWindow : 10
         storedEnabledTools = enabled
@@ -136,6 +143,38 @@ final class LinuxUsageModel: @unchecked Sendable {
         if enabled.contains("Cline") { incremental ? clineService.incrementalScan() : clineService.fullScan() }
         if enabled.contains("Continue") { incremental ? continueService.incrementalScan() : continueService.fullScan() }
         if enabled.contains("Cursor Agent") { incremental ? cursorAgentService.incrementalScan() : cursorAgentService.fullScan() }
+        if enabled.contains("ZCode") { incremental ? zcodeService.incrementalScan() : zcodeService.fullScan() }
+
+        if !incremental, enabled.contains("OpenClaw"),
+           UserDefaults.standard.int(for: .openclawHistoryRepairVersion) < 1 {
+            let days = AppConfig.History.retentionDays
+            let startDate = Calendar.current.date(
+                byAdding: .day, value: -days + 1,
+                to: Calendar.current.startOfDay(for: Date())
+            ) ?? Date()
+            if HistoryStore.shared.replaceToolHistory(
+                toolName: "OpenClaw",
+                snapshotsByDate: openclawService.historicalSnapshots(retentionDays: days),
+                from: DateHelper.dateKey(from: startDate), through: DateHelper.todayKey()
+            ) {
+                UserDefaults.standard.setInt(1, for: .openclawHistoryRepairVersion)
+            }
+        }
+        if !incremental, enabled.contains("ZCode"),
+           UserDefaults.standard.int(for: .zcodeHistoryImportVersion) < 1 {
+            let days = AppConfig.History.retentionDays
+            let startDate = Calendar.current.date(
+                byAdding: .day, value: -days + 1,
+                to: Calendar.current.startOfDay(for: Date())
+            ) ?? Date()
+            if HistoryStore.shared.replaceToolHistory(
+                toolName: "ZCode",
+                snapshotsByDate: zcodeService.historicalSnapshots(retentionDays: days),
+                from: DateHelper.dateKey(from: startDate), through: DateHelper.todayKey()
+            ) {
+                UserDefaults.standard.setInt(1, for: .zcodeHistoryImportVersion)
+            }
+        }
 
         var results: [String: ScanSnapshot] = [:]
         if enabled.contains("OpenClaw") {
@@ -193,6 +232,10 @@ final class LinuxUsageModel: @unchecked Sendable {
         if enabled.contains("Cursor Agent") {
             let usage = cursorAgentService.todayUsage()
             results["Cursor Agent"] = snapshot(usage, cursorAgentService.recentUsage(minutes: rateWindow).tokens, cursorAgentService.currentHourTokens(), cursorAgentService.isActive(), cursorAgentService.todaySessions(), cost: cursorAgentService.todayCost(), cacheRead: cursorAgentService.todayCacheReadTokens())
+        }
+        if enabled.contains("ZCode") {
+            let usage = zcodeService.todayUsage()
+            results["ZCode"] = snapshot(usage, zcodeService.recentUsage(minutes: rateWindow).tokens, zcodeService.currentHourTokens(), zcodeService.isActive(), zcodeService.todaySessions(), cost: zcodeService.todayCost(), cacheRead: zcodeService.todayCacheReadTokens())
         }
 
         lock.lock()
@@ -404,6 +447,7 @@ final class LinuxUsageModel: @unchecked Sendable {
             case "cline": PathConfig.setClinePath(result.detectedPath)
             case "continue": PathConfig.setContinuePath(result.detectedPath)
             case "cursorAgent": PathConfig.setCursorAgentPath(result.detectedPath)
+            case "zcode": PathConfig.setZCodePath(result.detectedPath)
             default: break
             }
         }

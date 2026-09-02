@@ -67,9 +67,18 @@ struct ClockContentView: View {
             HStack {
                 VStack(alignment: .leading, spacing: 4) {
                     ForEach(viewModel.activeToolsList) { tool in
-                        Text("\(tool.emoji) \(tool.abbreviation)")
-                            .font(.system(size: 13 * s, weight: .semibold, design: .rounded))
-                            .foregroundColor(viewModel.effectiveDialPrimary.opacity(0.75))
+                        HStack(alignment: .firstTextBaseline, spacing: 0.5 * s) {
+                            Text(tool.emoji)
+                                .font(.system(size: 13 * s))
+                                .baselineOffset(0.5 * s)
+                                .frame(width: 16 * s, alignment: .trailing)
+                            Text(tool.abbreviation)
+                                .font(.system(size: 13 * s, weight: .semibold, design: .rounded))
+                                .lineLimit(1)
+                                .fixedSize(horizontal: true, vertical: false)
+                                .frame(width: 24 * s, alignment: .trailing)
+                        }
+                        .foregroundColor(viewModel.effectiveDialPrimary.opacity(0.75))
                     }
                 }
                 .padding(.leading, 32 * s)

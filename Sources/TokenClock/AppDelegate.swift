@@ -823,12 +823,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         window.minSize = NSSize(width: 380, height: 480)
         window.isReleasedWhenClosed = false
         window.delegate = self
-        window.contentView = NSHostingView(rootView: SubscriptionQuotaWindowView(viewModel: viewModel))
+        window.contentView = NSHostingView(rootView: SubscriptionQuotaWindowView(
+            viewModel: viewModel,
+            onLayoutChange: { [weak self] twoColumns in
+                self?.resizeSubscriptionQuotaWindow(twoColumns: twoColumns)
+            }
+        ))
         window.level = .floating
         window.center()
         window.makeKeyAndOrderFront(nil)
         subscriptionQuotaWindow = window
         viewModel.refreshSubscriptionQuotas()
+    }
+
+    private func resizeSubscriptionQuotaWindow(twoColumns: Bool) {
+        guard let window = subscriptionQuotaWindow else { return }
+        let targetWidth: CGFloat = twoColumns ? 760 : 430
+        guard abs(window.frame.width - targetWidth) > 1 else { return }
+        var frame = window.frame
+        frame.origin.x -= (targetWidth - frame.width) / 2
+        frame.size.width = targetWidth
+        window.minSize = NSSize(width: twoColumns ? 700 : 380, height: 480)
+        window.setFrame(frame, display: true, animate: true)
     }
 
     private func showSettingsWindow() {

@@ -22,6 +22,10 @@ static inline GtkBox *tc_gtk_box(GtkWidget *widget) {
     return GTK_BOX(widget);
 }
 
+static inline GtkGrid *tc_gtk_grid(GtkWidget *widget) {
+    return GTK_GRID(widget);
+}
+
 static inline GtkLabel *tc_gtk_label(GtkWidget *widget) {
     return GTK_LABEL(widget);
 }

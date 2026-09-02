@@ -25,6 +25,7 @@ final class LinuxSettingsWindow: @unchecked Sendable {
         .init(emoji: "🤖", name: "Cline", service: "cline", pathKey: .clinePath),
         .init(emoji: "▶️", name: "Continue", service: "continue", pathKey: .continuePath),
         .init(emoji: "🖱️", name: "Cursor Agent", service: "cursorAgent", pathKey: .cursorAgentPath),
+        .init(emoji: "🅉", name: "ZCode", service: "zcode", pathKey: .zcodePath),
     ]
 
     private weak var owner: LinuxApp?

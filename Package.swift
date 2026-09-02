@@ -18,6 +18,7 @@ let linuxSources = [
     "Services/ContinueUsageService.swift",
     "Services/CopilotUsageService.swift",
     "Services/CursorAgentUsageService.swift",
+    "Services/ZCodeUsageService.swift",
     "Services/GeminiUsageService.swift",
     "Services/GrokUsageService.swift",
     "Services/HermesUsageService.swift",

@@ -55,6 +55,7 @@ enum SettingsKey: String {
     case clinePath = "TC_clinePath"
     case continuePath = "TC_continuePath"
     case cursorAgentPath = "TC_cursorAgentPath"
+    case zcodePath = "TC_zcodePath"
     case kiroSessionsPath = "TC_kiroSessionsPath"
     case codeBuddyEndpoint = "TC_codeBuddyEndpoint"
 
@@ -97,9 +98,13 @@ enum SettingsKey: String {
     case dropdownShowPercentage = "TC_dropdownShowPercentage"
     /// Subscription Quota 窗口内 provider 的用户自定义顺序。
     case subscriptionQuotaOrder = "TC_subscriptionQuotaOrder"
+    /// One-time OpenClaw history rebuild after cron/content accounting fixes.
+    case openclawHistoryRepairVersion = "TC_openclawHistoryRepairVersion"
+    case zcodeHistoryImportVersion = "TC_zcodeHistoryImportVersion"
 
     // MARK: - 首次启动标记
     case hasRunInitialDetection = "TC_hasRunInitialDetection"
+    case zcodeSupportMigrated = "TC_zcodeSupportMigrated"
 
     // MARK: - 日结历史
     case historyLastSettledDateKey = "TC_historyLastSettledDateKey"

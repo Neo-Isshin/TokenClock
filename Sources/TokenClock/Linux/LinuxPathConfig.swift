@@ -22,6 +22,7 @@ enum PathConfig {
     static func clineHome() -> String { home(.cline, key: "clinePath") }
     static func continueHome() -> String { home(.continue, key: "continuePath") }
     static func cursorAgentHome() -> String { home(.cursorAgent, key: "cursorAgentPath") }
+    static func zcodeHome() -> String { home(.zcode, key: "zcodePath") }
 
     static func opencodeDatabasePath() -> String {
         if let custom = customPath(forKey: "opencodePath") {
@@ -52,6 +53,7 @@ enum PathConfig {
     static func defaultClineHome() -> String { defaultPath(.cline) }
     static func defaultContinueHome() -> String { defaultPath(.continue) }
     static func defaultCursorAgentHome() -> String { defaultPath(.cursorAgent) }
+    static func defaultZCodeHome() -> String { defaultPath(.zcode) }
 
     static func openclawCandidates() -> [String] { candidates(.openclaw) }
     static func claudeCodeCandidates() -> [String] { candidates(.claudeCode) }
@@ -67,6 +69,7 @@ enum PathConfig {
     static func clineCandidates() -> [String] { candidates(.cline) }
     static func continueCandidates() -> [String] { candidates(.continue) }
     static func cursorAgentCandidates() -> [String] { candidates(.cursorAgent) }
+    static func zcodeCandidates() -> [String] { candidates(.zcode) }
 
     static func antigravityConversationDirs() -> [String] {
         var roots = [
@@ -100,6 +103,7 @@ enum PathConfig {
     static func setClinePath(_ path: String) { setCustomPath(path, forKey: "clinePath") }
     static func setContinuePath(_ path: String) { setCustomPath(path, forKey: "continuePath") }
     static func setCursorAgentPath(_ path: String) { setCustomPath(path, forKey: "cursorAgentPath") }
+    static func setZCodePath(_ path: String) { setCustomPath(path, forKey: "zcodePath") }
 
     static var hasRunInitialDetection: Bool {
         get { UserDefaults.standard.bool(forKey: prefix + "hasRunInitialDetection") }

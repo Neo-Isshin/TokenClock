@@ -19,6 +19,7 @@ struct SettingsView: View {
     @State private var clinePath: String = ""
     @State private var continuePath: String = ""
     @State private var cursorAgentPath: String = ""
+    @State private var zcodePath: String = ""
     @State private var detectResults: [PathDetector.DetectionResult] = []
     @State private var detectionSummary: String = ""
 
@@ -215,6 +216,15 @@ struct SettingsView: View {
                                 path: $cursorAgentPath,
                                 service: "cursorAgent",
                                 browseTitle: L10n.shared.tr("settings.browseCursorAgent")
+                            )
+                            }
+
+                            if viewModel.enabledTools.contains("ZCode") {
+                            pathRow(
+                                emoji: "🅉", name: "ZCode",
+                                path: $zcodePath,
+                                service: "zcode",
+                                browseTitle: L10n.shared.tr("settings.browseZCode")
                             )
                             }
 
@@ -552,6 +562,7 @@ struct SettingsView: View {
         ("🤖", "Cline", "cline"),
         ("▶️", "Continue", "continue"),
         ("🖱️", "Cursor Agent", "cursorAgent"),
+        ("🅉", "ZCode", "zcode"),
     ]
 
     /// 工具是否已探测到有效数据路径
@@ -1314,6 +1325,7 @@ struct SettingsView: View {
         clinePath = UserDefaults.standard.string(for: .clinePath) ?? ""
         continuePath = UserDefaults.standard.string(for: .continuePath) ?? ""
         cursorAgentPath = UserDefaults.standard.string(for: .cursorAgentPath) ?? ""
+        zcodePath = UserDefaults.standard.string(for: .zcodePath) ?? ""
     }
 
     private func savePaths() {
@@ -1331,6 +1343,7 @@ struct SettingsView: View {
         setPath(.clinePath, clinePath)
         setPath(.continuePath, continuePath)
         setPath(.cursorAgentPath, cursorAgentPath)
+        setPath(.zcodePath, zcodePath)
     }
 
     private func setPath(_ key: SettingsKey, _ value: String) {
@@ -1363,6 +1376,7 @@ struct SettingsView: View {
             case "cline": clinePath = result.detectedPath
             case "continue": continuePath = result.detectedPath
             case "cursorAgent": cursorAgentPath = result.detectedPath
+            case "zcode": zcodePath = result.detectedPath
             default: break
             }
         }
@@ -1397,6 +1411,7 @@ struct SettingsView: View {
             "cline":      ("🤖", "Cline"),
             "continue":   ("▶️", "Continue"),
             "cursorAgent":("🖱️", "Cursor Agent"),
+            "zcode":      ("🅉", "ZCode"),
         ]
         let label = toolLabels[service] ?? ("", service)
 
@@ -1417,6 +1432,7 @@ struct SettingsView: View {
                 case "cline": clinePath = result.detectedPath
                 case "continue": continuePath = result.detectedPath
                 case "cursorAgent": cursorAgentPath = result.detectedPath
+                case "zcode": zcodePath = result.detectedPath
                 default: break
                 }
                 detectionSummary = String(format: L10n.shared.tr("settings.detectUpdated"), label.emoji, label.name, timeStr)
@@ -1479,6 +1495,12 @@ struct SettingsView: View {
             return fm.fileExists(atPath: basePath + "/hooks/log-token-usage.sh")
                 || fm.fileExists(atPath: basePath + "/token-usage.jsonl")
                 || fm.fileExists(atPath: basePath + "/cli-config.json")
+        case "zcode":
+            let database = (basePath.lowercased().hasSuffix(".sqlite") || basePath.lowercased().hasSuffix(".db"))
+                ? basePath : basePath + "/cli/db/db.sqlite"
+            var isDirectory: ObjCBool = false
+            return FileManager.default.fileExists(atPath: database, isDirectory: &isDirectory)
+                && !isDirectory.boolValue
         default:
             return false
         }
@@ -1516,6 +1538,7 @@ struct SettingsView: View {
         case "cline": clinePath = selectedPath
         case "continue": continuePath = selectedPath
         case "cursorAgent": cursorAgentPath = selectedPath
+        case "zcode": zcodePath = selectedPath
         default: break
         }
         savePaths()
