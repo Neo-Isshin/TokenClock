@@ -483,11 +483,9 @@ final class LinuxDetailsPanel: @unchecked Sendable {
             if index > 0 { gtk_box_pack_start(tc_gtk_box(list), separator(), 0, 0, 0) }
             let expanded = expandedTools.contains(tool.name)
             let prefix = tool.sessions.isEmpty ? "  " : (expanded ? "▾" : "▸")
-            let title = "\(prefix) \(tool.name)"
+            let title = "\(prefix) \(tool.emoji) \(tool.name)"
             appendDataRow(
                 title: title,
-                displayName: tool.name,
-                fallbackEmoji: tool.emoji,
                 tokens: primaryValue(tokens: tool.todayTokens, cacheRead: tool.todayCacheReadTokens, cost: tool.todayCost, includeCacheRead: includeCache),
                 messages: secondaryValue(tokens: tool.todayTokens, cacheRead: tool.todayCacheReadTokens, messages: tool.todayMessages, total: total, includeCacheRead: includeCache),
                 trailing: cacheText(tool.cacheRate),
@@ -529,9 +527,7 @@ final class LinuxDetailsPanel: @unchecked Sendable {
             let expanded = expandedModels.contains(group.name)
             let prefix = group.contributions.isEmpty ? "  " : (expanded ? "▾" : "▸")
             appendDataRow(
-                title: "\(prefix) \(group.name)",
-                displayName: group.name,
-                fallbackEmoji: group.emoji,
+                title: "\(prefix) \(group.emoji) \(group.name)",
                 tokens: primaryValue(tokens: group.totalTokens, cacheRead: group.totalCacheReadTokens, cost: group.totalCost, includeCacheRead: includeCache),
                 messages: secondaryValue(tokens: group.totalTokens, cacheRead: group.totalCacheReadTokens, messages: group.totalMessages, total: total, includeCacheRead: includeCache),
                 trailing: nil,
@@ -542,9 +538,7 @@ final class LinuxDetailsPanel: @unchecked Sendable {
             if expanded {
                 for contribution in group.contributions {
                     appendDataRow(
-                        title: "    \(contribution.tool)",
-                        displayName: contribution.tool,
-                        fallbackEmoji: contribution.emoji,
+                        title: "    \(contribution.emoji) \(contribution.tool)",
                         tokens: primaryValue(tokens: contribution.tokens, cacheRead: contribution.cacheReadTokens, cost: contribution.cost, includeCacheRead: includeCache),
                         messages: secondaryValue(tokens: contribution.tokens, cacheRead: contribution.cacheReadTokens, messages: contribution.messages, total: total, includeCacheRead: includeCache),
                         trailing: nil,
@@ -559,8 +553,6 @@ final class LinuxDetailsPanel: @unchecked Sendable {
 
     private func appendDataRow(
         title: String,
-        displayName: String? = nil,
-        fallbackEmoji: String = "",
         tokens: String,
         messages: String,
         trailing: String?,
@@ -571,25 +563,7 @@ final class LinuxDetailsPanel: @unchecked Sendable {
         guard let row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0) else { return }
         gtk_container_set_border_width(tc_gtk_container(row), child ? 5 : 7)
         tc_gtk_add_class(row, child ? "tokenclock-detail-child-row" : "tokenclock-detail-row")
-        if let displayName,
-           let nameBox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4),
-           let icon = LinuxTokenClockIconRenderer.widget(
-               displayName: displayName,
-               fallbackEmoji: fallbackEmoji,
-               size: child ? 14 : 16
-           ) {
-            let label = gtk_label_new(title)
-            gtk_label_set_xalign(tc_gtk_label(label), 0)
-            gtk_widget_set_hexpand(label, 1)
-            tc_gtk_add_class(label, child ? "tokenclock-detail-subtext" : "tokenclock-detail-text")
-            gtk_box_pack_start(tc_gtk_box(nameBox), icon, 0, 0, 0)
-            gtk_box_pack_start(tc_gtk_box(nameBox), label, 1, 1, 0)
-            gtk_widget_set_size_request(nameBox, 130, -1)
-            gtk_widget_set_hexpand(nameBox, 1)
-            gtk_box_pack_start(tc_gtk_box(row), nameBox, 1, 1, 0)
-        } else {
-            appendLabel(title, width: 130, expands: true, alignment: 0, style: child ? "tokenclock-detail-subtext" : "tokenclock-detail-text", to: row)
-        }
+        appendLabel(title, width: 130, expands: true, alignment: 0, style: child ? "tokenclock-detail-subtext" : "tokenclock-detail-text", to: row)
         appendLabel(tokens, width: 60, alignment: 1, style: "tokenclock-detail-text", to: row)
         appendLabel(messages, width: 40, alignment: 1, style: "tokenclock-detail-subtext", to: row)
         if let trailing {

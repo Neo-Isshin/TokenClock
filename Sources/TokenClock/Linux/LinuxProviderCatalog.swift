@@ -126,7 +126,7 @@ enum LinuxProviderCatalog {
             )
         case .opencode:
             return Entry(
-                provider: provider, service: "opencode", displayName: "OpenCode", emoji: "🖱️",
+                provider: provider, service: "opencode", displayName: "OpenCode", emoji: "🐙",
                 defaultPath: data("opencode"), defaultOrigin: .officialDefault,
                 environmentVariables: ["OPENCODE_DB", "XDG_DATA_HOME"], compatibilityEnvironmentVariables: ["OPENCODE_HOME"],
                 parserInput: "opencode.db (session table)",
@@ -191,7 +191,7 @@ enum LinuxProviderCatalog {
             )
         case .cursorAgent:
             return Entry(
-                provider: provider, service: "cursorAgent", displayName: "Cursor Agent", emoji: "◈",
+                provider: provider, service: "cursorAgent", displayName: "Cursor Agent", emoji: "🖱️",
                 defaultPath: config("Cursor", "User", "globalStorage"), defaultOrigin: .officialDefault,
                 environmentVariables: ["XDG_CONFIG_HOME"], compatibilityEnvironmentVariables: ["CURSOR_AGENT_HOME"],
                 parserInput: "state.vscdb (cursorAuth/accessToken), then Cursor usage API",

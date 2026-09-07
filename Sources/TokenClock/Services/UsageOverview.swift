@@ -227,7 +227,7 @@ enum UsageOverviewBuilder {
         case "Gemini CLI": return "✨"
         case "Codex": return "🤖"
         case "Hermes": return "⚕️"
-        case "OpenCode": return "🖱️"
+        case "OpenCode": return "🐙"
         case "Qwen Code": return "🟣"
         case "Copilot": return "🛩️"
         case "Grok": return "⚡"
@@ -235,7 +235,7 @@ enum UsageOverviewBuilder {
         case "Antigravity": return "🛡️"
         case "Cline": return "🤖"
         case "Continue": return "▶️"
-        case "Cursor Agent": return "◈"
+        case "Cursor Agent": return "🖱️"
         case "Grok Bot": return "🤖"
         default: return "🧰"
         }
