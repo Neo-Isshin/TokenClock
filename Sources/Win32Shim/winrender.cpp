@@ -74,7 +74,10 @@ enum tc_color_icon {
     TC_ICON_SLEEP, TC_ICON_BED, TC_ICON_COFFEE, TC_ICON_RUNNER, TC_ICON_FLAME,
     TC_ICON_BURST, TC_ICON_MOON, TC_ICON_WHALE, TC_ICON_SPEAKER,
     TC_ICON_RECYCLE, TC_ICON_BLUE_SQUARE, TC_ICON_PUZZLE, TC_ICON_Z,
-    TC_ICON_BEAN, TC_ICON_LLAMA, TC_ICON_TORNADO, TC_ICON_QUESTION
+    TC_ICON_BEAN, TC_ICON_LLAMA, TC_ICON_TORNADO, TC_ICON_QUESTION,
+    TC_ICON_KEYBOARD, TC_ICON_RAINBOW, TC_ICON_SWIRL, TC_ICON_GALAXY,
+    TC_ICON_SATELLITE, TC_ICON_TOOLBOX, TC_ICON_CHAT, TC_ICON_WAVEMARK,
+    TC_ICON_NOTE, TC_ICON_LEAF, TC_ICON_BOOK, TC_ICON_ABACUS, TC_ICON_COMPASS
 };
 
 static tc_color_icon color_icon_for(const wchar_t *text) {
@@ -116,6 +119,22 @@ static tc_color_icon color_icon_for(const wchar_t *text) {
     if (wcsstr(text, L"🫘")) return TC_ICON_BEAN;
     if (wcsstr(text, L"🦙")) return TC_ICON_LLAMA;
     if (wcsstr(text, L"🌪")) return TC_ICON_TORNADO;
+    if (wcsstr(text, L"⌨")) return TC_ICON_KEYBOARD;
+    if (wcsstr(text, L"🌈")) return TC_ICON_RAINBOW;
+    if (wcsstr(text, L"🌀")) return TC_ICON_SWIRL;
+    if (wcsstr(text, L"🌌")) return TC_ICON_GALAXY;
+    if (wcsstr(text, L"🛰")) return TC_ICON_SATELLITE;
+    if (wcsstr(text, L"🧰")) return TC_ICON_TOOLBOX;
+    if (wcsstr(text, L"💬")) return TC_ICON_CHAT;
+    if (wcsstr(text, L"〽")) return TC_ICON_WAVEMARK;
+    if (wcsstr(text, L"📝")) return TC_ICON_NOTE;
+    if (wcsstr(text, L"🍃")) return TC_ICON_LEAF;
+    if (wcsstr(text, L"📖") || wcsstr(text, L"🎼")) return TC_ICON_BOOK;
+    if (wcsstr(text, L"🧮")) return TC_ICON_ABACUS;
+    if (wcsstr(text, L"🧭")) return TC_ICON_COMPASS;
+    if (wcsstr(text, L"💫") || wcsstr(text, L"🌠")) return TC_ICON_STAR;
+    if (wcsstr(text, L"🔷")) return TC_ICON_GEM;
+    if (wcsstr(text, L"☯")) return TC_ICON_SWIRL;
     if (wcsstr(text, L"❓")) return TC_ICON_QUESTION;
     return TC_ICON_NONE;
 }
@@ -262,6 +281,60 @@ static void draw_color_icon(Gdiplus::Graphics &gfx, tc_color_icon icon,
         line(-3,-3,-1,-6,255,255,255,2.0f); line(-1,-6,3,-5,255,255,255,2.0f);
         line(3,-5,3,-1,255,255,255,2.0f); line(3,-1,0,2,255,255,255,2.0f);
         ellipse(-1,6,2.2f,2.2f,255,255,255); break;
+    case TC_ICON_KEYBOARD: {
+        GraphicsPath body; body.AddRectangle(RectF(cx-10*s,cy-7*s,20*s,14*s));
+        Pen edge(Color(255,75,85,99),1.4f*s); gfx.DrawPath(&edge,&body);
+        for(int row=0;row<2;++row) for(int col=0;col<5;++col)
+            ellipse(-7.8f+col*3.8f,-4.7f+row*4.2f,2.2f,2.2f,107,114,128);
+        line(-6,4.8f,6,4.8f,75,85,99,1.5f); break;
+    }
+    case TC_ICON_RAINBOW:
+        { Pen red(Color(255,235,75,82),2.4f*s), yellow(Color(255,245,180,45),2.4f*s), blue(Color(255,72,139,224),2.4f*s);
+          gfx.DrawArc(&red,cx-10*s,cy-7*s,20*s,18*s,190,160); gfx.DrawArc(&yellow,cx-7.5f*s,cy-4.5f*s,15*s,13*s,190,160); gfx.DrawArc(&blue,cx-5*s,cy-2*s,10*s,8*s,190,160); } break;
+    case TC_ICON_SWIRL:
+        { Pen swirl(Color(255,91,92,222),2.2f*s); swirl.SetStartCap(LineCapRound); swirl.SetEndCap(LineCapRound);
+          gfx.DrawArc(&swirl,cx-9*s,cy-9*s,18*s,18*s,205,285); gfx.DrawArc(&swirl,cx-5*s,cy-5*s,10*s,10*s,25,250);
+          PointF tip[]={{7,-5},{11,-5},{9,-1}}; polygon(tip,3,91,92,222); } break;
+    case TC_ICON_GALAXY:
+        ellipse(-10,-7,20,14,49,46,129); ellipse(-7,-4,14,8,107,76,190);
+        line(-10,4,10,-4,219,205,255,1.5f); ellipse(-4,-5,2,2,255,235,137); ellipse(5,1,2.2f,2.2f,255,255,255); break;
+    case TC_ICON_SATELLITE: {
+        PointF body[]={{-2,-5},{4,-2},{1,4},{-5,1}}; polygon(body,4,132,142,160);
+        PointF left[]={{-10,-7},{-4,-4},{-7,1},{-12,-2}}; polygon(left,4,61,132,211);
+        PointF right[]={{5,-1},{11,2},{8,7},{2,4}}; polygon(right,4,61,132,211);
+        line(2,-4,6,-8,89,96,112,1.4f); ellipse(5,-10,3,3,244,181,44); break;
+    }
+    case TC_ICON_TOOLBOX: {
+        { SolidBrush box(Color(255,224,112,48)); gfx.FillRectangle(&box,cx-10*s,cy-4*s,20*s,13*s); }
+        { Pen handle(Color(255,121,72,45),2.0f*s); gfx.DrawArc(&handle,cx-5*s,cy-9*s,10*s,8*s,180,180); }
+        line(-10,0,10,0,151,77,43,1.4f); line(0,-3,0,2,247,211,181,1.8f); break;
+    }
+    case TC_ICON_CHAT: {
+        GraphicsPath bubble; bubble.AddArc(cx-10*s,cy-8*s,5*s,5*s,180,90); bubble.AddArc(cx+5*s,cy-8*s,5*s,5*s,270,90);
+        bubble.AddArc(cx+5*s,cy+2*s,5*s,5*s,0,90); bubble.AddLine(cx,cy+7*s,cx-5*s,cy+11*s); bubble.AddLine(cx-5*s,cy+7*s,cx-7.5f*s,cy+7*s); bubble.AddArc(cx-10*s,cy+2*s,5*s,5*s,90,90); bubble.CloseFigure();
+        SolidBrush fill(Color(255,112,93,210)); gfx.FillPath(&fill,&bubble); ellipse(-5,-1,2.2f,2.2f,255,255,255); ellipse(-1,-1,2.2f,2.2f,255,255,255); ellipse(3,-1,2.2f,2.2f,255,255,255); break;
+    }
+    case TC_ICON_WAVEMARK:
+        line(-9,4,-5,-5,236,177,44,2.6f); line(-5,-5,0,5,236,177,44,2.6f); line(0,5,5,-2,236,177,44,2.6f); line(5,-2,9,2,236,177,44,2.6f); break;
+    case TC_ICON_NOTE: {
+        PointF page[]={{-7,-10},{5,-10},{9,-6},{9,10},{-7,10}}; polygon(page,5,245,188,91);
+        line(-4,-4,5,-4,116,82,51,1.2f); line(-4,0,5,0,116,82,51,1.2f); line(-4,4,2,4,116,82,51,1.2f); break;
+    }
+    case TC_ICON_LEAF: {
+        GraphicsPath leaf; leaf.StartFigure(); leaf.AddBezier(cx-9*s,cy+7*s,cx-9*s,cy-5*s,cx+2*s,cy-10*s,cx+9*s,cy-8*s);
+        leaf.AddBezier(cx+9*s,cy-8*s,cx+9*s,cy+1*s,cx+3*s,cy+9*s,cx-9*s,cy+7*s); leaf.CloseFigure();
+        SolidBrush fill(Color(255,73,166,91)); gfx.FillPath(&fill,&leaf); line(-7,6,6,-6,30,111,58,1.3f); break;
+    }
+    case TC_ICON_BOOK: {
+        PointF left[]={{-10,-8},{-1,-6},{-1,9},{-10,7}}; PointF right[]={{1,-6},{10,-8},{10,7},{1,9}};
+        polygon(left,4,89,139,220); polygon(right,4,108,158,234); line(0,-6,0,9,45,83,145,1.3f); break;
+    }
+    case TC_ICON_ABACUS: {
+        { Pen frame(Color(255,117,82,57),1.8f*s); gfx.DrawRectangle(&frame,cx-9*s,cy-9*s,18*s,18*s); }
+        for(int row=0;row<3;++row){ float y=-5+row*5; line(-7,y,7,y,117,82,57,1.0f); for(int col=0;col<3;++col) ellipse(-6+col*5,y-1.5f,3,3,219,105+(BYTE)(row*35),66); } break;
+    }
+    case TC_ICON_COMPASS:
+        ellipse(-10,-10,20,20,71,136,210); { PointF needle[]={{2,-8},{-1,1},{-6,6},{1,2}}; polygon(needle,4,244,92,84); } ellipse(-1.5f,-1.5f,3,3,255,255,255); break;
     default: break;
     }
 }

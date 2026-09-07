@@ -110,7 +110,7 @@ enum WindowsProviderCatalog {
                   ],
                   defaultPath: user + "\\.gemini", alternatePaths: [], dataKind: .jsonDirectory,
                   measurementUnit: .tokens, measurementScope: .today, statisticsSupport: .parsed, sourceKind: .fileSystem, defaultEnabled: true),
-            Entry(id: .codex, displayName: "Codex", abbreviation: "CX", emoji: "🤖", environmentOverrides: [official("CODEX_HOME")],
+            Entry(id: .codex, displayName: "Codex", abbreviation: "CX", emoji: "⌨️", environmentOverrides: [official("CODEX_HOME")],
                   defaultPath: user + "\\.codex", alternatePaths: [], dataKind: .jsonlDirectory,
                   measurementUnit: .tokens, measurementScope: .today, statisticsSupport: .parsed, sourceKind: .fileSystem, defaultEnabled: true),
             Entry(id: .hermes, displayName: "Hermes", abbreviation: "HM", emoji: "⚕️", environmentOverrides: [official("HERMES_HOME")],
@@ -118,7 +118,7 @@ enum WindowsProviderCatalog {
                   measurementUnit: .tokens, measurementScope: .today, statisticsSupport: .parsed, sourceKind: .fileSystem, defaultEnabled: true),
             // OpenCode uses the platform data directory on Windows. Keep the historical
             // ~/.local/share location as a compatibility probe for older installations.
-            Entry(id: .opencode, displayName: "OpenCode", abbreviation: "OD", emoji: "🐙", environmentOverrides: [
+            Entry(id: .opencode, displayName: "OpenCode", abbreviation: "OD", emoji: "🖱️", environmentOverrides: [
                     official("OPENCODE_DB", "direct SQLite database"),
                     official("XDG_DATA_HOME", "parent data directory; append opencode"),
                     compatibility("OPENCODE_HOME")
@@ -127,7 +127,7 @@ enum WindowsProviderCatalog {
                   alternatePaths: [local + "\\opencode", user + "\\.opencode"],
                   dataKind: .sqliteDirectory, measurementUnit: .tokens, measurementScope: .today, statisticsSupport: .parsed,
                   sourceKind: .fileSystem, defaultEnabled: true),
-            Entry(id: .qwen, displayName: "Qwen Code", abbreviation: "QW", emoji: "🟣", environmentOverrides: [official("QWEN_RUNTIME_DIR"), official("QWEN_HOME")],
+            Entry(id: .qwen, displayName: "Qwen Code", abbreviation: "QW", emoji: "🌀", environmentOverrides: [official("QWEN_RUNTIME_DIR"), official("QWEN_HOME")],
                   defaultPath: user + "\\.qwen", alternatePaths: [], dataKind: .jsonlDirectory,
                   measurementUnit: .tokens, measurementScope: .today, statisticsSupport: .parsed, sourceKind: .fileSystem, defaultEnabled: true),
             Entry(id: .copilot, displayName: "Copilot", abbreviation: "CP", emoji: "🐙", environmentOverrides: [
@@ -136,16 +136,16 @@ enum WindowsProviderCatalog {
                   ],
                   defaultPath: user + "\\.copilot", alternatePaths: [], dataKind: .jsonlDirectory,
                   measurementUnit: .tokens, measurementScope: .today, statisticsSupport: .parsed, sourceKind: .fileSystem, defaultEnabled: true),
-            Entry(id: .grok, displayName: "Grok", abbreviation: "GK", emoji: "⚡", environmentOverrides: [compatibility("GROK_HOME")],
+            Entry(id: .grok, displayName: "Grok", abbreviation: "GK", emoji: "🌌", environmentOverrides: [compatibility("GROK_HOME")],
                   defaultPath: user + "\\.grok", alternatePaths: [], dataKind: .jsonlDirectory,
                   measurementUnit: .tokens, measurementScope: .today, statisticsSupport: .parsed, sourceKind: .fileSystem, defaultEnabled: true),
             Entry(id: .aider, displayName: "Aider", abbreviation: "AI", emoji: "🤝", environmentOverrides: [official("AIDER_ANALYTICS_LOG"), compatibility("AIDER_HOME")],
                   defaultPath: user + "\\.aider\\analytics.jsonl", alternatePaths: [], dataKind: .analyticsJSONL,
                   measurementUnit: .tokens, measurementScope: .today, statisticsSupport: .parsed, sourceKind: .fileSystem, defaultEnabled: true),
-            Entry(id: .antigravity, displayName: "Antigravity", abbreviation: "AG", emoji: "🛡️", environmentOverrides: [compatibility("ANTIGRAVITY_HOME")],
+            Entry(id: .antigravity, displayName: "Antigravity", abbreviation: "AG", emoji: "🌈", environmentOverrides: [compatibility("ANTIGRAVITY_HOME")],
                   defaultPath: user + "\\.gemini\\antigravity-cli", alternatePaths: [], dataKind: .sqliteDirectory,
                   measurementUnit: .tokens, measurementScope: .today, statisticsSupport: .parsed, sourceKind: .fileSystem, defaultEnabled: true),
-            Entry(id: .cline, displayName: "Cline", abbreviation: "CL", emoji: "🤖", environmentOverrides: [compatibility("CLINE_HOME")],
+            Entry(id: .cline, displayName: "Cline", abbreviation: "CL", emoji: "🧰", environmentOverrides: [compatibility("CLINE_HOME")],
                   defaultPath: roaming + "\\Code\\User\\globalStorage\\saoudrizwan.claude-dev",
                   alternatePaths: [roaming + "\\Cursor\\User\\globalStorage\\saoudrizwan.claude-dev"],
                   dataKind: .jsonDirectory, measurementUnit: .tokens, measurementScope: .today, statisticsSupport: .parsed,
@@ -153,7 +153,7 @@ enum WindowsProviderCatalog {
             Entry(id: .continue, displayName: "Continue", abbreviation: "CN", emoji: "▶️", environmentOverrides: [compatibility("CONTINUE_HOME")],
                   defaultPath: user + "\\.continue", alternatePaths: [], dataKind: .jsonlDirectory,
                   measurementUnit: .tokens, measurementScope: .today, statisticsSupport: .parsed, sourceKind: .fileSystem, defaultEnabled: true),
-            Entry(id: .cursorAgent, displayName: "Cursor Agent", abbreviation: "CA", emoji: "🖱️", environmentOverrides: [compatibility("CURSOR_AGENT_HOME")],
+            Entry(id: .cursorAgent, displayName: "Cursor Agent", abbreviation: "CA", emoji: "💎", environmentOverrides: [compatibility("CURSOR_AGENT_HOME")],
                   defaultPath: roaming + "\\Cursor\\User\\globalStorage", alternatePaths: [],
                   dataKind: .cursorStateDatabase, measurementUnit: .tokens, measurementScope: .today, statisticsSupport: .parsed,
                   sourceKind: .fileSystem, defaultEnabled: true),

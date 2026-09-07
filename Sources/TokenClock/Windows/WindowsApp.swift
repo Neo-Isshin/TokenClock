@@ -601,12 +601,12 @@ final class WindowsApp: @unchecked Sendable {
                     return (provider.0, provider.1, 1_000_000 - index * 21_000, 150 - index, [])
                 }
                 : modelMode
-                ? [("gpt-5", "🧠", 820_000, 118, [("Codex", 600_000, 80), ("Claude Code", 220_000, 38)]),
-                   ("claude-sonnet", "✳", 290_000, 42, [("Claude Code", 180_000, 27), ("Codex", 110_000, 15)]),
-                   ("grok-4", "⚡", 42_000, 9, [])]
-                : [("Codex", "●", 1_000_000, 146, [("主项目重构", 620_000, 84), ("文档翻译", 380_000, 62)]),
+                ? [("gpt-5", "💬", 820_000, 118, [("Codex", 600_000, 80), ("Claude Code", 220_000, 38)]),
+                   ("claude-sonnet", "📝", 290_000, 42, [("Claude Code", 180_000, 27), ("Codex", 110_000, 15)]),
+                   ("grok-4", "🌌", 42_000, 9, [])]
+                : [("Codex", "⌨️", 1_000_000, 146, [("主项目重构", 620_000, 84), ("文档翻译", 380_000, 62)]),
                    ("Claude Code", "✳", 150_000, 31, [("session-7a", 90_000, 18)]),
-                   ("Grok", "⚡", 42_000, 9, [])]
+                   ("Grok", "🌌", 42_000, 9, [])]
             let grand = parents.reduce(0) { $0 + $1.2 }
             var rows: [DetailRow] = []
             for p in parents {
