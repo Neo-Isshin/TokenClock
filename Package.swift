@@ -93,6 +93,7 @@ let package = Package(
             resources: [
                 .copy("Resources/glass_disc.png"),
                 .copy("Resources/pricing-snapshot.json"),
+                .copy("Resources/TokenClockIcons"),
             ],
             swiftSettings: [.unsafeFlags(["-parse-as-library"])]
         ),
@@ -149,6 +150,7 @@ let package = Package(
             resources: [
                 .copy("Resources/glass_disc.png"),
                 .copy("Resources/pricing-snapshot.json"),
+                .copy("Resources/TokenClockIcons"),
             ],
             swiftSettings: [.unsafeFlags(["-parse-as-library"])],
             // SwiftPM otherwise emits a console-subsystem PE and Windows opens a black terminal
@@ -177,6 +179,7 @@ let package = Package(
             resources: [
                 .copy("Resources/glass_disc.png"),
                 .copy("Resources/pricing-snapshot.json"),
+                .copy("Resources/TokenClockIcons"),
             ],
             swiftSettings: [.unsafeFlags(["-parse-as-library"])]
         ),

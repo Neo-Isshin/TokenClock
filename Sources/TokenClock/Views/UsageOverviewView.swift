@@ -604,10 +604,13 @@ struct UsageOverviewView: View {
                     LazyVStack(spacing: 0) {
                         ForEach(rows) { row in
                             HStack(spacing: 0) {
-                                HStack(spacing: 5) {
-                                    Text(row.emoji)
-                                    Text(displayName(row.name)).lineLimit(1)
-                                }
+                                EmojiNameLabel(
+                                    emoji: row.emoji,
+                                    name: displayName(row.name),
+                                    iconSize: 12,
+                                    nameFont: .system(size: 12),
+                                    truncationMode: .tail
+                                )
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 Text(TokenFormat.compact(displayedTokens(row.metrics)))
                                     .frame(width: 82, alignment: .trailing)

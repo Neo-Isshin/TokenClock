@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+  <title>Qwen model family concept v2</title>
+  <g fill="currentColor">
+    <path id="blade" d="M12 2.8 17.9 6.2 16.2 9.05 12 6.62 9.55 8.05 7.9 5.18Z"/>
+    <use href="#blade" transform="rotate(120 12 12)"/>
+    <use href="#blade" transform="rotate(240 12 12)"/>
+  </g>
+</svg>
