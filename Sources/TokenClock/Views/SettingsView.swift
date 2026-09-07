@@ -127,7 +127,7 @@ struct SettingsView: View {
 
                             if viewModel.enabledTools.contains("Codex") {
                             pathRow(
-                                emoji: "🤖", name: "Codex",
+                                emoji: "⌨️", name: "Codex",
                                 path: $codexPath,
                                 service: "codex",
                                 browseTitle: L10n.shared.tr("settings.browseCodex")
@@ -149,7 +149,7 @@ struct SettingsView: View {
 
                             if viewModel.enabledTools.contains("Qwen Code") {
                             pathRow(
-                                emoji: "🟣", name: "Qwen Code",
+                                emoji: "🌀", name: "Qwen Code",
                                 path: $qwenPath,
                                 service: "qwen",
                                 browseTitle: L10n.shared.tr("settings.browseQwen")
@@ -167,7 +167,7 @@ struct SettingsView: View {
 
                             if viewModel.enabledTools.contains("Grok") {
                             pathRow(
-                                emoji: "⚡", name: "Grok",
+                                emoji: "🌌", name: "Grok",
                                 path: $grokPath,
                                 service: "grok",
                                 browseTitle: L10n.shared.tr("settings.browseGrok")
@@ -185,7 +185,7 @@ struct SettingsView: View {
 
                             if viewModel.enabledTools.contains("Antigravity") {
                             pathRow(
-                                emoji: "🛡️", name: "Antigravity",
+                                emoji: "🌈", name: "Antigravity",
                                 path: $antigravityPath,
                                 service: "antigravity",
                                 browseTitle: L10n.shared.tr("settings.browseAntigravity")
@@ -194,7 +194,7 @@ struct SettingsView: View {
 
                             if viewModel.enabledTools.contains("Cline") {
                             pathRow(
-                                emoji: "🤖", name: "Cline",
+                                emoji: "🧰", name: "Cline",
                                 path: $clinePath,
                                 service: "cline",
                                 browseTitle: L10n.shared.tr("settings.browseCline")
@@ -212,7 +212,7 @@ struct SettingsView: View {
 
                             if viewModel.enabledTools.contains("Cursor Agent") {
                             pathRow(
-                                emoji: "◈", name: "Cursor Agent",
+                                emoji: "💎", name: "Cursor Agent",
                                 path: $cursorAgentPath,
                                 service: "cursorAgent",
                                 browseTitle: L10n.shared.tr("settings.browseCursorAgent")
@@ -551,17 +551,17 @@ struct SettingsView: View {
         ("🦞", "OpenClaw", "openclaw"),
         ("✳️", "Claude Code", "claudeCode"),
         ("✨", "Gemini CLI", "gemini"),
-        ("🤖", "Codex", "codex"),
+        ("⌨️", "Codex", "codex"),
         ("⚕️", "Hermes", "hermes"),
         ("🖱️", "OpenCode", "opencode"),
-        ("🟣", "Qwen Code", "qwen"),
+        ("🌀", "Qwen Code", "qwen"),
         ("🐙", "Copilot", "copilot"),
-        ("⚡", "Grok", "grok"),
+        ("🌌", "Grok", "grok"),
         ("🤝", "Aider", "aider"),
-        ("🛡️", "Antigravity", "antigravity"),
-        ("🤖", "Cline", "cline"),
+        ("🌈", "Antigravity", "antigravity"),
+        ("🧰", "Cline", "cline"),
         ("▶️", "Continue", "continue"),
-        ("◈", "Cursor Agent", "cursorAgent"),
+        ("💎", "Cursor Agent", "cursorAgent"),
         ("🅉", "ZCode", "zcode"),
     ]
 
@@ -1409,17 +1409,17 @@ struct SettingsView: View {
             "openclaw":   ("🦞", "OpenClaw"),
             "claudeCode": ("✳️", "Claude Code"),
             "gemini":     ("✨", "Gemini CLI"),
-            "codex":      ("🤖", "Codex"),
+            "codex":      ("⌨️", "Codex"),
             "hermes":     ("⚕️", "Hermes"),
             "opencode":   ("🖱️", "OpenCode"),
-            "qwen":       ("🟣", "Qwen Code"),
+            "qwen":       ("🌀", "Qwen Code"),
             "copilot":    ("🐙", "Copilot"),
-            "grok":       ("⚡", "Grok"),
+            "grok":       ("🌌", "Grok"),
             "aider":      ("🤝", "Aider"),
-            "antigravity":("🛡️", "Antigravity"),
-            "cline":      ("🤖", "Cline"),
+            "antigravity":("🌈", "Antigravity"),
+            "cline":      ("🧰", "Cline"),
             "continue":   ("▶️", "Continue"),
-            "cursorAgent":("◈", "Cursor Agent"),
+            "cursorAgent":("💎", "Cursor Agent"),
             "zcode":      ("🅉", "ZCode"),
         ]
         let label = toolLabels[service] ?? ("", service)

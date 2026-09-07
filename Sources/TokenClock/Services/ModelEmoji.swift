@@ -8,34 +8,46 @@ import Foundation
 enum ModelEmoji {
     /// (前缀, emoji) —— 顺序敏感；更具体的放前面。前缀匹配均对模型名 lowercased。
     private static let rules: [(prefix: String, emoji: String)] = [
-        // Anthropic —— 同 Claude Code 工具
-        ("claude",   "✳️"),
-        // OpenAI —— 同 Codex 工具（含 o 系列推理模型）
-        ("gpt",      "🤖"),
-        ("o1",       "🤖"),
-        ("o3",       "🤖"),
-        ("o4",       "🤖"),
-        // Google —— 同 Gemini CLI 工具
-        ("gemini",   "✨"),
-        // MiniMax —— 声波
-        ("minimax",  "🔊"),
-        // 智谱 GLM —— 字母 Z
-        ("glm",      "🅉"),
-        // Moonshot Kimi —— 月亮（月之暗面）
-        ("kimi",     "🌙"),
+        // OpenAI / ChatGPT models share a bright conversation mark. It remains
+        // legible in dense rows without turning each model into a black knot.
+        ("gpt-6-astra", "💬"),
+        ("gpt-5.6-sol", "💬"),
+        ("gpt-5.6-luna", "💬"),
+        ("gpt-5.6-terra", "💬"),
+        ("gpt-5.4-mini", "💬"),
+        ("chatgpt", "💬"),
+        ("gpt", "💬"),
+        ("o1", "💬"),
+        ("o3", "💬"),
+        ("o4", "💬"),
+
+        // Anthropic model names are literary forms.
+        ("claude-opus", "🎼"),
+        ("claude-sonnet", "📝"),
+        ("claude-haiku", "🍃"),
+        ("claude-fable", "📖"),
+        ("claude", "✳️"),
+
+        // Google Gemini: gem for the family, motion for Flash.
+        ("gemini-3.7-flash", "💫"),
+        ("gemini-3.6-flash", "💫"),
+        ("gemini-3.5-flash", "💫"),
+        ("gemini", "💎"),
+
+        ("minimax", "〽️"),
+        ("glm", "🧮"),
+        ("kimi", "🌙"),
         ("moonshot", "🌙"),
-        // 通义千问
-        ("qwen",     "♻️"),
-        // 字节豆包 —— 豆
-        ("doubao",   "🫘"),
-        // DeepSeek —— 鲸
+        ("qwen", "🌀"),
+        ("doubao", "🫘"),
         ("deepseek", "🐋"),
-        // Meta Llama
-        ("llama",    "🦙"),
-        // xAI Grok —— 同 Grok 工具
-        ("grok",     "⚡"),
-        // Mistral
-        ("mistral",  "🌪️"),
+        ("llama", "🦙"),
+        ("grok", "🌌"),
+        ("mistral", "🌪️"),
+        ("command", "🧭"),
+        ("nova", "🌠"),
+        ("phi", "🔷"),
+        ("yi", "☯️"),
     ]
 
     /// 取模型名对应的 emoji；匹配不到返回 🧠。
