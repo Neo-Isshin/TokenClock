@@ -506,10 +506,10 @@ final class ViewModel: ObservableObject {
                 savedPaths.append("🧠 Claude Code: \(result.detail)")
             case "gemini":
                 PathConfig.setGeminiPath(result.detectedPath)
-                savedPaths.append("💎 Gemini CLI: \(result.detail)")
+                savedPaths.append("❇️ Gemini CLI: \(result.detail)")
             case "codex":
                 PathConfig.setCodexPath(result.detectedPath)
-                savedPaths.append("⌨️ Codex: \(result.detail)")
+                savedPaths.append("⚛️ Codex: \(result.detail)")
             case "hermes":
                 PathConfig.setHermesPath(result.detectedPath)
                 savedPaths.append("🏔️ Hermes: \(result.detail)")
@@ -518,19 +518,19 @@ final class ViewModel: ObservableObject {
                 savedPaths.append("🖱️ OpenCode: \(result.detail)")
             case "qwen":
                 PathConfig.setQwenPath(result.detectedPath)
-                savedPaths.append("🌀 Qwen Code: \(result.detail)")
+                savedPaths.append("♻️ Qwen Code: \(result.detail)")
             case "copilot":
                 PathConfig.setCopilotPath(result.detectedPath)
                 savedPaths.append("🐙 Copilot: \(result.detail)")
             case "grok":
                 PathConfig.setGrokPath(result.detectedPath)
-                savedPaths.append("🌌 Grok: \(result.detail)")
+                savedPaths.append("🪐 Grok: \(result.detail)")
             case "aider":
                 PathConfig.setAiderPath(result.detectedPath)
                 savedPaths.append("🤝 Aider: \(result.detail)")
             case "antigravity":
                 PathConfig.setAntigravityPath(result.detectedPath)
-                savedPaths.append("🌈 Antigravity: \(result.detail)")
+                savedPaths.append("🔃 Antigravity: \(result.detail)")
             case "cline":
                 PathConfig.setClinePath(result.detectedPath)
                 savedPaths.append("🧰 Cline: \(result.detail)")
