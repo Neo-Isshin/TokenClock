@@ -22,6 +22,21 @@ import SQLite3
 ///
 /// 同时覆盖 Cursor IDE 和 Cursor Agent CLI，因为两者共用同一套账户系统。
 final class CursorAgentUsageService: @unchecked Sendable {
+    private static let dashboardRouteMarkers: Set<String> = [
+        "thinking", "fast", "low", "medium", "high", "xhigh",
+    ]
+    private static let dashboardMaxEffortFamilies = [
+        "gpt-", "claude-", "gemini-", "grok-", "composer-", "o1-", "o3-", "o4-",
+    ]
+    /// Cursor occasionally namespaces third-party model IDs as `cursor-<vendor model>`.
+    /// Strip that transport prefix only for known model families so Cursor-owned names
+    /// such as `cursor-small` remain intact.
+    private static let dashboardCursorAliasFamilies: Set<String> = [
+        "chatgpt", "gpt", "o1", "o3", "o4", "claude", "gemini", "grok",
+        "qwen", "minimax", "mistral", "deepseek", "kimi", "moonshot", "glm",
+        "llama", "command", "nova", "composer",
+    ]
+
     private(set) var dailyData: [String: DayUsage] = [:]
     private(set) var hourlyData: [String: HourlyUsage] = [:]
     private(set) var dailyCache: [String: Int] = [:]
@@ -413,7 +428,7 @@ final class CursorAgentUsageService: @unchecked Sendable {
                 dailyCache[dateKey, default: 0] += cacheRead
             }
 
-            if let model = ModelNormalizer.normalize(rawModel) {
+            if let model = Self.normalizeDashboardModel(rawModel) {
                 dailyModelBuckets[dateKey, default: [:]][model, default: ModelBuckets()].merge(
                     ModelBuckets(
                         input: inputTokens,
@@ -462,10 +477,45 @@ final class CursorAgentUsageService: @unchecked Sendable {
         return 0
     }
 
+    static func normalizeDashboardModel(_ raw: String?) -> String? {
+        guard var model = raw?.trimmingCharacters(in: .whitespacesAndNewlines), !model.isEmpty else {
+            return nil
+        }
+        model = stripKnownCursorAliasPrefix(from: model)
+        var removedRouteMarker = false
+        let lowercasedModel = model.lowercased()
+        let knownMaxEffortFamily = dashboardMaxEffortFamilies.contains {
+            lowercasedModel.hasPrefix($0)
+        }
+        while let separator = model.lastIndex(of: "-") {
+            let marker = model[model.index(after: separator)...].lowercased()
+            guard dashboardRouteMarkers.contains(marker)
+                    || (marker == "max" && (removedRouteMarker || knownMaxEffortFamily)) else { break }
+            model.removeSubrange(separator...)
+            removedRouteMarker = true
+        }
+        return ModelNormalizer.normalize(model)
+    }
+
     static func isGrokBotDashboardModel(_ raw: String?) -> Bool {
-        raw?.trimmingCharacters(in: .whitespacesAndNewlines)
-            .lowercased()
-            .hasPrefix("grok-bot-") == true
+        guard let raw else { return false }
+        return stripKnownCursorAliasPrefix(
+            from: raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        ).lowercased().hasPrefix("grok-bot-")
+    }
+
+    private static func stripKnownCursorAliasPrefix(from raw: String) -> String {
+        let prefix = "cursor-"
+        let lower = raw.lowercased()
+        guard lower.hasPrefix(prefix), raw.count > prefix.count else { return raw }
+        let remainder = String(raw.dropFirst(prefix.count))
+        let lowerRemainder = remainder.lowercased()
+        let knownFamily = dashboardCursorAliasFamilies.contains {
+            lowerRemainder == $0 || lowerRemainder.hasPrefix($0 + "-")
+                || ($0 == "qwen" && lowerRemainder.hasPrefix("qwen"))
+        }
+        guard knownFamily else { return raw }
+        return remainder
     }
 
     // MARK: - Session 列表

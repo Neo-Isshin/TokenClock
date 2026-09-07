@@ -27,6 +27,34 @@ final class UsageOverviewTests: XCTestCase {
         XCTAssertEqual(includingCache.rows.map(\.name), ["Claude Code", "Codex"])
     }
 
+    func testHistoricalCursorVendorPrefixesCollapseWithoutRewritingHistory() {
+        let sessions = [
+            DaySnapshot.Tool.Session(
+                id: "grok", displayName: "grok", tokens: 44, messages: 1, isActive: false,
+                model: "cursor-grok-4.6-high-fast", cost: .unavailable, cacheReadTokens: 6
+            ),
+            DaySnapshot.Tool.Session(
+                id: "chatgpt", displayName: "chatgpt", tokens: 56, messages: 1, isActive: false,
+                model: "cursor-chatgpt-high", cost: .unavailable, cacheReadTokens: 4
+            ),
+        ]
+        let cursor = DaySnapshot.Tool(
+            name: "Cursor Agent", tokens: 100, messages: 2, cacheRate: 10.0 / 110.0,
+            isActive: false, cost: .unavailable, cacheReadTokens: 10, sessions: sessions
+        )
+        let snapshot = DaySnapshot(
+            date: "2026-08-30", totalTokens: 100, totalMessages: 2, tools: [cursor]
+        )
+        let data = UsageOverviewBuilder.make(
+            startDate: date("2026-08-30"), endDate: date("2026-08-30"),
+            snapshots: [snapshot], grouping: .model
+        )
+
+        XCTAssertEqual(data.rows.map(\.name), ["chatgpt", "grok-4.6"])
+        XCTAssertEqual(data.rows.map(\.emoji), ["💫", "🪐"])
+        XCTAssertEqual(data.rows.reduce(0) { $0 + $1.metrics.tokens }, 100)
+    }
+
     private func tool(_ name: String, tokens: Int, cache: Int) -> DaySnapshot.Tool {
         DaySnapshot.Tool(
             name: name, tokens: tokens, messages: 1,

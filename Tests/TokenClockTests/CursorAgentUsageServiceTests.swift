@@ -91,6 +91,26 @@ final class CursorAgentUsageServiceTests: XCTestCase {
         XCTAssertFalse(CursorAgentUsageService.isGrokBotDashboardModel("grok-4-fast"))
     }
 
+    func testCursorDashboardAliasesCollapseWithoutDamagingCursorModels() {
+        let aliases: [(raw: String, expected: String)] = [
+            ("claude-fable-5-thinking-medium", "claude-fable-5"),
+            ("cursor-chatgpt-high", "chatgpt"),
+            ("cursor-gpt-5.6-sol-high-fast", "gpt-5.6-sol"),
+            ("cursor-claude-opus-5-thinking-medium", "claude-opus-5"),
+            ("cursor-gemini-3.7-flash-high", "gemini-3.7-flash"),
+            ("cursor-grok-4.6-high-fast", "grok-4.6"),
+            ("cursor-qwen3.8-max", "qwen3.8-max"),
+            ("cursor-MiniMax-M2.7-highspeed", "MiniMax-M2.7-highspeed"),
+            ("cursor-composer-2.5-fast", "composer-2.5"),
+        ]
+        for alias in aliases {
+            XCTAssertEqual(CursorAgentUsageService.normalizeDashboardModel(alias.raw), alias.expected)
+        }
+        XCTAssertEqual(CursorAgentUsageService.normalizeDashboardModel("cursor-small"), "cursor-small")
+        XCTAssertEqual(CursorAgentUsageService.normalizeDashboardModel("cursor-auto-fast"), "cursor-auto")
+        XCTAssertTrue(CursorAgentUsageService.isGrokBotDashboardModel("cursor-grok-bot-default"))
+    }
+
     private func event(
         timestamp: Any,
         model: String,

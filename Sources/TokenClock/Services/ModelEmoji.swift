@@ -41,7 +41,7 @@ enum ModelEmoji {
         ("doubao", "🫘"),
         ("deepseek", "🐋"),
         ("llama", "🦙"),
-        ("grok-bot", "😶"),
+        ("grok-bot", "🪐"),
         ("grok", "🪐"),
         ("mistral", "🌪️"),
         ("command", "🧭"),
