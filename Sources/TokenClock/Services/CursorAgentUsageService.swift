@@ -28,6 +28,14 @@ final class CursorAgentUsageService: @unchecked Sendable {
     private static let dashboardMaxEffortFamilies = [
         "gpt-", "claude-", "gemini-", "grok-", "composer-", "o1-", "o3-", "o4-",
     ]
+    /// Cursor occasionally namespaces third-party model IDs as `cursor-<vendor model>`.
+    /// Strip that transport prefix only when the remainder starts with a known model
+    /// family. Cursor-owned names such as `cursor-small` must stay intact.
+    private static let dashboardCursorAliasFamilies: Set<String> = [
+        "chatgpt", "gpt", "o1", "o3", "o4", "claude", "gemini", "grok",
+        "qwen", "minimax", "mistral", "deepseek", "kimi", "moonshot", "glm",
+        "llama", "command", "nova", "composer",
+    ]
 
     static var cloudFetchEnabled: Bool {
         UserDefaults.standard.bool(for: .cursorCloudFetchEnabled, default: true)
@@ -526,6 +534,7 @@ final class CursorAgentUsageService: @unchecked Sendable {
         guard var model = raw?.trimmingCharacters(in: .whitespacesAndNewlines), !model.isEmpty else {
             return nil
         }
+        model = stripKnownCursorAliasPrefix(from: model)
         var removedRouteMarker = false
         let lowercasedModel = model.lowercased()
         let knownMaxEffortFamily = Self.dashboardMaxEffortFamilies.contains {
@@ -542,9 +551,24 @@ final class CursorAgentUsageService: @unchecked Sendable {
     }
 
     static func isGrokBotDashboardModel(_ raw: String?) -> Bool {
-        raw?.trimmingCharacters(in: .whitespacesAndNewlines)
-            .lowercased()
-            .hasPrefix("grok-bot-") == true
+        guard let raw else { return false }
+        return stripKnownCursorAliasPrefix(
+            from: raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        ).lowercased().hasPrefix("grok-bot-")
+    }
+
+    private static func stripKnownCursorAliasPrefix(from raw: String) -> String {
+        let prefix = "cursor-"
+        let lower = raw.lowercased()
+        guard lower.hasPrefix(prefix), raw.count > prefix.count else { return raw }
+        let remainder = String(raw.dropFirst(prefix.count))
+        let lowerRemainder = remainder.lowercased()
+        let knownFamily = dashboardCursorAliasFamilies.contains {
+            lowerRemainder == $0 || lowerRemainder.hasPrefix($0 + "-")
+                || ($0 == "qwen" && lowerRemainder.hasPrefix("qwen"))
+        }
+        guard knownFamily else { return raw }
+        return remainder
     }
 
     // MARK: - Session 列表

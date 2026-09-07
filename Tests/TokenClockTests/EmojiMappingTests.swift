@@ -7,7 +7,7 @@ final class EmojiMappingTests: XCTestCase {
         XCTAssertEqual(ModelEmoji.emoji(for: "gpt-6-astra"), "💫")
         XCTAssertEqual(ModelEmoji.emoji(for: "gemini-3.7-flash"), "❇️")
         XCTAssertEqual(ModelEmoji.emoji(for: "grok-4"), "🪐")
-        XCTAssertEqual(ModelEmoji.emoji(for: "grok-bot-default"), "😶")
+        XCTAssertEqual(ModelEmoji.emoji(for: "grok-bot-default"), "🪐")
         XCTAssertEqual(ModelEmoji.emoji(for: "MiniMax-M3"), "〽️")
         XCTAssertEqual(ModelEmoji.emoji(for: "qwen3-coder"), "♻️")
     }
