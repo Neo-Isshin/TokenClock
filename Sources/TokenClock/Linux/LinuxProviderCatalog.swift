@@ -104,7 +104,7 @@ enum LinuxProviderCatalog {
             )
         case .gemini:
             return Entry(
-                provider: provider, service: "gemini", displayName: "Gemini CLI", emoji: "💎",
+                provider: provider, service: "gemini", displayName: "Gemini CLI", emoji: "❇️",
                 defaultPath: home(".gemini"), defaultOrigin: .officialDefault,
                 environmentVariables: ["GEMINI_CLI_HOME"], compatibilityEnvironmentVariables: ["GEMINI_HOME"],
                 parserInput: "tmp/*/chats/session-*.jsonl (or legacy JSON)",
@@ -112,7 +112,7 @@ enum LinuxProviderCatalog {
             )
         case .codex:
             return Entry(
-                provider: provider, service: "codex", displayName: "Codex", emoji: "⌨️",
+                provider: provider, service: "codex", displayName: "Codex", emoji: "⚛️",
                 defaultPath: home(".codex"), defaultOrigin: .officialDefault,
                 environmentVariables: ["CODEX_HOME"], compatibilityEnvironmentVariables: [],
                 parserInput: "sessions/YYYY/MM/DD/rollout-*.jsonl", limitation: nil
@@ -134,7 +134,7 @@ enum LinuxProviderCatalog {
             )
         case .qwen:
             return Entry(
-                provider: provider, service: "qwen", displayName: "Qwen Code", emoji: "🌀",
+                provider: provider, service: "qwen", displayName: "Qwen Code", emoji: "♻️",
                 defaultPath: home(".qwen"), defaultOrigin: .officialDefault,
                 environmentVariables: ["QWEN_RUNTIME_DIR", "QWEN_HOME"], compatibilityEnvironmentVariables: [],
                 parserInput: "projects/*/chats/*.jsonl", limitation: nil
@@ -149,7 +149,7 @@ enum LinuxProviderCatalog {
             )
         case .grok:
             return Entry(
-                provider: provider, service: "grok", displayName: "Grok CLI", emoji: "🌌",
+                provider: provider, service: "grok", displayName: "Grok CLI", emoji: "🪐",
                 defaultPath: home(".grok"), defaultOrigin: .officialDefault,
                 environmentVariables: [], compatibilityEnvironmentVariables: ["GROK_HOME"],
                 parserInput: "sessions/*/*/updates.jsonl",
@@ -166,7 +166,7 @@ enum LinuxProviderCatalog {
             )
         case .antigravity:
             return Entry(
-                provider: provider, service: "antigravity", displayName: "Antigravity", emoji: "🌈",
+                provider: provider, service: "antigravity", displayName: "Antigravity", emoji: "🔃",
                 defaultPath: home(".gemini", "antigravity-cli"), defaultOrigin: .officialDefault,
                 environmentVariables: [], compatibilityEnvironmentVariables: ["ANTIGRAVITY_HOME"],
                 parserInput: "conversations/*.db (steps protobuf telemetry)",
