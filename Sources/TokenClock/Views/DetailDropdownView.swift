@@ -646,7 +646,7 @@ struct DetailDropdownView: View {
                     Text(L10n.shared.tr("detail.forecast"))
                         .font(.system(size: 11))
                         .foregroundColor(subtextColor)
-                        .padding(.trailing, 3)
+                        .offset(x: 2)
                 }
                 forecastNotificationButton
             }
