@@ -298,9 +298,23 @@ final class LinuxClockRenderer: @unchecked Sendable {
         let rowSpacing = 17 * scale
         let firstY = height / 2 - Double(max(0, activeTools.count - 1)) * rowSpacing / 2
         for (index, tool) in activeTools.enumerated() {
-            drawText(context, "\(tool.emoji) \(tool.abbreviation)", family: "Sans", size: 13 * scale, weight: 600,
-                     x: 22 * scale, y: firstY + Double(index) * rowSpacing, alignment: 0,
-                     color: withAlpha(primary, primary.alpha * 0.75))
+            let rowY = firstY + Double(index) * rowSpacing
+            let rowColor = withAlpha(primary, primary.alpha * 0.75)
+            if let icon = TokenClockIcon.resolve(displayName: tool.name) {
+                var iconColor = GdkRGBA()
+                iconColor.red = rowColor.red; iconColor.green = rowColor.green
+                iconColor.blue = rowColor.blue; iconColor.alpha = rowColor.alpha
+                LinuxTokenClockIconRenderer.draw(
+                    icon, context: context,
+                    centerX: 29 * scale, centerY: rowY,
+                    size: 14 * scale, color: iconColor
+                )
+                drawText(context, tool.abbreviation, family: "Sans", size: 13 * scale, weight: 600,
+                         x: 38 * scale, y: rowY, alignment: 0, color: rowColor)
+            } else {
+                drawText(context, "\(tool.emoji) \(tool.abbreviation)", family: "Sans", size: 13 * scale, weight: 600,
+                         x: 22 * scale, y: rowY, alignment: 0, color: rowColor)
+            }
         }
 
         drawText(context, UsageAggregator.rateEmoji(tools), family: "Noto Color Emoji, Emoji, Sans", size: 28 * scale, weight: 400,

@@ -33,6 +33,7 @@ let linuxSources = [
     "Services/ProviderQuotaService.swift",
     "Services/QwenCodeUsageService.swift",
     "Services/TokenAccounting.swift",
+    "Services/TokenClockIcon.swift",
     "Services/UsageAggregator.swift",
     "Services/UsageOverview.swift",
     "Services/UsageReportScheduler.swift",
@@ -47,6 +48,7 @@ let linuxSources = [
     "Linux/LinuxSettingsWindow.swift",
     "Linux/LinuxUsageOverviewWindow.swift",
     "Linux/LinuxThemePicker.swift",
+    "Linux/LinuxTokenClockIcon.swift",
     "Linux/LinuxWeatherService.swift",
     "Linux/LinuxMain.swift",
     "Linux/LinuxNotificationWindow.swift",
@@ -92,6 +94,7 @@ let package = Package(
             resources: [
                 .copy("Resources/glass_disc.png"),
                 .copy("Resources/pricing-snapshot.json"),
+                .copy("Resources/TokenClockIcons"),
             ],
             swiftSettings: [.unsafeFlags(["-parse-as-library"])]
         ),

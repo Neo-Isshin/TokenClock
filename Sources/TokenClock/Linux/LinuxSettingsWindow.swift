@@ -16,7 +16,7 @@ final class LinuxSettingsWindow: @unchecked Sendable {
         .init(emoji: "✨", name: "Gemini CLI", service: "gemini", pathKey: .geminiPath),
         .init(emoji: "🤖", name: "Codex", service: "codex", pathKey: .codexPath),
         .init(emoji: "⚕️", name: "Hermes", service: "hermes", pathKey: .hermesPath),
-        .init(emoji: "🐙", name: "OpenCode", service: "opencode", pathKey: .opencodePath),
+        .init(emoji: "🖱️", name: "OpenCode", service: "opencode", pathKey: .opencodePath),
         .init(emoji: "🟣", name: "Qwen Code", service: "qwen", pathKey: .qwenPath),
         .init(emoji: "🐙", name: "Copilot", service: "copilot", pathKey: .copilotPath),
         .init(emoji: "⚡", name: "Grok", service: "grok", pathKey: .grokPath),
@@ -24,7 +24,7 @@ final class LinuxSettingsWindow: @unchecked Sendable {
         .init(emoji: "🛡️", name: "Antigravity", service: "antigravity", pathKey: .antigravityPath),
         .init(emoji: "🤖", name: "Cline", service: "cline", pathKey: .clinePath),
         .init(emoji: "▶️", name: "Continue", service: "continue", pathKey: .continuePath),
-        .init(emoji: "🖱️", name: "Cursor Agent", service: "cursorAgent", pathKey: .cursorAgentPath),
+        .init(emoji: "◈", name: "Cursor Agent", service: "cursorAgent", pathKey: .cursorAgentPath),
     ]
 
     private weak var owner: LinuxApp?
@@ -300,7 +300,13 @@ final class LinuxSettingsWindow: @unchecked Sendable {
         gtk_box_pack_start(tc_gtk_box(columns), left, 1, 1, 0)
         gtk_box_pack_start(tc_gtk_box(columns), right, 1, 1, 0)
         for (index, option) in Self.toolOptions.enumerated() {
-            let button = gtk_check_button_new_with_label("\(option.emoji)  \(option.name)")
+            guard let button = gtk_check_button_new(),
+                  let content = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 5),
+                  let icon = LinuxTokenClockIconRenderer.widget(displayName: option.name, fallbackEmoji: option.emoji, size: 16) else { continue }
+            let label = gtk_label_new(option.name)
+            gtk_box_pack_start(tc_gtk_box(content), icon, 0, 0, 0)
+            gtk_box_pack_start(tc_gtk_box(content), label, 0, 0, 0)
+            gtk_container_add(tc_gtk_container(button), content)
             gtk_box_pack_start(tc_gtk_box(index < 7 ? left : right), button, 0, 0, 0)
             toolButtons[option.name] = button
         }
@@ -323,16 +329,20 @@ final class LinuxSettingsWindow: @unchecked Sendable {
         for option in Self.toolOptions {
             let row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8)
             tc_gtk_add_class(row, "tokenclock-settings-row")
-            let label = gtk_label_new("\(option.emoji) \(option.name)")
+            let labelBox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 5)
+            let icon = LinuxTokenClockIconRenderer.widget(displayName: option.name, fallbackEmoji: option.emoji, size: 16)
+            let label = gtk_label_new(option.name)
             gtk_label_set_xalign(tc_gtk_label(label), 0)
-            gtk_widget_set_size_request(label, 130, -1)
+            gtk_box_pack_start(tc_gtk_box(labelBox), icon, 0, 0, 0)
+            gtk_box_pack_start(tc_gtk_box(labelBox), label, 1, 1, 0)
+            gtk_widget_set_size_request(labelBox, 130, -1)
             let entry = gtk_entry_new()
             gtk_entry_set_placeholder_text(tc_gtk_entry(entry), L10n.shared.tr("settings.defaultPath"))
             gtk_widget_set_hexpand(entry, 1)
             let browse = gtk_button_new_with_label(L10n.shared.tr("settings.browse"))
             gtk_widget_set_name(browse, "settings:browse:\(option.service)")
             _ = tc_gtk_on_clicked(browse, linuxSettingsAction, opaque)
-            gtk_box_pack_start(tc_gtk_box(row), label, 0, 0, 0)
+            gtk_box_pack_start(tc_gtk_box(row), labelBox, 0, 0, 0)
             gtk_box_pack_start(tc_gtk_box(row), entry, 1, 1, 0)
             gtk_box_pack_start(tc_gtk_box(row), browse, 0, 0, 0)
             gtk_box_pack_start(tc_gtk_box(page), row, 0, 0, 0)

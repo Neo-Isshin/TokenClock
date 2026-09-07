@@ -441,16 +441,28 @@ final class LinuxUsageOverviewWindow: @unchecked Sendable {
         }
         for row in rows {
             let name = row.name == "Unknown" ? L10n.shared.tr("detail.unknownModel") : row.name
-            appendDataRow(name: "\(row.emoji)  \(name)", tokens: TokenFormat.compact(displayedTokens(row.metrics)), messages: number(row.metrics.messages), cost: CostFormat.estimate(row.metrics.cost), cache: String(format: "%@%.2f%%", row.metrics.cacheIsExact ? "" : "≈", row.metrics.averageCacheRate * 100), header: false, to: list)
+            appendDataRow(name: name, displayName: row.name, fallbackEmoji: row.emoji, tokens: TokenFormat.compact(displayedTokens(row.metrics)), messages: number(row.metrics.messages), cost: CostFormat.estimate(row.metrics.cost), cache: String(format: "%@%.2f%%", row.metrics.cacheIsExact ? "" : "≈", row.metrics.averageCacheRate * 100), header: false, to: list)
         }
         gtk_box_pack_start(tc_gtk_box(root), list, 0, 0, 0)
     }
 
-    private func appendDataRow(name: String, tokens: String, messages: String, cost: String, cache: String, header: Bool, to list: UnsafeMutablePointer<GtkWidget>?) {
+    private func appendDataRow(name: String, displayName: String? = nil, fallbackEmoji: String = "", tokens: String, messages: String, cost: String, cache: String, header: Bool, to list: UnsafeMutablePointer<GtkWidget>?) {
         let row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8)
         tc_gtk_add_class(row, header ? "tc-overview-header" : "tc-overview-row")
         let labels = [name, tokens, messages, cost, cache]
         for (index, value) in labels.enumerated() {
+            if index == 0, let displayName,
+               let nameBox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 5),
+               let icon = LinuxTokenClockIconRenderer.widget(displayName: displayName, fallbackEmoji: fallbackEmoji, size: 16) {
+                let label = gtk_label_new(value)
+                gtk_label_set_xalign(tc_gtk_label(label), 0)
+                gtk_widget_set_hexpand(label, 1)
+                gtk_box_pack_start(tc_gtk_box(nameBox), icon, 0, 0, 0)
+                gtk_box_pack_start(tc_gtk_box(nameBox), label, 1, 1, 0)
+                gtk_widget_set_hexpand(nameBox, 1)
+                gtk_box_pack_start(tc_gtk_box(row), nameBox, 1, 1, 0)
+                continue
+            }
             let label = gtk_label_new(value)
             gtk_label_set_xalign(tc_gtk_label(label), index == 0 ? 0 : 1)
             if index == 0 { gtk_widget_set_hexpand(label, 1) }
