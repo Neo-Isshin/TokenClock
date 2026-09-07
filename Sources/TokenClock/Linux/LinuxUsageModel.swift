@@ -172,8 +172,29 @@ final class LinuxUsageModel: @unchecked Sendable {
             results["Copilot"] = snapshot(usage, copilotService.recentUsage(minutes: rateWindow).tokens, copilotService.currentHourTokens(), copilotService.isActive(), copilotService.todaySessions())
         }
         if enabled.contains("Grok") {
-            let usage = grokService.todayUsage()
-            results["Grok"] = snapshot(usage, grokService.recentUsage(minutes: rateWindow).tokens, grokService.currentHourTokens(), grokService.isActive(), grokService.todaySessions())
+            let native = grokService.todayUsage()
+            let bridged = cursorAgentService.todayGrokBotUsage()
+            let nativeRecent = grokService.recentUsage(minutes: rateWindow)
+            let bridgedRecent = cursorAgentService.recentGrokBotUsage(minutes: rateWindow)
+            let cacheRead = cursorAgentService.todayGrokBotCacheReadTokens()
+            let freshTokens = native.tokens + bridged.tokens
+            var cost = cursorAgentService.todayGrokBotCost()
+            if native.tokens > 0, cost.available { cost.complete = false }
+            let usage = (
+                tokens: freshTokens,
+                messages: native.messages + bridged.messages,
+                cacheRate: TokenAccounting.cacheReadShare(freshTokens: freshTokens, cacheRead: cacheRead)
+            )
+            results["Grok"] = snapshot(
+                usage,
+                nativeRecent.tokens + bridgedRecent.tokens,
+                grokService.currentHourTokens() + cursorAgentService.currentHourGrokBotTokens(),
+                grokService.isActive() || cursorAgentService.isGrokBotActive(),
+                (grokService.todaySessions() + cursorAgentService.todayGrokBotSessions())
+                    .sorted { $0.todayTokens > $1.todayTokens },
+                cost: cost,
+                cacheRead: cacheRead
+            )
         }
         if enabled.contains("Aider") {
             let usage = aiderService.todayUsage()

@@ -32,6 +32,10 @@ final class CursorAgentUsageService: @unchecked Sendable {
     private var dailyModelCache: [String: [String: Int]] = [:]
     private var dailyModelLatestActivity: [String: [String: Date]] = [:]
     private var recentEntries: [RecentEntry] = []
+    private var dailyGrokBotData: [String: DayUsage] = [:]
+    private var hourlyGrokBotData: [String: HourlyUsage] = [:]
+    private var dailyGrokBotCache: [String: Int] = [:]
+    private var recentGrokBotEntries: [RecentEntry] = []
 
     private let session: URLSession
     private var sessionToken: String?
@@ -75,7 +79,9 @@ final class CursorAgentUsageService: @unchecked Sendable {
     }
 
     func todayModelBuckets() -> [String: ModelBuckets] {
-        dailyModelBuckets[DateHelper.todayKey()] ?? [:]
+        (dailyModelBuckets[DateHelper.todayKey()] ?? [:]).filter {
+            !Self.isGrokBotDashboardModel($0.key)
+        }
     }
 
     func todayCost() -> CostEstimate {
@@ -84,6 +90,43 @@ final class CursorAgentUsageService: @unchecked Sendable {
 
     func todayCacheReadTokens() -> Int {
         dailyCache[DateHelper.todayKey()] ?? 0
+    }
+
+    func todayGrokBotUsage() -> (tokens: Int, messages: Int, cacheRate: Double) {
+        let usage = dailyGrokBotData[DateHelper.todayKey()]
+        let cache = dailyGrokBotCache[DateHelper.todayKey()] ?? 0
+        let tokens = usage?.tokens ?? 0
+        return (tokens, usage?.messages ?? 0,
+                TokenAccounting.cacheReadShare(freshTokens: tokens, cacheRead: cache))
+    }
+
+    func todayGrokBotModelBuckets() -> [String: ModelBuckets] {
+        (dailyModelBuckets[DateHelper.todayKey()] ?? [:]).filter {
+            Self.isGrokBotDashboardModel($0.key)
+        }
+    }
+
+    func todayGrokBotCost() -> CostEstimate {
+        PricingService.shared.cost(of: todayGrokBotModelBuckets())
+    }
+
+    func todayGrokBotCacheReadTokens() -> Int {
+        dailyGrokBotCache[DateHelper.todayKey()] ?? 0
+    }
+
+    func currentHourGrokBotTokens() -> Int {
+        hourlyGrokBotData[DateHelper.currentHourKey()]?.tokens ?? 0
+    }
+
+    func recentGrokBotUsage(minutes: Int = 10) -> (tokens: Int, messages: Int) {
+        let cutoff = Date().addingTimeInterval(-Double(minutes * 60))
+        let entries = recentGrokBotEntries.filter { $0.timestamp >= cutoff }
+        return (entries.reduce(0) { $0 + $1.tokens }, entries.count)
+    }
+
+    func isGrokBotActive() -> Bool {
+        let cutoff = Date().addingTimeInterval(-AppConfig.Scan.activeThresholdSeconds)
+        return recentGrokBotEntries.contains { $0.timestamp >= cutoff }
     }
 
     func currentHourTokens() -> Int {
@@ -284,6 +327,10 @@ final class CursorAgentUsageService: @unchecked Sendable {
             dailyModelCache.removeAll()
             dailyModelLatestActivity.removeAll()
             recentEntries = []
+            dailyGrokBotData.removeAll()
+            hourlyGrokBotData.removeAll()
+            dailyGrokBotCache.removeAll()
+            recentGrokBotEntries = []
         } else {
             // 增量窗口覆盖最近 rangeDays 天（cursorIncrementalDays=2 = 今天 + 昨天）。
             // 必须逐天清空后再重读，否则昨天的 dailyData/hourlyData/dailyCache 每轮增量都
@@ -299,6 +346,12 @@ final class CursorAgentUsageService: @unchecked Sendable {
                 dailyModelLatestActivity[day] = nil
                 hourlyData = hourlyData.filter { !$0.key.hasPrefix(day) }
                 recentEntries = recentEntries.filter { DateHelper.dateKey(from: $0.timestamp) != day }
+                dailyGrokBotData[day] = nil
+                dailyGrokBotCache[day] = nil
+                hourlyGrokBotData = hourlyGrokBotData.filter { !$0.key.hasPrefix(day) }
+                recentGrokBotEntries = recentGrokBotEntries.filter {
+                    DateHelper.dateKey(from: $0.timestamp) != day
+                }
             }
         }
 
@@ -331,21 +384,36 @@ final class CursorAgentUsageService: @unchecked Sendable {
             )
             guard total > 0 else { continue }
 
-            if var e = dailyData[dateKey] {
-                e.tokens += total; e.messages += 1; dailyData[dateKey] = e
+            let rawModel = event["model"] as? String
+            let isGrokBot = Self.isGrokBotDashboardModel(rawModel)
+
+            if isGrokBot {
+                if var e = dailyGrokBotData[dateKey] {
+                    e.tokens += total; e.messages += 1; dailyGrokBotData[dateKey] = e
+                } else {
+                    dailyGrokBotData[dateKey] = DayUsage(tokens: total, messages: 1)
+                }
+                if var e = hourlyGrokBotData[hourKey] {
+                    e.tokens += total; e.messages += 1; hourlyGrokBotData[hourKey] = e
+                } else {
+                    hourlyGrokBotData[hourKey] = HourlyUsage(tokens: total, messages: 1)
+                }
+                dailyGrokBotCache[dateKey, default: 0] += cacheRead
             } else {
-                dailyData[dateKey] = DayUsage(tokens: total, messages: 1)
+                if var e = dailyData[dateKey] {
+                    e.tokens += total; e.messages += 1; dailyData[dateKey] = e
+                } else {
+                    dailyData[dateKey] = DayUsage(tokens: total, messages: 1)
+                }
+                if var e = hourlyData[hourKey] {
+                    e.tokens += total; e.messages += 1; hourlyData[hourKey] = e
+                } else {
+                    hourlyData[hourKey] = HourlyUsage(tokens: total, messages: 1)
+                }
+                dailyCache[dateKey, default: 0] += cacheRead
             }
 
-            if var e = hourlyData[hourKey] {
-                e.tokens += total; e.messages += 1; hourlyData[hourKey] = e
-            } else {
-                hourlyData[hourKey] = HourlyUsage(tokens: total, messages: 1)
-            }
-
-            dailyCache[dateKey, default: 0] += cacheRead
-
-            if let model = ModelNormalizer.normalize(event["model"] as? String) {
+            if let model = ModelNormalizer.normalize(rawModel) {
                 dailyModelBuckets[dateKey, default: [:]][model, default: ModelBuckets()].merge(
                     ModelBuckets(
                         input: inputTokens,
@@ -369,11 +437,19 @@ final class CursorAgentUsageService: @unchecked Sendable {
             }
 
             if dateKey == today {
-                recentEntries.append(RecentEntry(timestamp: date, tokens: total))
+                if isGrokBot {
+                    recentGrokBotEntries.append(RecentEntry(timestamp: date, tokens: total))
+                } else {
+                    recentEntries.append(RecentEntry(timestamp: date, tokens: total))
+                }
                 // L4: 限制 recentEntries 增长，只保留 active 窗口 3 倍内的条目
                 if recentEntries.count > 64 {
                     let cutoff = Date().addingTimeInterval(-AppConfig.Scan.activeThresholdSeconds * 3)
                     recentEntries = recentEntries.filter { $0.timestamp >= cutoff }
+                }
+                if recentGrokBotEntries.count > 64 {
+                    let cutoff = Date().addingTimeInterval(-AppConfig.Scan.activeThresholdSeconds * 3)
+                    recentGrokBotEntries = recentGrokBotEntries.filter { $0.timestamp >= cutoff }
                 }
             }
         }
@@ -386,6 +462,12 @@ final class CursorAgentUsageService: @unchecked Sendable {
         return 0
     }
 
+    static func isGrokBotDashboardModel(_ raw: String?) -> Bool {
+        raw?.trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+            .hasPrefix("grok-bot-") == true
+    }
+
     // MARK: - Session 列表
 
     func todaySessions() -> [SessionInfo] {
@@ -393,7 +475,9 @@ final class CursorAgentUsageService: @unchecked Sendable {
         // 与 Dashboard 的模型筛选口径一致，也避免产生数百个低价值 session 行。
         let today = DateHelper.todayKey()
         let activeCutoff = Date().addingTimeInterval(-AppConfig.Scan.activeThresholdSeconds)
-        return (dailyModelUsage[today] ?? [:]).map { model, usage in
+        return (dailyModelUsage[today] ?? [:]).filter {
+            !Self.isGrokBotDashboardModel($0.key)
+        }.map { model, usage in
             let buckets = dailyModelBuckets[today]?[model]
             return SessionInfo(
                 rawId: "cursor:\(model)",
@@ -404,6 +488,24 @@ final class CursorAgentUsageService: @unchecked Sendable {
                 isActive: (dailyModelLatestActivity[today]?[model] ?? .distantPast) >= activeCutoff,
                 model: model,
                 todayCost: buckets.map { PricingService.shared.cost(of: [model: $0]) } ?? .zero,
+                cacheReadTokens: dailyModelCache[today]?[model] ?? 0
+            )
+        }.sorted { $0.todayTokens > $1.todayTokens }
+    }
+
+    func todayGrokBotSessions() -> [SessionInfo] {
+        let today = DateHelper.todayKey()
+        let activeCutoff = Date().addingTimeInterval(-AppConfig.Scan.activeThresholdSeconds)
+        return (dailyModelUsage[today] ?? [:]).filter {
+            Self.isGrokBotDashboardModel($0.key)
+        }.map { model, usage in
+            let buckets = dailyModelBuckets[today]?[model]
+            return SessionInfo(
+                rawId: "cursor:\(model)", displayName: model, detail: nil,
+                todayTokens: usage.tokens, todayMessages: usage.messages,
+                isActive: (dailyModelLatestActivity[today]?[model] ?? .distantPast) >= activeCutoff,
+                source: "Cursor", model: model,
+                todayCost: buckets.map { PricingService.shared.cost(of: [model: $0]) } ?? .unavailable,
                 cacheReadTokens: dailyModelCache[today]?[model] ?? 0
             )
         }.sorted { $0.todayTokens > $1.todayTokens }

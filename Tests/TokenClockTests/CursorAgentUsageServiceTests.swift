@@ -59,6 +59,31 @@ final class CursorAgentUsageServiceTests: XCTestCase {
         XCTAssertEqual(service.todayModelBuckets()["cursor-replace"]?.input, 7)
     }
 
+    func testGrokBotModelsAreSeparatedFromDirectCursorUsage() {
+        let service = CursorAgentUsageService()
+        let timestamp = Int(Date().timeIntervalSince1970 * 1_000)
+        service.applyEvents([
+            event(timestamp: timestamp, model: "cursor-direct", input: 100, output: 20, cacheRead: 300),
+            event(timestamp: timestamp, model: "grok-bot-default", input: 400, output: 50, cacheRead: 900),
+            event(timestamp: timestamp, model: "grok-bot-automation", input: 70, output: 10, cacheRead: 120),
+            event(timestamp: timestamp, model: "grok-4-fast", input: 30, output: 5, cacheRead: 15),
+        ], rangeDays: 30)
+
+        XCTAssertEqual(service.todayUsage().tokens, 155)
+        XCTAssertEqual(service.todayUsage().messages, 2)
+        XCTAssertEqual(service.todayCacheReadTokens(), 315)
+        XCTAssertEqual(service.todayGrokBotUsage().tokens, 530)
+        XCTAssertEqual(service.todayGrokBotUsage().messages, 2)
+        XCTAssertEqual(service.todayGrokBotCacheReadTokens(), 1_020)
+        XCTAssertEqual(
+            service.todayGrokBotSessions().map(\.displayName).sorted(),
+            ["grok-bot-automation", "grok-bot-default"]
+        )
+        XCTAssertTrue(service.todayGrokBotSessions().allSatisfy { $0.source == "Cursor" })
+        XCTAssertTrue(CursorAgentUsageService.isGrokBotDashboardModel(" GROK-BOT-CUA "))
+        XCTAssertFalse(CursorAgentUsageService.isGrokBotDashboardModel("grok-4-fast"))
+    }
+
     private func event(
         timestamp: Any,
         model: String,
