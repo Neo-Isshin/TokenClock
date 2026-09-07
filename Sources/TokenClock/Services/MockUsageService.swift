@@ -14,24 +14,24 @@ final class MockUsageService {
             WindowsProviderCatalog.orderedEntries.map {
                 ($0.displayName, $0.abbreviation, $0.emoji, $0.measurementUnit, $0.measurementScope)
             }
-        let tools = catalogTools + [("Grok Bot", "GB", "🛰️", .tokens, .today)]
+        let tools = catalogTools + [("Grok Bot", "GB", "😶", .tokens, .today)]
         #else
         let tokenTools: [(name: String, abbr: String, emoji: String)] = [
             ("OpenClaw", "OC", "🦞"),
-            ("Gemini CLI", "GC", "✨"),
+            ("Gemini CLI", "GC", "❇️"),
             ("Claude Code", "CC", "✳️"),
             ("Hermes", "HM", "⚕️"),
-            ("Codex", "CX", "⌨️"),
+            ("Codex", "CX", "⚛️"),
             ("OpenCode", "OD", "🖱️"),
-            ("Qwen Code", "QW", "🌀"),
+            ("Qwen Code", "QW", "♻️"),
             ("Copilot", "CP", "🐙"),
-            ("Grok", "GK", "🌌"),
+            ("Grok", "GK", "🪐"),
             ("Aider", "AI", "🤝"),
-            ("Antigravity", "AG", "🌈"),
+            ("Antigravity", "AG", "🔃"),
             ("Cline", "CL", "🧰"),
             ("Continue", "CN", "▶️"),
             ("Cursor Agent", "CA", "💎"),
-            ("Grok Bot", "GB", "🛰️"),
+            ("Grok Bot", "GB", "😶"),
             ("ZCode", "ZC", "🅉"),
         ]
         let tools: [(name: String, abbr: String, emoji: String, unit: UsageMeasurementUnit, scope: UsageMeasurementScope)] =
