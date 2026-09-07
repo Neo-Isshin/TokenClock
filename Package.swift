@@ -15,7 +15,6 @@ let package = Package(
             ],
             resources: [
                 .copy("Resources/pricing-snapshot.json"),
-                .copy("Resources/TokenClockIcons"),
             ],
             swiftSettings: [.unsafeFlags(["-parse-as-library"])]
         ),

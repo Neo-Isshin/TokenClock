@@ -509,37 +509,37 @@ final class ViewModel: ObservableObject {
                 savedPaths.append("💎 Gemini CLI: \(result.detail)")
             case "codex":
                 PathConfig.setCodexPath(result.detectedPath)
-                savedPaths.append("🤖 Codex: \(result.detail)")
+                savedPaths.append("⌨️ Codex: \(result.detail)")
             case "hermes":
                 PathConfig.setHermesPath(result.detectedPath)
                 savedPaths.append("🏔️ Hermes: \(result.detail)")
             case "opencode":
                 PathConfig.setOpenCodePath(result.detectedPath)
-                savedPaths.append("🐙 OpenCode: \(result.detail)")
+                savedPaths.append("🖱️ OpenCode: \(result.detail)")
             case "qwen":
                 PathConfig.setQwenPath(result.detectedPath)
-                savedPaths.append("🟣 Qwen Code: \(result.detail)")
+                savedPaths.append("🌀 Qwen Code: \(result.detail)")
             case "copilot":
                 PathConfig.setCopilotPath(result.detectedPath)
                 savedPaths.append("🐙 Copilot: \(result.detail)")
             case "grok":
                 PathConfig.setGrokPath(result.detectedPath)
-                savedPaths.append("⚡ Grok: \(result.detail)")
+                savedPaths.append("🌌 Grok: \(result.detail)")
             case "aider":
                 PathConfig.setAiderPath(result.detectedPath)
                 savedPaths.append("🤝 Aider: \(result.detail)")
             case "antigravity":
                 PathConfig.setAntigravityPath(result.detectedPath)
-                savedPaths.append("🛡️ Antigravity: \(result.detail)")
+                savedPaths.append("🌈 Antigravity: \(result.detail)")
             case "cline":
                 PathConfig.setClinePath(result.detectedPath)
-                savedPaths.append("🤖 Cline: \(result.detail)")
+                savedPaths.append("🧰 Cline: \(result.detail)")
             case "continue":
                 PathConfig.setContinuePath(result.detectedPath)
                 savedPaths.append("▶️ Continue: \(result.detail)")
             case "cursorAgent":
                 PathConfig.setCursorAgentPath(result.detectedPath)
-                savedPaths.append("🖱️ Cursor Agent: \(result.detail)")
+                savedPaths.append("💎 Cursor Agent: \(result.detail)")
             case "zcode":
                 PathConfig.setZCodePath(result.detectedPath)
                 savedPaths.append("🅉 ZCode: \(result.detail)")

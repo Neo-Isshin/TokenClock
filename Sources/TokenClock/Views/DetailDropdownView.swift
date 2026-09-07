@@ -1057,8 +1057,11 @@ struct EmojiNameLabel: View {
 
     var body: some View {
         HStack(alignment: .center, spacing: 3) {
-            TokenClockIconView(displayName: name, fallbackEmoji: emoji, size: iconSize)
+            Text(emoji)
+                .font(.system(size: iconSize))
+                .offset(y: enclosedLetterSymbols.contains(emoji) ? -1.25 : 0)
                 .frame(width: 15, height: 15, alignment: .center)
+                .accessibilityHidden(true)
             Text(name)
                 .font(nameFont)
                 .lineLimit(1)
@@ -1066,4 +1069,6 @@ struct EmojiNameLabel: View {
         }
         .accessibilityElement(children: .combine)
     }
+
+    private var enclosedLetterSymbols: Set<String> { ["🅉", "🄺", "ℤ"] }
 }
