@@ -24,6 +24,7 @@ final class MockUsageService {
             ("Cline", "CL", "🤖"),
             ("Continue", "CN", "▶️"),
             ("Cursor Agent", "CA", "🖱️"),
+            ("Grok Bot", "GB", "🤖"),
         ]
 
         return tools.map { tool in

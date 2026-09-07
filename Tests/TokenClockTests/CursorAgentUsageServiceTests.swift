@@ -2,6 +2,13 @@ import XCTest
 @testable import TokenClock
 
 final class CursorAgentUsageServiceTests: XCTestCase {
+    func testGrokBotHasItsOwnDisplayTool() {
+        let names = MockUsageService.generateInitialData().map(\.name)
+        XCTAssertTrue(names.contains("Grok"))
+        XCTAssertTrue(names.contains("Grok Bot"))
+        XCTAssertNotEqual(names.firstIndex(of: "Grok"), names.firstIndex(of: "Grok Bot"))
+    }
+
     func testDashboardEventsPreserveModelsAndTokenBuckets() {
         let service = CursorAgentUsageService()
         let now = Date()

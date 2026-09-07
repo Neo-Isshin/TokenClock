@@ -236,6 +236,7 @@ enum UsageOverviewBuilder {
         case "Cline": return "🤖"
         case "Continue": return "▶️"
         case "Cursor Agent": return "🖱️"
+        case "Grok Bot": return "🤖"
         default: return "🧰"
         }
     }

@@ -69,7 +69,10 @@ final class LinuxUsageModel: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         return storedTools
-            .filter { storedEnabledTools.contains($0.name) }
+            .filter {
+                storedEnabledTools.contains($0.name)
+                    || ($0.name == "Grok Bot" && storedEnabledTools.contains("Cursor Agent"))
+            }
             .sorted { $0.todayTokens > $1.todayTokens }
     }
 
@@ -172,28 +175,13 @@ final class LinuxUsageModel: @unchecked Sendable {
             results["Copilot"] = snapshot(usage, copilotService.recentUsage(minutes: rateWindow).tokens, copilotService.currentHourTokens(), copilotService.isActive(), copilotService.todaySessions())
         }
         if enabled.contains("Grok") {
-            let native = grokService.todayUsage()
-            let bridged = cursorAgentService.todayGrokBotUsage()
-            let nativeRecent = grokService.recentUsage(minutes: rateWindow)
-            let bridgedRecent = cursorAgentService.recentGrokBotUsage(minutes: rateWindow)
-            let cacheRead = cursorAgentService.todayGrokBotCacheReadTokens()
-            let freshTokens = native.tokens + bridged.tokens
-            var cost = cursorAgentService.todayGrokBotCost()
-            if native.tokens > 0, cost.available { cost.complete = false }
-            let usage = (
-                tokens: freshTokens,
-                messages: native.messages + bridged.messages,
-                cacheRate: TokenAccounting.cacheReadShare(freshTokens: freshTokens, cacheRead: cacheRead)
-            )
+            let usage = grokService.todayUsage()
             results["Grok"] = snapshot(
                 usage,
-                nativeRecent.tokens + bridgedRecent.tokens,
-                grokService.currentHourTokens() + cursorAgentService.currentHourGrokBotTokens(),
-                grokService.isActive() || cursorAgentService.isGrokBotActive(),
-                (grokService.todaySessions() + cursorAgentService.todayGrokBotSessions())
-                    .sorted { $0.todayTokens > $1.todayTokens },
-                cost: cost,
-                cacheRead: cacheRead
+                grokService.recentUsage(minutes: rateWindow).tokens,
+                grokService.currentHourTokens(),
+                grokService.isActive(),
+                grokService.todaySessions()
             )
         }
         if enabled.contains("Aider") {
@@ -215,6 +203,16 @@ final class LinuxUsageModel: @unchecked Sendable {
         if enabled.contains("Cursor Agent") {
             let usage = cursorAgentService.todayUsage()
             results["Cursor Agent"] = snapshot(usage, cursorAgentService.recentUsage(minutes: rateWindow).tokens, cursorAgentService.currentHourTokens(), cursorAgentService.isActive(), cursorAgentService.todaySessions(), cost: cursorAgentService.todayCost(), cacheRead: cursorAgentService.todayCacheReadTokens())
+            let bot = cursorAgentService.todayGrokBotUsage()
+            results["Grok Bot"] = snapshot(
+                bot,
+                cursorAgentService.recentGrokBotUsage(minutes: rateWindow).tokens,
+                cursorAgentService.currentHourGrokBotTokens(),
+                cursorAgentService.isGrokBotActive(),
+                cursorAgentService.todayGrokBotSessions(),
+                cost: cursorAgentService.todayGrokBotCost(),
+                cacheRead: cursorAgentService.todayGrokBotCacheReadTokens()
+            )
         }
 
         lock.lock()
