@@ -73,12 +73,29 @@ enum tc_color_icon {
     TC_ICON_BRAIN, TC_ICON_GEM, TC_ICON_MOUNTAIN, TC_ICON_MEDICAL,
     TC_ICON_SLEEP, TC_ICON_BED, TC_ICON_COFFEE, TC_ICON_RUNNER, TC_ICON_FLAME,
     TC_ICON_BURST, TC_ICON_MOON, TC_ICON_WHALE, TC_ICON_SPEAKER,
-    TC_ICON_RECYCLE, TC_ICON_BLUE_SQUARE, TC_ICON_PUZZLE, TC_ICON_Z,
-    TC_ICON_BEAN, TC_ICON_LLAMA, TC_ICON_TORNADO, TC_ICON_QUESTION
+    TC_ICON_RECYCLE, TC_ICON_BLUE_SQUARE, TC_ICON_PUZZLE, TC_ICON_Z, TC_ICON_CRYSTAL,
+    TC_ICON_BEAN, TC_ICON_LLAMA, TC_ICON_TORNADO, TC_ICON_QUESTION,
+    TC_ICON_TOOL_CODEX, TC_ICON_TOOL_CURSOR, TC_ICON_TOOL_ANTIGRAVITY,
+    TC_ICON_TOOL_QWEN, TC_ICON_TOOL_GROK, TC_ICON_TOOL_GROK_BOT, TC_ICON_TOOL_CLINE,
+    TC_ICON_MODEL_OPENAI, TC_ICON_MODEL_GROK, TC_ICON_MODEL_MINIMAX, TC_ICON_MODEL_QWEN
 };
 
 static tc_color_icon color_icon_for(const wchar_t *text) {
     if (!text || !*text) return TC_ICON_NONE;
+    // TokenClock-owned provider and model glyphs. Match semantic names before
+    // their legacy emoji so tools that shared 🤖 remain visually distinct.
+    if (wcsstr(text, L"Grok Bot") || wcsstr(text, L" GB")) return TC_ICON_TOOL_GROK_BOT;
+    if (wcsstr(text, L"Cursor") || wcsstr(text, L" CA")) return TC_ICON_TOOL_CURSOR;
+    if (wcsstr(text, L"Antigravity") || wcsstr(text, L" AG")) return TC_ICON_TOOL_ANTIGRAVITY;
+    if (wcsstr(text, L"Qwen Code") || wcsstr(text, L" QW")) return TC_ICON_TOOL_QWEN;
+    if (wcsstr(text, L"Codex") || wcsstr(text, L" CX")) return TC_ICON_TOOL_CODEX;
+    if (wcsstr(text, L"Cline") || wcsstr(text, L" CL")) return TC_ICON_TOOL_CLINE;
+    if (wcsstr(text, L" Grok") || wcsstr(text, L" GK")) return TC_ICON_TOOL_GROK;
+    if (wcsstr(text, L"grok-") || wcsstr(text, L"grok ")) return TC_ICON_MODEL_GROK;
+    if (wcsstr(text, L"MiniMax") || wcsstr(text, L"minimax")) return TC_ICON_MODEL_MINIMAX;
+    if (wcsstr(text, L"qwen")) return TC_ICON_MODEL_QWEN;
+    if (wcsstr(text, L"chatgpt") || wcsstr(text, L"gpt-") || wcsstr(text, L" o1")
+        || wcsstr(text, L" o3") || wcsstr(text, L" o4")) return TC_ICON_MODEL_OPENAI;
     if (wcsstr(text, L"⛈") || wcsstr(text, L"🌩")) return TC_ICON_STORM;
     if (wcsstr(text, L"🌨") || wcsstr(text, L"❄")) return TC_ICON_SNOW;
     if (wcsstr(text, L"🌧") || wcsstr(text, L"🌦")) return TC_ICON_RAIN;
@@ -113,6 +130,7 @@ static tc_color_icon color_icon_for(const wchar_t *text) {
     if (wcsstr(text, L"🟦")) return TC_ICON_BLUE_SQUARE;
     if (wcsstr(text, L"🧩")) return TC_ICON_PUZZLE;
     if (wcsstr(text, L"🅉")) return TC_ICON_Z;
+    if (wcsstr(text, L"◈")) return TC_ICON_CRYSTAL;
     if (wcsstr(text, L"🫘")) return TC_ICON_BEAN;
     if (wcsstr(text, L"🦙")) return TC_ICON_LLAMA;
     if (wcsstr(text, L"🌪")) return TC_ICON_TORNADO;
@@ -135,7 +153,8 @@ static const wchar_t *text_after_icon(const wchar_t *text) {
 }
 
 static void draw_color_icon(Gdiplus::Graphics &gfx, tc_color_icon icon,
-                            float cx, float cy, float size) {
+                            float cx, float cy, float size,
+                            unsigned int tint = 0xff202124u) {
     using namespace Gdiplus;
     if (icon == TC_ICON_NONE || size <= 0) return;
     const float s = size / 24.0f;
@@ -155,6 +174,55 @@ static void draw_color_icon(Gdiplus::Graphics &gfx, tc_color_icon icon,
     auto cloud = [&](float dx, float dy) {
         ellipse(dx-8,dy-1,16,7,238,243,249); ellipse(dx-6,dy-5,9,9,247,250,253); ellipse(dx,dy-4,8,8,231,238,246);
         Pen edge(Color(255,126,145,166),1.0f*s); gfx.DrawArc(&edge,cx+(dx-8)*s,cy+(dy-1)*s,16*s,7*s,0,180);
+    };
+    const Color mono = cr(tint);
+    auto monoLine = [&](float x1, float y1, float x2, float y2, float width = 1.65f,
+                        BYTE alpha = 255) {
+        Pen stroke(Color(alpha, mono.GetR(), mono.GetG(), mono.GetB()), width * s);
+        stroke.SetStartCap(LineCapRound); stroke.SetEndCap(LineCapRound);
+        stroke.SetLineJoin(LineJoinRound);
+        gfx.DrawLine(&stroke, cx+x1*s, cy+y1*s, cx+x2*s, cy+y2*s);
+    };
+    auto monoPolygon = [&](const PointF *points, int count, BYTE alpha = 255) {
+        PointF p[16];
+        for (int i=0; i<count; ++i) p[i] = PointF(cx+points[i].X*s, cy+points[i].Y*s);
+        SolidBrush fill(Color(alpha, mono.GetR(), mono.GetG(), mono.GetB()));
+        gfx.FillPolygon(&fill, p, count);
+    };
+    auto qwenBlades = [&](bool prompt) {
+        const PointF base[]={{0,-9.55f},{6.45f,-5.85f},{4.65f,-2.8f},{0,-5.48f},{-2.65f,-3.95f},{-4.42f,-7.02f}};
+        for (int turn=0; turn<3; ++turn) {
+            const double angle=deg2rad(turn*120.0); PointF rotated[6];
+            for (int i=0;i<6;++i) rotated[i]=PointF(
+                (float)(base[i].X*cos(angle)-base[i].Y*sin(angle)),
+                (float)(base[i].X*sin(angle)+base[i].Y*cos(angle)));
+            monoPolygon(rotated,6);
+        }
+        if (prompt) {
+            monoLine(-2.85f,-2.2f,-0.65f,-0.1f,1.35f);
+            monoLine(-0.65f,-0.1f,-2.85f,2.0f,1.35f);
+            monoLine(0.25f,2.0f,2.95f,2.0f,1.35f);
+        }
+    };
+    auto blackHole = [&](float ox, float oy, float scale) {
+        const float k=s*scale;
+        GraphicsState state=gfx.Save();
+        gfx.TranslateTransform(cx+ox*s,cy+oy*s);
+        gfx.RotateTransform(-9.0f);
+        Pen upper(Color(184,mono.GetR(),mono.GetG(),mono.GetB()),1.35f*k);
+        Pen lower(Color(116,mono.GetR(),mono.GetG(),mono.GetB()),1.35f*k);
+        Pen disk(Color(255,mono.GetR(),mono.GetG(),mono.GetB()),1.75f*k);
+        Pen diskLow(Color(150,mono.GetR(),mono.GetG(),mono.GetB()),1.2f*k);
+        for (Pen *pen : {&upper,&lower,&disk,&diskLow}) {
+            pen->SetStartCap(LineCapRound); pen->SetEndCap(LineCapRound);
+        }
+        gfx.DrawBezier(&upper,PointF(-8*k,-1.1f*k),PointF(-7*k,-9*k),PointF(7*k,-9*k),PointF(8*k,-1.1f*k));
+        gfx.DrawBezier(&lower,PointF(-8*k,1.1f*k),PointF(-7*k,9*k),PointF(7*k,9*k),PointF(8*k,1.1f*k));
+        gfx.DrawBezier(&disk,PointF(-10*k,-.8f*k),PointF(-5*k,-2.35f*k),PointF(5*k,-2.35f*k),PointF(10*k,-.8f*k));
+        gfx.DrawBezier(&diskLow,PointF(-10*k,1.1f*k),PointF(-5*k,2.7f*k),PointF(5*k,2.7f*k),PointF(10*k,1.1f*k));
+        SolidBrush horizon(mono);
+        gfx.FillEllipse(&horizon,-4.2f*k,-4.2f*k,8.4f*k,8.4f*k);
+        gfx.Restore(state);
     };
 
     switch (icon) {
@@ -240,6 +308,13 @@ static void draw_color_icon(Gdiplus::Graphics &gfx, tc_color_icon icon,
         gfx.FillEllipse(&fill,cx-10*s,cy-10*s,20*s,20*s);
         line(-5,-5,5,-5,255,255,255,2.2f); line(5,-5,-5,5,255,255,255,2.2f); line(-5,5,5,5,255,255,255,2.2f); break;
     }
+    case TC_ICON_CRYSTAL: {
+        PointF left[]={{0,-10},{0,9},{-9,3},{-9,-4}};
+        PointF right[]={{0,-10},{9,-4},{9,3},{0,9}};
+        PointF center[]={{-9,-4},{0,-10},{9,-4},{0,0}};
+        polygon(left,4,116,120,128); polygon(right,4,67,70,77); polygon(center,4,205,208,214);
+        line(0,-10,0,9,238,239,242,0.8f); line(-9,-4,0,0,238,239,242,0.8f); line(9,-4,0,0,238,239,242,0.8f); break;
+    }
     case TC_ICON_BEAN: {
         GraphicsPath bean;
         bean.StartFigure(); bean.AddBezier(cx-7*s,cy-9*s,cx+5*s,cy-11*s,cx+11*s,cy-2*s,cx+6*s,cy+7*s);
@@ -262,6 +337,54 @@ static void draw_color_icon(Gdiplus::Graphics &gfx, tc_color_icon icon,
         line(-3,-3,-1,-6,255,255,255,2.0f); line(-1,-6,3,-5,255,255,255,2.0f);
         line(3,-5,3,-1,255,255,255,2.0f); line(3,-1,0,2,255,255,255,2.0f);
         ellipse(-1,6,2.2f,2.2f,255,255,255); break;
+    case TC_ICON_TOOL_CODEX: {
+        PointF shell[]={{-4,-8},{4,-8},{8,-4},{8,4},{4,8},{-4,8},{-8,4},{-8,-4}};
+        PointF scaled[8]; for(int i=0;i<8;++i) scaled[i]=PointF(cx+shell[i].X*s,cy+shell[i].Y*s);
+        Pen stroke(mono,1.7f*s); stroke.SetLineJoin(LineJoinRound); gfx.DrawPolygon(&stroke,scaled,8);
+        monoLine(-3.4f,-3.2f,0,0,1.7f); monoLine(0,0,-3.4f,3.2f,1.7f); monoLine(.9f,3.2f,4.5f,3.2f,1.7f); break;
+    }
+    case TC_ICON_TOOL_CURSOR: {
+        PointF shell[]={{0,-9},{8,-4.5f},{8,4.5f},{0,9},{-8,4.5f},{-8,-4.5f}};
+        PointF tri[]={{-4.65f,-3.6f},{4.65f,-3.6f},{0,4.25f}};
+        PointF p[6]; for(int i=0;i<6;++i)p[i]=PointF(cx+shell[i].X*s,cy+shell[i].Y*s);
+        PointF q[3]; for(int i=0;i<3;++i)q[i]=PointF(cx+tri[i].X*s,cy+tri[i].Y*s);
+        Pen stroke(mono,1.55f*s); stroke.SetLineJoin(LineJoinRound); gfx.DrawPolygon(&stroke,p,6); gfx.DrawPolygon(&stroke,q,3);
+        monoLine(0,-9,-4.65f,-3.6f,1.4f); monoLine(0,-9,4.65f,-3.6f,1.4f);
+        monoLine(-8,-4.5f,-4.65f,-3.6f,1.4f); monoLine(8,-4.5f,4.65f,-3.6f,1.4f);
+        monoLine(-8,4.5f,0,4.25f,1.4f); monoLine(8,4.5f,0,4.25f,1.4f); monoLine(0,9,0,4.25f,1.4f); break;
+    }
+    case TC_ICON_TOOL_ANTIGRAVITY: {
+        Pen arch(mono,4.2f*s); arch.SetStartCap(LineCapRound); arch.SetEndCap(LineCapRound);
+        gfx.DrawBezier(&arch,PointF(cx-8*s,cy+7*s),PointF(cx-6.2f*s,cy-7*s),PointF(cx+6.2f*s,cy-7*s),PointF(cx+8*s,cy+7*s));
+        monoLine(-5.5f,9,5.5f,9,1.5f,52); break;
+    }
+    case TC_ICON_TOOL_QWEN: qwenBlades(true); break;
+    case TC_ICON_MODEL_QWEN: qwenBlades(false); break;
+    case TC_ICON_TOOL_GROK:
+        blackHole(1.5f,-1.5f,.78f);
+        monoLine(-9.3f,4.7f,-6.95f,6.85f,1.55f); monoLine(-6.95f,6.85f,-9.3f,9,1.55f); monoLine(-5.9f,9,-2.5f,9,1.55f); break;
+    case TC_ICON_TOOL_GROK_BOT: {
+        blackHole(1.5f,-1.5f,.78f);
+        GraphicsPath bubble; bubble.AddRectangle(RectF(cx-10*s,cy+4*s,8*s,5*s));
+        Pen stroke(mono,1.35f*s); stroke.SetLineJoin(LineJoinRound); gfx.DrawPath(&stroke,&bubble);
+        monoLine(-7.5f,9,-9.5f,11,1.35f); break;
+    }
+    case TC_ICON_MODEL_GROK: blackHole(0,0,1); break;
+    case TC_ICON_TOOL_CLINE: {
+        Pen stroke(mono,1.65f*s); stroke.SetStartCap(LineCapRound); stroke.SetEndCap(LineCapRound);
+        gfx.DrawArc(&stroke,cx-8*s,cy-8*s,16*s,16*s,45,270);
+        monoLine(2.6f,-3.6f,6.2f,0,1.65f); monoLine(6.2f,0,2.6f,3.6f,1.65f);
+        monoLine(-4,-3.5f,-.9f,-3.5f,1.4f); monoLine(-4,0,.2f,0,1.4f); monoLine(-4,3.5f,-.9f,3.5f,1.4f); break;
+    }
+    case TC_ICON_MODEL_OPENAI: {
+        Pen stroke(mono,1.45f*s); stroke.SetLineJoin(LineJoinRound);
+        for(int i=0;i<6;++i){ GraphicsState state=gfx.Save(); gfx.TranslateTransform(cx,cy); gfx.RotateTransform((float)(i*60)); gfx.DrawEllipse(&stroke,-3.5f*s,-8*s,7*s,9*s); gfx.Restore(state); }
+        PointF hex[]={{0,-3.9f},{3.4f,-2},{3.4f,2},{0,3.9f},{-3.4f,2},{-3.4f,-2}};
+        PointF p[6]; for(int i=0;i<6;++i)p[i]=PointF(cx+hex[i].X*s,cy+hex[i].Y*s); gfx.DrawPolygon(&stroke,p,6); break;
+    }
+    case TC_ICON_MODEL_MINIMAX:
+        monoLine(-9,0,-6.6f,0,1.65f); monoLine(-6.6f,0,-4.9f,-5.2f,1.65f); monoLine(-4.9f,-5.2f,-1.85f,5.2f,1.65f);
+        monoLine(-1.85f,5.2f,1,-3.1f,1.65f); monoLine(1,-3.1f,3.35f,3.1f,1.65f); monoLine(3.35f,3.1f,5.1f,0,1.65f); monoLine(5.1f,0,9,0,1.65f); break;
     default: break;
     }
 }
@@ -954,7 +1077,7 @@ void win_render_clock(int w, int h, int hh, int mm, int ss, const win_theme *t, 
         if (to_wide(u8, wb, 32) == 0 || (argb >> 24) == 0) return;
         tc_color_icon icon = color_icon_for(wb);
         if (icon != TC_ICON_NONE) {
-            draw_color_icon(gfx, icon, (float)px, (float)py, size * 1.15f);
+            draw_color_icon(gfx, icon, (float)px, (float)py, size * 1.15f, argb);
             return;
         }
         Gdiplus::FontFamily emojiFam(L"Segoe UI Emoji");
@@ -977,7 +1100,7 @@ void win_render_clock(int w, int h, int hh, int mm, int ss, const win_theme *t, 
             const float iconSize = size * 1.2f, gap = label[0] ? 4.0f : 0.0f;
             const float total = iconSize + gap + (label[0] ? measured.Width : 0.0f);
             const float left = (float)px - total / 2.0f;
-            draw_color_icon(gfx, icon, left + iconSize / 2.0f, (float)py, iconSize);
+            draw_color_icon(gfx, icon, left + iconSize / 2.0f, (float)py, iconSize, argb);
             if (label[0]) {
                 Gdiplus::StringFormat sf; sf.SetAlignment(Gdiplus::StringAlignmentNear); sf.SetLineAlignment(Gdiplus::StringAlignmentCenter);
                 Gdiplus::RectF rect(left + iconSize + gap, (Gdiplus::REAL)(py - size), measured.Width + 6.0f, size * 2.0f);
@@ -1002,7 +1125,7 @@ void win_render_clock(int w, int h, int hh, int mm, int ss, const win_theme *t, 
             const float labelLeft = iconRight + 0.5f * (float)S;
             const float labelRight = (float)px + 41.0f * (float)S;
             draw_color_icon(gfx, icon, iconRight - iconSize / 2.0f,
-                            (float)py - 0.5f * (float)S, iconSize);
+                            (float)py - 0.5f * (float)S, iconSize, argb);
             if (label[0]) {
                 Gdiplus::Font f(&fam, size, Gdiplus::FontStyleRegular, Gdiplus::UnitPixel);
                 Gdiplus::SolidBrush b(cr(argb));
@@ -1121,7 +1244,7 @@ void win_render_clock(int w, int h, int hh, int mm, int ss, const win_theme *t, 
                         draw_color_icon(gfx, summaryIcon,
                                         summaryRect.X + iconSize / 2.0f,
                                         summaryRect.Y + summaryRect.Height / 2.0f,
-                                        iconSize);
+                                        iconSize, t->dd_text);
                         Gdiplus::RectF summaryText(summaryRect.X + iconSize + (float)(4.0 * S), summaryRect.Y,
                                                    summaryRect.Width - iconSize - (float)(4.0 * S), summaryRect.Height);
                         gfx.DrawString(text_after_icon(summary), -1, &fSummary, summaryText, &sfL, &mainBrush);
@@ -1187,7 +1310,7 @@ void win_render_clock(int w, int h, int hh, int mm, int ss, const win_theme *t, 
                             draw_color_icon(gfx, forecastIcon,
                                             emojiRect.X + emojiRect.Width / 2.0f,
                                             emojiRect.Y + emojiRect.Height / 2.0f,
-                                            (float)(19.0 * S));
+                                            (float)(19.0 * S), t->dd_text);
                         } else {
                             gfx.DrawString(emoji, -1, &fWeatherEmoji, emojiRect, &sfC2, &mainBrush);
                         }
@@ -1373,7 +1496,7 @@ void win_render_clock(int w, int h, int hh, int mm, int ss, const win_theme *t, 
                             tc_color_icon providerIcon = color_icon_for(fields[1]);
                             if (providerIcon != TC_ICON_NONE) {
                                 draw_color_icon(gfx, providerIcon, providerRect.X + (float)(9.0 * S),
-                                                providerRect.Y + providerRect.Height / 2.0f, (float)(18.0 * S));
+                                                providerRect.Y + providerRect.Height / 2.0f, (float)(18.0 * S), t->dd_text);
                                 providerRect.X += (Gdiplus::REAL)(23.0 * S);
                                 providerRect.Width -= (Gdiplus::REAL)(23.0 * S);
                                 gfx.DrawString(text_after_icon(fields[1]), -1, &fQuotaBold, providerRect, &sfL, &mainBrush);
@@ -1485,7 +1608,7 @@ void win_render_clock(int w, int h, int hh, int mm, int ss, const win_theme *t, 
                 if (rowIcon != TC_ICON_NONE) {
                     const float iconSize = (float)((child ? 14.0 : 16.0) * S);
                     draw_color_icon(gfx, rowIcon, lr.X + iconSize / 2.0f,
-                                    lr.Y + lr.Height / 2.0f, iconSize);
+                                    lr.Y + lr.Height / 2.0f, iconSize, rowColor);
                     Gdiplus::RectF labelRect(lr.X + iconSize + (float)(4.0 * S), lr.Y,
                                              lr.Width - iconSize - (float)(4.0 * S), lr.Height);
                     gfx.DrawString(text_after_icon(parts[0]), -1, labelFont, labelRect, &sfL, &rowBrush);

@@ -22,7 +22,7 @@ final class MockUsageService {
             ("Claude Code", "CC", "✳️"),
             ("Hermes", "HM", "⚕️"),
             ("Codex", "CX", "🤖"),
-            ("OpenCode", "OD", "🐙"),
+            ("OpenCode", "OD", "🖱️"),
             ("Qwen Code", "QW", "🟣"),
             ("Copilot", "CP", "🐙"),
             ("Grok", "GK", "⚡"),
@@ -30,7 +30,7 @@ final class MockUsageService {
             ("Antigravity", "AG", "🛡️"),
             ("Cline", "CL", "🤖"),
             ("Continue", "CN", "▶️"),
-            ("Cursor Agent", "CA", "🖱️"),
+            ("Cursor Agent", "CA", "◈"),
             ("Grok Bot", "GB", "🤖"),
         ]
         let tools: [(name: String, abbr: String, emoji: String, unit: UsageMeasurementUnit, scope: UsageMeasurementScope)] =

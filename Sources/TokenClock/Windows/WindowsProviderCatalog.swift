@@ -118,7 +118,7 @@ enum WindowsProviderCatalog {
                   measurementUnit: .tokens, measurementScope: .today, statisticsSupport: .parsed, sourceKind: .fileSystem, defaultEnabled: true),
             // OpenCode uses the platform data directory on Windows. Keep the historical
             // ~/.local/share location as a compatibility probe for older installations.
-            Entry(id: .opencode, displayName: "OpenCode", abbreviation: "OD", emoji: "🐙", environmentOverrides: [
+            Entry(id: .opencode, displayName: "OpenCode", abbreviation: "OD", emoji: "🖱️", environmentOverrides: [
                     official("OPENCODE_DB", "direct SQLite database"),
                     official("XDG_DATA_HOME", "parent data directory; append opencode"),
                     compatibility("OPENCODE_HOME")
@@ -153,7 +153,7 @@ enum WindowsProviderCatalog {
             Entry(id: .continue, displayName: "Continue", abbreviation: "CN", emoji: "▶️", environmentOverrides: [compatibility("CONTINUE_HOME")],
                   defaultPath: user + "\\.continue", alternatePaths: [], dataKind: .jsonlDirectory,
                   measurementUnit: .tokens, measurementScope: .today, statisticsSupport: .parsed, sourceKind: .fileSystem, defaultEnabled: true),
-            Entry(id: .cursorAgent, displayName: "Cursor Agent", abbreviation: "CA", emoji: "🖱️", environmentOverrides: [compatibility("CURSOR_AGENT_HOME")],
+            Entry(id: .cursorAgent, displayName: "Cursor Agent", abbreviation: "CA", emoji: "◈", environmentOverrides: [compatibility("CURSOR_AGENT_HOME")],
                   defaultPath: roaming + "\\Cursor\\User\\globalStorage", alternatePaths: [],
                   dataKind: .cursorStateDatabase, measurementUnit: .tokens, measurementScope: .today, statisticsSupport: .parsed,
                   sourceKind: .fileSystem, defaultEnabled: true),

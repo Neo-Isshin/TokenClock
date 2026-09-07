@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.45" stroke-linecap="round" stroke-linejoin="round">
+  <title>Qwen Code rotating forms with centered prompt concept v3</title>
+  <g fill="currentColor" stroke="none">
+    <path id="blade" d="M12 2.45 18.45 6.15 16.65 9.2 12 6.52 9.35 8.05 7.58 4.98Z"/>
+    <use href="#blade" transform="rotate(120 12 12)"/>
+    <use href="#blade" transform="rotate(240 12 12)"/>
+  </g>
+  <path d="m9.15 9.8 2.2 2.1-2.2 2.1M12.25 14h2.7" stroke-width="1.35"/>
+</svg>

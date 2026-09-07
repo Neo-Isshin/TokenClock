@@ -349,7 +349,7 @@ enum PathDetector {
             }
         )
         return buildResult(
-            service: "opencode", emoji: "🐙",
+            service: "opencode", emoji: "🖱️",
             match: match, custom: custom,
             defaultPath: PathConfig.defaultOpenCodeHome()
         )
@@ -503,7 +503,7 @@ enum PathDetector {
             return hookExists || logExists || cliConfigExists
             #endif
         })
-        return buildResult(service: "cursorAgent", emoji: "🖱️", match: match, custom: custom, defaultPath: PathConfig.defaultCursorAgentHome())
+        return buildResult(service: "cursorAgent", emoji: "◈", match: match, custom: custom, defaultPath: PathConfig.defaultCursorAgentHome())
     }
 
     // MARK: - 候选路径构建

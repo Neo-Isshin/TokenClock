@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+  <title>Grok Gargantua-style black-hole model concept v3</title>
+  <g transform="rotate(-9 12 12)">
+  <!-- Gravitationally lensed images of the rear accretion disk. -->
+  <path d="M4.15 10.75C5.15 5.25 8.1 2.9 12 2.9s6.85 2.35 7.85 7.85" stroke-width="1.35" opacity=".72"/>
+  <path d="M4.15 13.25C5.15 18.75 8.1 21.1 12 21.1s6.85-2.35 7.85-7.85" stroke-width="1.35" opacity=".48"/>
+  <path d="M5.55 9.15C7.2 6.15 9.25 4.85 12 4.85s4.8 1.3 6.45 4.3" stroke-width="1.05" opacity=".45"/>
+  <path d="M5.55 14.85c1.65 3 3.7 4.3 6.45 4.3s4.8-1.3 6.45-4.3" stroke-width="1.05" opacity=".28"/>
+  <!-- Near-side accretion disk crosses the event horizon horizontally. -->
+  <path d="M1.8 11.45C6.1 9.7 17.9 9.7 22.2 11.45" stroke-width="1.75"/>
+  <path d="M1.8 13.45C6.1 15.2 17.9 15.2 22.2 13.45" stroke-width="1.25" opacity=".58"/>
+  <path d="M2.8 12.4h18.4" stroke-width=".85" opacity=".34"/>
+  <!-- Event horizon is intentionally drawn last so the disk disappears behind it. -->
+  <circle cx="12" cy="12.35" r="4.2" fill="currentColor" stroke="none"/>
+  <ellipse cx="12" cy="11.45" rx="3.25" ry=".72" fill="none" stroke="currentColor" stroke-width=".72" opacity=".2"/>
+  </g>
+</svg>

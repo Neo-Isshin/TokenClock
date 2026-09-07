@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round">
+  <title>MiniMax model family concept</title>
+  <path d="M3 12h2.4l1.7-5.2 3.05 10.4L13 8.9l2.35 6.2 1.75-3.1H21"/>
+  <path d="M4.2 5.2h4M15.8 18.8h4"/>
+  <circle cx="3" cy="12" r=".85" fill="currentColor" stroke="none"/>
+  <circle cx="21" cy="12" r=".85" fill="currentColor" stroke="none"/>
+</svg>
