@@ -241,7 +241,7 @@ final class LinuxDetailsPanel: @unchecked Sendable {
             name: "details:quota", expands: true, prominent: true, to: launcherRow
         )
         let unread = notifications.filter { !$0.isRead }.count
-        if unread > 0 {
+        if unread > 0, weather.cityName.isEmpty {
             _ = appendControl("🔔  \(unread)", name: "details:notifications", prominent: true, to: launcherRow)
         }
 
@@ -345,12 +345,33 @@ final class LinuxDetailsPanel: @unchecked Sendable {
         gtk_box_pack_start(tc_gtk_box(header), current, 1, 1, 0)
 
         let slots = selectedForecastSlots()
+        let trailing = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 3)
         if !slots.isEmpty {
             let forecastLabel = gtk_label_new(tr("detail.forecast"))
             gtk_label_set_xalign(tc_gtk_label(forecastLabel), 1)
             tc_gtk_add_class(forecastLabel, "tokenclock-detail-subtext")
-            gtk_box_pack_end(tc_gtk_box(header), forecastLabel, 0, 0, 0)
+            gtk_widget_set_margin_end(forecastLabel, 1)
+            gtk_box_pack_start(tc_gtk_box(trailing), forecastLabel, 0, 0, 0)
         }
+        if let notificationButton = gtk_button_new(),
+           let notificationContent = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 1),
+           let bell = gtk_image_new_from_icon_name("notifications-symbolic", GTK_ICON_SIZE_MENU) {
+            let unread = notifications.contains { !$0.isRead }
+            gtk_widget_set_name(notificationButton, "details:notifications")
+            tc_gtk_add_class(notificationButton, "tokenclock-weather-bell")
+            gtk_button_set_relief(tc_gtk_button(notificationButton), GTK_RELIEF_NONE)
+            gtk_widget_set_opacity(bell, unread ? 0.78 : 0.30)
+            gtk_box_pack_start(tc_gtk_box(notificationContent), bell, 0, 0, 0)
+            if unread {
+                let dot = gtk_label_new("●")
+                tc_gtk_add_class(dot, "tokenclock-notification-dot")
+                gtk_box_pack_start(tc_gtk_box(notificationContent), dot, 0, 0, 0)
+            }
+            gtk_container_add(tc_gtk_container(notificationButton), notificationContent)
+            _ = tc_gtk_on_clicked(notificationButton, linuxDetailsAction, opaque)
+            gtk_box_pack_start(tc_gtk_box(trailing), notificationButton, 0, 0, 0)
+        }
+        gtk_box_pack_end(tc_gtk_box(header), trailing, 0, 0, 0)
         gtk_box_pack_start(tc_gtk_box(box), header, 0, 0, 0)
 
         if !slots.isEmpty {
@@ -1064,6 +1085,9 @@ final class LinuxDetailsPanel: @unchecked Sendable {
               padding: 3px 8px; font: 600 10px Sans;
             }
             .tokenclock-detail-chip:hover { background: alpha(\(text), 0.14); }
+            .tokenclock-weather-bell { background: transparent; border: 0; padding: 0; min-width: 18px; min-height: 18px; }
+            .tokenclock-weather-bell:hover { background: alpha(\(text), 0.06); }
+            .tokenclock-notification-dot { color: #ff3b30; font: 700 7px Sans; }
             .tokenclock-detail-action-chip { padding: 5px 10px; font: 600 11px Sans; }
             .tokenclock-detail-third-chip { padding: 5px 5px; font: 600 10px Sans; }
             #tokenclock-current-color-dot { color: \(text); font: 700 13px Sans; }
