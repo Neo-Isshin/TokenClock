@@ -646,7 +646,7 @@ struct DetailDropdownView: View {
                     Text(L10n.shared.tr("detail.forecast"))
                         .font(.system(size: 11))
                         .foregroundColor(subtextColor)
-                        .padding(.trailing, 10)
+                        .padding(.trailing, 8)
                 }
                 forecastNotificationButton
             }
@@ -680,8 +680,12 @@ struct DetailDropdownView: View {
             ZStack(alignment: .topTrailing) {
                 Image(systemName: unreadNotificationCount > 0 ? "bell.fill" : "bell")
                     .font(.system(size: 12, weight: .semibold))
-                    .foregroundColor(textColor.opacity(notificationHovered ? 1 : 0.78))
-                    .frame(width: 20, height: 20)
+                    .foregroundColor(textColor.opacity(
+                        unreadNotificationCount > 0
+                            ? (notificationHovered ? 1 : 0.78)
+                            : (notificationHovered ? 0.5 : 0.3)
+                    ))
+                    .frame(width: 16, height: 20)
                     .contentShape(Circle())
 
                 if unreadNotificationCount > 0 {
@@ -696,6 +700,7 @@ struct DetailDropdownView: View {
         .help(L10n.shared.tr("notification.open"))
         .accessibilityLabel(Text(L10n.shared.tr("notification.open")))
         .onHover { notificationHovered = $0 }
+        .offset(x: 6)
     }
 
     /// 选取当前 3 小时槽 + 接下来 3 个槽（共 4 个，覆盖 12 小时）
