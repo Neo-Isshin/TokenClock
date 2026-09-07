@@ -71,6 +71,8 @@ struct DetailDropdownView: View {
     var onQuickContrast: (() -> Void)? = nil
     var onHistoryUsage: (() -> Void)? = nil
     var onSubscriptionQuota: (() -> Void)? = nil
+    var unreadNotificationCount: Int = 0
+    var onNotificationClick: (() -> Void)? = nil
 
     /// Codex 剩余额度面板。额度只在点击后按需读取，不参与 30 秒用量扫描。
     var showsCodexQuota: Bool = false
@@ -86,6 +88,7 @@ struct DetailDropdownView: View {
     @State private var cacheHovered = false
     @State private var textColorHovered = false
     @State private var historyHovered = false
+    @State private var notificationHovered = false
 
     private var textColor: Color { dropdownTextColorOverride ?? theme.dropdownTextColor }
     private var subtextColor: Color { dropdownTextColorOverride.map { $0.opacity(0.65) } ?? theme.dropdownSubtextColor }
@@ -643,7 +646,9 @@ struct DetailDropdownView: View {
                     Text(L10n.shared.tr("detail.forecast"))
                         .font(.system(size: 11))
                         .foregroundColor(subtextColor)
+                        .padding(.trailing, 10)
                 }
+                forecastNotificationButton
             }
             .padding(.horizontal, 12)
 
@@ -668,6 +673,29 @@ struct DetailDropdownView: View {
             }
         }
         .padding(.top, 8)
+    }
+
+    private var forecastNotificationButton: some View {
+        Button { onNotificationClick?() } label: {
+            ZStack(alignment: .topTrailing) {
+                Image(systemName: unreadNotificationCount > 0 ? "bell.fill" : "bell")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(textColor.opacity(notificationHovered ? 1 : 0.78))
+                    .frame(width: 20, height: 20)
+                    .contentShape(Circle())
+
+                if unreadNotificationCount > 0 {
+                    Circle()
+                        .fill(Color.red)
+                        .frame(width: 5, height: 5)
+                        .offset(x: -1, y: 1)
+                }
+            }
+        }
+        .buttonStyle(ChipPressStyle())
+        .help(L10n.shared.tr("notification.open"))
+        .accessibilityLabel(Text(L10n.shared.tr("notification.open")))
+        .onHover { notificationHovered = $0 }
     }
 
     /// 选取当前 3 小时槽 + 接下来 3 个槽（共 4 个，覆盖 12 小时）

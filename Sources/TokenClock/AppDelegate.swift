@@ -63,7 +63,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 self?.dropdownPanel?.endResize()
             },
             onSubscriptionQuota: { [weak self] in self?.showSubscriptionQuotaWindow() },
-            onHistoryUsage: { [weak self] in self?.showUsageOverviewWindow() }
+            onHistoryUsage: { [weak self] in self?.showUsageOverviewWindow() },
+            onNotificationClick: { [weak self] in self?.toggleNotificationCenter() }
         )
         let detailContentView = NSHostingView(rootView: detailView)
         detailContentView.frame = NSRect(
@@ -1125,6 +1126,7 @@ private struct DropdownPanelView: View {
     let onResizeEnded: () -> Void
     let onSubscriptionQuota: () -> Void
     let onHistoryUsage: () -> Void
+    let onNotificationClick: () -> Void
 
     var body: some View {
         VStack(spacing: 0) {
@@ -1144,7 +1146,9 @@ private struct DropdownPanelView: View {
                 quickContrastPreset: viewModel.quickContrastPreset,
                 onQuickContrast: { viewModel.cycleQuickContrast() },
                 onHistoryUsage: onHistoryUsage,
-                onSubscriptionQuota: onSubscriptionQuota
+                onSubscriptionQuota: onSubscriptionQuota,
+                unreadNotificationCount: viewModel.unreadNotificationCount,
+                onNotificationClick: onNotificationClick
             )
             .frame(maxHeight: .infinity, alignment: .top)
 
