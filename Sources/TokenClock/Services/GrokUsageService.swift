@@ -212,7 +212,8 @@ final class GrokUsageService: @unchecked Sendable {
 
                 results.append(SessionInfo(
                     rawId: dir2, displayName: SessionIdDisplay.format(dir2), detail: dir1,
-                    todayTokens: totalTokens, todayMessages: msgCount, isActive: true
+                    todayTokens: totalTokens, todayMessages: msgCount, isActive: true,
+                    source: "CLI"
                 ))
             }
         }
