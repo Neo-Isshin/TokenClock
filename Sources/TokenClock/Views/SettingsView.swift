@@ -139,7 +139,7 @@ struct SettingsView: View {
 
                             if viewModel.enabledTools.contains("OpenCode") {
                             pathRow(
-                                emoji: "🐙", name: "OpenCode",
+                                emoji: "🖱️", name: "OpenCode",
                                 path: $opencodePath,
                                 service: "opencode",
                                 browseTitle: L10n.shared.tr("settings.browseOpenCode")
@@ -211,7 +211,7 @@ struct SettingsView: View {
 
                             if viewModel.enabledTools.contains("Cursor Agent") {
                             pathRow(
-                                emoji: "🖱️", name: "Cursor Agent",
+                                emoji: "◈", name: "Cursor Agent",
                                 path: $cursorAgentPath,
                                 service: "cursorAgent",
                                 browseTitle: L10n.shared.tr("settings.browseCursorAgent")
@@ -549,7 +549,7 @@ struct SettingsView: View {
         ("✨", "Gemini CLI", "gemini"),
         ("🤖", "Codex", "codex"),
         ("⚕️", "Hermes", "hermes"),
-        ("🐙", "OpenCode", "opencode"),
+        ("🖱️", "OpenCode", "opencode"),
         ("🟣", "Qwen Code", "qwen"),
         ("🐙", "Copilot", "copilot"),
         ("⚡", "Grok", "grok"),
@@ -557,7 +557,7 @@ struct SettingsView: View {
         ("🛡️", "Antigravity", "antigravity"),
         ("🤖", "Cline", "cline"),
         ("▶️", "Continue", "continue"),
-        ("🖱️", "Cursor Agent", "cursorAgent"),
+        ("◈", "Cursor Agent", "cursorAgent"),
         ("🅉", "ZCode", "zcode"),
     ]
 
@@ -577,10 +577,14 @@ struct SettingsView: View {
                     // 让用户清楚知道哪些工具当前真正在统计;点击仍可切换 enabledTools(以便后续指向自定义路径)。
                     let shownOn = detected && isEnabled
                     HStack(spacing: 6) {
-                        Text("\(tool.emoji) \(tool.name)")
-                            .font(.system(size: 12))
+                        EmojiNameLabel(
+                            emoji: tool.emoji,
+                            name: tool.name,
+                            iconSize: 12,
+                            nameFont: .system(size: 12),
+                            truncationMode: .tail
+                        )
                             .foregroundColor(detected ? .primary : .secondary.opacity(0.5))
-                            .lineLimit(1)
                         Spacer()
                         Toggle("", isOn: Binding(
                             get: { shownOn },
@@ -640,8 +644,13 @@ struct SettingsView: View {
     private func pathRow(emoji: String, name: String, path: Binding<String>,
                          service: String, browseTitle: String) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("\(emoji) \(name)")
-                .font(.system(size: 12, weight: .medium))
+            EmojiNameLabel(
+                emoji: emoji,
+                name: name,
+                iconSize: 12,
+                nameFont: .system(size: 12, weight: .medium),
+                truncationMode: .tail
+            )
 
             HStack(spacing: 8) {
                 // 路径输入框
@@ -1396,7 +1405,7 @@ struct SettingsView: View {
             "gemini":     ("✨", "Gemini CLI"),
             "codex":      ("🤖", "Codex"),
             "hermes":     ("⚕️", "Hermes"),
-            "opencode":   ("🐙", "OpenCode"),
+            "opencode":   ("🖱️", "OpenCode"),
             "qwen":       ("🟣", "Qwen Code"),
             "copilot":    ("🐙", "Copilot"),
             "grok":       ("⚡", "Grok"),
@@ -1404,7 +1413,7 @@ struct SettingsView: View {
             "antigravity":("🛡️", "Antigravity"),
             "cline":      ("🤖", "Cline"),
             "continue":   ("▶️", "Continue"),
-            "cursorAgent":("🖱️", "Cursor Agent"),
+            "cursorAgent":("◈", "Cursor Agent"),
             "zcode":      ("🅉", "ZCode"),
         ]
         let label = toolLabels[service] ?? ("", service)

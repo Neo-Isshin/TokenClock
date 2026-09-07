@@ -778,11 +778,14 @@ private struct ToolExpandableRow: View {
                         .foregroundColor(subtextColor)
                         .frame(width: 14)
 
-                    Text("\(tool.emoji) \(tool.name)")
-                        .font(.system(size: 11, weight: .medium))
+                    EmojiNameLabel(
+                        emoji: tool.emoji,
+                        name: tool.name,
+                        iconSize: 11,
+                        nameFont: .system(size: 11, weight: .medium),
+                        truncationMode: .tail
+                    )
                         .foregroundColor(textColor)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
                         .frame(maxWidth: .infinity, alignment: .leading)
 
                     Text(primaryValueText(tokens: tool.todayTokens, cacheRead: tool.todayCacheReadTokens, cost: tool.todayCost, mode: valueMode, includeCacheRead: usageIncludesCache))
@@ -951,11 +954,14 @@ private struct ModelExpandableRow: View {
                         .foregroundColor(subtextColor)
                         .frame(width: 14)
 
-                    Text("\(group.emoji) \(group.name)")
-                        .font(.system(size: 11, weight: .medium, design: .monospaced))
+                    EmojiNameLabel(
+                        emoji: group.emoji,
+                        name: group.name,
+                        iconSize: 11,
+                        nameFont: .system(size: 11, weight: .medium, design: .monospaced),
+                        truncationMode: .middle
+                    )
                         .foregroundColor(textColor)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
                         .frame(maxWidth: .infinity, alignment: .leading)
 
                     Text(primaryValueText(tokens: group.totalTokens, cacheRead: group.totalCacheReadTokens, cost: group.totalCost, mode: valueMode, includeCacheRead: usageIncludesCache))
@@ -1014,11 +1020,14 @@ private struct ModelContributionRow: View {
                 .fill(Color.clear)
                 .frame(width: 26)
 
-            Text("\(contribution.emoji) \(contribution.tool)")
-                .font(.system(size: 10, weight: .medium))
+            EmojiNameLabel(
+                emoji: contribution.emoji,
+                name: contribution.tool,
+                iconSize: 10,
+                nameFont: .system(size: 10, weight: .medium),
+                truncationMode: .tail
+            )
                 .foregroundColor(textColor)
-                .lineLimit(1)
-                .truncationMode(.tail)
                 .frame(maxWidth: .infinity, alignment: .leading)
 
             Text(primaryValueText(tokens: contribution.tokens, cacheRead: contribution.cacheReadTokens, cost: contribution.cost, mode: valueMode, includeCacheRead: usageIncludesCache))
@@ -1033,5 +1042,28 @@ private struct ModelContributionRow: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 5)
+    }
+}
+
+/// Keeps provider/model symbols in one optical column. Enclosed-alphanumeric
+/// glyphs use a text baseline that sits visibly lower than Apple Color Emoji,
+/// so they receive a tiny optical lift without moving the adjacent label.
+struct EmojiNameLabel: View {
+    let emoji: String
+    let name: String
+    let iconSize: CGFloat
+    let nameFont: Font
+    let truncationMode: Text.TruncationMode
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 3) {
+            TokenClockIconView(displayName: name, fallbackEmoji: emoji, size: iconSize)
+                .frame(width: 15, height: 15, alignment: .center)
+            Text(name)
+                .font(nameFont)
+                .lineLimit(1)
+                .truncationMode(truncationMode)
+        }
+        .accessibilityElement(children: .combine)
     }
 }
