@@ -8,18 +8,17 @@ import Foundation
 enum ModelEmoji {
     /// (前缀, emoji) —— 顺序敏感；更具体的放前面。前缀匹配均对模型名 lowercased。
     private static let rules: [(prefix: String, emoji: String)] = [
-        // OpenAI / ChatGPT models share a bright conversation mark. It remains
-        // legible in dense rows without turning each model into a black knot.
-        ("gpt-6-astra", "💬"),
-        ("gpt-5.6-sol", "💬"),
-        ("gpt-5.6-luna", "💬"),
-        ("gpt-5.6-terra", "💬"),
-        ("gpt-5.4-mini", "💬"),
-        ("chatgpt", "💬"),
-        ("gpt", "💬"),
-        ("o1", "💬"),
-        ("o3", "💬"),
-        ("o4", "💬"),
+        // OpenAI / ChatGPT models share the user-selected shooting-star mark.
+        ("gpt-6-astra", "💫"),
+        ("gpt-5.6-sol", "💫"),
+        ("gpt-5.6-luna", "💫"),
+        ("gpt-5.6-terra", "💫"),
+        ("gpt-5.4-mini", "💫"),
+        ("chatgpt", "💫"),
+        ("gpt", "💫"),
+        ("o1", "💫"),
+        ("o3", "💫"),
+        ("o4", "💫"),
 
         // Anthropic model names are literary forms.
         ("claude-opus", "🎼"),
@@ -28,21 +27,22 @@ enum ModelEmoji {
         ("claude-fable", "📖"),
         ("claude", "✳️"),
 
-        // Google Gemini: gem for the family, motion for Flash.
-        ("gemini-3.7-flash", "💫"),
-        ("gemini-3.6-flash", "💫"),
-        ("gemini-3.5-flash", "💫"),
-        ("gemini", "💎"),
+        // Gemini CLI and every Gemini model share the same sparkle mark.
+        ("gemini-3.7-flash", "❇️"),
+        ("gemini-3.6-flash", "❇️"),
+        ("gemini-3.5-flash", "❇️"),
+        ("gemini", "❇️"),
 
         ("minimax", "〽️"),
         ("glm", "🧮"),
         ("kimi", "🌙"),
         ("moonshot", "🌙"),
-        ("qwen", "🌀"),
+        ("qwen", "♻️"),
         ("doubao", "🫘"),
         ("deepseek", "🐋"),
         ("llama", "🦙"),
-        ("grok", "🌌"),
+        ("grok-bot", "😶"),
+        ("grok", "🪐"),
         ("mistral", "🌪️"),
         ("command", "🧭"),
         ("nova", "🌠"),

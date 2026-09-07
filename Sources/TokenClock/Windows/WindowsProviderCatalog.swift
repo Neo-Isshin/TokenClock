@@ -105,12 +105,12 @@ enum WindowsProviderCatalog {
                   defaultPath: user + "\\.claude", alternatePaths: [], dataKind: .jsonlDirectory,
                   measurementUnit: .tokens, measurementScope: .today, statisticsSupport: .parsed, sourceKind: .fileSystem, defaultEnabled: true),
             // GEMINI_CLI_HOME is the parent directory; PathConfig appends `.gemini`.
-            Entry(id: .gemini, displayName: "Gemini CLI", abbreviation: "GC", emoji: "✨", environmentOverrides: [
+            Entry(id: .gemini, displayName: "Gemini CLI", abbreviation: "GC", emoji: "❇️", environmentOverrides: [
                     official("GEMINI_CLI_HOME", "home parent; append .gemini"), compatibility("GEMINI_HOME")
                   ],
                   defaultPath: user + "\\.gemini", alternatePaths: [], dataKind: .jsonDirectory,
                   measurementUnit: .tokens, measurementScope: .today, statisticsSupport: .parsed, sourceKind: .fileSystem, defaultEnabled: true),
-            Entry(id: .codex, displayName: "Codex", abbreviation: "CX", emoji: "⌨️", environmentOverrides: [official("CODEX_HOME")],
+            Entry(id: .codex, displayName: "Codex", abbreviation: "CX", emoji: "⚛️", environmentOverrides: [official("CODEX_HOME")],
                   defaultPath: user + "\\.codex", alternatePaths: [], dataKind: .jsonlDirectory,
                   measurementUnit: .tokens, measurementScope: .today, statisticsSupport: .parsed, sourceKind: .fileSystem, defaultEnabled: true),
             Entry(id: .hermes, displayName: "Hermes", abbreviation: "HM", emoji: "⚕️", environmentOverrides: [official("HERMES_HOME")],
@@ -127,7 +127,7 @@ enum WindowsProviderCatalog {
                   alternatePaths: [local + "\\opencode", user + "\\.opencode"],
                   dataKind: .sqliteDirectory, measurementUnit: .tokens, measurementScope: .today, statisticsSupport: .parsed,
                   sourceKind: .fileSystem, defaultEnabled: true),
-            Entry(id: .qwen, displayName: "Qwen Code", abbreviation: "QW", emoji: "🌀", environmentOverrides: [official("QWEN_RUNTIME_DIR"), official("QWEN_HOME")],
+            Entry(id: .qwen, displayName: "Qwen Code", abbreviation: "QW", emoji: "♻️", environmentOverrides: [official("QWEN_RUNTIME_DIR"), official("QWEN_HOME")],
                   defaultPath: user + "\\.qwen", alternatePaths: [], dataKind: .jsonlDirectory,
                   measurementUnit: .tokens, measurementScope: .today, statisticsSupport: .parsed, sourceKind: .fileSystem, defaultEnabled: true),
             Entry(id: .copilot, displayName: "Copilot", abbreviation: "CP", emoji: "🐙", environmentOverrides: [
@@ -136,13 +136,13 @@ enum WindowsProviderCatalog {
                   ],
                   defaultPath: user + "\\.copilot", alternatePaths: [], dataKind: .jsonlDirectory,
                   measurementUnit: .tokens, measurementScope: .today, statisticsSupport: .parsed, sourceKind: .fileSystem, defaultEnabled: true),
-            Entry(id: .grok, displayName: "Grok", abbreviation: "GK", emoji: "🌌", environmentOverrides: [compatibility("GROK_HOME")],
+            Entry(id: .grok, displayName: "Grok", abbreviation: "GK", emoji: "🪐", environmentOverrides: [compatibility("GROK_HOME")],
                   defaultPath: user + "\\.grok", alternatePaths: [], dataKind: .jsonlDirectory,
                   measurementUnit: .tokens, measurementScope: .today, statisticsSupport: .parsed, sourceKind: .fileSystem, defaultEnabled: true),
             Entry(id: .aider, displayName: "Aider", abbreviation: "AI", emoji: "🤝", environmentOverrides: [official("AIDER_ANALYTICS_LOG"), compatibility("AIDER_HOME")],
                   defaultPath: user + "\\.aider\\analytics.jsonl", alternatePaths: [], dataKind: .analyticsJSONL,
                   measurementUnit: .tokens, measurementScope: .today, statisticsSupport: .parsed, sourceKind: .fileSystem, defaultEnabled: true),
-            Entry(id: .antigravity, displayName: "Antigravity", abbreviation: "AG", emoji: "🌈", environmentOverrides: [compatibility("ANTIGRAVITY_HOME")],
+            Entry(id: .antigravity, displayName: "Antigravity", abbreviation: "AG", emoji: "🔃", environmentOverrides: [compatibility("ANTIGRAVITY_HOME")],
                   defaultPath: user + "\\.gemini\\antigravity-cli", alternatePaths: [], dataKind: .sqliteDirectory,
                   measurementUnit: .tokens, measurementScope: .today, statisticsSupport: .parsed, sourceKind: .fileSystem, defaultEnabled: true),
             Entry(id: .cline, displayName: "Cline", abbreviation: "CL", emoji: "🧰", environmentOverrides: [compatibility("CLINE_HOME")],

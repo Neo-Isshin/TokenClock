@@ -77,7 +77,8 @@ enum tc_color_icon {
     TC_ICON_BEAN, TC_ICON_LLAMA, TC_ICON_TORNADO, TC_ICON_QUESTION,
     TC_ICON_KEYBOARD, TC_ICON_RAINBOW, TC_ICON_SWIRL, TC_ICON_GALAXY,
     TC_ICON_SATELLITE, TC_ICON_TOOLBOX, TC_ICON_CHAT, TC_ICON_WAVEMARK,
-    TC_ICON_NOTE, TC_ICON_LEAF, TC_ICON_BOOK, TC_ICON_ABACUS, TC_ICON_COMPASS
+    TC_ICON_NOTE, TC_ICON_LEAF, TC_ICON_BOOK, TC_ICON_ABACUS, TC_ICON_COMPASS,
+    TC_ICON_ATOM, TC_ICON_PLANET, TC_ICON_ROTATE, TC_ICON_FACELESS
 };
 
 static tc_color_icon color_icon_for(const wchar_t *text) {
@@ -90,7 +91,7 @@ static tc_color_icon color_icon_for(const wchar_t *text) {
     if (wcsstr(text, L"☁")) return TC_ICON_CLOUD;
     if (wcsstr(text, L"☀")) return TC_ICON_SUN;
     if (wcsstr(text, L"🦞")) return TC_ICON_LOBSTER;
-    if (wcsstr(text, L"✨") || wcsstr(text, L"✳")) return TC_ICON_STAR;
+    if (wcsstr(text, L"✨") || wcsstr(text, L"✳") || wcsstr(text, L"❇")) return TC_ICON_STAR;
     if (wcsstr(text, L"🤖")) return TC_ICON_ROBOT;
     if (wcsstr(text, L"🐙")) return TC_ICON_OCTOPUS;
     if (wcsstr(text, L"🟣")) return TC_ICON_PURPLE;
@@ -135,6 +136,10 @@ static tc_color_icon color_icon_for(const wchar_t *text) {
     if (wcsstr(text, L"💫") || wcsstr(text, L"🌠")) return TC_ICON_STAR;
     if (wcsstr(text, L"🔷")) return TC_ICON_GEM;
     if (wcsstr(text, L"☯")) return TC_ICON_SWIRL;
+    if (wcsstr(text, L"⚛")) return TC_ICON_ATOM;
+    if (wcsstr(text, L"🪐")) return TC_ICON_PLANET;
+    if (wcsstr(text, L"🔃")) return TC_ICON_ROTATE;
+    if (wcsstr(text, L"😶")) return TC_ICON_FACELESS;
     if (wcsstr(text, L"❓")) return TC_ICON_QUESTION;
     return TC_ICON_NONE;
 }
@@ -335,6 +340,21 @@ static void draw_color_icon(Gdiplus::Graphics &gfx, tc_color_icon icon,
     }
     case TC_ICON_COMPASS:
         ellipse(-10,-10,20,20,71,136,210); { PointF needle[]={{2,-8},{-1,1},{-6,6},{1,2}}; polygon(needle,4,244,92,84); } ellipse(-1.5f,-1.5f,3,3,255,255,255); break;
+    case TC_ICON_ATOM: {
+        for(int turn=0;turn<3;++turn){ GraphicsState state=gfx.Save(); gfx.TranslateTransform(cx,cy); gfx.RotateTransform((float)(turn*60));
+            Pen orbit(Color(255,70,132,214),1.35f*s); gfx.DrawEllipse(&orbit,-10*s,-4*s,20*s,8*s); gfx.Restore(state); }
+        ellipse(-2.6f,-2.6f,5.2f,5.2f,238,92,84); break;
+    }
+    case TC_ICON_PLANET:
+        ellipse(-7,-7,14,14,115,89,196); { Pen ring(Color(255,239,164,67),2.0f*s); gfx.DrawArc(&ring,cx-11*s,cy-4*s,22*s,10*s,165,210); }
+        ellipse(2,-5,2.2f,2.2f,177,152,231); break;
+    case TC_ICON_ROTATE: {
+        Pen arrows(Color(255,46,164,132),2.2f*s); arrows.SetStartCap(LineCapRound); arrows.SetEndCap(LineCapRound);
+        gfx.DrawArc(&arrows,cx-9*s,cy-9*s,18*s,18*s,205,210); gfx.DrawArc(&arrows,cx-9*s,cy-9*s,18*s,18*s,25,210);
+        PointF a[]={{-9,-2},{-11,-7},{-5,-6}}; PointF b[]={{9,2},{11,7},{5,6}}; polygon(a,3,46,164,132); polygon(b,3,46,164,132); break;
+    }
+    case TC_ICON_FACELESS:
+        ellipse(-10,-10,20,20,246,193,62); ellipse(-5,-3,2.8f,3.5f,75,66,48); ellipse(2.2f,-3,2.8f,3.5f,75,66,48); break;
     default: break;
     }
 }

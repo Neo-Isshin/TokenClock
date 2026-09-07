@@ -169,7 +169,7 @@ enum PathDetector {
             }
         )
         return buildResult(
-            service: "gemini", emoji: "💎",
+            service: "gemini", emoji: "❇️",
             match: match, custom: custom,
             defaultPath: PathConfig.defaultGeminiHome()
         )
@@ -202,7 +202,7 @@ enum PathDetector {
             }
         )
         return buildResult(
-            service: "codex", emoji: "⌨️",
+            service: "codex", emoji: "⚛️",
             match: match, custom: custom,
             defaultPath: PathConfig.defaultCodexHome()
         )
@@ -367,7 +367,7 @@ enum PathDetector {
             findJSONLFiles(in: path, subpath: "projects", recursive: true)
             #endif
         })
-        return buildResult(service: "qwen", emoji: "🌀", match: match, custom: custom, defaultPath: PathConfig.defaultQwenHome())
+        return buildResult(service: "qwen", emoji: "♻️", match: match, custom: custom, defaultPath: PathConfig.defaultQwenHome())
     }
 
     private static func detectCopilot() -> DetectionResult {
@@ -405,7 +405,7 @@ enum PathDetector {
             return fm.fileExists(atPath: path + "/sessions", isDirectory: &isDir) && isDir.boolValue
             #endif
         })
-        return buildResult(service: "grok", emoji: "🌌", match: match, custom: custom, defaultPath: PathConfig.defaultGrokHome())
+        return buildResult(service: "grok", emoji: "🪐", match: match, custom: custom, defaultPath: PathConfig.defaultGrokHome())
     }
 
     private static func detectAider() -> DetectionResult {
@@ -447,7 +447,7 @@ enum PathDetector {
             return fm.fileExists(atPath: path + "/conversations", isDirectory: &isDir) && isDir.boolValue
             #endif
         })
-        return buildResult(service: "antigravity", emoji: "🌈", match: match, custom: custom, defaultPath: PathConfig.defaultAntigravityHome())
+        return buildResult(service: "antigravity", emoji: "🔃", match: match, custom: custom, defaultPath: PathConfig.defaultAntigravityHome())
     }
 
     private static func detectCline() -> DetectionResult {
