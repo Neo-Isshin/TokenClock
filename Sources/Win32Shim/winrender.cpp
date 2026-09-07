@@ -1110,9 +1110,11 @@ void win_render_clock(int w, int h, int hh, int mm, int ss, const win_theme *t, 
                     Gdiplus::Font fForecastLabel(&famD, (float)(11.0 * S), Gdiplus::FontStyleRegular, Gdiplus::UnitPixel);
                     Gdiplus::SolidBrush mainBrush(cr(t->dd_text)), subBrush(cr(t->dd_subtext));
                     Gdiplus::RectF summaryRect((Gdiplus::REAL)(cardLeft + 12.0 * S), (Gdiplus::REAL)(cardTop + 4.0 * S),
-                                               (Gdiplus::REAL)(cardW - 100.0 * S), (Gdiplus::REAL)(22.0 * S));
-                    Gdiplus::RectF labelRect((Gdiplus::REAL)(cardRight - 96.0 * S), (Gdiplus::REAL)(cardTop + 4.0 * S),
-                                             (Gdiplus::REAL)(84.0 * S), (Gdiplus::REAL)(22.0 * S));
+                                               (Gdiplus::REAL)(cardW - 120.0 * S), (Gdiplus::REAL)(22.0 * S));
+                    // Match the macOS HStack: Forecast ends near the final time column, while
+                    // the always-present bell occupies the far-right edge of the weather bar.
+                    Gdiplus::RectF labelRect((Gdiplus::REAL)(cardRight - 106.0 * S), (Gdiplus::REAL)(cardTop + 4.0 * S),
+                                             (Gdiplus::REAL)(80.0 * S), (Gdiplus::REAL)(22.0 * S));
                     tc_color_icon summaryIcon = color_icon_for(summary);
                     if (summaryIcon != TC_ICON_NONE) {
                         const float iconSize = (float)(17.0 * S);
@@ -1127,6 +1129,37 @@ void win_render_clock(int w, int h, int hh, int mm, int ss, const win_theme *t, 
                         gfx.DrawString(summary, -1, &fSummary, summaryRect, &sfL, &mainBrush);
                     }
                     gfx.DrawString(forecastLabel, -1, &fForecastLabel, labelRect, &sfR, &subBrush);
+
+                    const bool unread = ov->notification_unread_count > 0;
+                    const float bellX = (float)(cardRight - 14.0 * S);
+                    const float bellY = (float)(cardTop + 14.5 * S);
+                    Gdiplus::Pen bellPen(cr(alpha(t->dd_text, unread ? 199 : 77)), (Gdiplus::REAL)(1.25 * S));
+                    bellPen.SetStartCap(Gdiplus::LineCapRound);
+                    bellPen.SetEndCap(Gdiplus::LineCapRound);
+                    bellPen.SetLineJoin(Gdiplus::LineJoinRound);
+                    Gdiplus::GraphicsPath bell;
+                    bell.StartFigure();
+                    bell.AddArc(bellX - (float)(4.5 * S), bellY - (float)(5.0 * S),
+                                (float)(9.0 * S), (float)(9.0 * S), 180.0f, 180.0f);
+                    bell.AddLine(bellX + (float)(4.5 * S), bellY - (float)(0.5 * S),
+                                 bellX + (float)(4.5 * S), bellY + (float)(2.0 * S));
+                    bell.AddLine(bellX + (float)(4.5 * S), bellY + (float)(2.0 * S),
+                                 bellX + (float)(5.5 * S), bellY + (float)(3.5 * S));
+                    bell.AddLine(bellX + (float)(5.5 * S), bellY + (float)(3.5 * S),
+                                 bellX - (float)(5.5 * S), bellY + (float)(3.5 * S));
+                    bell.AddLine(bellX - (float)(5.5 * S), bellY + (float)(3.5 * S),
+                                 bellX - (float)(4.5 * S), bellY + (float)(2.0 * S));
+                    bell.AddLine(bellX - (float)(4.5 * S), bellY + (float)(2.0 * S),
+                                 bellX - (float)(4.5 * S), bellY - (float)(0.5 * S));
+                    gfx.DrawPath(&bellPen, &bell);
+                    Gdiplus::SolidBrush clapper(cr(alpha(t->dd_text, unread ? 199 : 77)));
+                    gfx.FillEllipse(&clapper, bellX - (float)(1.4 * S), bellY + (float)(4.1 * S),
+                                    (float)(2.8 * S), (float)(2.8 * S));
+                    if (unread) {
+                        Gdiplus::SolidBrush unreadDot(Gdiplus::Color(255, 255, 59, 48));
+                        gfx.FillEllipse(&unreadDot, bellX + (float)(2.4 * S), bellY - (float)(6.6 * S),
+                                        (float)(4.2 * S), (float)(4.2 * S));
+                    }
                 }
 
                 wchar_t encoded[1024];

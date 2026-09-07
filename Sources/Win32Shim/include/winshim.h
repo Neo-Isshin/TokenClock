@@ -217,6 +217,7 @@ typedef struct {
     const char *detail_header;   /* label \t usage \t messages \t cache */
     const char *forecast_summary; /* emoji/city/temp \t-ish encoded as summary|label */
     const char *forecast_slots;   /* time|emoji|temp, four slots separated by \t */
+    int notification_unread_count; /* forecast-bar bell state; bell remains visible at zero */
     const char *quota_label;      /* left chip label beside percent */
     const char *quota_text;       /* quota panel: typed tab-separated rows */
     int detail_grouping;         /* 0 session / 1 model */

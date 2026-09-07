@@ -342,6 +342,7 @@ final class WindowsApp: @unchecked Sendable {
             ov.detail_header = ptrs[11]
             ov.forecast_summary = ptrs[12]
             ov.forecast_slots = ptrs[13]
+            ov.notification_unread_count = Int32(model.unreadNotificationCount)
             ov.quota_label = ptrs[14]
             ov.quota_text = ptrs[15]
             ov.detail_grouping = groupingMode == .model ? 1 : 0
@@ -770,6 +771,10 @@ final class WindowsApp: @unchecked Sendable {
         guard localX >= 0, localX < detailCardWidth else { return }
         let localY = Double(y - dialHeight) - 14.0
         let forecastHeight = weatherLock.withLock { weatherInfo?.cityName.isEmpty == false } ? 76.0 : 0.0
+        if forecastHeight > 0, localY >= 0, localY < 34, localX >= detailCardWidth - 36 {
+            openNotifications()
+            return
+        }
         let controlsY = localY - forecastHeight
         if controlsY >= 8, controlsY < 57 {
             if localX >= detailCardWidth / 2.0 { openSubscriptionQuota() }
