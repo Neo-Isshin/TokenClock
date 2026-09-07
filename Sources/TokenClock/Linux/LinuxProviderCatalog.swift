@@ -112,7 +112,7 @@ enum LinuxProviderCatalog {
             )
         case .codex:
             return Entry(
-                provider: provider, service: "codex", displayName: "Codex", emoji: "🤖",
+                provider: provider, service: "codex", displayName: "Codex", emoji: "⌨️",
                 defaultPath: home(".codex"), defaultOrigin: .officialDefault,
                 environmentVariables: ["CODEX_HOME"], compatibilityEnvironmentVariables: [],
                 parserInput: "sessions/YYYY/MM/DD/rollout-*.jsonl", limitation: nil
@@ -126,7 +126,7 @@ enum LinuxProviderCatalog {
             )
         case .opencode:
             return Entry(
-                provider: provider, service: "opencode", displayName: "OpenCode", emoji: "🐙",
+                provider: provider, service: "opencode", displayName: "OpenCode", emoji: "🖱️",
                 defaultPath: data("opencode"), defaultOrigin: .officialDefault,
                 environmentVariables: ["OPENCODE_DB", "XDG_DATA_HOME"], compatibilityEnvironmentVariables: ["OPENCODE_HOME"],
                 parserInput: "opencode.db (session table)",
@@ -134,7 +134,7 @@ enum LinuxProviderCatalog {
             )
         case .qwen:
             return Entry(
-                provider: provider, service: "qwen", displayName: "Qwen Code", emoji: "🟣",
+                provider: provider, service: "qwen", displayName: "Qwen Code", emoji: "🌀",
                 defaultPath: home(".qwen"), defaultOrigin: .officialDefault,
                 environmentVariables: ["QWEN_RUNTIME_DIR", "QWEN_HOME"], compatibilityEnvironmentVariables: [],
                 parserInput: "projects/*/chats/*.jsonl", limitation: nil
@@ -149,7 +149,7 @@ enum LinuxProviderCatalog {
             )
         case .grok:
             return Entry(
-                provider: provider, service: "grok", displayName: "Grok CLI", emoji: "⚡",
+                provider: provider, service: "grok", displayName: "Grok CLI", emoji: "🌌",
                 defaultPath: home(".grok"), defaultOrigin: .officialDefault,
                 environmentVariables: [], compatibilityEnvironmentVariables: ["GROK_HOME"],
                 parserInput: "sessions/*/*/updates.jsonl",
@@ -166,7 +166,7 @@ enum LinuxProviderCatalog {
             )
         case .antigravity:
             return Entry(
-                provider: provider, service: "antigravity", displayName: "Antigravity", emoji: "🛡️",
+                provider: provider, service: "antigravity", displayName: "Antigravity", emoji: "🌈",
                 defaultPath: home(".gemini", "antigravity-cli"), defaultOrigin: .officialDefault,
                 environmentVariables: [], compatibilityEnvironmentVariables: ["ANTIGRAVITY_HOME"],
                 parserInput: "conversations/*.db (steps protobuf telemetry)",
@@ -174,7 +174,7 @@ enum LinuxProviderCatalog {
             )
         case .cline:
             return Entry(
-                provider: provider, service: "cline", displayName: "Cline", emoji: "🤖",
+                provider: provider, service: "cline", displayName: "Cline", emoji: "🧰",
                 defaultPath: config("Code", "User", "globalStorage", "saoudrizwan.claude-dev"),
                 defaultOrigin: .officialDefault,
                 environmentVariables: ["XDG_CONFIG_HOME"], compatibilityEnvironmentVariables: ["CLINE_HOME"],
@@ -191,7 +191,7 @@ enum LinuxProviderCatalog {
             )
         case .cursorAgent:
             return Entry(
-                provider: provider, service: "cursorAgent", displayName: "Cursor Agent", emoji: "🖱️",
+                provider: provider, service: "cursorAgent", displayName: "Cursor Agent", emoji: "💎",
                 defaultPath: config("Cursor", "User", "globalStorage"), defaultOrigin: .officialDefault,
                 environmentVariables: ["XDG_CONFIG_HOME"], compatibilityEnvironmentVariables: ["CURSOR_AGENT_HOME"],
                 parserInput: "state.vscdb (cursorAuth/accessToken), then Cursor usage API",
