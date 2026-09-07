@@ -81,7 +81,10 @@ final class WindowsUsageModel: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         return storedTools
-            .filter { enabledTools.contains($0.name) }
+            .filter {
+                enabledTools.contains($0.name)
+                    || ($0.name == "Grok Bot" && enabledTools.contains("Cursor Agent"))
+            }
             .sorted {
                 if $0.measurementUnit != $1.measurementUnit {
                     return $0.measurementUnit == .tokens
@@ -195,30 +198,13 @@ final class WindowsUsageModel: @unchecked Sendable {
             results["Copilot"] = snapshot(usage, copilotService.recentUsage(minutes: rateWindowMinutes).tokens, copilotService.currentHourTokens(), copilotService.isActive(), copilotService.todaySessions())
         }
         if enabledTools.contains("Grok") {
-            let native = grokService.todayUsage()
-            let bridged = cursorAgentService.todayGrokBotUsage()
-            let nativeRecent = grokService.recentUsage(minutes: rateWindowMinutes)
-            let bridgedRecent = cursorAgentService.recentGrokBotUsage(minutes: rateWindowMinutes)
-            let cacheRead = cursorAgentService.todayGrokBotCacheReadTokens()
-            let freshTokens = native.tokens + bridged.tokens
-            var cost = cursorAgentService.todayGrokBotCost()
-            if native.tokens > 0, cost.available { cost.complete = false }
-            let usage = (
-                tokens: freshTokens,
-                messages: native.messages + bridged.messages,
-                cacheRate: TokenAccounting.cacheReadShare(freshTokens: freshTokens, cacheRead: cacheRead)
-            )
+            let usage = grokService.todayUsage()
             results["Grok"] = snapshot(
                 usage,
-                nativeRecent.tokens + bridgedRecent.tokens,
-                grokService.currentHourTokens() + cursorAgentService.currentHourGrokBotTokens(),
-                grokService.isActive() || cursorAgentService.isGrokBotActive(),
-                (grokService.todaySessions() + cursorAgentService.todayGrokBotSessions())
-                    .sorted { $0.todayTokens > $1.todayTokens },
-                measurementValue: nil,
-                measurementScope: .today,
-                cost,
-                cacheRead
+                grokService.recentUsage(minutes: rateWindowMinutes).tokens,
+                grokService.currentHourTokens(),
+                grokService.isActive(),
+                grokService.todaySessions()
             )
         }
         if enabledTools.contains("Aider") {
@@ -240,6 +226,18 @@ final class WindowsUsageModel: @unchecked Sendable {
         if enabledTools.contains("Cursor Agent") {
             let usage = cursorAgentService.todayUsage()
             results["Cursor Agent"] = snapshot(usage, cursorAgentService.recentUsage(minutes: rateWindowMinutes).tokens, cursorAgentService.currentHourTokens(), cursorAgentService.isActive(), cursorAgentService.todaySessions())
+            let bot = cursorAgentService.todayGrokBotUsage()
+            results["Grok Bot"] = snapshot(
+                bot,
+                cursorAgentService.recentGrokBotUsage(minutes: rateWindowMinutes).tokens,
+                cursorAgentService.currentHourGrokBotTokens(),
+                cursorAgentService.isGrokBotActive(),
+                cursorAgentService.todayGrokBotSessions(),
+                measurementValue: nil,
+                measurementScope: .today,
+                cursorAgentService.todayGrokBotCost(),
+                cursorAgentService.todayGrokBotCacheReadTokens()
+            )
         }
         if enabledTools.contains("ZCode") {
             let usage = zcodeService.todayUsage()

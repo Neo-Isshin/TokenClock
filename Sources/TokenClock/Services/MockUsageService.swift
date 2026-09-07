@@ -10,10 +10,11 @@ final class MockUsageService {
     static func generateInitialData(enabledTools: Set<String> = .init()) -> [ToolUsage] {
         _ = enabledTools
         #if os(Windows)
-        let tools: [(name: String, abbr: String, emoji: String, unit: UsageMeasurementUnit, scope: UsageMeasurementScope)] =
+        let catalogTools: [(name: String, abbr: String, emoji: String, unit: UsageMeasurementUnit, scope: UsageMeasurementScope)] =
             WindowsProviderCatalog.orderedEntries.map {
                 ($0.displayName, $0.abbreviation, $0.emoji, $0.measurementUnit, $0.measurementScope)
             }
+        let tools = catalogTools + [("Grok Bot", "GB", "🤖", .tokens, .today)]
         #else
         let tokenTools: [(name: String, abbr: String, emoji: String)] = [
             ("OpenClaw", "OC", "🦞"),
@@ -30,6 +31,7 @@ final class MockUsageService {
             ("Cline", "CL", "🤖"),
             ("Continue", "CN", "▶️"),
             ("Cursor Agent", "CA", "🖱️"),
+            ("Grok Bot", "GB", "🤖"),
         ]
         let tools: [(name: String, abbr: String, emoji: String, unit: UsageMeasurementUnit, scope: UsageMeasurementScope)] =
             tokenTools.map { ($0.name, $0.abbr, $0.emoji, .tokens, .today) }
