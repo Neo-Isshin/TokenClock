@@ -61,7 +61,10 @@ final class ViewModel: ObservableObject {
 
     /// 只包含已启用工具的排序列表
     var visibleTools: [ToolUsage] {
-        sortedTools.filter { enabledTools.contains($0.name) }
+        sortedTools.filter {
+            enabledTools.contains($0.name)
+                || ($0.name == "Grok Bot" && enabledTools.contains("Cursor Agent"))
+        }
     }
 
     let clockTicker = ClockTicker()
@@ -1210,25 +1213,15 @@ final class ViewModel: ObservableObject {
                 results["Copilot"] = ToolSnapshot(tokens: u.tokens, messages: u.messages, recent: self.copilotService.recentUsage(minutes: rateWindow).tokens, hourly: self.copilotService.currentHourTokens(), active: self.copilotService.isActive(), cacheRate: u.cacheRate, sessions: self.copilotService.todaySessions())
             }
             if enabled.contains("Grok") {
-                let native = self.grokService.todayUsage()
-                let bridged = self.cursorAgentService.todayGrokBotUsage()
-                let nativeRecent = self.grokService.recentUsage(minutes: rateWindow)
-                let bridgedRecent = self.cursorAgentService.recentGrokBotUsage(minutes: rateWindow)
-                let cacheRead = self.cursorAgentService.todayGrokBotCacheReadTokens()
-                let freshTokens = native.tokens + bridged.tokens
-                var cost = self.cursorAgentService.todayGrokBotCost()
-                if native.tokens > 0, cost.available { cost.complete = false }
+                let usage = self.grokService.todayUsage()
                 results["Grok"] = ToolSnapshot(
-                    tokens: freshTokens,
-                    messages: native.messages + bridged.messages,
-                    recent: nativeRecent.tokens + bridgedRecent.tokens,
-                    hourly: self.grokService.currentHourTokens() + self.cursorAgentService.currentHourGrokBotTokens(),
-                    active: self.grokService.isActive() || self.cursorAgentService.isGrokBotActive(),
-                    cacheRate: TokenAccounting.cacheReadShare(freshTokens: freshTokens, cacheRead: cacheRead),
-                    cost: cost,
-                    cacheRead: cacheRead,
-                    sessions: (self.grokService.todaySessions() + self.cursorAgentService.todayGrokBotSessions())
-                        .sorted { $0.todayTokens > $1.todayTokens }
+                    tokens: usage.tokens,
+                    messages: usage.messages,
+                    recent: self.grokService.recentUsage(minutes: rateWindow).tokens,
+                    hourly: self.grokService.currentHourTokens(),
+                    active: self.grokService.isActive(),
+                    cacheRate: usage.cacheRate,
+                    sessions: self.grokService.todaySessions()
                 )
             }
             if enabled.contains("Aider") {
@@ -1250,6 +1243,18 @@ final class ViewModel: ObservableObject {
             if enabled.contains("Cursor Agent") {
                 let u = self.cursorAgentService.todayUsage()
                 results["Cursor Agent"] = ToolSnapshot(tokens: u.tokens, messages: u.messages, recent: self.cursorAgentService.recentUsage(minutes: rateWindow).tokens, hourly: self.cursorAgentService.currentHourTokens(), active: self.cursorAgentService.isActive(), cacheRate: u.cacheRate, cost: self.cursorAgentService.todayCost(), cacheRead: self.cursorAgentService.todayCacheReadTokens(), sessions: self.cursorAgentService.todaySessions())
+                let bot = self.cursorAgentService.todayGrokBotUsage()
+                results["Grok Bot"] = ToolSnapshot(
+                    tokens: bot.tokens,
+                    messages: bot.messages,
+                    recent: self.cursorAgentService.recentGrokBotUsage(minutes: rateWindow).tokens,
+                    hourly: self.cursorAgentService.currentHourGrokBotTokens(),
+                    active: self.cursorAgentService.isGrokBotActive(),
+                    cacheRate: bot.cacheRate,
+                    cost: self.cursorAgentService.todayGrokBotCost(),
+                    cacheRead: self.cursorAgentService.todayGrokBotCacheReadTokens(),
+                    sessions: self.cursorAgentService.todayGrokBotSessions()
+                )
             }
             if enabled.contains("ZCode") {
                 let u = self.zcodeService.todayUsage()
