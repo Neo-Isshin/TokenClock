@@ -1,11 +1,11 @@
-# 每周自动刷新价格快照（LiteLLM 上游日更），有变化时创建 PR 供人工 review。
+# 每日自动检查价格快照（LiteLLM 上游日更），有变化时创建或更新 PR 供人工 review。
 # 价格快照的 diff 逐模型一行，review 时可直接核对单价变化。
 name: update-pricing
 
 on:
   schedule:
-    # UTC 每周一 03:17（避开整点，降低 GitHub 定时任务高峰拥堵）
-    - cron: '17 3 * * 1'
+    # UTC 每日 03:17（避开整点，降低 GitHub 定时任务高峰拥堵）
+    - cron: '17 3 * * *'
   workflow_dispatch:
 
 permissions:
@@ -48,7 +48,7 @@ jobs:
           git add Sources/TokenClock/Resources/pricing-snapshot.json
           git commit -m "chore(pricing): refresh snapshot from LiteLLM ($(date -u +%Y-%m-%d))"
           # This branch is owned by the workflow. Reusing it keeps reruns and
-          # later weekly refreshes idempotent while an earlier PR is still open.
+          # later daily refreshes idempotent while an earlier PR is still open.
           git push --force origin "$BRANCH"
 
           PR_NUMBER=$(gh pr list \

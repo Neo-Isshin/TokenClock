@@ -38,6 +38,33 @@ final class PricingServiceTests: XCTestCase {
         XCTAssertEqual(PricingService.shared.price(forModel: "MiniMax-M2.7")?.cacheRead, 0.06)
         XCTAssertEqual(PricingService.shared.price(forModel: "glm-5.1")?.output, 4.4)
         XCTAssertEqual(PricingService.shared.price(forModel: "qwen3.8-max")?.output, 6)
+
+        let fable = try XCTUnwrap(PricingService.shared.price(forModel: "claude-fable-5-1"))
+        XCTAssertEqual(fable.input, 10)
+        XCTAssertEqual(fable.cacheRead, 0.25)
+        XCTAssertEqual(fable.cacheWrite, 12.5)
+        XCTAssertEqual(fable.output, 50)
+
+        let astra = try XCTUnwrap(PricingService.shared.price(forModel: "gpt-6-astra"))
+        XCTAssertEqual(astra.input, 10)
+        XCTAssertEqual(astra.cacheRead, 1)
+        XCTAssertEqual(astra.cacheWrite, 12.5)
+        XCTAssertEqual(astra.output, 50)
+        XCTAssertEqual(astra.longContextThreshold, 272_000)
+        XCTAssertEqual(astra.longInput, 20)
+        XCTAssertEqual(astra.longOutput, 75)
+        XCTAssertEqual(astra.priorityMultiplier, 2)
+    }
+
+    func testAutomaticCatalogRefreshPolicyChecksDaily() {
+        let now = Date(timeIntervalSince1970: 2_000_000_000)
+        XCTAssertTrue(PricingService.shouldRefresh(lastRefresh: nil, now: now))
+        XCTAssertFalse(PricingService.shouldRefresh(
+            lastRefresh: now.addingTimeInterval(-23 * 60 * 60), now: now
+        ))
+        XCTAssertTrue(PricingService.shouldRefresh(
+            lastRefresh: now.addingTimeInterval(-24 * 60 * 60), now: now
+        ))
     }
 
     /// Antigravity appends the thinking level to Gemini's official model ID. Thinking level
@@ -214,6 +241,8 @@ final class PricingServiceTests: XCTestCase {
         XCTAssertNotNil(PricingService.shared.lastRefresh)
         XCTAssertGreaterThan(PricingService.shared.catalogSummary.count, 100)
         XCTAssertNotNil(PricingService.shared.price(forModel: "gpt-5-codex"))
+        XCTAssertNotNil(PricingService.shared.price(forModel: "claude-fable-5-1"))
+        XCTAssertNotNil(PricingService.shared.price(forModel: "gpt-6-astra"))
     }
 
     /// 端到端：扫本机真实日志，验证扫描层 → 分桶 → 计费全链路出数。

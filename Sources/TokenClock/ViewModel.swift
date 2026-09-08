@@ -405,6 +405,7 @@ final class ViewModel: ObservableObject {
             self, selector: #selector(handlePricingUpdate),
             name: PricingService.catalogUpdatedNotification, object: nil
         )
+        PricingService.shared.startAutomaticRefresh()
         if PricingService.shared.isStale() {
             Task.detached(priority: .utility) {
                 try? await PricingService.shared.refresh()

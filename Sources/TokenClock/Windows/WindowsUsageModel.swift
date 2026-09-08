@@ -50,7 +50,8 @@ final class WindowsUsageModel: @unchecked Sendable {
             reloadServicesBeforeNextScan = summary.foundCount > 0
         }
 
-        // 每周自动静默刷新价格目录（与 macOS/Linux 一致）
+        // 每天最多联网一次；长时间运行时也会继续静默检查。
+        PricingService.shared.startAutomaticRefresh()
         if PricingService.shared.isStale() {
             Task.detached(priority: .utility) {
                 try? await PricingService.shared.refresh()

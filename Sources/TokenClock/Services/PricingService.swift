@@ -159,6 +159,8 @@ enum CostFormat {
 /// 目录查询发生在后台扫描线程，价格编辑/刷新发生在主线程 —— 用锁保护可变状态。
 final class PricingService: @unchecked Sendable {
     static let shared = PricingService()
+    static let automaticRefreshMaxAge: TimeInterval = 24 * 60 * 60
+    static let automaticRefreshPollInterval: TimeInterval = 6 * 60 * 60
 
     /// 目录刷新后广播（ViewModel 收到后增量重扫，30 秒内的下一轮扫描也会自然重算）
     static let catalogUpdatedNotification = Notification.Name("PricingCatalogUpdated")
@@ -174,6 +176,8 @@ final class PricingService: @unchecked Sendable {
     /// 查过但没命中的模型名（设置页展示，引导用户补自定义价）
     private var unpriced: Set<String> = []
     private let lock = NSLock()
+    private var automaticRefreshTimer: DispatchSourceTimer?
+    private var refreshInFlight = false
 
     /// Defensive pricing aliases for historical callers that may still supply a harness
     /// inference suffix. ModelNormalizer also removes these suffixes for display/grouping.
@@ -355,14 +359,56 @@ final class PricingService: @unchecked Sendable {
 
     // MARK: - 刷新
 
-    /// 是否到了每周自动刷新的时点
-    func isStale(maxAge: TimeInterval = 7 * 86_400) -> Bool {
-        guard let last = lastRefresh else { return true }
-        return Date().timeIntervalSince(last) > maxAge
+    /// 是否到了下一次自动检查的时点。默认每天最多联网一次。
+    func isStale(
+        maxAge: TimeInterval = PricingService.automaticRefreshMaxAge,
+        now: Date = Date()
+    ) -> Bool {
+        lock.lock(); let last = lastRefresh; lock.unlock()
+        return Self.shouldRefresh(lastRefresh: last, now: now, maxAge: maxAge)
+    }
+
+    static func shouldRefresh(
+        lastRefresh: Date?,
+        now: Date,
+        maxAge: TimeInterval = automaticRefreshMaxAge
+    ) -> Bool {
+        guard let lastRefresh else { return true }
+        return now.timeIntervalSince(lastRefresh) >= maxAge
+    }
+
+    /// Keep long-running widgets current. The timer itself does no I/O; it wakes
+    /// every six hours and only performs a network request when the last successful
+    /// check is at least one day old.
+    func startAutomaticRefresh() {
+        lock.lock()
+        guard automaticRefreshTimer == nil else { lock.unlock(); return }
+        let timer = DispatchSource.makeTimerSource(
+            queue: DispatchQueue(label: "TokenClock.PricingCatalog", qos: .utility)
+        )
+        automaticRefreshTimer = timer
+        lock.unlock()
+
+        let interval = Int(Self.automaticRefreshPollInterval)
+        timer.schedule(
+            deadline: .now() + .seconds(interval),
+            repeating: .seconds(interval),
+            leeway: .seconds(15 * 60)
+        )
+        timer.setEventHandler { [weak self] in
+            guard let self, self.isStale() else { return }
+            Task.detached(priority: .utility) {
+                try? await self.refresh()
+            }
+        }
+        timer.resume()
     }
 
     /// 拉取远端快照写入缓存并重建目录。失败抛错（调用方决定是否提示）。
     func refresh() async throws {
+        guard beginRefresh() else { return }
+        defer { endRefresh() }
+
         let data: Data
         #if os(Windows)
         // Windows 构建不链接 FoundationNetworking.dll：走 WinHTTP 同步桥
@@ -383,20 +429,48 @@ final class PricingService: @unchecked Sendable {
         }
         data = fetched
         #endif
-        guard (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] != nil else {
+        guard let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+              let models = object["models"] as? [String: [String: Any]],
+              !models.isEmpty else {
             throw PricingError.badResponse
+        }
+        let remoteRevision = (object["_meta"] as? [String: Any])?["generatedAt"] as? String
+        let currentRevision = currentCatalogRevision()
+
+        let stamp = Date()
+        // Never replace a newer bundled catalog with an older GitHub snapshot.
+        // ISO-8601 UTC revisions sort chronologically in their string form.
+        if let remoteRevision, let currentRevision, remoteRevision <= currentRevision {
+            recordRefresh(stamp)
+            UserDefaults.standard.setDouble(stamp.timeIntervalSince1970, for: .pricingLastRefresh)
+            return
         }
         try FileManager.default.createDirectory(
             at: Self.cacheURL.deletingLastPathComponent(),
             withIntermediateDirectories: true
         )
-        try data.write(to: Self.cacheURL)
+        try data.write(to: Self.cacheURL, options: .atomic)
         guard applyRefreshedCatalog() else { throw PricingError.badResponse }
 
-        let stamp = Date()
         recordRefresh(stamp)
         UserDefaults.standard.setDouble(stamp.timeIntervalSince1970, for: .pricingLastRefresh)
         NotificationCenter.default.post(name: Self.catalogUpdatedNotification, object: nil)
+    }
+
+    private func beginRefresh() -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        guard !refreshInFlight else { return false }
+        refreshInFlight = true
+        return true
+    }
+
+    private func currentCatalogRevision() -> String? {
+        lock.lock(); defer { lock.unlock() }
+        return generatedAt
+    }
+
+    private func endRefresh() {
+        lock.lock(); refreshInFlight = false; lock.unlock()
     }
 
     /// 同步上下文里持锁重建目录（Swift 6 禁止在 async 函数里直接 NSLock）
