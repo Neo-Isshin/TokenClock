@@ -3,6 +3,29 @@ import XCTest
 @testable import TokenClock
 
 final class ClaudeQuotaServiceTests: XCTestCase {
+    func testDetailedPlanDistinguishesMaxTiers() {
+        XCTAssertEqual(
+            ClaudeQuotaService.detailedPlan(subscriptionType: "max", rateLimitTier: "default_claude_max_5x"),
+            "max_5x"
+        )
+        XCTAssertEqual(
+            ClaudeQuotaService.detailedPlan(subscriptionType: "max", rateLimitTier: "default_claude_max_20x"),
+            "max_20x"
+        )
+        XCTAssertEqual(
+            ClaudeQuotaService.detailedPlan(subscriptionType: "pro", rateLimitTier: "default_claude_ai"),
+            "pro"
+        )
+    }
+
+    func testDecodesClaudeAccountProfileEmailAndStableID() throws {
+        let data = Data(#"{"oauthAccount":{"accountUuid":"account-1","emailAddress":"person@example.com","userRateLimitTier":"default_claude_max_20x"}}"#.utf8)
+        let profile = try XCTUnwrap(ClaudeQuotaService.decodeAccountProfile(data))
+        XCTAssertEqual(profile.id, "account-1")
+        XCTAssertEqual(profile.email, "person@example.com")
+        XCTAssertEqual(profile.rateLimitTier, "default_claude_max_20x")
+    }
+
     func testDecodesSubscriptionWindowsAndModelLimits() throws {
         let payload = #"{"five_hour":{"utilization":25,"resets_at":"2026-08-21T12:00:00Z"},"seven_day":{"utilization":"70","resets_at":"2026-08-25T12:00:00Z"},"seven_day_opus":{"utilization":90,"resets_at":2000000000}}"#
         let refreshed = Date(timeIntervalSince1970: 1_900_000_000)

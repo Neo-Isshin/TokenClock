@@ -2,19 +2,21 @@ import SwiftUI
 
 /// 独立的订阅额度窗口。所有网络/本地服务读取都由用户打开窗口或点击刷新时触发。
 struct SubscriptionQuotaWindowView: View {
-    private enum QuotaProvider: String, CaseIterable, Identifiable {
-        case codex, claude, antigravity, cursor, zhipu
-        var id: String { rawValue }
-    }
-
     @ObservedObject var viewModel: ViewModel
     var onLayoutChange: (Bool) -> Void = { _ in }
+    var onEditAccount: (SubscriptionAccountRecord) -> Void = { _ in }
     @State private var isEditingOrder = false
-    @State private var providerOrder: [QuotaProvider]
+    @State private var providerOrder: [SubscriptionProvider]
+    @State private var expandedEmails: Set<String> = []
 
-    init(viewModel: ViewModel, onLayoutChange: @escaping (Bool) -> Void = { _ in }) {
+    init(
+        viewModel: ViewModel,
+        onLayoutChange: @escaping (Bool) -> Void = { _ in },
+        onEditAccount: @escaping (SubscriptionAccountRecord) -> Void = { _ in }
+    ) {
         self.viewModel = viewModel
         self.onLayoutChange = onLayoutChange
+        self.onEditAccount = onEditAccount
         _providerOrder = State(initialValue: Self.loadProviderOrder())
     }
 
@@ -26,7 +28,7 @@ struct SubscriptionQuotaWindowView: View {
         viewModel.zhipuQuota.status == .loading
     }
 
-    private var visibleProviders: [QuotaProvider] {
+    private var visibleProviders: [SubscriptionProvider] {
         providerOrder.filter(hasQuotaData)
     }
 
@@ -105,32 +107,17 @@ struct SubscriptionQuotaWindowView: View {
     }
 
     @ViewBuilder
-    private func providerView(_ provider: QuotaProvider) -> some View {
+    private func providerView(_ provider: SubscriptionProvider) -> some View {
         switch provider {
-        case .codex: codexSection
-        case .claude: claudeSection
-        case .antigravity:
-            providerSection(
-                title: "🛸 Antigravity",
-                snapshot: viewModel.antigravityQuota,
-                unavailableKey: "quota.antigravityUnavailable"
-            )
-        case .cursor:
-            providerSection(
-                title: "🖱️ Cursor",
-                snapshot: viewModel.cursorQuota,
-                unavailableKey: "quota.cursorUnavailable"
-            )
-        case .zhipu:
-            providerSection(
-                title: "🅉 Zhipu GLM",
-                snapshot: viewModel.zhipuQuota,
-                unavailableKey: "quota.zhipuUnavailable"
-            )
+        case .codex: accountProviderSection(provider, title: "⚛️ Codex")
+        case .claude: accountProviderSection(provider, title: "✳️ Claude Code")
+        case .antigravity: accountProviderSection(provider, title: "🔃 Antigravity")
+        case .cursor: accountProviderSection(provider, title: "💎 Cursor")
+        case .zhipu: accountProviderSection(provider, title: "🅉 Zhipu GLM")
         }
     }
 
-    private func reorderControls(for provider: QuotaProvider, at index: Int, count: Int) -> some View {
+    private func reorderControls(for provider: SubscriptionProvider, at index: Int, count: Int) -> some View {
         VStack(spacing: 4) {
             reorderButton("chevron.up", disabled: index == 0) { move(provider, by: -1) }
             reorderButton("chevron.down", disabled: index == count - 1) { move(provider, by: 1) }
@@ -150,7 +137,7 @@ struct SubscriptionQuotaWindowView: View {
         .opacity(disabled ? 0.35 : 1)
     }
 
-    private func move(_ provider: QuotaProvider, by offset: Int) {
+    private func move(_ provider: SubscriptionProvider, by offset: Int) {
         let visible = visibleProviders
         guard let visibleSource = visible.firstIndex(of: provider) else { return }
         let visibleDestination = visibleSource + offset
@@ -164,7 +151,7 @@ struct SubscriptionQuotaWindowView: View {
         )
     }
 
-    private func hasQuotaData(_ provider: QuotaProvider) -> Bool {
+    private func hasQuotaData(_ provider: SubscriptionProvider) -> Bool {
         switch provider {
         case .codex: return !viewModel.codexQuota.buckets.isEmpty
         case .claude: return !viewModel.claudeQuota.buckets.isEmpty
@@ -174,106 +161,110 @@ struct SubscriptionQuotaWindowView: View {
         }
     }
 
-    private static func loadProviderOrder() -> [QuotaProvider] {
+    private static func loadProviderOrder() -> [SubscriptionProvider] {
         let saved = UserDefaults.standard.stringArray(forKey: SettingsKey.subscriptionQuotaOrder.rawValue) ?? []
-        var result = saved.compactMap(QuotaProvider.init(rawValue:))
-        for provider in QuotaProvider.allCases where !result.contains(provider) {
+        var result = saved.compactMap(SubscriptionProvider.init(rawValue:))
+        for provider in SubscriptionProvider.allCases where !result.contains(provider) {
             result.append(provider)
         }
         return result
     }
 
-    private var codexSection: some View {
-        quotaSection(
-            title: "🤖 Codex",
-            plan: viewModel.codexQuota.planType,
-            status: viewModel.codexQuota.status,
-            buckets: viewModel.codexQuota.buckets,
-            unavailableKey: "quota.codexUnavailable",
-            source: viewModel.codexQuota.source == .appServer
-                ? L10n.shared.tr("quota.liveSource") : L10n.shared.tr("quota.logSource"),
-            refreshedAt: viewModel.codexQuota.refreshedAt
-        ) {
-            if viewModel.codexQuota.hasUnlimitedCredits {
+    private func accountProviderSection(_ provider: SubscriptionProvider, title: String) -> some View {
+        let accounts = viewModel.subscriptionAccounts(for: provider)
+        return VStack(alignment: .leading, spacing: 11) {
+            HStack(spacing: 7) {
+                if providerIsLoading(provider) { ProgressView().controlSize(.small) }
+                Text(title).font(.system(size: 13, weight: .bold, design: .rounded))
+                Spacer()
+                if accounts.count > 1 { metaChip(L10n.shared.tr("quota.accounts", accounts.count)) }
+            }
+            if accounts.isEmpty {
+                unavailableRow(L10n.shared.tr("quota.loadingProvider", title))
+            } else {
+                ForEach(accounts) { accountCard($0) }
+            }
+        }
+        .sectionContainer()
+    }
+
+    private func accountCard(_ account: SubscriptionAccountRecord) -> some View {
+        let isCurrent = viewModel.activeSubscriptionAccountIDs[account.provider] == account.id
+        return VStack(alignment: .leading, spacing: 9) {
+            HStack(spacing: 7) {
+                Text(account.displayName)
+                    .font(.system(size: 11.5, weight: .semibold, design: .rounded))
+                    .lineLimit(1)
+                Spacer(minLength: 4)
+                if let plan = account.effectivePlan {
+                    metaChip(L10n.shared.tr("quota.plan", displayPlan(plan)))
+                }
+                Button {
+                    expandedEmails.remove(account.id)
+                    onEditAccount(account)
+                } label: {
+                    Image(systemName: "pencil")
+                        .font(.system(size: 9, weight: .semibold))
+                        .frame(width: 18, height: 18)
+                }
+                .buttonStyle(.plain)
+                .help(L10n.shared.tr("quota.editAccount"))
+                if account.revealsEmailOnDemand {
+                    Button {
+                        if expandedEmails.contains(account.id) {
+                            expandedEmails.remove(account.id)
+                        } else {
+                            expandedEmails.insert(account.id)
+                        }
+                    } label: {
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 9, weight: .bold))
+                            .rotationEffect(.degrees(expandedEmails.contains(account.id) ? 90 : 0))
+                            .frame(width: 18, height: 18)
+                    }
+                    .buttonStyle(.plain)
+                    .help(L10n.shared.tr("quota.showEmail"))
+                }
+            }
+            if account.revealsEmailOnDemand,
+               expandedEmails.contains(account.id),
+               let email = account.email {
+                Label(email, systemImage: "envelope")
+                    .font(.system(size: 9.5))
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+            }
+            ForEach(account.groups) { group in
+                if account.groups.count > 1 || group.name != "Subscription" {
+                    Text(group.name)
+                        .font(.system(size: 10.5, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                }
+                ForEach(group.buckets) { quotaCard($0) }
+            }
+            if account.hasUnlimitedCredits {
                 metaChip(L10n.shared.tr("quota.unlimited"))
-            } else if let balance = viewModel.codexQuota.creditBalance, balance != "0" {
+            } else if let balance = account.creditBalance, balance != "0" {
                 metaChip(L10n.shared.tr("quota.creditBalance", balance))
             }
-            if viewModel.codexQuota.resetCreditCount > 0 {
-                metaChip(L10n.shared.tr("quota.resetCredits", viewModel.codexQuota.resetCreditCount))
+            if account.resetCreditCount > 0 {
+                metaChip(L10n.shared.tr("quota.resetCredits", account.resetCreditCount))
             }
+            sourceRow(account.source, refreshedAt: account.refreshedAt, isCurrent: isCurrent)
         }
+        .padding(10)
+        .background(RoundedRectangle(cornerRadius: 11, style: .continuous).fill(Color.primary.opacity(0.025)))
+        .overlay(RoundedRectangle(cornerRadius: 11, style: .continuous)
+            .strokeBorder(Color.primary.opacity(0.075), lineWidth: 0.5))
     }
 
-    private var claudeSection: some View {
-        quotaSection(
-            title: "✳️ Claude Code",
-            plan: viewModel.claudeQuota.planType,
-            status: viewModel.claudeQuota.status,
-            buckets: viewModel.claudeQuota.buckets,
-            unavailableKey: "quota.claudeUnavailable",
-            source: L10n.shared.tr("quota.claudeSource"),
-            refreshedAt: viewModel.claudeQuota.refreshedAt
-        ) { EmptyView() }
-    }
-
-    private func providerSection(
-        title: String,
-        snapshot: ProviderQuotaSnapshot,
-        unavailableKey: String
-    ) -> some View {
-        VStack(alignment: .leading, spacing: 11) {
-            providerHeader(title, plan: snapshot.planType, loading: snapshot.status == .loading)
-            if snapshot.groups.isEmpty {
-                unavailableRow(snapshot.status == .loading
-                    ? L10n.shared.tr("quota.loadingProvider", title)
-                    : (snapshot.message ?? L10n.shared.tr(unavailableKey)))
-            } else {
-                ForEach(snapshot.groups) { group in
-                    if snapshot.groups.count > 1 || group.name != "Subscription" {
-                        Text(group.name)
-                            .font(.system(size: 10.5, weight: .semibold))
-                            .foregroundStyle(.secondary)
-                    }
-                    ForEach(group.buckets) { quotaCard($0) }
-                }
-                sourceRow(snapshot.source, refreshedAt: snapshot.refreshedAt)
-            }
-        }
-        .sectionContainer()
-    }
-
-    private func quotaSection<Meta: View>(
-        title: String,
-        plan: String?,
-        status: CodexQuotaStatus,
-        buckets: [CodexQuotaBucket],
-        unavailableKey: String,
-        source: String,
-        refreshedAt: Date?,
-        @ViewBuilder meta: () -> Meta
-    ) -> some View {
-        VStack(alignment: .leading, spacing: 11) {
-            providerHeader(title, plan: plan, loading: status == .loading)
-            if buckets.isEmpty {
-                unavailableRow(L10n.shared.tr(status == .loading ? "quota.loadingProvider" : unavailableKey, title))
-            } else {
-                ForEach(buckets) { quotaCard($0) }
-                HStack(spacing: 6) { meta(); Spacer(minLength: 0) }
-                sourceRow(source, refreshedAt: refreshedAt)
-            }
-        }
-        .sectionContainer()
-    }
-
-    private func providerHeader(_ title: String, plan: String?, loading: Bool) -> some View {
-        HStack(spacing: 7) {
-            if loading { ProgressView().controlSize(.small) }
-            Text(title).font(.system(size: 13, weight: .bold, design: .rounded))
-            Spacer()
-            if let plan, !plan.isEmpty {
-                metaChip(L10n.shared.tr("quota.plan", displayPlan(plan)))
-            }
+    private func providerIsLoading(_ provider: SubscriptionProvider) -> Bool {
+        switch provider {
+        case .codex: return viewModel.codexQuota.status == .loading
+        case .claude: return viewModel.claudeQuota.status == .loading
+        case .antigravity: return viewModel.antigravityQuota.status == .loading
+        case .cursor: return viewModel.cursorQuota.status == .loading
+        case .zhipu: return viewModel.zhipuQuota.status == .loading
         }
     }
 
@@ -328,10 +319,10 @@ struct SubscriptionQuotaWindowView: View {
             .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.04)))
     }
 
-    private func sourceRow(_ source: String, refreshedAt: Date?) -> some View {
+    private func sourceRow(_ source: String, refreshedAt: Date?, isCurrent: Bool) -> some View {
         HStack(spacing: 5) {
-            Circle().fill(Color.green).frame(width: 5, height: 5)
-            Text(source)
+            Circle().fill(isCurrent ? Color.green : Color.orange).frame(width: 5, height: 5)
+            Text(isCurrent ? source : L10n.shared.tr("quota.savedSnapshot"))
             Spacer()
             if let refreshedAt { Text(L10n.shared.tr("quota.updated", relativeDate(refreshedAt))) }
         }
@@ -360,7 +351,14 @@ struct SubscriptionQuotaWindowView: View {
     }
 
     private func displayPlan(_ raw: String) -> String {
-        raw.replacingOccurrences(of: "_", with: " ").capitalized
+        switch raw.lowercased() {
+        case "pro_5x", "pro-5x": return "Pro 5x"
+        case "pro_20x", "pro-20x": return "Pro 20x"
+        case "max_5x", "default_claude_max_5x": return "Max 5x"
+        case "max_20x", "default_claude_max_20x": return "Max 20x"
+        case "pro_plus", "pro+": return "Pro+"
+        default: return raw.replacingOccurrences(of: "_", with: " ").capitalized
+        }
     }
 
     private func resetLabel(_ date: Date) -> String {
@@ -379,6 +377,169 @@ struct SubscriptionQuotaWindowView: View {
         formatter.locale = Locale(identifier: L10n.shared.language.rawValue)
         formatter.dateFormat = L10n.shared.language == .en ? "MMM d · h:mm a" : "M月d日 · HH:mm"
         return formatter.string(from: date)
+    }
+}
+
+struct SubscriptionAccountEditorView: View {
+    let account: SubscriptionAccountRecord
+    let onSave: (String, String?) -> Void
+    let onCancel: () -> Void
+    @State private var note: String
+    @State private var selectedPlan: String
+
+    init(
+        account: SubscriptionAccountRecord,
+        onSave: @escaping (String, String?) -> Void,
+        onCancel: @escaping () -> Void
+    ) {
+        self.account = account
+        self.onSave = onSave
+        self.onCancel = onCancel
+        _note = State(initialValue: account.note)
+        _selectedPlan = State(initialValue: account.manualPlan ?? "")
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text(L10n.shared.tr("quota.editAccount"))
+                .font(.system(size: 17, weight: .bold, design: .rounded))
+            if let email = account.email {
+                Label(email, systemImage: "envelope")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+            }
+            VStack(alignment: .leading, spacing: 6) {
+                Text(L10n.shared.tr("quota.accountNote"))
+                    .font(.system(size: 11, weight: .semibold))
+                SubscriptionAccountNoteField(
+                    text: $note,
+                    placeholder: L10n.shared.tr("quota.accountNotePlaceholder")
+                )
+                .frame(height: 22)
+            }
+            VStack(alignment: .leading, spacing: 6) {
+                Text(L10n.shared.tr("quota.planLabel"))
+                    .font(.system(size: 11, weight: .semibold))
+                Picker("", selection: $selectedPlan) {
+                    Text(autoPlanLabel).tag("")
+                    ForEach(planOptions, id: \.self) { plan in Text(plan).tag(plan) }
+                }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            HStack {
+                Spacer()
+                Button(L10n.shared.tr("quota.cancel")) { onCancel() }
+                Button(L10n.shared.tr("quota.save")) {
+                    onSave(note, selectedPlan.isEmpty ? nil : selectedPlan)
+                }
+                .keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(20)
+        .frame(width: 360)
+    }
+
+    private var autoPlanLabel: String {
+        let detected = account.detectedPlan.map(Self.displayPlan) ?? L10n.shared.tr("quota.unknownPlan")
+        return L10n.shared.tr("quota.detectedPlan", detected)
+    }
+
+    private var planOptions: [String] {
+        let values: [String]
+        switch account.provider {
+        case .codex: values = ["Plus", "Pro", "Pro 5x", "Pro 20x", "Business", "Enterprise", "Edu"]
+        case .claude: values = ["Pro", "Max 5x", "Max 20x", "Team", "Enterprise"]
+        case .cursor: values = ["Hobby", "Start", "Pro", "Pro+", "Ultra", "Teams"]
+        case .zhipu: values = ["Start", "Pro"]
+        case .antigravity: values = []
+        }
+        let detected = account.detectedPlan.map(Self.displayPlan)
+        return values.filter { $0 != detected }
+    }
+
+    private static func displayPlan(_ raw: String) -> String {
+        switch raw.lowercased() {
+        case "pro_5x", "pro-5x": return "Pro 5x"
+        case "pro_20x", "pro-20x": return "Pro 20x"
+        case "max_5x", "default_claude_max_5x": return "Max 5x"
+        case "max_20x", "default_claude_max_20x": return "Max 20x"
+        case "pro_plus", "pro+": return "Pro+"
+        default: return raw.replacingOccurrences(of: "_", with: " ").capitalized
+        }
+    }
+}
+
+/// The quota window may live at status-bar level while TokenClock runs without a
+/// normal app window. SwiftUI's TextField can then display its field editor but
+/// fail to make the sheet key on newer macOS builds. Use a native field that
+/// explicitly activates its own window before requesting the first responder.
+private struct SubscriptionAccountNoteField: NSViewRepresentable {
+    @Binding var text: String
+    let placeholder: String
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(text: $text)
+    }
+
+    func makeNSView(context: Context) -> ActivatingTextField {
+        let field = ActivatingTextField(string: text)
+        field.placeholderString = placeholder
+        field.isEditable = true
+        field.isSelectable = true
+        field.isEnabled = true
+        field.isBezeled = true
+        field.isBordered = true
+        field.bezelStyle = .roundedBezel
+        field.focusRingType = .default
+        field.font = .systemFont(ofSize: NSFont.systemFontSize)
+        field.delegate = context.coordinator
+        return field
+    }
+
+    func updateNSView(_ field: ActivatingTextField, context: Context) {
+        context.coordinator.text = $text
+        field.placeholderString = placeholder
+        if field.stringValue != text {
+            field.stringValue = text
+        }
+    }
+
+    final class Coordinator: NSObject, NSTextFieldDelegate {
+        var text: Binding<String>
+
+        init(text: Binding<String>) {
+            self.text = text
+        }
+
+        func controlTextDidChange(_ notification: Notification) {
+            guard let field = notification.object as? NSTextField else { return }
+            text.wrappedValue = field.stringValue
+        }
+    }
+
+    final class ActivatingTextField: NSTextField {
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            guard window != nil else { return }
+            DispatchQueue.main.async { [weak self] in
+                guard let self, let window = self.window else { return }
+                NSApp.activate(ignoringOtherApps: true)
+                _ = NSRunningApplication.current.activate(options: [.activateAllWindows])
+                window.makeKeyAndOrderFront(nil)
+                _ = window.makeFirstResponder(self)
+            }
+        }
+
+        override func mouseDown(with event: NSEvent) {
+            NSApp.activate(ignoringOtherApps: true)
+            _ = NSRunningApplication.current.activate(options: [.activateAllWindows])
+            window?.makeKey()
+            _ = window?.makeFirstResponder(self)
+            super.mouseDown(with: event)
+        }
     }
 }
 
