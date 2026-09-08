@@ -3,6 +3,13 @@ import XCTest
 @testable import TokenClock
 
 final class ProviderQuotaServiceTests: XCTestCase {
+    func testDecodesCodexAccountIdentityWithoutExposingTokenMaterial() throws {
+        let data = Data(#"{"id":2,"result":{"account":{"type":"chatgpt","email":"person@example.com","planType":"pro"}}}"#.utf8)
+        let account = try XCTUnwrap(CodexQuotaService.decodeAccountResponse(data))
+        XCTAssertEqual(account.email, "person@example.com")
+        XCTAssertEqual(account.planType, "pro")
+    }
+
     func testLiveCursorQuotaWhenEnabled() throws {
         guard ProcessInfo.processInfo.environment["TOKENCLOCK_RUN_CURSOR_QUOTA_TESTS"] == "1" else {
             throw XCTSkip("Set TOKENCLOCK_RUN_CURSOR_QUOTA_TESTS=1 to query the signed-in Cursor account")
@@ -15,6 +22,8 @@ final class ProviderQuotaServiceTests: XCTestCase {
             $0.name + "=" + String(describing: $0.resetsAt)
         }
         XCTAssertTrue(buckets.allSatisfy { $0.resetsAt != nil }, "Missing reset in: \(resetDiagnostics)")
+        XCTAssertNotNil(snapshot.account?.email)
+        XCTAssertFalse(snapshot.account?.id.isEmpty ?? true)
     }
 
     func testLiveZhipuQuotaWhenEnabled() throws {
@@ -25,6 +34,7 @@ final class ProviderQuotaServiceTests: XCTestCase {
         XCTAssertEqual(snapshot.status, .available, snapshot.message ?? "")
         XCTAssertFalse(snapshot.groups.flatMap(\.buckets).isEmpty)
         XCTAssertNotNil(snapshot.planType)
+        XCTAssertFalse(snapshot.account?.id.isEmpty ?? true)
     }
 
     func testDecodesAntigravityQuotaGroups() throws {

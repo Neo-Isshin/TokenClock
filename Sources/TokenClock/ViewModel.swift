@@ -107,6 +107,8 @@ final class ViewModel: ObservableObject {
     @Published private(set) var antigravityQuota = ProviderQuotaSnapshot.idle(source: "Antigravity local service")
     @Published private(set) var cursorQuota = ProviderQuotaSnapshot.idle(source: "Cursor dashboard")
     @Published private(set) var zhipuQuota = ProviderQuotaSnapshot.idle(source: "ZCode Coding Plan")
+    @Published private(set) var subscriptionAccounts = SubscriptionAccountStore.shared.records()
+    @Published private(set) var activeSubscriptionAccountIDs: [SubscriptionProvider: String] = [:]
     @Published private(set) var notifications: [TokenClockNotification] = []
     var unreadNotificationCount: Int { notifications.filter { !$0.isRead }.count }
 
@@ -228,6 +230,7 @@ final class ViewModel: ObservableObject {
     private let antigravityQuotaService = AntigravityQuotaService()
     private let cursorQuotaService = CursorQuotaService()
     private let zhipuQuotaService = ZhipuQuotaService()
+    private let subscriptionAccountStore = SubscriptionAccountStore.shared
     private let hermesService = HermesUsageService()
     private let opencodeService = OpenCodeUsageService()
     private let qwenService = QwenCodeUsageService()
@@ -352,6 +355,7 @@ final class ViewModel: ObservableObject {
                 }.value
                 guard !Task.isCancelled else { return }
                 self?.codexQuota = result
+                self?.rememberCodexQuota(result)
             }
         }
         if claudeQuota.status != .loading {
@@ -364,6 +368,7 @@ final class ViewModel: ObservableObject {
                 }.value
                 guard !Task.isCancelled else { return }
                 self?.claudeQuota = result
+                self?.rememberClaudeQuota(result)
             }
         }
         if antigravityQuota.status != .loading {
@@ -374,6 +379,7 @@ final class ViewModel: ObservableObject {
                 let result = await Task.detached(priority: .utility) { service.fetch() }.value
                 guard !Task.isCancelled else { return }
                 self?.antigravityQuota = result
+                self?.rememberProviderQuota(result, provider: .antigravity)
             }
         }
         if cursorQuota.status != .loading {
@@ -384,6 +390,7 @@ final class ViewModel: ObservableObject {
                 let result = await Task.detached(priority: .utility) { service.fetch() }.value
                 guard !Task.isCancelled else { return }
                 self?.cursorQuota = result
+                self?.rememberProviderQuota(result, provider: .cursor)
             }
         }
         if zhipuQuota.status != .loading {
@@ -394,8 +401,81 @@ final class ViewModel: ObservableObject {
                 let result = await Task.detached(priority: .utility) { service.fetch() }.value
                 guard !Task.isCancelled else { return }
                 self?.zhipuQuota = result
+                self?.rememberProviderQuota(result, provider: .zhipu)
             }
         }
+    }
+
+    func subscriptionAccounts(for provider: SubscriptionProvider) -> [SubscriptionAccountRecord] {
+        let current = activeSubscriptionAccountIDs[provider]
+        return subscriptionAccounts.filter { $0.provider == provider }.sorted {
+            if $0.id == current { return true }
+            if $1.id == current { return false }
+            return ($0.refreshedAt ?? .distantPast) > ($1.refreshedAt ?? .distantPast)
+        }
+    }
+
+    func updateSubscriptionAccount(id: String, note: String, manualPlan: String?) {
+        subscriptionAccounts = subscriptionAccountStore.update(id: id, note: note, manualPlan: manualPlan)
+    }
+
+    private func rememberCodexQuota(_ snapshot: CodexQuotaSnapshot) {
+        guard snapshot.status == .available, !snapshot.buckets.isEmpty else {
+            activeSubscriptionAccountIDs[.codex] = nil; return
+        }
+        rememberSubscriptionAccount(
+            provider: .codex, identity: snapshot.account, plan: snapshot.planType,
+            groups: [ProviderQuotaGroup(id: "codex:subscription", name: "Subscription", buckets: snapshot.buckets)],
+            refreshedAt: snapshot.refreshedAt,
+            source: snapshot.source == .appServer ? "Codex app-server" : "Codex session log",
+            creditBalance: snapshot.creditBalance,
+            hasUnlimitedCredits: snapshot.hasUnlimitedCredits,
+            resetCreditCount: snapshot.resetCreditCount
+        )
+    }
+
+    private func rememberClaudeQuota(_ snapshot: ClaudeQuotaSnapshot) {
+        guard snapshot.status == .available, !snapshot.buckets.isEmpty else {
+            activeSubscriptionAccountIDs[.claude] = nil; return
+        }
+        rememberSubscriptionAccount(
+            provider: .claude, identity: snapshot.account, plan: snapshot.planType,
+            groups: [ProviderQuotaGroup(id: "claude:subscription", name: "Subscription", buckets: snapshot.buckets)],
+            refreshedAt: snapshot.refreshedAt, source: "Claude OAuth API"
+        )
+    }
+
+    private func rememberProviderQuota(_ snapshot: ProviderQuotaSnapshot, provider: SubscriptionProvider) {
+        guard snapshot.status == .available, !snapshot.groups.isEmpty else {
+            activeSubscriptionAccountIDs[provider] = nil; return
+        }
+        rememberSubscriptionAccount(
+            provider: provider, identity: snapshot.account, plan: snapshot.planType,
+            groups: snapshot.groups, refreshedAt: snapshot.refreshedAt, source: snapshot.source
+        )
+    }
+
+    private func rememberSubscriptionAccount(
+        provider: SubscriptionProvider,
+        identity: SubscriptionAccountIdentity?,
+        plan: String?,
+        groups: [ProviderQuotaGroup],
+        refreshedAt: Date?,
+        source: String,
+        creditBalance: String? = nil,
+        hasUnlimitedCredits: Bool = false,
+        resetCreditCount: Int = 0
+    ) {
+        let accountID = identity?.id.trimmingCharacters(in: .whitespacesAndNewlines)
+        let stableID = accountID?.isEmpty == false ? accountID! : "active"
+        let record = SubscriptionAccountRecord(
+            provider: provider, accountID: stableID, email: identity?.email, note: "",
+            detectedPlan: plan, manualPlan: nil, groups: groups, refreshedAt: refreshedAt,
+            source: source, creditBalance: creditBalance, hasUnlimitedCredits: hasUnlimitedCredits,
+            resetCreditCount: resetCreditCount
+        )
+        subscriptionAccounts = subscriptionAccountStore.merge(record)
+        activeSubscriptionAccountIDs[provider] = record.id
     }
 
     // MARK: - 价格目录

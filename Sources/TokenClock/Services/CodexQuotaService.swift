@@ -12,7 +12,7 @@ enum CodexQuotaStatus: String, Sendable {
     case unavailable
 }
 
-struct CodexQuotaBucket: Identifiable, Equatable, Sendable {
+struct CodexQuotaBucket: Identifiable, Equatable, Codable, Sendable {
     let id: String
     let name: String
     let usedPercent: Double
@@ -34,6 +34,7 @@ struct CodexQuotaSnapshot: Equatable, Sendable {
     var refreshedAt: Date?
     var source: CodexQuotaSource?
     var message: String?
+    var account: SubscriptionAccountIdentity? = nil
 
     static let idle = CodexQuotaSnapshot(
         status: .idle,
@@ -133,8 +134,16 @@ final class CodexQuotaService: @unchecked Sendable {
 
     func fetch() -> CodexQuotaSnapshot {
         if let executable = codexExecutable(),
-           let response = fetchFromAppServer(executable: executable),
-           let snapshot = Self.decodeAppServerResponse(response) {
+           let response = fetchAppServerResponse(executable: executable, method: "account/rateLimits/read"),
+           var snapshot = Self.decodeAppServerResponse(response) {
+            if let accountResponse = fetchAppServerResponse(
+                executable: executable, method: "account/read", params: ["refreshToken": false]
+            ), let account = Self.decodeAccountResponse(accountResponse) {
+                snapshot.account = SubscriptionAccountIdentity(
+                    id: snapshot.account?.id ?? account.id, email: account.email
+                )
+                if snapshot.planType?.isEmpty != false { snapshot.planType = account.planType }
+            }
             return snapshot
         }
         if let snapshot = fetchFromRecentSessionLogs() {
@@ -218,7 +227,9 @@ final class CodexQuotaService: @unchecked Sendable {
         return candidates
     }
 
-    private func fetchFromAppServer(executable: URL) -> Data? {
+    private func fetchAppServerResponse(
+        executable: URL, method: String, params: [String: Any] = [:]
+    ) -> Data? {
         let process = Process()
         let input = Pipe()
         let output = Pipe()
@@ -259,7 +270,7 @@ final class CodexQuotaService: @unchecked Sendable {
                 ],
             ],
             ["method": "initialized", "params": [:]],
-            ["method": "account/rateLimits/read", "id": 2, "params": [:]],
+            ["method": method, "id": 2, "params": params],
         ]
         var requestData = Data()
         for request in requests {
@@ -335,6 +346,7 @@ final class CodexQuotaService: @unchecked Sendable {
 
         let credits = main?["credits"] as? [String: Any]
         let resetCredits = result["rateLimitResetCredits"] as? [String: Any]
+        let accountID = result["accountId"] as? String
         return CodexQuotaSnapshot(
             status: .available,
             buckets: buckets,
@@ -344,8 +356,20 @@ final class CodexQuotaService: @unchecked Sendable {
             resetCreditCount: integer(resetCredits?["availableCount"]) ?? 0,
             refreshedAt: now,
             source: .appServer,
-            message: nil
+            message: nil,
+            account: accountID.map { SubscriptionAccountIdentity(id: $0, email: nil) }
         )
+    }
+
+    static func decodeAccountResponse(_ data: Data) -> (id: String, email: String?, planType: String?)? {
+        guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              object["error"] == nil,
+              let result = object["result"] as? [String: Any],
+              let account = result["account"] as? [String: Any],
+              (account["type"] as? String) == "chatgpt" else { return nil }
+        let email = (account["email"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let plan = account["planType"] as? String
+        return (email?.lowercased() ?? "codex-active", email?.isEmpty == false ? email : nil, plan)
     }
 
     private func fetchFromRecentSessionLogs() -> CodexQuotaSnapshot? {

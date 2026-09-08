@@ -11,6 +11,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var settingsWindow: NSWindow?
     private var overviewWindow: NSWindow?
     private var subscriptionQuotaWindow: NSWindow?
+    private var subscriptionAccountEditorWindow: NSWindow?
     private var aboutWindow: NSWindow?
     private var themePickerPanel: NSPanel?
     private var themePickerEventMonitor: Any?
@@ -28,6 +29,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     private func setup() {
+        // A release installed by the one-liner is launched as a standalone Mach-O,
+        // not from an .app bundle. macOS can therefore leave NSApplication in the
+        // prohibited activation policy: nonactivating clock panels still work, but
+        // ordinary windows can never receive keyboard focus. Accessory is the native
+        // menu-bar-app policy (keyboard-capable, without adding a Dock icon).
+        if NSApp.activationPolicy() != .accessory {
+            _ = NSApp.setActivationPolicy(.accessory)
+        }
+
         viewModel = ViewModel()
         panel = FloatingPanel(viewModel: viewModel)
         dropdownPanel = DropdownPanel()
@@ -810,7 +820,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private func showSubscriptionQuotaWindow() {
         NSApp.activate(ignoringOtherApps: true)
         if let window = subscriptionQuotaWindow {
-            window.level = .floating
+            window.level = viewModel.alwaysOnTop ? .statusBar : .floating
             window.makeKeyAndOrderFront(nil)
             viewModel.refreshSubscriptionQuotas()
             return
@@ -828,13 +838,79 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             viewModel: viewModel,
             onLayoutChange: { [weak self] twoColumns in
                 self?.resizeSubscriptionQuotaWindow(twoColumns: twoColumns)
+            },
+            onEditAccount: { [weak self] account in
+                self?.showSubscriptionAccountEditor(account)
             }
         ))
-        window.level = .floating
+        window.level = viewModel.alwaysOnTop ? .statusBar : .floating
         window.center()
         window.makeKeyAndOrderFront(nil)
         subscriptionQuotaWindow = window
         viewModel.refreshSubscriptionQuotas()
+    }
+
+    /// Use a real key window instead of a SwiftUI sheet. TokenClock is installed
+    /// as a standalone menu-bar executable, and macOS 27 can leave a sheet visible
+    /// without routing keyboard events to it. A child NSWindow remains above the
+    /// quota window while retaining normal AppKit first-responder behavior.
+    private func showSubscriptionAccountEditor(_ account: SubscriptionAccountRecord) {
+        closeSubscriptionAccountEditor(restoreQuotaFocus: false)
+        NSApp.activate(ignoringOtherApps: true)
+        _ = NSRunningApplication.current.activate(options: [.activateAllWindows])
+
+        let editor = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 400, height: 245),
+            styleMask: [.titled, .closable],
+            backing: .buffered,
+            defer: false
+        )
+        editor.title = L10n.shared.tr("quota.editAccount")
+        editor.isReleasedWhenClosed = false
+        editor.hidesOnDeactivate = false
+        editor.delegate = self
+        editor.contentView = NSHostingView(rootView: SubscriptionAccountEditorView(
+            account: account,
+            onSave: { [weak self] note, manualPlan in
+                self?.viewModel.updateSubscriptionAccount(
+                    id: account.id,
+                    note: note,
+                    manualPlan: manualPlan
+                )
+                self?.closeSubscriptionAccountEditor()
+            },
+            onCancel: { [weak self] in self?.closeSubscriptionAccountEditor() }
+        ))
+
+        if let quotaWindow = subscriptionQuotaWindow {
+            editor.level = NSWindow.Level(rawValue: quotaWindow.level.rawValue + 1)
+            editor.collectionBehavior = quotaWindow.collectionBehavior
+            let origin = NSPoint(
+                x: quotaWindow.frame.midX - editor.frame.width / 2,
+                y: quotaWindow.frame.midY - editor.frame.height / 2
+            )
+            editor.setFrameOrigin(origin)
+            quotaWindow.addChildWindow(editor, ordered: .above)
+        } else {
+            editor.level = .floating
+            editor.center()
+        }
+
+        subscriptionAccountEditorWindow = editor
+        editor.makeKeyAndOrderFront(nil)
+        editor.orderFrontRegardless()
+    }
+
+    private func closeSubscriptionAccountEditor(restoreQuotaFocus: Bool = true) {
+        guard let editor = subscriptionAccountEditorWindow else { return }
+        if let parent = editor.parent {
+            parent.removeChildWindow(editor)
+        }
+        subscriptionAccountEditorWindow = nil
+        editor.close()
+        if restoreQuotaFocus {
+            subscriptionQuotaWindow?.makeKeyAndOrderFront(nil)
+        }
     }
 
     private func resizeSubscriptionQuotaWindow(twoColumns: Bool) {
@@ -969,7 +1045,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             } else if let window = closingWindow, window == overviewWindow {
                 overviewWindow = nil
             } else if let window = closingWindow, window == subscriptionQuotaWindow {
+                closeSubscriptionAccountEditor(restoreQuotaFocus: false)
                 subscriptionQuotaWindow = nil
+            } else if let window = closingWindow, window == subscriptionAccountEditorWindow {
+                if let parent = window.parent {
+                    parent.removeChildWindow(window)
+                }
+                subscriptionAccountEditorWindow = nil
             }
         }
     }

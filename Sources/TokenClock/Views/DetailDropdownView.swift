@@ -433,7 +433,7 @@ struct DetailDropdownView: View {
                     .accessibilityLabel(L10n.shared.tr("quota.retry"))
                 }
 
-                quotaProviderHeader("🤖 Codex", plan: codexQuota.planType, loading: codexQuota.status == .loading)
+                quotaProviderHeader("⚛️ Codex", plan: codexQuota.planType, loading: codexQuota.status == .loading)
                 if codexQuota.buckets.isEmpty {
                     quotaUnavailableRow(L10n.shared.tr(
                         codexQuota.status == .loading ? "quota.loadingCodex" : "quota.codexUnavailable"

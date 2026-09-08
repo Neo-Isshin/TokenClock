@@ -348,6 +348,68 @@ static inline void tc_gtk_show_message(
     gtk_widget_destroy(dialog);
 }
 
+static inline int tc_gtk_edit_subscription_account(
+    GtkWidget *parent_widget,
+    const char *title,
+    const char *email,
+    const char *note_label,
+    const char *note_value,
+    const char *plan_label,
+    const char *plan_options,
+    const char *selected_plan,
+    const char *cancel_label,
+    const char *save_label,
+    char **out_note,
+    char **out_plan
+) {
+    GtkWidget *dialog = gtk_dialog_new_with_buttons(
+        title, GTK_WINDOW(parent_widget), GTK_DIALOG_MODAL | GTK_DIALOG_DESTROY_WITH_PARENT,
+        cancel_label, GTK_RESPONSE_CANCEL, save_label, GTK_RESPONSE_ACCEPT, NULL
+    );
+    GtkWidget *content = gtk_dialog_get_content_area(GTK_DIALOG(dialog));
+    GtkWidget *box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);
+    gtk_container_set_border_width(GTK_CONTAINER(box), 16);
+    gtk_box_pack_start(GTK_BOX(content), box, TRUE, TRUE, 0);
+    if (email != NULL && email[0] != '\0') {
+        GtkWidget *email_label = gtk_label_new(email);
+        gtk_label_set_xalign(GTK_LABEL(email_label), 0.0f);
+        gtk_box_pack_start(GTK_BOX(box), email_label, FALSE, FALSE, 0);
+    }
+    GtkWidget *note_caption = gtk_label_new(note_label);
+    gtk_label_set_xalign(GTK_LABEL(note_caption), 0.0f);
+    gtk_box_pack_start(GTK_BOX(box), note_caption, FALSE, FALSE, 0);
+    GtkWidget *note = gtk_entry_new();
+    gtk_entry_set_text(GTK_ENTRY(note), note_value != NULL ? note_value : "");
+    gtk_box_pack_start(GTK_BOX(box), note, FALSE, FALSE, 0);
+    GtkWidget *plan_caption = gtk_label_new(plan_label);
+    gtk_label_set_xalign(GTK_LABEL(plan_caption), 0.0f);
+    gtk_box_pack_start(GTK_BOX(box), plan_caption, FALSE, FALSE, 0);
+    GtkWidget *combo = gtk_combo_box_text_new();
+    gchar **choices = g_strsplit(plan_options != NULL ? plan_options : "", "\t", -1);
+    gint selected = 0;
+    for (gint i = 0; choices != NULL && choices[i] != NULL; ++i) {
+        gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(combo), choices[i]);
+        if (selected_plan != NULL && g_strcmp0(choices[i], selected_plan) == 0) selected = i;
+    }
+    g_strfreev(choices);
+    gtk_combo_box_set_active(GTK_COMBO_BOX(combo), selected);
+    gtk_box_pack_start(GTK_BOX(box), combo, FALSE, FALSE, 0);
+    gtk_widget_show_all(dialog);
+    // Make the account note immediately keyboard-ready. This is especially
+    // important for keyboard-only/X11 sessions where the window manager does
+    // not automatically choose the first editable child of a modal dialog.
+    gtk_widget_grab_focus(note);
+    gtk_entry_set_activates_default(GTK_ENTRY(note), TRUE);
+    gtk_dialog_set_default_response(GTK_DIALOG(dialog), GTK_RESPONSE_ACCEPT);
+    int accepted = gtk_dialog_run(GTK_DIALOG(dialog)) == GTK_RESPONSE_ACCEPT;
+    if (accepted) {
+        if (out_note != NULL) *out_note = g_strdup(gtk_entry_get_text(GTK_ENTRY(note)));
+        if (out_plan != NULL) *out_plan = gtk_combo_box_text_get_active_text(GTK_COMBO_BOX_TEXT(combo));
+    }
+    gtk_widget_destroy(dialog);
+    return accepted;
+}
+
 static inline char *tc_gtk_choose_folder(
     GtkWidget *parent_widget,
     const char *title,
