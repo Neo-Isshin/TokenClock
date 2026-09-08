@@ -18,7 +18,7 @@
     python3 scripts/update-pricing-snapshot.py            # 拉上游 → 写快照
     python3 scripts/update-pricing-snapshot.py --check     # 仅检查上游是否有变化（CI 用）
 
-由 .github/workflows/update-pricing.yml 每周自动运行并对快照发起 PR。
+由 .github/workflows/update-pricing.yml 每日自动运行并对快照发起或更新 PR。
 """
 
 import argparse
@@ -88,8 +88,12 @@ OFFICIAL_OVERRIDES = {
                 "lin": 10.0, "lout": 45.0, "lcr": 1.0, "pm": 2.0, "p": "openai"},
     "gpt-5.4": {"in": 2.5, "out": 15.0, "cr": 0.25, "lt": 272_000,
                 "lin": 5.0, "lout": 22.5, "lcr": 0.5, "pm": 2.0, "p": "openai"},
+    "gpt-6-astra": {"in": 10.0, "out": 50.0, "cr": 1.0, "cw": 12.5, "lt": 272_000,
+                    "lin": 20.0, "lout": 75.0, "lcr": 2.0, "lcw": 25.0,
+                    "pm": 2.0, "p": "openai"},
 
     # Anthropic: platform.claude.com/docs/en/about-claude/pricing (5-minute cache writes)
+    "claude-fable-5-1": {"in": 10.0, "out": 50.0, "cr": 0.25, "cw": 12.5, "p": "anthropic"},
     "claude-fable-5": {"in": 10.0, "out": 50.0, "cr": 1.0, "cw": 12.5, "p": "anthropic"},
     "claude-mythos-5": {"in": 10.0, "out": 50.0, "cr": 1.0, "cw": 12.5, "p": "anthropic"},
     "claude-opus-5": {"in": 5.0, "out": 25.0, "cr": 0.5, "cw": 6.25, "p": "anthropic"},
@@ -232,7 +236,8 @@ def main() -> int:
         return 1
     # 保底：一方核心模型必须在，否则上游改名/结构变化应人工介入
     for must in (
-        "claude-sonnet-5", "gpt-5.6-sol", "gemini-3.5-flash", "xai/grok-4.6",
+        "claude-sonnet-5", "claude-fable-5-1", "gpt-5.6-sol", "gpt-6-astra",
+        "gemini-3.5-flash", "xai/grok-4.6",
         "deepseek-v4-pro", "moonshot/kimi-k3", "minimax/MiniMax-M2.7",
         "zai/glm-5.1", "dashscope/qwen3.8-max",
     ):

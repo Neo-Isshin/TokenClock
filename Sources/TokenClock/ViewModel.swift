@@ -354,7 +354,8 @@ final class ViewModel: ObservableObject {
             self, selector: #selector(handlePricingUpdate),
             name: PricingService.catalogUpdatedNotification, object: nil
         )
-        // 每周自动静默刷新一次价格目录（手动刷新入口在设置页）
+        // 启动时检查，并为长时间运行的小组件启动周期检查。
+        PricingService.shared.startAutomaticRefresh()
         if PricingService.shared.isStale() {
             Task.detached(priority: .utility) {
                 try? await PricingService.shared.refresh()
