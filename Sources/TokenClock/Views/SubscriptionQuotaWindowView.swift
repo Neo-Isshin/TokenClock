@@ -38,12 +38,12 @@ struct SubscriptionQuotaWindowView: View {
                     codexSection
                     claudeSection
                     providerSection(
-                        title: "🛸 Antigravity",
+                        title: "🔃 Antigravity",
                         snapshot: viewModel.antigravityQuota,
                         unavailableKey: "quota.antigravityUnavailable"
                     )
                     providerSection(
-                        title: "🖱️ Cursor",
+                        title: "💎 Cursor",
                         snapshot: viewModel.cursorQuota,
                         unavailableKey: "quota.cursorUnavailable"
                     )
@@ -57,7 +57,7 @@ struct SubscriptionQuotaWindowView: View {
 
     private var codexSection: some View {
         quotaSection(
-            title: "🤖 Codex",
+            title: "⚛️ Codex",
             plan: viewModel.codexQuota.planType,
             status: viewModel.codexQuota.status,
             buckets: viewModel.codexQuota.buckets,
@@ -262,4 +262,3 @@ private extension View {
                 .strokeBorder(Color.primary.opacity(0.09), lineWidth: 0.6))
     }
 }
-

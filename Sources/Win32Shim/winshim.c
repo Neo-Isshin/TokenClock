@@ -1281,6 +1281,25 @@ void dlg_add_edit(void *dlg, int id, const char *text_utf8, int x, int y, int w,
     SendMessageW(frame, WM_SIZE, 0, MAKELPARAM(w, h));
 }
 
+void dlg_add_combo(void *dlg, int id, const char *items_utf8, const char *selected_utf8,
+                   int x, int y, int w, int h) {
+    wchar_t items[2048], selected[256];
+    if (to_wide(items_utf8, items, 2048) == 0) items[0] = 0;
+    if (to_wide(selected_utf8, selected, 256) == 0) selected[0] = 0;
+    HWND combo = dlg_child((HWND)dlg, WC_COMBOBOXW,
+                           CBS_DROPDOWNLIST | CBS_HASSTRINGS | WS_VSCROLL | WS_TABSTOP,
+                           id, L"", x, y, w, max(h, 220));
+    if (!combo) return;
+    int selected_index = 0, index = 0;
+    wchar_t *context = NULL;
+    for (wchar_t *item = wcstok_s(items, L"\t", &context); item;
+         item = wcstok_s(NULL, L"\t", &context), ++index) {
+        SendMessageW(combo, CB_ADDSTRING, 0, (LPARAM)item);
+        if (selected[0] && wcscmp(item, selected) == 0) selected_index = index;
+    }
+    SendMessageW(combo, CB_SETCURSEL, selected_index, 0);
+}
+
 void dlg_add_static(void *dlg, const char *text_utf8, int x, int y, int w, int h) {
     wchar_t t[256]; if (to_wide(text_utf8, t, 256) == 0) t[0] = 0;
     dlg_child((HWND)dlg, L"STATIC", SS_LEFT, 0, t, x, y, w, h);

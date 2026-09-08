@@ -17,6 +17,7 @@ struct ClaudeQuotaSnapshot: Equatable, Sendable {
     var refreshedAt: Date?
     var source: ClaudeQuotaSource?
     var message: String?
+    var account: SubscriptionAccountIdentity? = nil
 
     static let idle = ClaudeQuotaSnapshot(
         status: .idle, buckets: [], planType: nil, refreshedAt: nil, source: nil, message: nil
@@ -50,7 +51,9 @@ final class ClaudeQuotaService: @unchecked Sendable {
     struct CredentialInfo: Equatable, Sendable {
         let accessToken: String
         let subscriptionType: String?
+        let rateLimitTier: String?
     }
+    struct AccountProfile: Equatable, Sendable { let id: String; let email: String?; let rateLimitTier: String? }
 
     private struct HTTPResponse: Sendable {
         let statusCode: Int
@@ -104,10 +107,22 @@ final class ClaudeQuotaService: @unchecked Sendable {
         guard (200..<300).contains(response.statusCode) else {
             return .unavailable("Claude quota request returned HTTP \(response.statusCode).")
         }
-        return Self.decodeUsageResponse(
+        var snapshot = Self.decodeUsageResponse(
             response.body,
-            planType: credential.subscriptionType
+            planType: Self.detailedPlan(subscriptionType: credential.subscriptionType, rateLimitTier: credential.rateLimitTier)
         ) ?? .unavailable("Claude quota response was not recognized.")
+        if snapshot.status == .available {
+            let profile = loadAccountProfile()
+            snapshot.account = SubscriptionAccountIdentity(
+                id: profile?.id ?? profile?.email?.lowercased()
+                    ?? SubscriptionAccountIdentity.opaqueID(namespace: "claude", secret: credential.accessToken),
+                email: profile?.email
+            )
+            if snapshot.planType?.isEmpty != false, let tier = profile?.rateLimitTier {
+                snapshot.planType = Self.detailedPlan(subscriptionType: nil, rateLimitTier: tier)
+            }
+        }
+        return snapshot
     }
 
     static func decodeCredentialPayload(_ data: Data) -> CredentialInfo? {
@@ -117,8 +132,23 @@ final class ClaudeQuotaService: @unchecked Sendable {
               !token.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
         return CredentialInfo(
             accessToken: token,
-            subscriptionType: oauth["subscriptionType"] as? String
+            subscriptionType: oauth["subscriptionType"] as? String,
+            rateLimitTier: oauth["rateLimitTier"] as? String
         )
+    }
+    static func detailedPlan(subscriptionType: String?, rateLimitTier: String?) -> String? {
+        let tier = rateLimitTier?.lowercased() ?? ""
+        if tier.contains("max_20x") || tier.contains("max-20x") { return "max_20x" }
+        if tier.contains("max_5x") || tier.contains("max-5x") { return "max_5x" }
+        return subscriptionType
+    }
+    static func decodeAccountProfile(_ data: Data) -> AccountProfile? {
+        guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any], let account = root["oauthAccount"] as? [String: Any] else { return nil }
+        let email = (account["emailAddress"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let rawID = (account["accountUuid"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let id = rawID?.isEmpty == false ? rawID! : (email?.lowercased() ?? "claude-active")
+        return AccountProfile(id: id, email: email?.isEmpty == false ? email : nil,
+            rateLimitTier: account["userRateLimitTier"] as? String ?? account["organizationRateLimitTier"] as? String)
     }
 
     static func credentialCandidatePaths(
@@ -234,7 +264,7 @@ final class ClaudeQuotaService: @unchecked Sendable {
 
     private func loadCredential() -> CredentialInfo? {
         if let token = environment["CLAUDE_CODE_OAUTH_TOKEN"], !token.isEmpty {
-            return CredentialInfo(accessToken: token, subscriptionType: nil)
+            return CredentialInfo(accessToken: token, subscriptionType: nil, rateLimitTier: nil)
         }
         for path in Self.credentialCandidatePaths(
             environment: environment,
@@ -255,6 +285,16 @@ final class ClaudeQuotaService: @unchecked Sendable {
         #endif
     }
 
+    private func loadAccountProfile() -> AccountProfile? {
+        let candidates = [(homeDirectory as NSString).appendingPathComponent(".claude.json"), claudeHome + ".json"]
+        var seen = Set<String>()
+        for path in candidates where seen.insert(path).inserted {
+            guard let data = fileManager.contents(atPath: path), let profile = Self.decodeAccountProfile(data) else { continue }
+            return profile
+        }
+        return nil
+    }
+
     #if os(macOS)
     private func loadMacOSKeychainCredential() -> CredentialInfo? {
         let deadline = Date().addingTimeInterval(AppConfig.Scan.claudeQuotaTimeoutSeconds)
@@ -273,7 +313,6 @@ final class ClaudeQuotaService: @unchecked Sendable {
         }
         return nil
     }
-
     private func readMacOSKeychainCredential(
         service: String, account: String, timeout: TimeInterval
     ) -> CredentialInfo? {

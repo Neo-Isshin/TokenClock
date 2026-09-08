@@ -120,6 +120,8 @@ void         win_fluent_paint_parent(void *child_hwnd, void *hdc, const void *re
 void *dlg_create(const char *title_utf8, int w, int h);
 void  dlg_add_check(void *dlg, int id, const char *text_utf8, int x, int y, int w, int h, int checked);
 void  dlg_add_edit(void *dlg, int id, const char *text_utf8, int x, int y, int w, int h);
+void  dlg_add_combo(void *dlg, int id, const char *items_utf8, const char *selected_utf8,
+                    int x, int y, int w, int h); /* tab-separated choices */
 void  dlg_add_static(void *dlg, const char *text_utf8, int x, int y, int w, int h);
 void *dlg_add_static_id(void *dlg, int id, const char *text_utf8, int x, int y, int w, int h); /* 带 id，可 dlg_set_text 改写 */
 void  dlg_add_title(void *dlg, const char *text_utf8, int x, int y, int w, int h);   /* 大号粗体标题 */

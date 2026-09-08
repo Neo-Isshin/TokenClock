@@ -129,6 +129,11 @@ final class WindowsApp: @unchecked Sendable {
     private let cursorQuotaState = ProviderQuotaStateBox(source: "Cursor dashboard")
     private let zhipuQuotaService = ZhipuQuotaService()
     private let zhipuQuotaState = ProviderQuotaStateBox(source: "ZCode Coding Plan")
+    private let subscriptionAccountStore = SubscriptionAccountStore.shared
+    private var activeSubscriptionAccountIDs: [SubscriptionProvider: String] = [:]
+    private var expandedQuotaEmails: Set<String> = []
+    private var quotaEditControls: [Int32: String] = [:]
+    private var quotaEmailControls: [Int32: String] = [:]
     fileprivate var customCfg = WindowsCustomTheme()   // 自定义主题编辑器在用的配置
     fileprivate var editorDlg: UnsafeMutableRawPointer?
     fileprivate var settingsDlg: UnsafeMutableRawPointer?
@@ -148,7 +153,6 @@ final class WindowsApp: @unchecked Sendable {
 
     private enum OverviewPeriod { case week, month, custom }
     private enum OverviewChartStyle { case automatic, line, stacked }
-    private enum QuotaProvider: String, CaseIterable { case codex, claude, antigravity, cursor, zhipu }
     private var overviewPeriod: OverviewPeriod = .week
     private var overviewChartStyle: OverviewChartStyle = .automatic
     private var overviewSelectedDayKey: String?
@@ -157,10 +161,10 @@ final class WindowsApp: @unchecked Sendable {
     private var overviewCustomStart = Calendar.current.date(byAdding: .day, value: -6, to: Date()) ?? Date()
     private var overviewCustomEnd = Date()
     private var quotaOrderEditing = false
-    private var quotaProviderOrder: [QuotaProvider] = {
-        let saved = UserDefaults.standard.stringArray(forKey: SettingsKey.subscriptionQuotaOrder.rawValue) ?? []
-        var order = saved.compactMap(QuotaProvider.init(rawValue:))
-        for provider in QuotaProvider.allCases where !order.contains(provider) { order.append(provider) }
+    private var quotaProviderOrder: [SubscriptionProvider] = {
+        let saved = UserDefaults.standard.stringArray(for: .subscriptionQuotaOrder) ?? []
+        var order = saved.compactMap(SubscriptionProvider.init(rawValue:))
+        for provider in SubscriptionProvider.allCases where !order.contains(provider) { order.append(provider) }
         return order
     }()
 
@@ -416,7 +420,7 @@ final class WindowsApp: @unchecked Sendable {
         let L = L10n.shared
         var lines = ["H\t\(L.tr("quota.subscriptions"))\t↻ \(L.tr("quota.retry"))"]
         let codexPlan = codex.planType.map { " · \(displayPlan($0))" } ?? ""
-        lines.append("P\t🤖 Codex\(codexPlan)")
+        lines.append("P\t⚛️ Codex\(codexPlan)")
         appendQuotaProvider(
             status: codex.status, buckets: codex.buckets,
             loading: L.tr("quota.loadingCodex"), unavailable: L.tr("quota.codexUnavailable"),
@@ -495,7 +499,14 @@ final class WindowsApp: @unchecked Sendable {
     }
 
     private func displayPlan(_ raw: String) -> String {
-        raw.split(separator: "_").map { $0.prefix(1).uppercased() + $0.dropFirst() }.joined(separator: " ")
+        switch raw.lowercased() {
+        case "pro_5x", "pro-5x": return "Pro 5x"
+        case "pro_20x", "pro-20x": return "Pro 20x"
+        case "max_5x", "default_claude_max_5x": return "Max 5x"
+        case "max_20x", "default_claude_max_20x": return "Max 20x"
+        case "pro_plus", "pro+": return "Pro+"
+        default: return raw.split(separator: "_").map { $0.prefix(1).uppercased() + $0.dropFirst() }.joined(separator: " ")
+        }
     }
 
     private var quickContrastPreset: Int {
@@ -1066,31 +1077,54 @@ final class WindowsApp: @unchecked Sendable {
         case 1000...1004:
             moveQuotaProvider(atDefaultIndex: Int(id - 1000), by: 1)
             rebuildSubscriptionQuotaDialog()
+        case 1100...1149:
+            if let accountID = quotaEditControls[id],
+               let account = subscriptionAccountStore.records().first(where: { $0.id == accountID }) {
+                editSubscriptionAccount(account)
+                rebuildSubscriptionQuotaDialog()
+            }
+        case 1200...1249:
+            if let accountID = quotaEmailControls[id] {
+                if expandedQuotaEmails.contains(accountID) { expandedQuotaEmails.remove(accountID) }
+                else { expandedQuotaEmails.insert(accountID) }
+                rebuildSubscriptionQuotaDialog()
+            }
         default: break
         }
     }
 
     private func rebuildSubscriptionQuotaDialog() {
         guard let dialog = quotaDlg else { return }
-        let codex = codexQuotaState.snapshot(), claude = claudeQuotaState.snapshot()
-        let antigravity = antigravityQuotaState.snapshot(), cursor = cursorQuotaState.snapshot()
-        let zhipu = zhipuQuotaState.snapshot()
-        typealias Card = (provider: QuotaProvider, title: String, plan: String?, status: CodexQuotaStatus, buckets: [CodexQuotaBucket])
+        var codex = codexQuotaState.snapshot(), claude = claudeQuotaState.snapshot()
+        var antigravity = antigravityQuotaState.snapshot(), cursor = cursorQuotaState.snapshot()
+        var zhipu = zhipuQuotaState.snapshot()
+        if ProcessInfo.processInfo.environment["TC_QUOTA_MOCK"] == "accounts" {
+            (codex, claude, antigravity, cursor, zhipu) = quotaAccountMockSnapshots()
+        }
+        syncSubscriptionAccounts(codex: codex, claude: claude, antigravity: antigravity, cursor: cursor, zhipu: zhipu)
+        if ProcessInfo.processInfo.environment["TC_QUOTA_MOCK"] == "accounts",
+           let current = subscriptionAccounts(for: .codex).first,
+           current.trimmedNote == nil {
+            _ = subscriptionAccountStore.update(id: current.id, note: "Personal", manualPlan: "Pro 20x")
+        }
+        typealias Card = (provider: SubscriptionProvider, title: String, status: CodexQuotaStatus, accounts: [SubscriptionAccountRecord])
         let allCards: [Card] = quotaProviderOrder.map { provider in
             switch provider {
-            case .codex: return (provider, "🤖 Codex", codex.planType, codex.status, codex.buckets)
-            case .claude: return (provider, "✳️ Claude Code", claude.planType, claude.status, claude.buckets)
-            case .antigravity: return (provider, "🛸 Antigravity", antigravity.planType, antigravity.status, antigravity.groups.flatMap(\.buckets))
-            case .cursor: return (provider, "🖱️ Cursor", cursor.planType, cursor.status, cursor.groups.flatMap(\.buckets))
-            case .zhipu: return (provider, "🅉 Zhipu GLM", zhipu.planType, zhipu.status, zhipu.groups.flatMap(\.buckets))
+            case .codex: return (provider, "⚛️ Codex", codex.status, subscriptionAccounts(for: provider))
+            case .claude: return (provider, "✳️ Claude Code", claude.status, subscriptionAccounts(for: provider))
+            case .antigravity: return (provider, "🔃 Antigravity", antigravity.status, subscriptionAccounts(for: provider))
+            case .cursor: return (provider, "💎 Cursor", cursor.status, subscriptionAccounts(for: provider))
+            case .zhipu: return (provider, "🅉 Zhipu GLM", zhipu.status, subscriptionAccounts(for: provider))
             }
         }
-        let cards = allCards.filter { !$0.buckets.isEmpty }
+        let cards = allCards.filter { providerHasLiveQuota($0.provider, codex: codex, claude: claude, antigravity: antigravity, cursor: cursor, zhipu: zhipu) && !$0.accounts.isEmpty }
         let anyLoading = allCards.contains { $0.status == .loading }
         let twoColumns = cards.count >= 4
         let dialogWidth: Int32 = twoColumns ? 900 : 470
         win_resize(dialog, dialogWidth, 700)
-        let estimatedRows = cards.reduce(0) { $0 + max(1, $1.buckets.count) }
+        let estimatedRows = cards.reduce(0) { total, card in
+            total + card.accounts.reduce(0) { $0 + max(1, $1.groups.flatMap(\.buckets).count) + 1 }
+        }
         let contentHeight = max(680, 220 + (twoColumns ? (estimatedRows + 1) / 2 : estimatedRows) * 82)
         dlg_reset_content(dialog, Int32(contentHeight))
         dlg_add_title(dialog, L10n.shared.tr("quota.windowTitle"), 24, 16, 270, 30)
@@ -1105,14 +1139,17 @@ final class WindowsApp: @unchecked Sendable {
         }
         var columnY: [Int32] = [82, 82]
         let cardWidth: Int32 = twoColumns ? 414 : dialogWidth - 56
+        quotaEditControls.removeAll()
+        quotaEmailControls.removeAll()
+        var accountControlIndex = 0
         for (index, card) in cards.enumerated() {
             let column = twoColumns ? index % 2 : 0
             let x: Int32 = column == 0 ? 22 : 464
             columnY[column] = appendQuotaDialogProvider(
-                dialog, provider: card.provider, title: card.title, plan: card.plan,
-                status: card.status, buckets: card.buckets,
+                dialog, provider: card.provider, title: card.title, accounts: card.accounts,
                 x: x, width: cardWidth, y: columnY[column],
-                visibleIndex: index, visibleCount: cards.count
+                visibleIndex: index, visibleCount: cards.count,
+                accountControlIndex: &accountControlIndex
             )
         }
         let bottom = columnY.max() ?? 82
@@ -1120,45 +1157,223 @@ final class WindowsApp: @unchecked Sendable {
     }
 
     private func appendQuotaDialogProvider(
-        _ dialog: UnsafeMutableRawPointer, provider: QuotaProvider, title: String, plan: String?,
-        status: CodexQuotaStatus, buckets: [CodexQuotaBucket],
-        x: Int32, width: Int32, y: Int32, visibleIndex: Int, visibleCount: Int
+        _ dialog: UnsafeMutableRawPointer, provider: SubscriptionProvider, title: String,
+        accounts: [SubscriptionAccountRecord], x: Int32, width: Int32, y: Int32,
+        visibleIndex: Int, visibleCount: Int, accountControlIndex: inout Int
     ) -> Int32 {
         var cursorY = y
-        let planText = plan.map { " · \(displayPlan($0))" } ?? ""
-        if quotaOrderEditing, let defaultIndex = QuotaProvider.allCases.firstIndex(of: provider) {
+        let accountCount = accounts.count > 1 ? " · \(L10n.shared.tr("quota.accounts", accounts.count))" : ""
+        if quotaOrderEditing, let defaultIndex = SubscriptionProvider.allCases.firstIndex(of: provider) {
             dlg_add_push(dialog, 990 + Int32(defaultIndex), visibleIndex == 0 ? "·" : "↑", x, cursorY - 2, 24, 22)
             dlg_add_push(dialog, 1000 + Int32(defaultIndex), visibleIndex == visibleCount - 1 ? "·" : "↓", x + 28, cursorY - 2, 24, 22)
-            dlg_add_section(dialog, title + planText, x + 60, cursorY, width - 64, 22)
+            dlg_add_section(dialog, title + accountCount, x + 60, cursorY, width - 64, 22)
         } else {
-            dlg_add_section(dialog, title + planText, x + 6, cursorY, width - 12, 22)
+            dlg_add_section(dialog, title + accountCount, x + 6, cursorY, width - 12, 22)
         }
         cursorY += 28
-        for bucket in buckets {
-            dlg_add_card(dialog, x, cursorY, width, 72)
-            let label = bucket.name.isEmpty ? quotaWindowLabel(minutes: bucket.windowMinutes) : bucket.name
-            let percent = String(format: "%.0f%% %@", bucket.remainingPercent, L10n.shared.tr("quota.remainingLabel"))
-            dlg_add_static(dialog, label, x + 14, cursorY + 8, width - 160, 20)
-            dlg_add_static(dialog, percent, x + width - 128, cursorY + 8, 114, 20)
-            dlg_add_progress(dialog, x + 14, cursorY + 32, width - 34, 8,
-                             Int32(bucket.remainingPercent.rounded()))
-            if let reset = bucket.resetsAt {
-                let labels = quotaResetLabels(reset)
-                dlg_add_subtitle(dialog, "\(labels.relative) · \(labels.absolute)", x + 14, cursorY + 49, width - 28, 17)
+        for (accountIndex, account) in accounts.enumerated() {
+            if accountIndex > 0 { dlg_add_sep(dialog, x + 6, cursorY, width - 12); cursorY += 12 }
+            let planText = account.effectivePlan.map { " · \(displayPlan($0))" } ?? ""
+            let editID = Int32(1100 + accountControlIndex)
+            let emailID = Int32(1200 + accountControlIndex)
+            quotaEditControls[editID] = account.id
+            dlg_add_static(dialog, account.displayName + planText, x + 8, cursorY, width - 74, 21)
+            dlg_add_push(dialog, editID, "✎", x + width - 58, cursorY - 2, 26, 23)
+            if account.revealsEmailOnDemand {
+                quotaEmailControls[emailID] = account.id
+                dlg_add_push(dialog, emailID, expandedQuotaEmails.contains(account.id) ? "⌄" : ">", x + width - 29, cursorY - 2, 25, 23)
             }
-            cursorY += 80
+            accountControlIndex += 1
+            cursorY += 25
+            if account.revealsEmailOnDemand, expandedQuotaEmails.contains(account.id), let email = account.email {
+                dlg_add_subtitle(dialog, "✉  \(email)", x + 12, cursorY, width - 24, 18)
+                cursorY += 21
+            }
+            for group in account.groups {
+                if account.groups.count > 1 || group.name != "Subscription" {
+                    dlg_add_subtitle(dialog, group.name, x + 10, cursorY, width - 20, 18)
+                    cursorY += 20
+                }
+                for bucket in group.buckets {
+                    dlg_add_card(dialog, x, cursorY, width, 72)
+                    let label = bucket.name.isEmpty ? quotaWindowLabel(minutes: bucket.windowMinutes) : bucket.name
+                    let percent = String(format: "%.0f%% %@", bucket.remainingPercent, L10n.shared.tr("quota.remainingLabel"))
+                    dlg_add_static(dialog, label, x + 14, cursorY + 8, width - 160, 20)
+                    dlg_add_static(dialog, percent, x + width - 128, cursorY + 8, 114, 20)
+                    dlg_add_progress(dialog, x + 14, cursorY + 32, width - 34, 8, Int32(bucket.remainingPercent.rounded()))
+                    if let reset = bucket.resetsAt {
+                        let labels = quotaResetLabels(reset)
+                        dlg_add_subtitle(dialog, "\(labels.relative) · \(labels.absolute)", x + 14, cursorY + 49, width - 28, 17)
+                    }
+                    cursorY += 80
+                }
+            }
+            let isCurrent = activeSubscriptionAccountIDs[provider] == account.id
+            let source = isCurrent ? account.source : L10n.shared.tr("quota.savedSnapshot")
+            let updated = account.refreshedAt.map { " · \(L10n.shared.tr("quota.updated", quotaUpdatedLabel($0)))" } ?? ""
+            dlg_add_subtitle(dialog, (isCurrent ? "●  " : "◐  ") + source + updated, x + 10, cursorY, width - 20, 18)
+            cursorY += 23
         }
         return cursorY + 4
     }
 
     private func moveQuotaProvider(atDefaultIndex index: Int, by offset: Int) {
-        guard QuotaProvider.allCases.indices.contains(index) else { return }
-        let provider = QuotaProvider.allCases[index]
+        guard SubscriptionProvider.allCases.indices.contains(index) else { return }
+        let provider = SubscriptionProvider.allCases[index]
         guard let source = quotaProviderOrder.firstIndex(of: provider) else { return }
         let destination = source + offset
         guard quotaProviderOrder.indices.contains(destination) else { return }
         quotaProviderOrder.swapAt(source, destination)
-        UserDefaults.standard.set(quotaProviderOrder.map(\.rawValue), forKey: SettingsKey.subscriptionQuotaOrder.rawValue)
+        UserDefaults.standard.setStringArray(quotaProviderOrder.map(\.rawValue), for: .subscriptionQuotaOrder)
+    }
+
+    private func syncSubscriptionAccounts(
+        codex: CodexQuotaSnapshot, claude: ClaudeQuotaSnapshot,
+        antigravity: ProviderQuotaSnapshot, cursor: ProviderQuotaSnapshot,
+        zhipu: ProviderQuotaSnapshot
+    ) {
+        if codex.status == .available, !codex.buckets.isEmpty {
+            rememberSubscriptionAccount(
+                provider: .codex, identity: codex.account, plan: codex.planType,
+                groups: [ProviderQuotaGroup(id: "codex:subscription", name: "Subscription", buckets: codex.buckets)],
+                refreshedAt: codex.refreshedAt,
+                source: codex.source == .appServer ? "Codex app-server" : "Codex session log",
+                creditBalance: codex.creditBalance, hasUnlimitedCredits: codex.hasUnlimitedCredits,
+                resetCreditCount: codex.resetCreditCount
+            )
+        } else if codex.status == .unavailable { activeSubscriptionAccountIDs[.codex] = nil }
+        if claude.status == .available, !claude.buckets.isEmpty {
+            rememberSubscriptionAccount(
+                provider: .claude, identity: claude.account, plan: claude.planType,
+                groups: [ProviderQuotaGroup(id: "claude:subscription", name: "Subscription", buckets: claude.buckets)],
+                refreshedAt: claude.refreshedAt, source: "Claude OAuth API"
+            )
+        } else if claude.status == .unavailable { activeSubscriptionAccountIDs[.claude] = nil }
+        rememberProviderQuota(antigravity, provider: .antigravity)
+        rememberProviderQuota(cursor, provider: .cursor)
+        rememberProviderQuota(zhipu, provider: .zhipu)
+    }
+
+    private func quotaAccountMockSnapshots() -> (
+        CodexQuotaSnapshot, ClaudeQuotaSnapshot, ProviderQuotaSnapshot,
+        ProviderQuotaSnapshot, ProviderQuotaSnapshot
+    ) {
+        let now = Date(), reset = now.addingTimeInterval(4 * 86_400)
+        func bucket(_ id: String, _ name: String, _ used: Double, _ minutes: Int = 10_080) -> CodexQuotaBucket {
+            CodexQuotaBucket(id: id, name: name, usedPercent: used, windowMinutes: minutes, resetsAt: reset)
+        }
+        func provider(
+            _ id: String, _ plan: String?, _ source: String, _ email: String? = nil
+        ) -> ProviderQuotaSnapshot {
+            ProviderQuotaSnapshot(
+                status: .available,
+                groups: [ProviderQuotaGroup(id: id, name: "Subscription", buckets: [bucket(id, id.capitalized, 25)])],
+                planType: plan, refreshedAt: now, source: source, message: nil,
+                account: SubscriptionAccountIdentity(id: id + "-account", email: email)
+            )
+        }
+        let codex = CodexQuotaSnapshot(
+            status: .available, buckets: [bucket("codex", "Codex", 20)], planType: "pro",
+            creditBalance: nil, hasUnlimitedCredits: false, resetCreditCount: 0,
+            refreshedAt: now, source: .appServer, message: nil,
+            account: SubscriptionAccountIdentity(id: "codex-account", email: "codex@example.com")
+        )
+        let claude = ClaudeQuotaSnapshot(
+            status: .available, buckets: [bucket("claude", "Claude", 40, 300)], planType: "max_5x",
+            refreshedAt: now, source: .oauthAPI, message: nil,
+            account: SubscriptionAccountIdentity(id: "claude-account", email: "claude@example.com")
+        )
+        return (
+            codex, claude,
+            provider("antigravity", nil, "Antigravity local service"),
+            provider("cursor", "pro_plus", "Cursor dashboard", "cursor@example.com"),
+            provider("zhipu", "pro", "ZCode Coding Plan")
+        )
+    }
+
+    private func rememberProviderQuota(_ snapshot: ProviderQuotaSnapshot, provider: SubscriptionProvider) {
+        if snapshot.status == .available, !snapshot.groups.isEmpty {
+            rememberSubscriptionAccount(
+                provider: provider, identity: snapshot.account, plan: snapshot.planType,
+                groups: snapshot.groups, refreshedAt: snapshot.refreshedAt, source: snapshot.source
+            )
+        } else if snapshot.status == .unavailable { activeSubscriptionAccountIDs[provider] = nil }
+    }
+
+    private func rememberSubscriptionAccount(
+        provider: SubscriptionProvider, identity: SubscriptionAccountIdentity?, plan: String?,
+        groups: [ProviderQuotaGroup], refreshedAt: Date?, source: String,
+        creditBalance: String? = nil, hasUnlimitedCredits: Bool = false, resetCreditCount: Int = 0
+    ) {
+        let candidate = identity?.id.trimmingCharacters(in: .whitespacesAndNewlines)
+        let stableID = candidate?.isEmpty == false ? candidate! : "active"
+        let record = SubscriptionAccountRecord(
+            provider: provider, accountID: stableID, email: identity?.email, note: "",
+            detectedPlan: plan, manualPlan: nil, groups: groups, refreshedAt: refreshedAt,
+            source: source, creditBalance: creditBalance, hasUnlimitedCredits: hasUnlimitedCredits,
+            resetCreditCount: resetCreditCount
+        )
+        _ = subscriptionAccountStore.merge(record)
+        activeSubscriptionAccountIDs[provider] = record.id
+    }
+
+    private func subscriptionAccounts(for provider: SubscriptionProvider) -> [SubscriptionAccountRecord] {
+        let current = activeSubscriptionAccountIDs[provider]
+        return subscriptionAccountStore.records().filter { $0.provider == provider }.sorted {
+            if $0.id == current { return true }
+            if $1.id == current { return false }
+            return ($0.refreshedAt ?? .distantPast) > ($1.refreshedAt ?? .distantPast)
+        }
+    }
+
+    private func providerHasLiveQuota(
+        _ provider: SubscriptionProvider, codex: CodexQuotaSnapshot, claude: ClaudeQuotaSnapshot,
+        antigravity: ProviderQuotaSnapshot, cursor: ProviderQuotaSnapshot, zhipu: ProviderQuotaSnapshot
+    ) -> Bool {
+        switch provider {
+        case .codex: return !codex.buckets.isEmpty
+        case .claude: return !claude.buckets.isEmpty
+        case .antigravity: return !antigravity.groups.isEmpty
+        case .cursor: return !cursor.groups.isEmpty
+        case .zhipu: return !zhipu.groups.isEmpty
+        }
+    }
+
+    private func editSubscriptionAccount(_ account: SubscriptionAccountRecord) {
+        let L = L10n.shared
+        guard let dialog = dlg_create(L.tr("quota.editAccount"), 430, 310) else { return }
+        dlg_add_title(dialog, L.tr("quota.editAccount"), 24, 16, 300, 30)
+        if let email = account.email { dlg_add_subtitle(dialog, "✉  \(email)", 24, 50, 370, 20) }
+        dlg_add_section(dialog, L.tr("quota.accountNote"), 24, 84, 180, 20)
+        dlg_add_edit(dialog, 1400, account.note, 24, 106, 376, 30)
+        dlg_add_section(dialog, L.tr("quota.planLabel"), 24, 150, 180, 20)
+        let detected = account.detectedPlan.map(displayPlan) ?? L.tr("quota.unknownPlan")
+        let automatic = L.tr("quota.detectedPlan", detected)
+        let choices = [automatic] + planOptions(for: account.provider).filter { $0 != detected }
+        dlg_add_combo(dialog, 1401, choices.joined(separator: "\t"), account.manualPlan ?? automatic, 24, 174, 250, 30)
+        dlg_add_sep(dialog, 20, 232, 390)
+        dlg_add_push(dialog, 1, L.tr("quota.save"), 220, 248, 84, 30)
+        dlg_add_push(dialog, 2, L.tr("quota.cancel"), 316, 248, 84, 30)
+        if dlg_modal(dialog) == 1 {
+            let note = settingsEditText(dialog, 1400)
+            let selected = settingsEditText(dialog, 1401)
+            _ = subscriptionAccountStore.update(
+                id: account.id, note: note,
+                manualPlan: selected == automatic ? nil : selected
+            )
+            expandedQuotaEmails.remove(account.id)
+        }
+        dlg_destroy(dialog)
+    }
+
+    private func planOptions(for provider: SubscriptionProvider) -> [String] {
+        switch provider {
+        case .codex: return ["Plus", "Pro", "Pro 5x", "Pro 20x", "Business", "Enterprise", "Edu"]
+        case .claude: return ["Pro", "Max 5x", "Max 20x", "Team", "Enterprise"]
+        case .cursor: return ["Hobby", "Start", "Pro", "Pro+", "Ultra", "Teams"]
+        case .zhipu: return ["Start", "Pro"]
+        case .antigravity: return []
+        }
     }
 
     private func openUsageOverview(route: UsageOverviewRoute? = nil) {

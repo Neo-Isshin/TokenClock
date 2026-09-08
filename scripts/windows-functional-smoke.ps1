@@ -237,6 +237,7 @@ $initialAnalytics="$Out\fixtures\analytics.jsonl";$initialNow=[DateTimeOffset]::
 $env:AIDER_ANALYTICS_LOG=$initialAnalytics;$env:CODEBUDDY_STATS_ENDPOINT='http://127.0.0.1:9'
 [ordered]@{TC_language='en';TC_clockSize='medium';TC_clockSizeUserChosen=$true;TC_selectedTheme='classic';TC_enabledTools=@('Aider');TC_hasRunInitialDetection=$true;TC_apiServerEnabled=$true;TC_apiServerPort=9988;TC_aiderPath=$initialAnalytics;TC_codeBuddyEndpoint='http://127.0.0.1:9';TC_selectedCity='Seattle'}|ConvertTo-Json -Depth 5|Set-Content -LiteralPath "$Out\localappdata\TokenClock\settings.json" -Encoding UTF8
 $env:TC_MOCK="session"
+$env:TC_QUOTA_MOCK="accounts"
 $env:TC_WEATHER_MOCK="1"
 $started=Get-Date
 $process=Start-Process -FilePath $Exe -WorkingDirectory (Split-Path $Exe) -PassThru
@@ -297,6 +298,29 @@ Click-Client $detail ([int]($detail0.width*0.80)) (32+$forecastOffset) "detail-s
 $quotaDialog=Wait-DialogControl "TCDialog" $pidApp 982 8000
 if($quotaDialog-eq[IntPtr]::Zero){throw "Subscription Quota window did not open"}
 Capture "04b-detail-subscription-quota" $quotaDialog
+if([TCWinTest]::GetDlgItem($quotaDialog,1100)-eq[IntPtr]::Zero){throw "Subscription account edit control is missing"}
+if([TCWinTest]::GetDlgItem($quotaDialog,1200)-eq[IntPtr]::Zero){throw "Collapsed account email disclosure is missing"}
+[void][TCWinTest]::PostMessage($quotaDialog,0x0111,[IntPtr]1200,[IntPtr]::Zero);Start-Sleep -Milliseconds 350
+$quotaDialog=Wait-DialogControl "TCDialog" $pidApp 982 3000
+[void][TCWinTest]::PostMessage($quotaDialog,0x0111,[IntPtr]1100,[IntPtr]::Zero)
+$accountEditor=Wait-DialogControl "TCDialog" $pidApp 1400 5000
+if($accountEditor-eq[IntPtr]::Zero){throw "Subscription account editor did not open"}
+Set-Text $accountEditor 1400 "Work Account"
+$planCombo=[TCWinTest]::GetDlgItem($accountEditor,1401)
+if($planCombo-eq[IntPtr]::Zero){throw "Subscription plan selector is missing"}
+[void][TCWinTest]::SendMessage($planCombo,0x014E,[IntPtr]3,[IntPtr]::Zero)
+[void][TCWinTest]::PostMessage($accountEditor,0x0111,[IntPtr]1,[IntPtr]::Zero)
+if(-not(Wait-Hidden $accountEditor)){throw "Subscription account editor did not close"}
+$quotaDialog=Wait-DialogControl "TCDialog" $pidApp 982 3000
+$accountPersisted=$false
+for($attempt=0;$attempt-lt20-and-not$accountPersisted;$attempt++){
+    $accountSettings=Get-Content -Raw -LiteralPath "$Out\localappdata\TokenClock\settings.json" | ConvertFrom-Json
+    $savedAccounts=ConvertFrom-Json $accountSettings.TC_subscriptionQuotaAccounts
+    $savedCodex=$savedAccounts|Where-Object provider -eq 'codex'|Select-Object -First 1
+    $accountPersisted=(($savedCodex.note -eq 'Work Account') -and ($savedCodex.manualPlan -eq 'Pro 20x'))
+    if(-not$accountPersisted){Start-Sleep -Milliseconds 100}
+}
+if(-not$accountPersisted){throw "Subscription account note/plan did not persist"}
 [void][TCWinTest]::PostMessage($quotaDialog,0x0111,[IntPtr]982,[IntPtr]::Zero)
 if(-not(Wait-Hidden $quotaDialog)){throw "Subscription Quota window did not close"}
 Record "detail-subscription-quota-close" $h
