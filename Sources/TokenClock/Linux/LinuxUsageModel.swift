@@ -55,6 +55,7 @@ final class LinuxUsageModel: @unchecked Sendable {
             let summary = PathDetector.runFullDetection()
             saveDetectedPaths(summary.results)
         }
+        PricingService.shared.startAutomaticRefresh()
         if PricingService.shared.isStale() {
             Task.detached(priority: .utility) { [weak self] in
                 do {
