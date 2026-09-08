@@ -8,7 +8,7 @@ import SQLite3
 import FoundationNetworking
 #endif
 
-struct ProviderQuotaGroup: Identifiable, Equatable, Sendable {
+struct ProviderQuotaGroup: Identifiable, Equatable, Codable, Sendable {
     let id: String
     let name: String
     let buckets: [CodexQuotaBucket]
@@ -21,6 +21,7 @@ struct ProviderQuotaSnapshot: Equatable, Sendable {
     var refreshedAt: Date?
     var source: String
     var message: String?
+    var account: SubscriptionAccountIdentity? = nil
 
     static func idle(source: String) -> Self {
         Self(status: .idle, groups: [], planType: nil, refreshedAt: nil, source: source, message: nil)
@@ -174,7 +175,15 @@ final class AntigravityQuotaService: @unchecked Sendable {
 /// Reads Cursor's authenticated dashboard summary. Unknown response shapes fail closed;
 /// TokenClock never estimates plan limits from sticker prices.
 final class CursorQuotaService: @unchecked Sendable {
-    private struct Credential { let token: String; let userID: String }
+    private static let SQLITE_TRANSIENT = unsafeBitCast(
+        OpaquePointer(bitPattern: -1), to: sqlite3_destructor_type.self
+    )
+    private struct Credential {
+        let token: String
+        let userID: String
+        let email: String?
+        let membershipType: String?
+    }
     private let fileManager: FileManager
     init(fileManager: FileManager = .default) { self.fileManager = fileManager }
 
@@ -186,9 +195,11 @@ final class CursorQuotaService: @unchecked Sendable {
         guard let credential = credentialFromStateDatabase() else {
             return .unavailable("Cursor login was not found.", source: source)
         }
-        guard let data = request(credential: credential), let snapshot = Self.decodeResponse(data) else {
+        guard let data = request(credential: credential), var snapshot = Self.decodeResponse(data) else {
             return .unavailable("Cursor subscription quota was not available.", source: source)
         }
+        snapshot.account = SubscriptionAccountIdentity(id: credential.userID, email: credential.email)
+        if snapshot.planType?.isEmpty != false { snapshot.planType = credential.membershipType }
         return snapshot
     }
 
@@ -217,13 +228,23 @@ final class CursorQuotaService: @unchecked Sendable {
         var db: OpaquePointer?
         guard sqlite3_open_v2(dbPath, &db, SQLITE_OPEN_READONLY, nil) == SQLITE_OK else { return nil }
         defer { sqlite3_close(db) }
+        guard let token = itemValue(db: db, key: "cursorAuth/accessToken"),
+              let userID = Self.userID(from: token) else { return nil }
+        return Credential(
+            token: token, userID: userID,
+            email: itemValue(db: db, key: "cursorAuth/cachedEmail"),
+            membershipType: itemValue(db: db, key: "cursorAuth/stripeMembershipType")
+        )
+    }
+
+    private func itemValue(db: OpaquePointer?, key: String) -> String? {
         var statement: OpaquePointer?
-        guard sqlite3_prepare_v2(db, "SELECT value FROM ItemTable WHERE key='cursorAuth/accessToken' LIMIT 1", -1, &statement, nil) == SQLITE_OK else { return nil }
+        guard sqlite3_prepare_v2(db, "SELECT value FROM ItemTable WHERE key=?1 LIMIT 1", -1, &statement, nil) == SQLITE_OK else { return nil }
         defer { sqlite3_finalize(statement) }
+        sqlite3_bind_text(statement, 1, key, -1, Self.SQLITE_TRANSIENT)
         guard sqlite3_step(statement) == SQLITE_ROW, let pointer = sqlite3_column_text(statement, 0) else { return nil }
-        let token = String(cString: pointer)
-        guard let userID = Self.userID(from: token) else { return nil }
-        return Credential(token: token, userID: userID)
+        let value = String(cString: pointer).trimmingCharacters(in: .whitespacesAndNewlines)
+        return value.isEmpty ? nil : value
     }
 
     static func userID(from token: String) -> String? {
@@ -286,4 +307,3 @@ final class CursorQuotaService: @unchecked Sendable {
         return ISO8601DateFormatter().date(from: value)
     }
 }
-

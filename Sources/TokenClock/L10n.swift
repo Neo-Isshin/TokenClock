@@ -249,6 +249,17 @@ final class L10n: @unchecked Sendable {
         "quota.liveSource":      [.zhHans: "实时", .zhHant: "即時", .en: "Live"],
         "quota.logSource":       [.zhHans: "本地记录", .zhHant: "本機記錄", .en: "Local log"],
         "quota.updated":         [.zhHans: "更新于 %@", .zhHant: "更新於 %@", .en: "Updated %@"],
+        "quota.accounts":        [.zhHans: "%d 个账号", .zhHant: "%d 個帳號", .en: "%d accounts"],
+        "quota.savedSnapshot":   [.zhHans: "上次账号快照", .zhHant: "上次帳號快照", .en: "Last account snapshot"],
+        "quota.editAccount":     [.zhHans: "编辑账号", .zhHant: "編輯帳號", .en: "Edit account"],
+        "quota.showEmail":       [.zhHans: "展开账号邮箱", .zhHant: "展開帳號信箱", .en: "Show account email"],
+        "quota.accountNote":     [.zhHans: "自定义备注", .zhHant: "自訂備註", .en: "Custom name"],
+        "quota.accountNotePlaceholder": [.zhHans: "例如：工作账号", .zhHant: "例如：工作帳號", .en: "For example: Work account"],
+        "quota.planLabel":       [.zhHans: "订阅方案", .zhHant: "訂閱方案", .en: "Subscription plan"],
+        "quota.detectedPlan":    [.zhHans: "自动（%@）", .zhHant: "自動（%@）", .en: "Automatic (%@)"],
+        "quota.unknownPlan":     [.zhHans: "未识别", .zhHant: "未識別", .en: "Unknown"],
+        "quota.cancel":          [.zhHans: "取消", .zhHant: "取消", .en: "Cancel"],
+        "quota.save":            [.zhHans: "保存", .zhHant: "儲存", .en: "Save"],
 
         // MARK: Pricing（费用估算）
         "pricing.title":         [.zhHans: "💰 费用估算", .zhHant: "💰 費用估算", .en: "💰 Cost Estimation"],

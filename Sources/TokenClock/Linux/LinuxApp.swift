@@ -188,6 +188,9 @@ final class LinuxApp: @unchecked Sendable {
         if ProcessInfo.processInfo.environment["TC_OVERVIEW"] != nil {
             overviewWindow?.show()
         }
+        if ProcessInfo.processInfo.environment["TC_OPEN_QUOTA_ON_LAUNCH"] == "1" {
+            detailsPanel?.showQuotaWindow()
+        }
     }
 
     private func buildContextMenu() {

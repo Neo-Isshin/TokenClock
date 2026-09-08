@@ -50,6 +50,9 @@ final class LinuxDetailsPanel: @unchecked Sendable {
     private let claudeQuotaService = ClaudeQuotaService()
     private let antigravityQuotaService = AntigravityQuotaService()
     private let cursorQuotaService = CursorQuotaService()
+    private let subscriptionAccountStore = SubscriptionAccountStore.shared
+    private var activeSubscriptionAccountIDs: [SubscriptionProvider: String] = [:]
+    private var expandedQuotaEmails: Set<String> = []
     private let quotaLock = NSLock()
     private var pendingQuota: CodexQuotaSnapshot?
     private var pendingClaudeQuota: ClaudeQuotaSnapshot?
@@ -174,7 +177,20 @@ final class LinuxDetailsPanel: @unchecked Sendable {
             rebuildQuotaWindow()
             return
         default:
-            if name.hasPrefix("details:tool:") {
+            if name.hasPrefix("details:quota-email:") {
+                let id = String(name.dropFirst("details:quota-email:".count))
+                if expandedQuotaEmails.contains(id) { expandedQuotaEmails.remove(id) }
+                else { expandedQuotaEmails.insert(id) }
+                rebuildQuotaWindow()
+                return
+            } else if name.hasPrefix("details:quota-account-edit:") {
+                let id = String(name.dropFirst("details:quota-account-edit:".count))
+                if let account = subscriptionAccountStore.records().first(where: { $0.id == id }) {
+                    editSubscriptionAccount(account)
+                    rebuildQuotaWindow()
+                }
+                return
+            } else if name.hasPrefix("details:tool:") {
                 let value = String(name.dropFirst("details:tool:".count))
                 if expandedTools.contains(value) { expandedTools.remove(value) } else { expandedTools.insert(value) }
             } else if name.hasPrefix("details:model-row:") {
@@ -607,7 +623,7 @@ final class LinuxDetailsPanel: @unchecked Sendable {
         gtk_box_pack_start(tc_gtk_box(list), label, 1, 1, 24)
     }
 
-    private func showQuotaWindow() {
+    func showQuotaWindow() {
         if quotaWindow == nil {
             guard let created = gtk_window_new(GTK_WINDOW_TOPLEVEL),
                   let content = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0) else { return }
@@ -620,6 +636,9 @@ final class LinuxDetailsPanel: @unchecked Sendable {
             gtk_window_set_keep_above(tc_gtk_window(created), 1)
             gtk_container_add(tc_gtk_container(created), content)
             _ = tc_gtk_hide_on_delete(created)
+        }
+        if ProcessInfo.processInfo.environment["TC_QUOTA_MOCK"] == "accounts" {
+            seedQuotaAccountMock()
         }
         refreshQuota()
         rebuildQuotaWindow()
@@ -678,20 +697,136 @@ final class LinuxDetailsPanel: @unchecked Sendable {
         _ provider: LinuxQuotaProvider,
         to content: UnsafeMutablePointer<GtkWidget>
     ) {
+        let accountProvider = subscriptionProvider(provider)
+        let accounts = subscriptionAccounts(for: accountProvider)
+        if !accounts.isEmpty {
+            appendQuotaProviderHeading(
+                quotaProviderTitle(provider), plan: nil,
+                loading: quotaProviderIsLoading(provider), to: content
+            )
+            for account in accounts {
+                appendQuotaAccount(
+                    account,
+                    isCurrent: activeSubscriptionAccountIDs[accountProvider] == account.id,
+                    to: content
+                )
+            }
+            return
+        }
         switch provider {
         case .codex: appendCodexQuota(to: content)
         case .claude: appendClaudeQuota(to: content)
         case .antigravity:
-            appendProviderQuotaSection("🛸 Antigravity", snapshot: antigravityQuota,
+            appendProviderQuotaSection("🔃 Antigravity", snapshot: antigravityQuota,
                 unavailable: tr("quota.antigravityUnavailable"), to: content)
         case .cursor:
-            appendProviderQuotaSection("🖱️ Cursor", snapshot: cursorQuota,
+            appendProviderQuotaSection("💎 Cursor", snapshot: cursorQuota,
                 unavailable: tr("quota.cursorUnavailable"), to: content)
         }
     }
 
+    private func quotaProviderTitle(_ provider: LinuxQuotaProvider) -> String {
+        switch provider {
+        case .codex: return "⚛️ Codex"
+        case .claude: return "✳️ Claude Code"
+        case .antigravity: return "🔃 Antigravity"
+        case .cursor: return "💎 Cursor"
+        }
+    }
+
+    private func subscriptionProvider(_ provider: LinuxQuotaProvider) -> SubscriptionProvider {
+        switch provider {
+        case .codex: return .codex
+        case .claude: return .claude
+        case .antigravity: return .antigravity
+        case .cursor: return .cursor
+        }
+    }
+
+    private func quotaProviderIsLoading(_ provider: LinuxQuotaProvider) -> Bool {
+        switch provider {
+        case .codex: return codexQuota.status == .loading
+        case .claude: return claudeQuota.status == .loading
+        case .antigravity: return antigravityQuota.status == .loading
+        case .cursor: return cursorQuota.status == .loading
+        }
+    }
+
+    private func subscriptionAccounts(for provider: SubscriptionProvider) -> [SubscriptionAccountRecord] {
+        let current = activeSubscriptionAccountIDs[provider]
+        return subscriptionAccountStore.records().filter { $0.provider == provider }.sorted {
+            if $0.id == current { return true }
+            if $1.id == current { return false }
+            return ($0.refreshedAt ?? .distantPast) > ($1.refreshedAt ?? .distantPast)
+        }
+    }
+
+    private func appendQuotaAccount(
+        _ account: SubscriptionAccountRecord,
+        isCurrent: Bool,
+        to content: UnsafeMutablePointer<GtkWidget>
+    ) {
+        if let row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 5) {
+            let name = gtk_label_new(account.displayName)
+            gtk_label_set_xalign(tc_gtk_label(name), 0)
+            gtk_label_set_ellipsize(tc_gtk_label(name), PANGO_ELLIPSIZE_END)
+            tc_gtk_add_class(name, "tokenclock-quota-source")
+            gtk_box_pack_start(tc_gtk_box(row), name, 1, 1, 0)
+            if let plan = account.effectivePlan {
+                appendQuotaChip(tr("quota.plan", displayPlan(plan)), to: row)
+            }
+            _ = appendControl(
+                "✎", name: "details:quota-account-edit:\(account.id)", to: row
+            )
+            if account.revealsEmailOnDemand {
+                _ = appendControl(
+                    expandedQuotaEmails.contains(account.id) ? "⌄" : ">",
+                    name: "details:quota-email:\(account.id)", to: row
+                )
+            }
+            gtk_box_pack_start(tc_gtk_box(content), row, 0, 0, 0)
+        }
+        if account.revealsEmailOnDemand,
+           expandedQuotaEmails.contains(account.id),
+           let email = account.email {
+            let label = gtk_label_new("✉  \(email)")
+            gtk_label_set_xalign(tc_gtk_label(label), 0)
+            gtk_label_set_selectable(tc_gtk_label(label), 1)
+            tc_gtk_add_class(label, "tokenclock-quota-source")
+            gtk_box_pack_start(tc_gtk_box(content), label, 0, 0, 1)
+        }
+        for group in account.groups {
+            if account.groups.count > 1 || group.name != "Subscription" {
+                let label = gtk_label_new(group.name)
+                gtk_label_set_xalign(tc_gtk_label(label), 0)
+                tc_gtk_add_class(label, "tokenclock-quota-source")
+                gtk_box_pack_start(tc_gtk_box(content), label, 0, 0, 1)
+            }
+            for bucket in group.buckets { appendQuotaCard(bucket, to: content) }
+        }
+        if account.hasUnlimitedCredits {
+            let metadata = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 5)
+            appendQuotaChip(tr("quota.unlimited"), to: metadata)
+            gtk_box_pack_start(tc_gtk_box(content), metadata, 0, 0, 0)
+        } else if let balance = account.creditBalance, balance != "0" {
+            let metadata = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 5)
+            appendQuotaChip(tr("quota.creditBalance", balance), to: metadata)
+            gtk_box_pack_start(tc_gtk_box(content), metadata, 0, 0, 0)
+        }
+        if account.resetCreditCount > 0 {
+            let metadata = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 5)
+            appendQuotaChip(tr("quota.resetCredits", account.resetCreditCount), to: metadata)
+            gtk_box_pack_start(tc_gtk_box(content), metadata, 0, 0, 0)
+        }
+        var source = isCurrent ? account.source : tr("quota.savedSnapshot")
+        if let refreshedAt = account.refreshedAt {
+            source += "  ·  " + tr("quota.updated", quotaUpdatedLabel(refreshedAt))
+        }
+        appendQuotaSource((isCurrent ? "" : "◐  ") + source, to: content)
+    }
+
     private func appendCodexQuota(to content: UnsafeMutablePointer<GtkWidget>) {
-        appendQuotaProviderHeading("🤖 Codex", plan: codexQuota.planType,
+        appendQuotaProviderHeading("⚛️ Codex", plan: codexQuota.planType,
             loading: codexQuota.status == .loading, to: content)
         if codexQuota.buckets.isEmpty {
             appendQuotaUnavailable(
@@ -902,9 +1037,144 @@ final class LinuxDetailsPanel: @unchecked Sendable {
         return (tr("quota.resetsRelative", relative), formatter.string(from: date))
     }
 
+    private func rememberCodexQuota(_ snapshot: CodexQuotaSnapshot) {
+        if snapshot.status == .available, !snapshot.buckets.isEmpty {
+            rememberSubscriptionAccount(
+                provider: .codex, identity: snapshot.account, plan: snapshot.planType,
+                groups: [ProviderQuotaGroup(
+                    id: "codex:subscription", name: "Subscription", buckets: snapshot.buckets
+                )],
+                refreshedAt: snapshot.refreshedAt,
+                source: snapshot.source == .appServer ? "Codex app-server" : "Codex session log",
+                creditBalance: snapshot.creditBalance,
+                hasUnlimitedCredits: snapshot.hasUnlimitedCredits,
+                resetCreditCount: snapshot.resetCreditCount
+            )
+        } else if snapshot.status == .unavailable {
+            activeSubscriptionAccountIDs[.codex] = nil
+        }
+    }
+
+    private func seedQuotaAccountMock() {
+        let now = Date()
+        let bucket = CodexQuotaBucket(
+            id: "codex:mock", name: "Codex", usedPercent: 20,
+            windowMinutes: 10_080, resetsAt: now.addingTimeInterval(4 * 86_400)
+        )
+        rememberSubscriptionAccount(
+            provider: .codex,
+            identity: SubscriptionAccountIdentity(id: "codex-account", email: "codex@example.com"),
+            plan: "pro",
+            groups: [ProviderQuotaGroup(
+                id: "codex:subscription", name: "Subscription", buckets: [bucket]
+            )],
+            refreshedAt: now,
+            source: "Codex app-server"
+        )
+    }
+
+    private func rememberClaudeQuota(_ snapshot: ClaudeQuotaSnapshot) {
+        if snapshot.status == .available, !snapshot.buckets.isEmpty {
+            rememberSubscriptionAccount(
+                provider: .claude, identity: snapshot.account, plan: snapshot.planType,
+                groups: [ProviderQuotaGroup(
+                    id: "claude:subscription", name: "Subscription", buckets: snapshot.buckets
+                )],
+                refreshedAt: snapshot.refreshedAt, source: "Claude OAuth API"
+            )
+        } else if snapshot.status == .unavailable {
+            activeSubscriptionAccountIDs[.claude] = nil
+        }
+    }
+
+    private func rememberProviderQuota(
+        _ snapshot: ProviderQuotaSnapshot,
+        provider: SubscriptionProvider
+    ) {
+        if snapshot.status == .available, !snapshot.groups.isEmpty {
+            rememberSubscriptionAccount(
+                provider: provider, identity: snapshot.account, plan: snapshot.planType,
+                groups: snapshot.groups, refreshedAt: snapshot.refreshedAt, source: snapshot.source
+            )
+        } else if snapshot.status == .unavailable {
+            activeSubscriptionAccountIDs[provider] = nil
+        }
+    }
+
+    private func rememberSubscriptionAccount(
+        provider: SubscriptionProvider,
+        identity: SubscriptionAccountIdentity?,
+        plan: String?,
+        groups: [ProviderQuotaGroup],
+        refreshedAt: Date?,
+        source: String,
+        creditBalance: String? = nil,
+        hasUnlimitedCredits: Bool = false,
+        resetCreditCount: Int = 0
+    ) {
+        let candidate = identity?.id.trimmingCharacters(in: .whitespacesAndNewlines)
+        let stableID = candidate?.isEmpty == false ? candidate! : "active"
+        let record = SubscriptionAccountRecord(
+            provider: provider, accountID: stableID, email: identity?.email, note: "",
+            detectedPlan: plan, manualPlan: nil, groups: groups, refreshedAt: refreshedAt,
+            source: source, creditBalance: creditBalance,
+            hasUnlimitedCredits: hasUnlimitedCredits, resetCreditCount: resetCreditCount
+        )
+        _ = subscriptionAccountStore.merge(record)
+        activeSubscriptionAccountIDs[provider] = record.id
+    }
+
+    private func editSubscriptionAccount(_ account: SubscriptionAccountRecord) {
+        guard let parent = quotaWindow ?? window else { return }
+        let detected = account.detectedPlan.map(displayPlan) ?? tr("quota.unknownPlan")
+        let automatic = tr("quota.detectedPlan", detected)
+        let options = [automatic] + planOptions(for: account.provider).filter { $0 != detected }
+        let values = [
+            tr("quota.editAccount"), account.email ?? "", tr("quota.accountNote"), account.note,
+            tr("quota.planLabel"), options.joined(separator: "\t"), account.manualPlan ?? automatic,
+            tr("quota.cancel"), tr("quota.save"),
+        ]
+        var notePointer: UnsafeMutablePointer<CChar>?
+        var planPointer: UnsafeMutablePointer<CChar>?
+        let accepted = withLinuxCStrings(values) { values in
+            tc_gtk_edit_subscription_account(
+                parent, values[0], values[1], values[2], values[3], values[4], values[5],
+                values[6], values[7], values[8], &notePointer, &planPointer
+            )
+        }
+        defer {
+            if let notePointer { tc_g_free(notePointer) }
+            if let planPointer { tc_g_free(planPointer) }
+        }
+        guard accepted != 0 else { return }
+        let note = notePointer.map { String(cString: $0) } ?? ""
+        let selected = planPointer.map { String(cString: $0) } ?? automatic
+        _ = subscriptionAccountStore.update(
+            id: account.id, note: note, manualPlan: selected == automatic ? nil : selected
+        )
+        expandedQuotaEmails.remove(account.id)
+    }
+
+    private func planOptions(for provider: SubscriptionProvider) -> [String] {
+        switch provider {
+        case .codex: return ["Plus", "Pro", "Pro 5x", "Pro 20x", "Business", "Enterprise", "Edu"]
+        case .claude: return ["Pro", "Max 5x", "Max 20x", "Team", "Enterprise"]
+        case .cursor: return ["Hobby", "Start", "Pro", "Pro+", "Ultra", "Teams"]
+        case .zhipu: return ["Start", "Pro"]
+        case .antigravity: return []
+        }
+    }
+
     private func displayPlan(_ raw: String) -> String {
-        if raw.lowercased() == "prolite" { return "Pro" }
-        return raw.replacingOccurrences(of: "_", with: " ").capitalized
+        switch raw.lowercased() {
+        case "prolite": return "Pro"
+        case "pro_5x", "pro-5x": return "Pro 5x"
+        case "pro_20x", "pro-20x": return "Pro 20x"
+        case "max_5x", "default_claude_max_5x": return "Max 5x"
+        case "max_20x", "default_claude_max_20x": return "Max 20x"
+        case "pro_plus", "pro+": return "Pro+"
+        default: return raw.replacingOccurrences(of: "_", with: " ").capitalized
+        }
     }
 
     private var quickContrastPreset: Int {
@@ -975,7 +1245,10 @@ final class LinuxDetailsPanel: @unchecked Sendable {
         pendingQuota = nil
         quotaLock.unlock()
         quotaFetchInFlight = false
-        if let snapshot { codexQuota = snapshot }
+        if let snapshot {
+            codexQuota = snapshot
+            rememberCodexQuota(snapshot)
+        }
         rebuildQuotaWindow()
     }
 
@@ -985,21 +1258,30 @@ final class LinuxDetailsPanel: @unchecked Sendable {
         pendingClaudeQuota = nil
         quotaLock.unlock()
         claudeQuotaFetchInFlight = false
-        if let snapshot { claudeQuota = snapshot }
+        if let snapshot {
+            claudeQuota = snapshot
+            rememberClaudeQuota(snapshot)
+        }
         rebuildQuotaWindow()
     }
 
     fileprivate func applyPendingAntigravityQuota() {
         quotaLock.lock(); let snapshot = pendingAntigravityQuota; pendingAntigravityQuota = nil; quotaLock.unlock()
         antigravityQuotaFetchInFlight = false
-        if let snapshot { antigravityQuota = snapshot }
+        if let snapshot {
+            antigravityQuota = snapshot
+            rememberProviderQuota(snapshot, provider: .antigravity)
+        }
         rebuildQuotaWindow()
     }
 
     fileprivate func applyPendingCursorQuota() {
         quotaLock.lock(); let snapshot = pendingCursorQuota; pendingCursorQuota = nil; quotaLock.unlock()
         cursorQuotaFetchInFlight = false
-        if let snapshot { cursorQuota = snapshot }
+        if let snapshot {
+            cursorQuota = snapshot
+            rememberProviderQuota(snapshot, provider: .cursor)
+        }
         rebuildQuotaWindow()
     }
 
@@ -1148,6 +1430,22 @@ final class LinuxDetailsPanel: @unchecked Sendable {
     private func localized(zh: String, en: String) -> String {
         L10n.shared.language == .en ? en : zh
     }
+}
+
+private func withLinuxCStrings<Result>(
+    _ values: [String],
+    _ body: ([UnsafePointer<CChar>]) -> Result
+) -> Result {
+    var pointers: [UnsafePointer<CChar>] = []
+    func walk(_ index: Int) -> Result {
+        if index == values.count { return body(pointers) }
+        return values[index].withCString { pointer in
+            pointers.append(pointer)
+            defer { pointers.removeLast() }
+            return walk(index + 1)
+        }
+    }
+    return walk(0)
 }
 
 private func detailsPanel(from data: gpointer?) -> LinuxDetailsPanel? {

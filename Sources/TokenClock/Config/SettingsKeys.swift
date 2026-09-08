@@ -79,6 +79,8 @@ enum SettingsKey: String {
     /// 旧版开关：用量列是否以「占总数百分比」显示（迁移到 dropdownValueMode 后弃用，仅读取）
     case dropdownShowPercentage = "TC_dropdownShowPercentage"
     case subscriptionQuotaOrder = "TC_subscriptionQuotaOrder"
+    /// Subscription Quota 已发现账号、用户备注、手动套餐与最近额度快照（不含凭据）。
+    case subscriptionQuotaAccounts = "TC_subscriptionQuotaAccounts"
 
     // MARK: - 首次启动标记
     case hasRunInitialDetection = "TC_hasRunInitialDetection"
