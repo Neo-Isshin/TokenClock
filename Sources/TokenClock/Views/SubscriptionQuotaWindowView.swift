@@ -25,6 +25,7 @@ struct SubscriptionQuotaWindowView: View {
         viewModel.claudeQuota.status == .loading ||
         viewModel.antigravityQuota.status == .loading ||
         viewModel.cursorQuota.status == .loading ||
+        viewModel.grokBotQuota.status == .loading ||
         viewModel.zhipuQuota.status == .loading
     }
 
@@ -113,6 +114,7 @@ struct SubscriptionQuotaWindowView: View {
         case .claude: accountProviderSection(provider, title: "✳️ Claude Code")
         case .antigravity: accountProviderSection(provider, title: "🔃 Antigravity")
         case .cursor: accountProviderSection(provider, title: "💎 Cursor")
+        case .grokBot: accountProviderSection(provider, title: "😶 Grok Bot")
         case .zhipu: accountProviderSection(provider, title: "🅉 Zhipu GLM")
         }
     }
@@ -157,6 +159,7 @@ struct SubscriptionQuotaWindowView: View {
         case .claude: return !viewModel.claudeQuota.buckets.isEmpty
         case .antigravity: return !viewModel.antigravityQuota.groups.isEmpty
         case .cursor: return !viewModel.cursorQuota.groups.isEmpty
+        case .grokBot: return !viewModel.grokBotQuota.groups.isEmpty
         case .zhipu: return !viewModel.zhipuQuota.groups.isEmpty
         }
     }
@@ -248,6 +251,7 @@ struct SubscriptionQuotaWindowView: View {
         case .claude: return viewModel.claudeQuota.status == .loading
         case .antigravity: return viewModel.antigravityQuota.status == .loading
         case .cursor: return viewModel.cursorQuota.status == .loading
+        case .grokBot: return viewModel.grokBotQuota.status == .loading
         case .zhipu: return viewModel.zhipuQuota.status == .loading
         }
     }
@@ -428,6 +432,7 @@ struct SubscriptionAccountEditorView: View {
         case .codex: values = ["Plus", "Pro", "Pro 5x", "Pro 20x", "Business", "Enterprise", "Edu"]
         case .claude: values = ["Pro", "Max 5x", "Max 20x", "Team", "Enterprise"]
         case .cursor: values = ["Hobby", "Start", "Pro", "Pro+", "Ultra", "Teams"]
+        case .grokBot: values = []
         case .zhipu: values = ["Start", "Pro"]
         case .antigravity: values = []
         }

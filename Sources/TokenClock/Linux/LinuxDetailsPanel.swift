@@ -40,11 +40,13 @@ final class LinuxDetailsPanel: @unchecked Sendable {
     private var claudeQuota = ClaudeQuotaSnapshot.idle
     private var antigravityQuota = ProviderQuotaSnapshot.idle(source: "Antigravity local service")
     private var cursorQuota = ProviderQuotaSnapshot.idle(source: "Cursor dashboard")
+    private var grokBotQuota = ProviderQuotaSnapshot.idle(source: "Cursor Grok Bot API")
     private var zhipuQuota = ProviderQuotaSnapshot.idle(source: "ZCode Coding Plan")
     private let quotaService = CodexQuotaService()
     private let claudeQuotaService = ClaudeQuotaService()
     private let antigravityQuotaService = AntigravityQuotaService()
     private let cursorQuotaService = CursorQuotaService()
+    private let grokBotQuotaService = GrokBotQuotaService()
     private let zhipuQuotaService = ZhipuQuotaService()
     private let subscriptionAccountStore = SubscriptionAccountStore.shared
     private var activeSubscriptionAccountIDs: [SubscriptionProvider: String] = [:]
@@ -54,11 +56,13 @@ final class LinuxDetailsPanel: @unchecked Sendable {
     private var pendingClaudeQuota: ClaudeQuotaSnapshot?
     private var pendingAntigravityQuota: ProviderQuotaSnapshot?
     private var pendingCursorQuota: ProviderQuotaSnapshot?
+    private var pendingGrokBotQuota: ProviderQuotaSnapshot?
     private var pendingZhipuQuota: ProviderQuotaSnapshot?
     private var quotaFetchInFlight = false
     private var claudeQuotaFetchInFlight = false
     private var antigravityQuotaFetchInFlight = false
     private var cursorQuotaFetchInFlight = false
+    private var grokBotQuotaFetchInFlight = false
     private var zhipuQuotaFetchInFlight = false
     private var rebuildScheduled = false
 
@@ -636,7 +640,7 @@ final class LinuxDetailsPanel: @unchecked Sendable {
         let sections = quotaSections()
         if sections.isEmpty {
             let loading = [codexQuota.status, claudeQuota.status, antigravityQuota.status,
-                           cursorQuota.status, zhipuQuota.status].contains(.loading)
+                           cursorQuota.status, grokBotQuota.status, zhipuQuota.status].contains(.loading)
             appendQuotaUnavailable(tr(loading ? "quota.loadingAll" : "quota.noActiveProviders"), to: content)
             if let quotaWindow { gtk_window_resize(tc_gtk_window(quotaWindow), 430, 650) }
             return
@@ -671,6 +675,7 @@ final class LinuxDetailsPanel: @unchecked Sendable {
             (.claude, "✳️ Claude Code", !claudeQuota.buckets.isEmpty),
             (.antigravity, "🔃 Antigravity", !antigravityQuota.groups.isEmpty),
             (.cursor, "💎 Cursor", !cursorQuota.groups.isEmpty),
+            (.grokBot, "😶 Grok Bot", !grokBotQuota.groups.isEmpty),
             (.zhipu, "🅉 Zhipu GLM", !zhipuQuota.groups.isEmpty),
         ]
         for (provider, title, hasLiveQuota) in definitions where hasLiveQuota {
@@ -969,6 +974,7 @@ final class LinuxDetailsPanel: @unchecked Sendable {
         case .codex: return ["Plus", "Pro", "Pro 5x", "Pro 20x", "Business", "Enterprise", "Edu"]
         case .claude: return ["Pro", "Max 5x", "Max 20x", "Team", "Enterprise"]
         case .cursor: return ["Hobby", "Start", "Pro", "Pro+", "Ultra", "Teams"]
+        case .grokBot: return []
         case .zhipu: return ["Start", "Pro"]
         case .antigravity: return []
         }
@@ -1045,6 +1051,16 @@ final class LinuxDetailsPanel: @unchecked Sendable {
                 _ = tc_gtk_idle_add(linuxDetailsCursorQuotaReady, self.opaque)
             }
         }
+        if !grokBotQuotaFetchInFlight && (force || grokBotQuota.status != .available || grokBotQuota.isStale) {
+            grokBotQuotaFetchInFlight = true
+            grokBotQuota = .loading(previous: grokBotQuota)
+            DispatchQueue.global(qos: .utility).async { [weak self] in
+                guard let self else { return }
+                let snapshot = self.grokBotQuotaService.fetch()
+                self.quotaLock.lock(); self.pendingGrokBotQuota = snapshot; self.quotaLock.unlock()
+                _ = tc_gtk_idle_add(linuxDetailsGrokBotQuotaReady, self.opaque)
+            }
+        }
         if !zhipuQuotaFetchInFlight && (force || zhipuQuota.status != .available || zhipuQuota.isStale) {
             zhipuQuotaFetchInFlight = true
             zhipuQuota = .loading(previous: zhipuQuota)
@@ -1089,6 +1105,13 @@ final class LinuxDetailsPanel: @unchecked Sendable {
         quotaLock.lock(); let snapshot = pendingCursorQuota; pendingCursorQuota = nil; quotaLock.unlock()
         cursorQuotaFetchInFlight = false
         if let snapshot { cursorQuota = snapshot; rememberProviderQuota(snapshot, provider: .cursor) }
+        rebuildQuotaWindow()
+    }
+
+    fileprivate func applyPendingGrokBotQuota() {
+        quotaLock.lock(); let snapshot = pendingGrokBotQuota; pendingGrokBotQuota = nil; quotaLock.unlock()
+        grokBotQuotaFetchInFlight = false
+        if let snapshot { grokBotQuota = snapshot; rememberProviderQuota(snapshot, provider: .grokBot) }
         rebuildQuotaWindow()
     }
 
@@ -1294,6 +1317,11 @@ private func linuxDetailsAntigravityQuotaReady(_ data: gpointer?) -> gboolean {
 
 private func linuxDetailsCursorQuotaReady(_ data: gpointer?) -> gboolean {
     detailsPanel(from: data)?.applyPendingCursorQuota()
+    return 0
+}
+
+private func linuxDetailsGrokBotQuotaReady(_ data: gpointer?) -> gboolean {
+    detailsPanel(from: data)?.applyPendingGrokBotQuota()
     return 0
 }
 

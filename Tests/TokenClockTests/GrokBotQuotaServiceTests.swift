@@ -1,0 +1,59 @@
+import Foundation
+import XCTest
+@testable import TokenClock
+
+final class GrokBotQuotaServiceTests: XCTestCase {
+    func testDecodesIndependentWeeklyQuota() throws {
+        let response = Data(#"""
+        {
+          "currentPeriodStart": "2026-09-05T08:41:29.934Z",
+          "nextResetTimestampUtc": "2026-09-12T08:41:29.934Z",
+          "usagePercent": 42.336651,
+          "hasAvailableUsage": true,
+          "hasNonZeroIncludedLimit": true,
+          "grokPlanLabel": "Grok Bot Plan"
+        }
+        """#.utf8)
+
+        let snapshot = try XCTUnwrap(GrokBotQuotaService.decodeResponse(
+            response,
+            now: Date(timeIntervalSince1970: 1_788_855_689)
+        ))
+        XCTAssertEqual(snapshot.status, .available)
+        XCTAssertNil(snapshot.planType)
+        XCTAssertEqual(snapshot.source, "Cursor Grok Bot API")
+        let bucket = try XCTUnwrap(snapshot.groups.first?.buckets.first)
+        XCTAssertEqual(bucket.id, "grok-bot:weekly")
+        XCTAssertEqual(bucket.usedPercent, 42.336651, accuracy: 0.000_001)
+        XCTAssertEqual(bucket.windowMinutes, 10_080)
+        XCTAssertEqual(
+            try XCTUnwrap(bucket.resetsAt).timeIntervalSince1970,
+            1_789_202_489.934,
+            accuracy: 0.001
+        )
+    }
+
+    func testRejectsResponsesWithoutAuthoritativeUsagePercent() {
+        XCTAssertNil(GrokBotQuotaService.decodeResponse(Data(#"{"hasAvailableUsage":true}"#.utf8)))
+    }
+
+    func testCursorChecksumMatchesSandClientAlgorithm() {
+        XCTAssertEqual(
+            GrokBotQuotaService.cursorChecksum(
+                machineID: "machine-123",
+                now: Date(timeIntervalSince1970: 1_700_000_000)
+            ),
+            "paaotEjtmachine-123"
+        )
+    }
+
+    func testLiveCursorBackedGrokBotQuotaWhenEnabled() throws {
+        guard ProcessInfo.processInfo.environment["TOKENCLOCK_RUN_GROK_BOT_QUOTA_TESTS"] == "1" else {
+            throw XCTSkip("Set TOKENCLOCK_RUN_GROK_BOT_QUOTA_TESTS=1 to query the signed-in Cursor account")
+        }
+        let snapshot = GrokBotQuotaService().fetch()
+        XCTAssertEqual(snapshot.status, .available, snapshot.message ?? "")
+        XCTAssertFalse(snapshot.groups.flatMap(\.buckets).isEmpty)
+        XCTAssertEqual(snapshot.account?.id.isEmpty, false)
+    }
+}
