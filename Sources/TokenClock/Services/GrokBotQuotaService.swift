@@ -10,9 +10,9 @@ import FoundationNetworking
 
 /// Reads Grok Bot's separate weekly allowance from Cursor's Sand dashboard service.
 ///
-/// Grok Bot is metered on the signed-in Cursor account, so this deliberately reuses
-/// Cursor's existing state database. It never opens or decrypts `Grok Bot Safe Storage`
-/// and therefore cannot trigger a keychain authorization prompt.
+/// Grok Bot is metered on the signed-in Cursor account. Cursor Agent CLI credentials
+/// are tried first, followed by Cursor IDE. This never opens or decrypts
+/// `Grok Bot Safe Storage`.
 final class GrokBotQuotaService: @unchecked Sendable {
     private static let source = "Cursor Grok Bot API"
     private static let endpoint =
@@ -21,46 +21,66 @@ final class GrokBotQuotaService: @unchecked Sendable {
         OpaquePointer(bitPattern: -1), to: sqlite3_destructor_type.self
     )
 
+    private enum CredentialOrigin {
+        case cli
+        case ide
+
+        var sourceLabel: String {
+            switch self {
+            case .cli: return "Cursor Agent CLI"
+            case .ide: return "Cursor IDE"
+            }
+        }
+    }
+
     private struct Credential {
         let token: String
         let userID: String
         let email: String?
-        let machineID: String
+        let machineID: String?
         let membershipType: String?
+        let origin: CredentialOrigin
     }
 
     private let fileManager: FileManager
     private let stateDatabasePath: String
+    private let environment: [String: String]
+    private let homeDirectory: String
 
     init(
         fileManager: FileManager = .default,
         stateDatabasePath: String = AppPaths.appSupport(
             "Cursor", "User", "globalStorage", "state.vscdb"
-        )
+        ),
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        homeDirectory: String = NSHomeDirectory()
     ) {
         self.fileManager = fileManager
         self.stateDatabasePath = stateDatabasePath
+        self.environment = environment
+        self.homeDirectory = homeDirectory
     }
 
     func fetch() -> ProviderQuotaSnapshot {
         guard UserDefaults.standard.bool(for: .cursorCloudFetchEnabled, default: true) else {
             return .unavailable("Cursor cloud access is disabled in Settings.", source: Self.source)
         }
-        guard let credential = credentialFromCursorState() else {
+        let credentials = credentialCandidates()
+        guard !credentials.isEmpty else {
             return .unavailable("Cursor login was not found.", source: Self.source)
         }
-        guard let data = request(credential: credential) else {
-            return .unavailable("Grok Bot quota request failed.", source: Self.source)
+        for credential in credentials {
+            guard let data = request(credential: credential),
+                  var snapshot = Self.decodeResponse(data) else { continue }
+            snapshot.account = SubscriptionAccountIdentity(
+                id: credential.userID,
+                email: credential.email
+            )
+            if snapshot.planType == nil { snapshot.planType = credential.membershipType }
+            snapshot.source = "\(Self.source) · \(credential.origin.sourceLabel)"
+            return snapshot
         }
-        guard var snapshot = Self.decodeResponse(data) else {
-            return .unavailable("Grok Bot quota response was not recognized.", source: Self.source)
-        }
-        snapshot.account = SubscriptionAccountIdentity(
-            id: credential.userID,
-            email: credential.email
-        )
-        if snapshot.planType == nil { snapshot.planType = credential.membershipType }
-        return snapshot
+        return .unavailable("Grok Bot quota request failed.", source: Self.source)
     }
 
     static func decodeResponse(_ data: Data, now: Date = Date()) -> ProviderQuotaSnapshot? {
@@ -111,7 +131,32 @@ final class GrokBotQuotaService: @unchecked Sendable {
         return prefix + machineID
     }
 
-    private func credentialFromCursorState() -> Credential? {
+    private func credentialCandidates() -> [Credential] {
+        var values: [Credential] = []
+        if let cli = credentialFromCLI() { values.append(cli) }
+        if let ide = credentialFromIDE(), !values.contains(where: { $0.token == ide.token }) {
+            values.append(ide)
+        }
+        return values
+    }
+
+    private func credentialFromCLI() -> Credential? {
+        let token = Self.nonEmpty(environment["CURSOR_AUTH_TOKEN"])
+            ?? cliAccessTokenFromFile()
+            ?? macOSCLIKeychainAccessToken()
+        guard let token, let userID = CursorQuotaService.userID(from: token) else { return nil }
+        let metadata = cliMetadata()
+        return Credential(
+            token: token,
+            userID: userID,
+            email: metadata.email,
+            machineID: nil,
+            membershipType: metadata.membershipType,
+            origin: .cli
+        )
+    }
+
+    private func credentialFromIDE() -> Credential? {
         guard fileManager.fileExists(atPath: stateDatabasePath) else { return nil }
         var database: OpaquePointer?
         guard sqlite3_open_v2(stateDatabasePath, &database, SQLITE_OPEN_READONLY, nil) == SQLITE_OK else {
@@ -128,8 +173,104 @@ final class GrokBotQuotaService: @unchecked Sendable {
             userID: userID,
             email: itemValue(database: database, key: "cursorAuth/cachedEmail"),
             machineID: machineID,
-            membershipType: itemValue(database: database, key: "cursorAuth/stripeMembershipType")
+            membershipType: itemValue(database: database, key: "cursorAuth/stripeMembershipType"),
+            origin: .ide
         )
+    }
+
+    static func decodeCLIAuthFile(_ data: Data) -> String? {
+        guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return nil
+        }
+        return nonEmpty((root["accessToken"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+
+    private func cliAccessTokenFromFile() -> String? {
+        let path: String
+        #if os(Windows)
+        let appData = environment["APPDATA"] ?? homeDirectory + "\\AppData\\Roaming"
+        path = appData + "\\Cursor\\auth.json"
+        #elseif os(macOS)
+        path = homeDirectory + "/.cursor/auth.json"
+        #else
+        let config = environment["XDG_CONFIG_HOME"] ?? homeDirectory + "/.config"
+        path = config + "/cursor/auth.json"
+        #endif
+        guard let data = boundedContents(at: path, maximumBytes: 1_048_576) else { return nil }
+        return Self.decodeCLIAuthFile(data)
+    }
+
+    private func cliMetadata() -> (email: String?, membershipType: String?) {
+        let cliRoot = homeDirectory + "/.cursor"
+        var email: String?
+        if let root = jsonObject(at: cliRoot + "/cli-config.json", maximumBytes: 2_097_152),
+           let auth = root["authInfo"] as? [String: Any] {
+            email = Self.nonEmpty(
+                (auth["email"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+            )
+        }
+        var membership: String?
+        if let root = jsonObject(at: cliRoot + "/statsig-cache.json", maximumBytes: 8_388_608),
+           let raw = root["data"] as? String,
+           let data = raw.data(using: .utf8),
+           let bootstrap = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           let user = bootstrap["user"] as? [String: Any],
+           let custom = user["custom"] as? [String: Any] {
+            membership = Self.nonEmpty(
+                (custom["stripeMembershipStatus"] as? String)?
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+            )
+        }
+        return (email, membership)
+    }
+
+    private func jsonObject(at path: String, maximumBytes: Int) -> [String: Any]? {
+        guard let data = boundedContents(at: path, maximumBytes: maximumBytes) else { return nil }
+        return try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+    }
+
+    private func boundedContents(at path: String, maximumBytes: Int) -> Data? {
+        guard let attributes = try? fileManager.attributesOfItem(atPath: path),
+              let size = attributes[.size] as? NSNumber,
+              size.intValue <= maximumBytes else { return nil }
+        return fileManager.contents(atPath: path)
+    }
+
+    private func macOSCLIKeychainAccessToken() -> String? {
+        #if os(macOS)
+        guard environment["TOKENCLOCK_DISABLE_CURSOR_CLI_KEYCHAIN"] != "1",
+              fileManager.isExecutableFile(atPath: "/usr/bin/security") else { return nil }
+        let process = Process()
+        let output = Pipe()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/security")
+        process.arguments = [
+            "find-generic-password", "-a", "cursor-user",
+            "-s", "cursor-access-token", "-w",
+        ]
+        process.standardOutput = output
+        process.standardError = Pipe()
+        do {
+            try process.run()
+            let deadline = Date().addingTimeInterval(2)
+            while process.isRunning, Date() < deadline {
+                Thread.sleep(forTimeInterval: 0.02)
+            }
+            guard !process.isRunning else {
+                process.terminate()
+                return nil
+            }
+            guard process.terminationStatus == 0 else { return nil }
+            let data = output.fileHandleForReading.readDataToEndOfFile()
+            guard data.count <= 16_384,
+                  let token = String(data: data, encoding: .utf8) else { return nil }
+            return Self.nonEmpty(token.trimmingCharacters(in: .whitespacesAndNewlines))
+        } catch {
+            if process.isRunning { process.terminate() }
+            return nil
+        }
+        #else
+        return nil
+        #endif
     }
 
     private func itemValue(database: OpaquePointer?, key: String) -> String? {
@@ -159,16 +300,22 @@ final class GrokBotQuotaService: @unchecked Sendable {
     }
 
     private func requestOnce(credential: Credential) -> Data? {
-        let headers = [
+        var headers = [
             "Accept": "application/json",
             "Authorization": "Bearer \(credential.token)",
             "Content-Type": "application/json",
-            "x-cursor-checksum": Self.cursorChecksum(machineID: credential.machineID),
-            "x-cursor-client-source": "sand-desktop",
-            "x-cursor-client-type": "sand",
             "x-ghost-mode": "true",
-            "x-sand-box-namespace": "prod",
         ]
+        switch credential.origin {
+        case .cli:
+            headers["x-cursor-client-type"] = "cli"
+        case .ide:
+            guard let machineID = credential.machineID else { return nil }
+            headers["x-cursor-checksum"] = Self.cursorChecksum(machineID: machineID)
+            headers["x-cursor-client-source"] = "sand-desktop"
+            headers["x-cursor-client-type"] = "sand"
+            headers["x-sand-box-namespace"] = "prod"
+        }
         let body = Data("{}".utf8)
         #if os(Windows)
         guard let response = try? WindowsNativeHTTP.request(
