@@ -47,13 +47,20 @@ final class GrokBotQuotaServiceTests: XCTestCase {
         )
     }
 
+    func testDecodesCursorAgentFileCredentialWithoutReturningRefreshToken() throws {
+        let data = Data(#"{"accessToken":"cli-access-token","refreshToken":"do-not-return"}"#.utf8)
+        XCTAssertEqual(GrokBotQuotaService.decodeCLIAuthFile(data), "cli-access-token")
+        XCTAssertNil(GrokBotQuotaService.decodeCLIAuthFile(Data(#"{"refreshToken":"only"}"#.utf8)))
+    }
+
     func testLiveCursorBackedGrokBotQuotaWhenEnabled() throws {
         guard ProcessInfo.processInfo.environment["TOKENCLOCK_RUN_GROK_BOT_QUOTA_TESTS"] == "1" else {
             throw XCTSkip("Set TOKENCLOCK_RUN_GROK_BOT_QUOTA_TESTS=1 to query the signed-in Cursor account")
         }
-        let snapshot = GrokBotQuotaService().fetch()
+        let snapshot = GrokBotQuotaService(stateDatabasePath: "/tokenclock/no-cursor-ide-state.vscdb").fetch()
         XCTAssertEqual(snapshot.status, .available, snapshot.message ?? "")
         XCTAssertFalse(snapshot.groups.flatMap(\.buckets).isEmpty)
         XCTAssertEqual(snapshot.account?.id.isEmpty, false)
+        XCTAssertTrue(snapshot.source.contains("Cursor Agent CLI"), snapshot.source)
     }
 }
