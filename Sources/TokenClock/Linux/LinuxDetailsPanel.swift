@@ -7,7 +7,7 @@ private enum LinuxGroupingMode: Int {
 }
 
 private enum LinuxQuotaProvider: String, CaseIterable {
-    case codex, claude, antigravity, cursor
+    case codex, claude, antigravity, cursor, grokBot
 }
 
 /// Theme-aware Linux counterpart of macOS `DetailDropdownView`.
@@ -46,10 +46,12 @@ final class LinuxDetailsPanel: @unchecked Sendable {
     private var claudeQuota = ClaudeQuotaSnapshot.idle
     private var antigravityQuota = ProviderQuotaSnapshot.idle(source: "Antigravity local service")
     private var cursorQuota = ProviderQuotaSnapshot.idle(source: "Cursor dashboard")
+    private var grokBotQuota = ProviderQuotaSnapshot.idle(source: "Cursor Grok Bot API")
     private let quotaService = CodexQuotaService()
     private let claudeQuotaService = ClaudeQuotaService()
     private let antigravityQuotaService = AntigravityQuotaService()
     private let cursorQuotaService = CursorQuotaService()
+    private let grokBotQuotaService = GrokBotQuotaService()
     private let subscriptionAccountStore = SubscriptionAccountStore.shared
     private var activeSubscriptionAccountIDs: [SubscriptionProvider: String] = [:]
     private var expandedQuotaEmails: Set<String> = []
@@ -58,10 +60,12 @@ final class LinuxDetailsPanel: @unchecked Sendable {
     private var pendingClaudeQuota: ClaudeQuotaSnapshot?
     private var pendingAntigravityQuota: ProviderQuotaSnapshot?
     private var pendingCursorQuota: ProviderQuotaSnapshot?
+    private var pendingGrokBotQuota: ProviderQuotaSnapshot?
     private var quotaFetchInFlight = false
     private var claudeQuotaFetchInFlight = false
     private var antigravityQuotaFetchInFlight = false
     private var cursorQuotaFetchInFlight = false
+    private var grokBotQuotaFetchInFlight = false
     private var quotaOrderEditing = false
     private var quotaProviderOrder: [LinuxQuotaProvider] = {
         let saved = UserDefaults.standard.stringArray(forKey: SettingsKey.subscriptionQuotaOrder.rawValue) ?? []
@@ -722,6 +726,9 @@ final class LinuxDetailsPanel: @unchecked Sendable {
         case .cursor:
             appendProviderQuotaSection("💎 Cursor", snapshot: cursorQuota,
                 unavailable: tr("quota.cursorUnavailable"), to: content)
+        case .grokBot:
+            appendProviderQuotaSection("😶 Grok Bot", snapshot: grokBotQuota,
+                unavailable: "Grok Bot quota unavailable; check Cursor sign-in", to: content)
         }
     }
 
@@ -731,6 +738,7 @@ final class LinuxDetailsPanel: @unchecked Sendable {
         case .claude: return "✳️ Claude Code"
         case .antigravity: return "🔃 Antigravity"
         case .cursor: return "💎 Cursor"
+        case .grokBot: return "😶 Grok Bot"
         }
     }
 
@@ -740,6 +748,7 @@ final class LinuxDetailsPanel: @unchecked Sendable {
         case .claude: return .claude
         case .antigravity: return .antigravity
         case .cursor: return .cursor
+        case .grokBot: return .grokBot
         }
     }
 
@@ -749,6 +758,7 @@ final class LinuxDetailsPanel: @unchecked Sendable {
         case .claude: return claudeQuota.status == .loading
         case .antigravity: return antigravityQuota.status == .loading
         case .cursor: return cursorQuota.status == .loading
+        case .grokBot: return grokBotQuota.status == .loading
         }
     }
 
@@ -1071,6 +1081,20 @@ final class LinuxDetailsPanel: @unchecked Sendable {
             refreshedAt: now,
             source: "Codex app-server"
         )
+        let grokBucket = CodexQuotaBucket(
+            id: "grok-bot:mock", name: "Grok Bot", usedPercent: 42,
+            windowMinutes: 10_080, resetsAt: now.addingTimeInterval(4 * 86_400)
+        )
+        rememberSubscriptionAccount(
+            provider: .grokBot,
+            identity: SubscriptionAccountIdentity(id: "cursor-account", email: "cursor@example.com"),
+            plan: "pro",
+            groups: [ProviderQuotaGroup(
+                id: "grok-bot:plan", name: "Subscription", buckets: [grokBucket]
+            )],
+            refreshedAt: now,
+            source: "Cursor Grok Bot API"
+        )
     }
 
     private func rememberClaudeQuota(_ snapshot: ClaudeQuotaSnapshot) {
@@ -1160,6 +1184,7 @@ final class LinuxDetailsPanel: @unchecked Sendable {
         case .codex: return ["Plus", "Pro", "Pro 5x", "Pro 20x", "Business", "Enterprise", "Edu"]
         case .claude: return ["Pro", "Max 5x", "Max 20x", "Team", "Enterprise"]
         case .cursor: return ["Hobby", "Start", "Pro", "Pro+", "Ultra", "Teams"]
+        case .grokBot: return []
         case .zhipu: return ["Start", "Pro"]
         case .antigravity: return []
         }
@@ -1236,6 +1261,16 @@ final class LinuxDetailsPanel: @unchecked Sendable {
                 _ = tc_gtk_idle_add(linuxDetailsCursorQuotaReady, self.opaque)
             }
         }
+        if !grokBotQuotaFetchInFlight && (force || grokBotQuota.status != .available || grokBotQuota.isStale) {
+            grokBotQuotaFetchInFlight = true
+            grokBotQuota = .loading(previous: grokBotQuota)
+            DispatchQueue.global(qos: .utility).async { [weak self] in
+                guard let self else { return }
+                let snapshot = self.grokBotQuotaService.fetch()
+                self.quotaLock.lock(); self.pendingGrokBotQuota = snapshot; self.quotaLock.unlock()
+                _ = tc_gtk_idle_add(linuxDetailsGrokBotQuotaReady, self.opaque)
+            }
+        }
         rebuildQuotaWindow()
     }
 
@@ -1282,6 +1317,13 @@ final class LinuxDetailsPanel: @unchecked Sendable {
             cursorQuota = snapshot
             rememberProviderQuota(snapshot, provider: .cursor)
         }
+        rebuildQuotaWindow()
+    }
+
+    fileprivate func applyPendingGrokBotQuota() {
+        quotaLock.lock(); let snapshot = pendingGrokBotQuota; pendingGrokBotQuota = nil; quotaLock.unlock()
+        grokBotQuotaFetchInFlight = false
+        if let snapshot { grokBotQuota = snapshot; rememberProviderQuota(snapshot, provider: .grokBot) }
         rebuildQuotaWindow()
     }
 
@@ -1483,5 +1525,10 @@ private func linuxDetailsAntigravityQuotaReady(_ data: gpointer?) -> gboolean {
 
 private func linuxDetailsCursorQuotaReady(_ data: gpointer?) -> gboolean {
     detailsPanel(from: data)?.applyPendingCursorQuota()
+    return 0
+}
+
+private func linuxDetailsGrokBotQuotaReady(_ data: gpointer?) -> gboolean {
+    detailsPanel(from: data)?.applyPendingGrokBotQuota()
     return 0
 }
