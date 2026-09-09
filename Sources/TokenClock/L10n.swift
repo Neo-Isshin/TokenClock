@@ -234,7 +234,7 @@ final class L10n: @unchecked Sendable {
         "quota.windowSubtitle":  [.zhHans: "仅在打开或刷新时读取本机登录状态", .zhHant: "僅在開啟或重新整理時讀取本機登入狀態", .en: "Read on demand from signed-in tools on this device"],
         "quota.editOrder":       [.zhHans: "修改", .zhHant: "修改", .en: "Edit"],
         "quota.finishOrder":     [.zhHans: "完成", .zhHant: "完成", .en: "Done"],
-        "quota.providersSummary":[.zhHans: "4 个本机服务", .zhHant: "4 個本機服務", .en: "4 local providers"],
+        "quota.providersSummary":[.zhHans: "6 个本机服务", .zhHant: "6 個本機服務", .en: "6 local providers"],
         "quota.loadingProvider": [.zhHans: "正在读取 %@ 额度…", .zhHant: "正在讀取 %@ 額度…", .en: "Loading %@ quota…"],
         "quota.antigravityUnavailable": [.zhHans: "未找到 Antigravity 额度，请确认应用正在运行并已登录", .zhHant: "未找到 Antigravity 額度，請確認應用正在執行並已登入", .en: "Antigravity quota unavailable; make sure it is running and signed in"],
         "quota.cursorUnavailable": [.zhHans: "未找到 Cursor 订阅额度，请确认 Cursor 已登录", .zhHant: "未找到 Cursor 訂閱額度，請確認 Cursor 已登入", .en: "Cursor quota unavailable; check Cursor sign-in"],

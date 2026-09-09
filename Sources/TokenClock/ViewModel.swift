@@ -110,6 +110,7 @@ final class ViewModel: ObservableObject {
     @Published private(set) var claudeQuota = ClaudeQuotaSnapshot.idle
     @Published private(set) var antigravityQuota = ProviderQuotaSnapshot.idle(source: "Antigravity local service")
     @Published private(set) var cursorQuota = ProviderQuotaSnapshot.idle(source: "Cursor dashboard")
+    @Published private(set) var grokBotQuota = ProviderQuotaSnapshot.idle(source: "Cursor Grok Bot API")
     @Published private(set) var zhipuQuota = ProviderQuotaSnapshot.idle(source: "ZCode Coding Plan")
     @Published private(set) var subscriptionAccounts = SubscriptionAccountStore.shared.records()
     @Published private(set) var activeSubscriptionAccountIDs: [SubscriptionProvider: String] = [:]
@@ -272,6 +273,7 @@ final class ViewModel: ObservableObject {
     private var claudeQuotaTask: Task<Void, Never>?
     private var antigravityQuotaTask: Task<Void, Never>?
     private var cursorQuotaTask: Task<Void, Never>?
+    private var grokBotQuotaTask: Task<Void, Never>?
     private var zhipuQuotaTask: Task<Void, Never>?
     private var cachedDateFormatter: DateFormatter?
     private var cachedDateFormatterKey = ""
@@ -288,6 +290,7 @@ final class ViewModel: ObservableObject {
     private let claudeQuotaService = ClaudeQuotaService()
     private let antigravityQuotaService = AntigravityQuotaService()
     private let cursorQuotaService = CursorQuotaService()
+    private let grokBotQuotaService = GrokBotQuotaService()
     private let zhipuQuotaService = ZhipuQuotaService()
     private let subscriptionAccountStore = SubscriptionAccountStore.shared
     private let hermesService = HermesUsageService()
@@ -373,6 +376,8 @@ final class ViewModel: ObservableObject {
         antigravityQuotaTask = nil
         cursorQuotaTask?.cancel()
         cursorQuotaTask = nil
+        grokBotQuotaTask?.cancel()
+        grokBotQuotaTask = nil
         zhipuQuotaTask?.cancel()
         zhipuQuotaTask = nil
     }
@@ -480,6 +485,20 @@ final class ViewModel: ObservableObject {
                 guard !Task.isCancelled else { return }
                 self?.cursorQuota = result
                 self?.rememberProviderQuota(result, provider: .cursor)
+            }
+        }
+        if grokBotQuota.status != .loading {
+            grokBotQuotaTask?.cancel()
+            grokBotQuota = .loading(previous: grokBotQuota)
+            let service = grokBotQuotaService
+            grokBotQuotaTask = Task { [weak self] in
+                let result = await Task.detached(priority: .utility) { service.fetch() }.value
+                guard !Task.isCancelled else { return }
+                if ProcessInfo.processInfo.environment["TC_QUOTA_DIAGNOSTICS"] == "1" {
+                    print("[GrokBotQuota] status=\(result.status.rawValue) message=\(result.message ?? "none")")
+                }
+                self?.grokBotQuota = result
+                self?.rememberProviderQuota(result, provider: .grokBot)
             }
         }
         if zhipuQuota.status != .loading {
