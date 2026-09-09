@@ -127,6 +127,8 @@ final class WindowsApp: @unchecked Sendable {
     private let antigravityQuotaState = ProviderQuotaStateBox(source: "Antigravity local service")
     private let cursorQuotaService = CursorQuotaService()
     private let cursorQuotaState = ProviderQuotaStateBox(source: "Cursor dashboard")
+    private let grokBotQuotaService = GrokBotQuotaService()
+    private let grokBotQuotaState = ProviderQuotaStateBox(source: "Cursor Grok Bot API")
     private let zhipuQuotaService = ZhipuQuotaService()
     private let zhipuQuotaState = ProviderQuotaStateBox(source: "ZCode Coding Plan")
     private let subscriptionAccountStore = SubscriptionAccountStore.shared
@@ -561,6 +563,13 @@ final class WindowsApp: @unchecked Sendable {
         }
         if cursorQuotaState.begin(force: force) {
             let service = cursorQuotaService, state = cursorQuotaState
+            DispatchQueue.global(qos: .userInitiated).async {
+                state.finish(service.fetch())
+                if let dialog = WindowsApp.shared.quotaDlg { dlg_post_command(dialog, 980) }
+            }
+        }
+        if grokBotQuotaState.begin(force: force) {
+            let service = grokBotQuotaService, state = grokBotQuotaState
             DispatchQueue.global(qos: .userInitiated).async {
                 state.finish(service.fetch())
                 if let dialog = WindowsApp.shared.quotaDlg { dlg_post_command(dialog, 980) }
@@ -1071,10 +1080,10 @@ final class WindowsApp: @unchecked Sendable {
         case 983:
             quotaOrderEditing.toggle()
             rebuildSubscriptionQuotaDialog()
-        case 990...994:
+        case 990...995:
             moveQuotaProvider(atDefaultIndex: Int(id - 990), by: -1)
             rebuildSubscriptionQuotaDialog()
-        case 1000...1004:
+        case 1000...1005:
             moveQuotaProvider(atDefaultIndex: Int(id - 1000), by: 1)
             rebuildSubscriptionQuotaDialog()
         case 1100...1149:
@@ -1097,11 +1106,14 @@ final class WindowsApp: @unchecked Sendable {
         guard let dialog = quotaDlg else { return }
         var codex = codexQuotaState.snapshot(), claude = claudeQuotaState.snapshot()
         var antigravity = antigravityQuotaState.snapshot(), cursor = cursorQuotaState.snapshot()
-        var zhipu = zhipuQuotaState.snapshot()
+        var grokBot = grokBotQuotaState.snapshot(), zhipu = zhipuQuotaState.snapshot()
         if ProcessInfo.processInfo.environment["TC_QUOTA_MOCK"] == "accounts" {
-            (codex, claude, antigravity, cursor, zhipu) = quotaAccountMockSnapshots()
+            (codex, claude, antigravity, cursor, grokBot, zhipu) = quotaAccountMockSnapshots()
         }
-        syncSubscriptionAccounts(codex: codex, claude: claude, antigravity: antigravity, cursor: cursor, zhipu: zhipu)
+        syncSubscriptionAccounts(
+            codex: codex, claude: claude, antigravity: antigravity,
+            cursor: cursor, grokBot: grokBot, zhipu: zhipu
+        )
         if ProcessInfo.processInfo.environment["TC_QUOTA_MOCK"] == "accounts",
            let current = subscriptionAccounts(for: .codex).first,
            current.trimmedNote == nil {
@@ -1114,10 +1126,16 @@ final class WindowsApp: @unchecked Sendable {
             case .claude: return (provider, "✳️ Claude Code", claude.status, subscriptionAccounts(for: provider))
             case .antigravity: return (provider, "🔃 Antigravity", antigravity.status, subscriptionAccounts(for: provider))
             case .cursor: return (provider, "💎 Cursor", cursor.status, subscriptionAccounts(for: provider))
+            case .grokBot: return (provider, "😶 Grok Bot", grokBot.status, subscriptionAccounts(for: provider))
             case .zhipu: return (provider, "🅉 Zhipu GLM", zhipu.status, subscriptionAccounts(for: provider))
             }
         }
-        let cards = allCards.filter { providerHasLiveQuota($0.provider, codex: codex, claude: claude, antigravity: antigravity, cursor: cursor, zhipu: zhipu) && !$0.accounts.isEmpty }
+        let cards = allCards.filter {
+            providerHasLiveQuota(
+                $0.provider, codex: codex, claude: claude, antigravity: antigravity,
+                cursor: cursor, grokBot: grokBot, zhipu: zhipu
+            ) && !$0.accounts.isEmpty
+        }
         let anyLoading = allCards.contains { $0.status == .loading }
         let twoColumns = cards.count >= 4
         let dialogWidth: Int32 = twoColumns ? 900 : 470
@@ -1230,7 +1248,7 @@ final class WindowsApp: @unchecked Sendable {
     private func syncSubscriptionAccounts(
         codex: CodexQuotaSnapshot, claude: ClaudeQuotaSnapshot,
         antigravity: ProviderQuotaSnapshot, cursor: ProviderQuotaSnapshot,
-        zhipu: ProviderQuotaSnapshot
+        grokBot: ProviderQuotaSnapshot, zhipu: ProviderQuotaSnapshot
     ) {
         if codex.status == .available, !codex.buckets.isEmpty {
             rememberSubscriptionAccount(
@@ -1251,12 +1269,13 @@ final class WindowsApp: @unchecked Sendable {
         } else if claude.status == .unavailable { activeSubscriptionAccountIDs[.claude] = nil }
         rememberProviderQuota(antigravity, provider: .antigravity)
         rememberProviderQuota(cursor, provider: .cursor)
+        rememberProviderQuota(grokBot, provider: .grokBot)
         rememberProviderQuota(zhipu, provider: .zhipu)
     }
 
     private func quotaAccountMockSnapshots() -> (
         CodexQuotaSnapshot, ClaudeQuotaSnapshot, ProviderQuotaSnapshot,
-        ProviderQuotaSnapshot, ProviderQuotaSnapshot
+        ProviderQuotaSnapshot, ProviderQuotaSnapshot, ProviderQuotaSnapshot
     ) {
         let now = Date(), reset = now.addingTimeInterval(4 * 86_400)
         func bucket(_ id: String, _ name: String, _ used: Double, _ minutes: Int = 10_080) -> CodexQuotaBucket {
@@ -1287,6 +1306,7 @@ final class WindowsApp: @unchecked Sendable {
             codex, claude,
             provider("antigravity", nil, "Antigravity local service"),
             provider("cursor", "pro_plus", "Cursor dashboard", "cursor@example.com"),
+            provider("grok-bot", "pro", "Cursor Grok Bot API", "cursor@example.com"),
             provider("zhipu", "pro", "ZCode Coding Plan")
         )
     }
@@ -1328,13 +1348,15 @@ final class WindowsApp: @unchecked Sendable {
 
     private func providerHasLiveQuota(
         _ provider: SubscriptionProvider, codex: CodexQuotaSnapshot, claude: ClaudeQuotaSnapshot,
-        antigravity: ProviderQuotaSnapshot, cursor: ProviderQuotaSnapshot, zhipu: ProviderQuotaSnapshot
+        antigravity: ProviderQuotaSnapshot, cursor: ProviderQuotaSnapshot,
+        grokBot: ProviderQuotaSnapshot, zhipu: ProviderQuotaSnapshot
     ) -> Bool {
         switch provider {
         case .codex: return !codex.buckets.isEmpty
         case .claude: return !claude.buckets.isEmpty
         case .antigravity: return !antigravity.groups.isEmpty
         case .cursor: return !cursor.groups.isEmpty
+        case .grokBot: return !grokBot.groups.isEmpty
         case .zhipu: return !zhipu.groups.isEmpty
         }
     }
@@ -1371,6 +1393,7 @@ final class WindowsApp: @unchecked Sendable {
         case .codex: return ["Plus", "Pro", "Pro 5x", "Pro 20x", "Business", "Enterprise", "Edu"]
         case .claude: return ["Pro", "Max 5x", "Max 20x", "Team", "Enterprise"]
         case .cursor: return ["Hobby", "Start", "Pro", "Pro+", "Ultra", "Teams"]
+        case .grokBot: return []
         case .zhipu: return ["Start", "Pro"]
         case .antigravity: return []
         }

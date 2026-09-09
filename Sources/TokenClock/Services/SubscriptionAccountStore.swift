@@ -1,7 +1,7 @@
 import Foundation
 
 enum SubscriptionProvider: String, CaseIterable, Codable, Identifiable, Sendable {
-    case codex, claude, antigravity, cursor, zhipu
+    case codex, claude, antigravity, cursor, grokBot, zhipu
     var id: String { rawValue }
 }
 

@@ -299,6 +299,7 @@ $quotaDialog=Wait-DialogControl "TCDialog" $pidApp 982 8000
 if($quotaDialog-eq[IntPtr]::Zero){throw "Subscription Quota window did not open"}
 Capture "04b-detail-subscription-quota" $quotaDialog
 if([TCWinTest]::GetDlgItem($quotaDialog,1100)-eq[IntPtr]::Zero){throw "Subscription account edit control is missing"}
+if([TCWinTest]::GetDlgItem($quotaDialog,1104)-eq[IntPtr]::Zero){throw "Independent Grok Bot quota card is missing"}
 if([TCWinTest]::GetDlgItem($quotaDialog,1200)-eq[IntPtr]::Zero){throw "Collapsed account email disclosure is missing"}
 [void][TCWinTest]::PostMessage($quotaDialog,0x0111,[IntPtr]1200,[IntPtr]::Zero);Start-Sleep -Milliseconds 350
 $quotaDialog=Wait-DialogControl "TCDialog" $pidApp 982 3000
