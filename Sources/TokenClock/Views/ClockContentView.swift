@@ -110,7 +110,6 @@ struct ClockContentView: View {
                     Spacer()
                     if quotaIndicators.count == 1, let indicator = quotaIndicators.first {
                         quotaRing(
-                            provider: indicator.provider,
                             outerRemaining: indicator.outerRemainingPercent,
                             innerRemaining: indicator.innerRemainingPercent,
                             size: 35 * s,
@@ -122,7 +121,6 @@ struct ClockContentView: View {
                         VStack(alignment: .trailing, spacing: 5 * s) {
                             ForEach(quotaIndicators) { indicator in
                                 quotaRing(
-                                    provider: indicator.provider,
                                     outerRemaining: indicator.outerRemainingPercent,
                                     innerRemaining: indicator.innerRemainingPercent,
                                     size: 29 * s,
@@ -234,7 +232,6 @@ struct ClockContentView: View {
     }
 
     private func quotaRing(
-        provider: SubscriptionProvider,
         outerRemaining: Double,
         innerRemaining: Double?,
         size: CGFloat,
@@ -246,7 +243,7 @@ struct ClockContentView: View {
         let scale = size / 30
         let innerInset = 5.25 * scale
         let innerLineWidth = 1.7 * scale
-        let accent = provider.dialQuotaColor
+        let accent = viewModel.effectiveDialPrimary
         let outerGradient = AngularGradient(
             colors: [accent.opacity(0.46), accent.opacity(0.76), accent.opacity(0.58)],
             center: .center,
@@ -317,11 +314,16 @@ struct ClockContentView: View {
                     .rotationEffect(.degrees(-90))
                     .shadow(color: accent.opacity(0.10), radius: 0.8 * scale)
             }
-            Text(String(format: "%.0f%%", outer))
-                .font(.system(size: fontSize, weight: .bold, design: .rounded))
-                .foregroundColor(quotaPercentColor(outer))
-                .minimumScaleFactor(0.75)
-                .shadow(color: Color.white.opacity(0.15), radius: 0.45 * scale, y: -0.25 * scale)
+            HStack(spacing: 0) {
+                Text(String(format: "%.0f", outer))
+                    .font(.system(size: fontSize, weight: .bold, design: .rounded))
+                Text("%")
+                    .font(.system(size: fontSize, weight: .regular, design: .rounded))
+            }
+            .foregroundColor(quotaPercentColor(outer))
+            .lineLimit(1)
+            .minimumScaleFactor(0.75)
+            .shadow(color: Color.white.opacity(0.15), radius: 0.45 * scale, y: -0.25 * scale)
         }
         .frame(width: size, height: size)
     }
