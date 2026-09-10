@@ -61,18 +61,21 @@ struct ClockContentView: View {
 
                     // 下方：tokens + 消息数（中心到下部中点）
                     VStack(spacing: 2) {
-                        Text(L10n.shared.tr("clock.todayTokens"))
-                            .font(.system(size: 9 * s))
-                            .foregroundColor(viewModel.effectiveDialSecondary)
+                        HStack(spacing: 3 * s) {
+                            Text(L10n.shared.tr("clock.todayTokens"))
+                            if let remaining = viewModel.dialQuotaRemainingPercent {
+                                Text("·")
+                                Text(viewModel.dialQuotaProvider.emoji)
+                                Text(String(format: "%.0f%%", remaining))
+                                    .fontWeight(.semibold)
+                                    .foregroundColor(dialQuotaTextColor(remaining))
+                            }
+                        }
+                        .font(.system(size: 9 * s))
+                        .foregroundColor(viewModel.effectiveDialSecondary)
                         Text(viewModel.totalTokensFormatted)
                             .font(.system(size: 20 * s, weight: .bold, design: .rounded))
                             .foregroundColor(viewModel.effectiveDialPrimary)
-                            .overlay(alignment: .trailing) {
-                                if let remaining = viewModel.dialQuotaRemainingPercent {
-                                    dialQuotaRing(remaining: remaining, scale: s)
-                                        .offset(x: 38 * s)
-                                }
-                            }
                         Text(viewModel.totalMessagesFormatted)
                             .font(.system(size: 10 * s))
                             .foregroundColor(viewModel.effectiveDialSecondary)
@@ -170,38 +173,26 @@ struct ClockContentView: View {
         .accessibilityAddTraits(.isButton)
     }
 
-    private func dialQuotaRing(remaining: Double, scale s: CGFloat) -> some View {
-        let normalized = min(100, max(0, remaining))
-        let accent: Color = normalized <= 15 ? .red : (normalized <= 35 ? .orange : .green)
-        return ZStack {
-            Circle()
-                .stroke(viewModel.effectiveDialSecondary.opacity(0.2), lineWidth: 3 * s)
-            Circle()
-                .trim(from: 0, to: normalized / 100)
-                .stroke(accent, style: StrokeStyle(lineWidth: 3 * s, lineCap: .round))
-                .rotationEffect(.degrees(-90))
-            Text(String(format: "%.0f%%", normalized))
-                .font(.system(size: 7.5 * s, weight: .bold, design: .rounded))
-                .foregroundColor(viewModel.effectiveDialPrimary)
-                .minimumScaleFactor(0.75)
-        }
-        .frame(width: 28 * s, height: 28 * s)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(Text(L10n.shared.tr(
-            "quota.dialAccessibility",
-            viewModel.dialQuotaProvider.displayName,
-            Int(normalized.rounded())
-        )))
+    private func dialQuotaTextColor(_ remaining: Double) -> Color {
+        if remaining <= 15 { return .red }
+        if remaining <= 35 { return .orange }
+        return viewModel.effectiveDialSecondary
     }
 
     /// VoiceOver 朗读摘要：时间 + 今日 token + 消息数（已随语言本地化）。
     private var accessibilitySummary: String {
         let time = String(format: "%d:%02d", viewModel.hours, viewModel.minutes)
-        return L10n.shared.tr("a11y.clockSummary",
-                              viewModel.dateString,
-                              time,
-                              viewModel.totalTokensFormatted,
-                              viewModel.totalMessagesFormatted)
+        let summary = L10n.shared.tr("a11y.clockSummary",
+                                     viewModel.dateString,
+                                     time,
+                                     viewModel.totalTokensFormatted,
+                                     viewModel.totalMessagesFormatted)
+        guard let remaining = viewModel.dialQuotaRemainingPercent else { return summary }
+        return summary + ", " + L10n.shared.tr(
+            "quota.dialAccessibility",
+            viewModel.dialQuotaProvider.displayName,
+            Int(remaining.rounded())
+        )
     }
 
     @ViewBuilder
