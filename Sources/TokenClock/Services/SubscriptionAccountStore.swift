@@ -3,6 +3,28 @@ import Foundation
 enum SubscriptionProvider: String, CaseIterable, Codable, Identifiable, Sendable {
     case codex, claude, antigravity, cursor, grokBot, zhipu
     var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .codex: return "Codex"
+        case .claude: return "Claude Code"
+        case .antigravity: return "Antigravity"
+        case .cursor: return "Cursor"
+        case .grokBot: return "Grok Bot"
+        case .zhipu: return "Zhipu GLM"
+        }
+    }
+
+    var emoji: String {
+        switch self {
+        case .codex: return "⚛️"
+        case .claude: return "✳️"
+        case .antigravity: return "🔃"
+        case .cursor: return "💎"
+        case .grokBot: return "😶"
+        case .zhipu: return "🅉"
+        }
+    }
 }
 
 struct SubscriptionAccountIdentity: Equatable, Sendable {

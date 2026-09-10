@@ -42,29 +42,58 @@ struct SubscriptionQuotaWindowView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack(alignment: .center, spacing: 10) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(L10n.shared.tr("quota.windowTitle"))
-                        .font(.system(size: 19, weight: .bold, design: .rounded))
-                    Text(L10n.shared.tr("quota.windowSubtitle"))
-                        .font(.system(size: 11))
+            VStack(spacing: 10) {
+                HStack(alignment: .center, spacing: 10) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(L10n.shared.tr("quota.windowTitle"))
+                            .font(.system(size: 19, weight: .bold, design: .rounded))
+                        Text(L10n.shared.tr("quota.windowSubtitle"))
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Button {
+                        isEditingOrder.toggle()
+                    } label: {
+                        Label(
+                            L10n.shared.tr(isEditingOrder ? "quota.finishOrder" : "quota.editOrder"),
+                            systemImage: isEditingOrder ? "checkmark" : "arrow.up.arrow.down"
+                        )
+                    }
+                    .buttonStyle(.bordered)
+                    Button { viewModel.refreshSubscriptionQuotas() } label: {
+                        Label(L10n.shared.tr("quota.retry"), systemImage: "arrow.clockwise")
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(isLoading)
+                }
+                HStack(spacing: 8) {
+                    Text(L10n.shared.tr("quota.dialDisplay"))
+                        .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(.secondary)
+                    Menu {
+                        ForEach(viewModel.dialQuotaProviderOptions) { provider in
+                            Button {
+                                viewModel.dialQuotaProvider = provider
+                            } label: {
+                                if provider == viewModel.dialQuotaProvider {
+                                    Label("\(provider.emoji) \(provider.displayName)", systemImage: "checkmark")
+                                } else {
+                                    Text("\(provider.emoji) \(provider.displayName)")
+                                }
+                            }
+                        }
+                    } label: {
+                        Label(
+                            "\(viewModel.dialQuotaProvider.emoji) \(viewModel.dialQuotaProvider.displayName)",
+                            systemImage: "circle.dashed"
+                        )
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(viewModel.dialQuotaProviderOptions.isEmpty)
+                    .help(L10n.shared.tr("quota.dialDisplayHelp"))
+                    Spacer()
                 }
-                Spacer()
-                Button {
-                    isEditingOrder.toggle()
-                } label: {
-                    Label(
-                        L10n.shared.tr(isEditingOrder ? "quota.finishOrder" : "quota.editOrder"),
-                        systemImage: isEditingOrder ? "checkmark" : "arrow.up.arrow.down"
-                    )
-                }
-                .buttonStyle(.bordered)
-                Button { viewModel.refreshSubscriptionQuotas() } label: {
-                    Label(L10n.shared.tr("quota.retry"), systemImage: "arrow.clockwise")
-                }
-                .buttonStyle(.bordered)
-                .disabled(isLoading)
             }
             .padding(.horizontal, 20)
             .padding(.vertical, 16)
@@ -109,14 +138,7 @@ struct SubscriptionQuotaWindowView: View {
 
     @ViewBuilder
     private func providerView(_ provider: SubscriptionProvider) -> some View {
-        switch provider {
-        case .codex: accountProviderSection(provider, title: "⚛️ Codex")
-        case .claude: accountProviderSection(provider, title: "✳️ Claude Code")
-        case .antigravity: accountProviderSection(provider, title: "🔃 Antigravity")
-        case .cursor: accountProviderSection(provider, title: "💎 Cursor")
-        case .grokBot: accountProviderSection(provider, title: "😶 Grok Bot")
-        case .zhipu: accountProviderSection(provider, title: "🅉 Zhipu GLM")
-        }
+        accountProviderSection(provider, title: "\(provider.emoji) \(provider.displayName)")
     }
 
     private func reorderControls(for provider: SubscriptionProvider, at index: Int, count: Int) -> some View {
