@@ -127,7 +127,16 @@ final class ViewModel: ObservableObject {
     /// The dial uses the most constrained active window for the chosen provider.
     /// Before the first on-demand refresh, fall back to the newest persisted snapshot.
     var dialQuotaRemainingPercent: Double? {
-        quotaBuckets(for: dialQuotaProvider).map(\.remainingPercent).min()
+        dialQuotaRemainingPercents.first
+    }
+
+    /// Up to two real quota windows, ordered from most to least constrained.
+    var dialQuotaRemainingPercents: [Double] {
+        quotaBuckets(for: dialQuotaProvider)
+            .map(\.remainingPercent)
+            .sorted()
+            .prefix(2)
+            .map { $0 }
     }
 
     var dialQuotaProviderOptions: [SubscriptionProvider] {

@@ -23,6 +23,7 @@ struct ClockContentView: View {
         // 表盘大小随用户设置缩放：d = 直径，s = 相对中档(240)的缩放比。
         let d = viewModel.clockSize.diameter
         let s = viewModel.clockSize.scale
+        let quotaPercents = viewModel.dialQuotaRemainingPercents
 
         // 外层：流动柔光在底，圆形玻璃盘体在上。
         // `.clear` 玻璃会透出 / 折射底层柔光，呈现晶莹剔透 + 微微流动的质感，
@@ -105,8 +106,12 @@ struct ClockContentView: View {
                 // 右侧：所选订阅工具的剩余额度
                 HStack {
                     Spacer()
-                    if let remaining = viewModel.dialQuotaRemainingPercent {
-                        dialQuotaRing(remaining: remaining, scale: s)
+                    if let remaining = quotaPercents.first {
+                        dialQuotaRing(
+                            remaining: remaining,
+                            secondaryRemaining: quotaPercents.dropFirst().first,
+                            scale: s
+                        )
                             .padding(.trailing, 36 * s)
                     }
                 }
@@ -171,22 +176,46 @@ struct ClockContentView: View {
         .accessibilityAddTraits(.isButton)
     }
 
-    private func dialQuotaRing(remaining: Double, scale s: CGFloat) -> some View {
+    private func dialQuotaRing(
+        remaining: Double,
+        secondaryRemaining: Double?,
+        scale s: CGFloat
+    ) -> some View {
         let normalized = min(100, max(0, remaining))
-        let accent: Color = normalized <= 15 ? .red : (normalized <= 35 ? .orange : .green)
+        let secondary = secondaryRemaining.map { min(100, max(0, $0)) }
         return ZStack {
             Circle()
-                .stroke(viewModel.effectiveDialSecondary.opacity(0.22), lineWidth: 3.5 * s)
+                .strokeBorder(viewModel.effectiveDialSecondary.opacity(0.22), lineWidth: 3.25 * s)
             Circle()
                 .trim(from: 0, to: normalized / 100)
-                .stroke(accent, style: StrokeStyle(lineWidth: 3.5 * s, lineCap: .round))
+                .stroke(quotaRingAccent(normalized), style: StrokeStyle(lineWidth: 3.25 * s, lineCap: .round))
                 .rotationEffect(.degrees(-90))
+                .padding(1.625 * s)
+            Circle()
+                .inset(by: 5.5 * s)
+                .stroke(viewModel.effectiveDialSecondary.opacity(0.18), lineWidth: 2.25 * s)
+            if let secondary {
+                Circle()
+                    .inset(by: 5.5 * s)
+                    .trim(from: 0, to: secondary / 100)
+                    .stroke(
+                        quotaRingAccent(secondary),
+                        style: StrokeStyle(lineWidth: 2.25 * s, lineCap: .round)
+                    )
+                    .rotationEffect(.degrees(-90))
+            }
             Text(String(format: "%.0f%%", normalized))
-                .font(.system(size: 8 * s, weight: .bold, design: .rounded))
+                .font(.system(size: 7.5 * s, weight: .bold, design: .rounded))
                 .foregroundColor(viewModel.effectiveDialPrimary)
                 .minimumScaleFactor(0.75)
         }
         .frame(width: 30 * s, height: 30 * s)
+    }
+
+    private func quotaRingAccent(_ remaining: Double) -> Color {
+        if remaining <= 15 { return .red }
+        if remaining <= 35 { return .orange }
+        return .green
     }
 
     /// VoiceOver 朗读摘要：时间 + 今日 token + 消息数（已随语言本地化）。
