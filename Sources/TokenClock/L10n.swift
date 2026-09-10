@@ -235,7 +235,7 @@ final class L10n: @unchecked Sendable {
         "quota.editOrder":       [.zhHans: "修改", .zhHant: "修改", .en: "Edit"],
         "quota.finishOrder":     [.zhHans: "完成", .zhHant: "完成", .en: "Done"],
         "quota.dialDisplay":     [.zhHans: "表盘", .zhHant: "錶盤", .en: "Dial"],
-        "quota.dialDisplayHelp": [.zhHans: "选择一至两个在表盘展示周额度的工具", .zhHant: "選擇一至兩個在錶盤顯示週額度的工具", .en: "Choose one or two providers whose weekly quota appears on the dial"],
+        "quota.dialDisplayHelp": [.zhHans: "选择一至两个工具；外环为周额度，内环为 5 小时额度（Cursor 按模型额度）", .zhHant: "選擇一至兩個工具；外環為週額度，內環為 5 小時額度（Cursor 按模型額度）", .en: "Choose one or two providers; weekly quota is outside and 5-hour quota is inside (Cursor uses model quotas)"],
         "quota.dialAccessibility": [.zhHans: "%@ 剩余额度 %d%%", .zhHant: "%@ 剩餘額度 %d%%", .en: "%@ quota, %d%% remaining"],
         "quota.providersSummary":[.zhHans: "6 个本机服务", .zhHant: "6 個本機服務", .en: "6 local providers"],
         "quota.loadingProvider": [.zhHans: "正在读取 %@ 额度…", .zhHant: "正在讀取 %@ 額度…", .en: "Loading %@ quota…"],

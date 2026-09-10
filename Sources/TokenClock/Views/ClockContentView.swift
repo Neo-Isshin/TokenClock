@@ -108,7 +108,9 @@ struct ClockContentView: View {
                     Spacer()
                     if quotaIndicators.count == 1, let indicator = quotaIndicators.first {
                         quotaRing(
-                            remaining: indicator.remainingPercent,
+                            provider: indicator.provider,
+                            outerRemaining: indicator.outerRemainingPercent,
+                            innerRemaining: indicator.innerRemainingPercent,
                             size: 30 * s,
                             lineWidth: 3.25 * s,
                             fontSize: 7.5 * s
@@ -117,17 +119,14 @@ struct ClockContentView: View {
                     } else if quotaIndicators.count == 2 {
                         VStack(alignment: .trailing, spacing: 4 * s) {
                             ForEach(quotaIndicators) { indicator in
-                                HStack(spacing: 2 * s) {
-                                    Text(indicator.provider.emoji)
-                                        .font(.system(size: 8 * s))
-                                        .frame(width: 10 * s)
-                                    quotaRing(
-                                        remaining: indicator.remainingPercent,
-                                        size: 30 * s,
-                                        lineWidth: 3.25 * s,
-                                        fontSize: 7.5 * s
-                                    )
-                                }
+                                quotaRing(
+                                    provider: indicator.provider,
+                                    outerRemaining: indicator.outerRemainingPercent,
+                                    innerRemaining: indicator.innerRemainingPercent,
+                                    size: 30 * s,
+                                    lineWidth: 3.25 * s,
+                                    fontSize: 7.5 * s
+                                )
                             }
                         }
                         .padding(.trailing, 36 * s)
@@ -195,31 +194,62 @@ struct ClockContentView: View {
     }
 
     private func quotaRing(
-        remaining: Double,
+        provider: SubscriptionProvider,
+        outerRemaining: Double,
+        innerRemaining: Double?,
         size: CGFloat,
         lineWidth: CGFloat,
         fontSize: CGFloat
     ) -> some View {
-        ZStack {
+        let outer = min(100, max(0, outerRemaining))
+        let inner = innerRemaining.map { min(100, max(0, $0)) }
+        let scale = size / 30
+        let innerInset = 5.5 * scale
+        let innerLineWidth = 2.25 * scale
+        return ZStack {
             Circle()
                 .strokeBorder(viewModel.effectiveDialSecondary.opacity(0.22), lineWidth: lineWidth)
             Circle()
-                .trim(from: 0, to: remaining / 100)
-                .stroke(quotaRingAccent(remaining), style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
+                .trim(from: 0, to: outer / 100)
+                .stroke(providerQuotaColor(provider), style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
                 .rotationEffect(.degrees(-90))
                 .padding(lineWidth / 2)
-            Text(String(format: "%.0f%%", remaining))
+            if let inner {
+                Circle()
+                    .inset(by: innerInset)
+                    .stroke(viewModel.effectiveDialSecondary.opacity(0.16), lineWidth: innerLineWidth)
+                Circle()
+                    .inset(by: innerInset)
+                    .trim(from: 0, to: inner / 100)
+                    .stroke(
+                        providerQuotaColor(provider).opacity(0.72),
+                        style: StrokeStyle(lineWidth: innerLineWidth, lineCap: .round)
+                    )
+                    .rotationEffect(.degrees(-90))
+            }
+            Text(String(format: "%.0f%%", outer))
                 .font(.system(size: fontSize, weight: .bold, design: .rounded))
-                .foregroundColor(viewModel.effectiveDialPrimary)
+                .foregroundColor(quotaPercentColor(outer))
                 .minimumScaleFactor(0.75)
         }
         .frame(width: size, height: size)
     }
 
-    private func quotaRingAccent(_ remaining: Double) -> Color {
+    private func providerQuotaColor(_ provider: SubscriptionProvider) -> Color {
+        switch provider {
+        case .codex: return Color(red: 0.06, green: 0.64, blue: 0.50)
+        case .claude: return Color(red: 0.85, green: 0.40, blue: 0.28)
+        case .antigravity: return Color(red: 0.55, green: 0.36, blue: 0.96)
+        case .cursor: return Color(red: 0.10, green: 0.62, blue: 0.92)
+        case .grokBot: return Color(red: 0.39, green: 0.40, blue: 0.95)
+        case .zhipu: return Color(red: 0.15, green: 0.44, blue: 0.95)
+        }
+    }
+
+    private func quotaPercentColor(_ remaining: Double) -> Color {
         if remaining <= 15 { return .red }
         if remaining <= 35 { return .orange }
-        return .green
+        return viewModel.effectiveDialPrimary
     }
 
     /// VoiceOver 朗读摘要：时间 + 今日 token + 消息数（已随语言本地化）。
@@ -234,7 +264,7 @@ struct ClockContentView: View {
             L10n.shared.tr(
                 "quota.dialAccessibility",
                 $0.provider.displayName,
-                Int($0.remainingPercent.rounded())
+                Int($0.outerRemainingPercent.rounded())
             )
         }
         guard !quotas.isEmpty else { return summary }

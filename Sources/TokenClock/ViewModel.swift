@@ -4,7 +4,8 @@ import AppKit
 
 struct DialQuotaIndicator: Identifiable, Equatable {
     let provider: SubscriptionProvider
-    let remainingPercent: Double
+    let outerRemainingPercent: Double
+    let innerRemainingPercent: Double?
     var id: SubscriptionProvider { provider }
 }
 
@@ -137,19 +138,15 @@ final class ViewModel: ObservableObject {
     @Published private(set) var notifications: [TokenClockNotification] = []
     var unreadNotificationCount: Int { notifications.filter { !$0.isRead }.count }
 
-    /// One ring per selected provider. Prefer its weekly window; if the provider exposes
-    /// a different subscription period, use its longest-duration bucket instead.
+    /// One indicator per provider: weekly outside and five-hour inside. Cursor's API uses
+    /// model groups instead, so Other Models is outside and Cursor Models is inside.
     var dialQuotaIndicators: [DialQuotaIndicator] {
-        dialQuotaProviders.compactMap { provider in
-            weeklyQuotaRemainingPercent(for: provider).map {
-                DialQuotaIndicator(provider: provider, remainingPercent: $0)
-            }
-        }
+        dialQuotaProviders.compactMap(dialQuotaIndicator)
     }
 
     var dialQuotaProviderOptions: [SubscriptionProvider] {
         SubscriptionProvider.allCases.filter {
-            dialQuotaProviders.contains($0) || !quotaBuckets(for: $0).isEmpty
+            dialQuotaProviders.contains($0) || dialQuotaIndicator(for: $0) != nil
         }
     }
 
@@ -588,8 +585,19 @@ final class ViewModel: ObservableObject {
         return subscriptionAccounts(for: provider).first?.groups.flatMap(\.buckets) ?? []
     }
 
-    private func weeklyQuotaRemainingPercent(for provider: SubscriptionProvider) -> Double? {
+    private func dialQuotaIndicator(for provider: SubscriptionProvider) -> DialQuotaIndicator? {
         let buckets = quotaBuckets(for: provider)
+        if provider == .cursor {
+            let otherModels = buckets.filter { $0.name.lowercased().contains("other") }
+            let cursorModels = buckets.filter { $0.name.lowercased().contains("cursor") }
+            guard let outer = otherModels.map(\.remainingPercent).min() else { return nil }
+            return DialQuotaIndicator(
+                provider: provider,
+                outerRemainingPercent: outer,
+                innerRemainingPercent: cursorModels.map(\.remainingPercent).min()
+            )
+        }
+
         let weekly = buckets.filter { bucket in
             let name = bucket.name.lowercased()
             return bucket.windowMinutes == 10_080
@@ -598,9 +606,21 @@ final class ViewModel: ObservableObject {
                 || name.contains("周")
                 || name.contains("週")
         }
-        if let remaining = weekly.map(\.remainingPercent).min() { return remaining }
-        guard let longestWindow = buckets.map(\.windowMinutes).max() else { return nil }
-        return buckets.filter { $0.windowMinutes == longestWindow }.map(\.remainingPercent).min()
+        guard let outer = weekly.map(\.remainingPercent).min() else { return nil }
+        let fiveHour = buckets.filter { bucket in
+            let name = bucket.name.lowercased()
+            return bucket.windowMinutes == 300
+                || name.contains("5-hour")
+                || name.contains("five hour")
+                || name.contains("5h")
+                || name.contains("5 小时")
+                || name.contains("5 小時")
+        }
+        return DialQuotaIndicator(
+            provider: provider,
+            outerRemainingPercent: outer,
+            innerRemainingPercent: fiveHour.map(\.remainingPercent).min()
+        )
     }
 
     func updateSubscriptionAccount(id: String, note: String, manualPlan: String?) {
