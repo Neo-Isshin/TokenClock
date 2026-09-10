@@ -9,6 +9,7 @@ typedef gboolean (*TCGtkTimerCallback)(gpointer);
 typedef gboolean (*TCGtkDrawCallback)(GtkWidget *, cairo_t *, gpointer);
 typedef gboolean (*TCGtkButtonCallback)(GtkWidget *, GdkEventButton *, gpointer);
 typedef gboolean (*TCGtkMotionCallback)(GtkWidget *, GdkEventMotion *, gpointer);
+typedef gboolean (*TCGtkCrossingCallback)(GtkWidget *, GdkEventCrossing *, gpointer);
 
 static inline GtkGrid *tc_gtk_grid(GtkWidget *widget) { return GTK_GRID(widget); }
 
@@ -118,6 +119,12 @@ static inline gulong tc_gtk_on_motion(
     return g_signal_connect(widget, "motion-notify-event", G_CALLBACK(callback), data);
 }
 
+static inline gulong tc_gtk_on_leave(
+    GtkWidget *widget, TCGtkCrossingCallback callback, gpointer data
+) {
+    return g_signal_connect(widget, "leave-notify-event", G_CALLBACK(callback), data);
+}
+
 static inline gulong tc_gtk_on_clicked(
     GtkWidget *widget, TCGtkVoidCallback callback, gpointer data
 ) {
@@ -181,6 +188,8 @@ static inline double tc_gtk_button_root_y(GdkEventButton *event) { return event-
 static inline guint32 tc_gtk_button_time(GdkEventButton *event) { return event->time; }
 static inline double tc_gtk_motion_root_x(GdkEventMotion *event) { return event->x_root; }
 static inline double tc_gtk_motion_root_y(GdkEventMotion *event) { return event->y_root; }
+static inline double tc_gtk_motion_x(GdkEventMotion *event) { return event->x; }
+static inline double tc_gtk_motion_y(GdkEventMotion *event) { return event->y; }
 static inline guint32 tc_gtk_motion_time(GdkEventMotion *event) { return event->time; }
 static inline guint tc_gtk_motion_state(GdkEventMotion *event) { return event->state; }
 

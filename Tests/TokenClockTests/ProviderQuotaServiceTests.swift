@@ -23,6 +23,15 @@ final class ProviderQuotaServiceTests: XCTestCase {
             .replacingOccurrences(of: "=", with: "")
         XCTAssertEqual(CursorQuotaService.userID(from: "header.\(payload).signature"), "user_ABC123")
     }
-}
 
+    func testDecodesZhipuCodingPlanQuotaWindows() throws {
+        let data = Data(#"{"code":200,"success":true,"data":{"level":"pro","limits":[{"type":"TIME_LIMIT","unit":5,"number":1,"usage":1000,"currentValue":5,"percentage":1,"nextResetTime":1789385500998},{"type":"TOKENS_LIMIT","unit":3,"number":5,"percentage":100,"nextResetTime":1788334857373},{"type":"TOKENS_LIMIT","unit":6,"number":1,"percentage":30,"nextResetTime":1788867100992}]}}"#.utf8)
+        let snapshot = try XCTUnwrap(ZhipuQuotaService.decodeResponse(data))
+        XCTAssertEqual(snapshot.planType, "pro")
+        XCTAssertEqual(snapshot.groups.first?.buckets.map(\.name), [
+            "Monthly MCP quota", "5-hour quota", "Weekly quota",
+        ])
+        XCTAssertEqual(snapshot.groups.first?.buckets.map(\.usedPercent), [1, 100, 30])
+    }
+}
 

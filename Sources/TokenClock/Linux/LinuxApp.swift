@@ -24,6 +24,7 @@ final class LinuxApp: @unchecked Sendable {
     private var dragStarted = false
     private var pressRootX: Double = 0
     private var pressRootY: Double = 0
+    private var hoveredQuotaIndex: Int?
 
     private var windowOpacity: Double = {
         let defaults = UserDefaults.standard
@@ -149,6 +150,7 @@ final class LinuxApp: @unchecked Sendable {
                 GDK_BUTTON_PRESS_MASK.rawValue
                     | GDK_BUTTON_RELEASE_MASK.rawValue
                     | GDK_POINTER_MOTION_MASK.rawValue
+                    | GDK_LEAVE_NOTIFY_MASK.rawValue
             )
         )
         gtk_container_add(tc_gtk_container(createdWindow), createdDial)
@@ -158,6 +160,7 @@ final class LinuxApp: @unchecked Sendable {
         _ = tc_gtk_on_button_press(createdDial, linuxButtonPress, opaque)
         _ = tc_gtk_on_button_release(createdDial, linuxButtonRelease, opaque)
         _ = tc_gtk_on_motion(createdDial, linuxMotion, opaque)
+        _ = tc_gtk_on_leave(createdDial, linuxLeave, opaque)
         _ = tc_gtk_on_draw(createdDial, linuxDraw, opaque)
 
         detailsPanel = LinuxDetailsPanel(
@@ -200,17 +203,32 @@ final class LinuxApp: @unchecked Sendable {
         opacityItems.removeAll()
         timezoneItems.removeAll()
         languageItems.removeAll()
-        guard let root = gtk_menu_new() else { return }
+        guard let root = gtk_menu_new(),
+              let appearanceRoot = gtk_menu_item_new_with_label(L10n.shared.tr("menu.appearance")),
+              let appearanceMenu = gtk_menu_new(),
+              let weatherRoot = gtk_menu_item_new_with_label(L10n.shared.tr("menu.weatherTime")),
+              let weatherMenu = gtk_menu_new(),
+              let generalRoot = gtk_menu_item_new_with_label(L10n.shared.tr("menu.general")),
+              let generalMenu = gtk_menu_new() else { return }
         menu = root
 
-        appendMenuItem(L10n.shared.tr("menu.clockFace"), name: "theme-picker", to: root)
+        gtk_menu_item_set_submenu(tc_gtk_menu_item(appearanceRoot), appearanceMenu)
+        gtk_menu_shell_append(tc_gtk_menu_shell(root), appearanceRoot)
+
+        gtk_menu_item_set_submenu(tc_gtk_menu_item(weatherRoot), weatherMenu)
+        gtk_menu_shell_append(tc_gtk_menu_shell(root), weatherRoot)
+
+        gtk_menu_item_set_submenu(tc_gtk_menu_item(generalRoot), generalMenu)
+        gtk_menu_shell_append(tc_gtk_menu_shell(root), generalRoot)
+
+        appendMenuItem(L10n.shared.tr("menu.clockFace"), name: "theme-picker", to: appearanceMenu)
 
         let savedThemes = LinuxCustomThemeStore.shared.themes
         if !savedThemes.isEmpty {
             let savedRoot = gtk_menu_item_new_with_label(L10n.shared.tr("menu.myClockFaces"))
             let savedMenu = gtk_menu_new()
             gtk_menu_item_set_submenu(tc_gtk_menu_item(savedRoot), savedMenu)
-            gtk_menu_shell_append(tc_gtk_menu_shell(root), savedRoot)
+            gtk_menu_shell_append(tc_gtk_menu_shell(appearanceMenu), savedRoot)
             let activeID = UserDefaults.standard.string(for: .activeCustomThemeId)
             for saved in savedThemes {
                 let selected = selectedTheme == .custom && activeID == saved.id.uuidString
@@ -226,7 +244,7 @@ final class LinuxApp: @unchecked Sendable {
         let sizeRoot = gtk_menu_item_new_with_label(L10n.shared.tr("size.title"))
         let sizeMenu = gtk_menu_new()
         gtk_menu_item_set_submenu(tc_gtk_menu_item(sizeRoot), sizeMenu)
-        gtk_menu_shell_append(tc_gtk_menu_shell(root), sizeRoot)
+        gtk_menu_shell_append(tc_gtk_menu_shell(appearanceMenu), sizeRoot)
         for size in LinuxClockSize.allCases {
             let item = gtk_menu_item_new_with_label(
                 menuSelectionLabel(size == selectedSize, title: size.displayName)
@@ -239,14 +257,13 @@ final class LinuxApp: @unchecked Sendable {
 
         appendMenuItem(
             L10n.shared.tr("menu.api", Int(Self.resolveAPIServerPort())),
-            name: "copy-api", to: root
+            name: "copy-api", to: generalMenu
         )
-        gtk_menu_shell_append(tc_gtk_menu_shell(root), gtk_separator_menu_item_new())
 
         let opacityRoot = gtk_menu_item_new_with_label(L10n.shared.tr("menu.opacity"))
         let opacityMenu = gtk_menu_new()
         gtk_menu_item_set_submenu(tc_gtk_menu_item(opacityRoot), opacityMenu)
-        gtk_menu_shell_append(tc_gtk_menu_shell(root), opacityRoot)
+        gtk_menu_shell_append(tc_gtk_menu_shell(appearanceMenu), opacityRoot)
         for value in [25, 50, 75, 100] {
             let item = gtk_menu_item_new_with_label(
                 menuSelectionLabel(Int(windowOpacity * 100) == value, title: "\(value)%")
@@ -259,14 +276,13 @@ final class LinuxApp: @unchecked Sendable {
 
         appendMenuItem(
             menuSelectionLabel(alwaysOnTop, title: L10n.shared.tr("menu.alwaysOnTop")),
-            name: "always-on-top", to: root
+            name: "always-on-top", to: generalMenu
         )
-        gtk_menu_shell_append(tc_gtk_menu_shell(root), gtk_separator_menu_item_new())
 
         let temperatureRoot = gtk_menu_item_new_with_label(L10n.shared.tr("menu.temperature"))
         let temperatureMenu = gtk_menu_new()
         gtk_menu_item_set_submenu(tc_gtk_menu_item(temperatureRoot), temperatureMenu)
-        gtk_menu_shell_append(tc_gtk_menu_shell(root), temperatureRoot)
+        gtk_menu_shell_append(tc_gtk_menu_shell(weatherMenu), temperatureRoot)
         let celsius = gtk_menu_item_new_with_label(
             menuSelectionLabel(!useFahrenheit, title: L10n.shared.tr("menu.celsius"))
         )
@@ -283,7 +299,7 @@ final class LinuxApp: @unchecked Sendable {
         let cityRoot = gtk_menu_item_new_with_label(L10n.shared.tr("menu.city"))
         let cityMenu = gtk_menu_new()
         gtk_menu_item_set_submenu(tc_gtk_menu_item(cityRoot), cityMenu)
-        gtk_menu_shell_append(tc_gtk_menu_shell(root), cityRoot)
+        gtk_menu_shell_append(tc_gtk_menu_shell(weatherMenu), cityRoot)
         for city in Self.cityOptions {
             let title: String
             if city == "auto" {
@@ -301,12 +317,10 @@ final class LinuxApp: @unchecked Sendable {
             _ = tc_gtk_on_activate(item, linuxMenuAction, opaque)
             gtk_menu_shell_append(tc_gtk_menu_shell(cityMenu), item)
         }
-        gtk_menu_shell_append(tc_gtk_menu_shell(root), gtk_separator_menu_item_new())
-
         let timezoneRoot = gtk_menu_item_new_with_label(L10n.shared.tr("menu.timezone"))
         let timezoneMenu = gtk_menu_new()
         gtk_menu_item_set_submenu(tc_gtk_menu_item(timezoneRoot), timezoneMenu)
-        gtk_menu_shell_append(tc_gtk_menu_shell(root), timezoneRoot)
+        gtk_menu_shell_append(tc_gtk_menu_shell(weatherMenu), timezoneRoot)
         for option in Self.timezoneOptions {
             let item = gtk_menu_item_new_with_label(
                 menuSelectionLabel(
@@ -323,7 +337,7 @@ final class LinuxApp: @unchecked Sendable {
         let languageRoot = gtk_menu_item_new_with_label(L10n.shared.tr("menu.language"))
         let languageMenu = gtk_menu_new()
         gtk_menu_item_set_submenu(tc_gtk_menu_item(languageRoot), languageMenu)
-        gtk_menu_shell_append(tc_gtk_menu_shell(root), languageRoot)
+        gtk_menu_shell_append(tc_gtk_menu_shell(generalMenu), languageRoot)
         for language in AppLanguage.allCases {
             let item = gtk_menu_item_new_with_label(
                 menuSelectionLabel(language == L10n.shared.language, title: language.displayName)
@@ -334,16 +348,17 @@ final class LinuxApp: @unchecked Sendable {
             languageItems[language] = item
         }
 
-        gtk_menu_shell_append(tc_gtk_menu_shell(root), gtk_separator_menu_item_new())
-        appendMenuItem(localized(zh: "查看详情", en: "Show Details"), name: "details", to: root)
-        appendMenuItem(localized(zh: "刷新数据", en: "Refresh Usage"), name: "refresh", to: root)
-        gtk_menu_shell_append(tc_gtk_menu_shell(root), gtk_separator_menu_item_new())
-        appendMenuItem(L10n.shared.tr("menu.settings"), name: "settings", to: root)
-        gtk_menu_shell_append(tc_gtk_menu_shell(root), gtk_separator_menu_item_new())
+        gtk_menu_shell_append(tc_gtk_menu_shell(generalMenu), gtk_separator_menu_item_new())
+        appendMenuItem(localized(zh: "查看详情", en: "Show Details"), name: "details", to: generalMenu)
+        appendMenuItem(localized(zh: "刷新数据", en: "Refresh Usage"), name: "refresh", to: generalMenu)
+        gtk_menu_shell_append(tc_gtk_menu_shell(generalMenu), gtk_separator_menu_item_new())
         appendMenuItem(
             menuSelectionLabel(LinuxAutostart.isEnabled, title: L10n.shared.tr("menu.launchAtLogin")),
-            name: "launch-at-login", to: root
+            name: "launch-at-login", to: generalMenu
         )
+
+        gtk_menu_shell_append(tc_gtk_menu_shell(root), gtk_separator_menu_item_new())
+        appendMenuItem(L10n.shared.tr("menu.settings"), name: "settings", to: root)
         gtk_menu_shell_append(tc_gtk_menu_shell(root), gtk_separator_menu_item_new())
         appendMenuItem(L10n.shared.tr("menu.about"), name: "about", to: root)
         appendMenuItem(L10n.shared.tr("menu.quit"), name: "quit", to: root)
@@ -414,7 +429,8 @@ final class LinuxApp: @unchecked Sendable {
                 useFahrenheit: useFahrenheit,
                 theme: selectedTheme,
                 size: selectedSize,
-                quotaRemainingPercent: detailsPanel?.dialQuotaRemainingPercent
+                quotaIndicators: detailsPanel?.dialQuotaIndicators ?? [],
+                hoveredQuotaIndex: hoveredQuotaIndex
             )
         )
     }
@@ -434,6 +450,19 @@ final class LinuxApp: @unchecked Sendable {
     }
 
     fileprivate func handleMotion(event: UnsafeMutablePointer<GdkEventMotion>) {
+        if let dial {
+            let indicators = detailsPanel?.dialQuotaIndicators ?? []
+            let hovered = renderer.quotaRingIndex(
+                atX: tc_gtk_motion_x(event), y: tc_gtk_motion_y(event),
+                width: Double(gtk_widget_get_allocated_width(dial)),
+                height: Double(gtk_widget_get_allocated_height(dial)),
+                size: selectedSize, indicatorCount: indicators.count
+            )
+            if hovered != hoveredQuotaIndex {
+                hoveredQuotaIndex = hovered
+                gtk_widget_queue_draw(dial)
+            }
+        }
         guard leftButtonDown, !dragStarted else { return }
         let state = tc_gtk_motion_state(event)
         guard state & guint(GDK_BUTTON1_MASK.rawValue) != 0 else { return }
@@ -445,6 +474,12 @@ final class LinuxApp: @unchecked Sendable {
         if let window {
             tc_gtk_begin_move_at(window, 1, x, y, tc_gtk_motion_time(event))
         }
+    }
+
+    fileprivate func handleLeave() {
+        guard hoveredQuotaIndex != nil else { return }
+        hoveredQuotaIndex = nil
+        refreshClock()
     }
 
     fileprivate func handleButtonRelease(event: UnsafeMutablePointer<GdkEventButton>) {
@@ -790,6 +825,15 @@ private func linuxMotion(
     guard let event else { return 0 }
     app(from: data)?.handleMotion(event: event)
     return 1
+}
+
+private func linuxLeave(
+    _ widget: UnsafeMutablePointer<GtkWidget>?,
+    _ event: UnsafeMutablePointer<GdkEventCrossing>?,
+    _ data: gpointer?
+) -> gboolean {
+    app(from: data)?.handleLeave()
+    return 0
 }
 
 private func linuxMenuAction(_ widget: UnsafeMutablePointer<GtkWidget>?, _ data: gpointer?) {

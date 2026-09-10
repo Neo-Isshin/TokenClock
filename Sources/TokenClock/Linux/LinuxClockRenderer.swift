@@ -9,7 +9,8 @@ struct LinuxClockSnapshot {
     let useFahrenheit: Bool
     let theme: LinuxClockTheme
     let size: LinuxClockSize
-    let quotaRemainingPercent: Double?
+    let quotaIndicators: [DialQuotaIndicator]
+    let hoveredQuotaIndex: Int?
 }
 
 /// Cairo/Pango port of macOS normal's `ClockFaceView` + `ClockContentView`.
@@ -58,6 +59,21 @@ final class LinuxClockRenderer: @unchecked Sendable {
         drawHands(context, centerX, centerY, radius, theme, snapshot.date, snapshot.timeZone)
         drawCenterDot(context, centerX, centerY, theme)
         drawOverlay(context, width, height, snapshot, colorOverride: quickTextColor)
+    }
+
+    func quotaRingIndex(
+        atX x: Double,
+        y: Double,
+        width: Double,
+        height: Double,
+        size: LinuxClockSize,
+        indicatorCount: Int
+    ) -> Int? {
+        quotaRingFrames(width: width, height: height, scale: size.scale, count: indicatorCount)
+            .firstIndex { frame in
+                x >= frame.x - 3 * size.scale && x <= frame.x + frame.size + 3 * size.scale
+                    && y >= frame.y - 3 * size.scale && y <= frame.y + frame.size + 3 * size.scale
+            }
     }
 
     /// Compact face-only rendering used by Linux's visual clock-face picker.
@@ -289,19 +305,18 @@ final class LinuxClockRenderer: @unchecked Sendable {
         }
 
         drawText(context, L10n.shared.tr("clock.todayTokens"), family: "Sans", size: 9 * scale, weight: 400,
-                 x: width / 2, y: height - 91 * scale, alignment: 1, color: secondary)
+                 x: width / 2 - 4 * scale, y: height - 91 * scale, alignment: 1, color: secondary)
+        drawText(context, UsageAggregator.rateEmoji(tools), family: "Noto Color Emoji, Emoji, Sans",
+                 size: 10 * scale, weight: 400, x: width / 2 + 39 * scale,
+                 y: height - 91 * scale, alignment: 1, color: LinuxColor(1, 1, 1))
         drawText(context, totalTokens, family: "Sans", size: 20 * scale, weight: 700,
                  x: width / 2, y: height - 71 * scale, alignment: 1, color: primary)
-        if let remaining = snapshot.quotaRemainingPercent {
-            drawQuotaRing(
-                context,
-                remaining: remaining,
-                centerX: width / 2 + 42 * scale,
-                centerY: height - 71 * scale,
-                scale: scale,
-                primary: primary,
-                secondary: secondary
-            )
+        let indicators = Array(snapshot.quotaIndicators.prefix(2))
+        let frames = quotaRingFrames(width: width, height: height, scale: scale, count: indicators.count)
+        for (index, indicator) in indicators.enumerated() {
+            let frame = frames[index]
+            drawQuotaRing(context, indicator: indicator, frame: frame, theme: theme,
+                          primary: primary, secondary: secondary)
         }
         drawText(context, L10n.shared.tr("clock.messagesCount", totalMessages), family: "Sans", size: 10 * scale, weight: 400,
                  x: width / 2, y: height - 51 * scale, alignment: 1, color: secondary)
@@ -315,45 +330,165 @@ final class LinuxClockRenderer: @unchecked Sendable {
                      color: withAlpha(primary, primary.alpha * 0.75))
         }
 
-        drawText(context, UsageAggregator.rateEmoji(tools), family: "Noto Color Emoji, Emoji, Sans", size: 28 * scale, weight: 400,
-                 x: width - 22 * scale, y: height / 2, alignment: 2, color: LinuxColor(1, 1, 1))
+        if let hovered = snapshot.hoveredQuotaIndex,
+           indicators.indices.contains(hovered), frames.indices.contains(hovered) {
+            drawQuotaTooltip(
+                context, indicator: indicators[hovered], frame: frames[hovered],
+                width: width, height: height, scale: scale
+            )
+        }
     }
 
     private func drawQuotaRing(
         _ context: OpaquePointer,
-        remaining: Double,
-        centerX: Double,
-        centerY: Double,
-        scale: Double,
+        indicator: DialQuotaIndicator,
+        frame: (x: Double, y: Double, size: Double),
+        theme: LinuxClockTheme,
         primary: LinuxColor,
         secondary: LinuxColor
     ) {
-        let normalized = min(100, max(0, remaining))
-        let radius = 14 * scale
-        cairo_set_line_width(context, 3 * scale)
+        let outer = min(100, max(0, indicator.outerRemainingPercent))
+        let inner = indicator.innerRemainingPercent.map { min(100, max(0, $0)) }
+        let centerX = frame.x + frame.size / 2
+        let centerY = frame.y + frame.size / 2
+        let radius = frame.size / 2 - 1.5
+        let scale = frame.size / (frame.size >= 34 ? 35 : 29)
+        let lineWidth = (frame.size >= 34 ? 3.0 : 2.5) * scale
+        let accent = dialQuotaColor(indicator.provider, theme: theme, primary: primary)
+        let surface = quotaRingSurface(theme: theme, primary: primary)
+
+        circle(context, centerX, centerY, frame.size / 2)
+        setSource(context, surface)
+        cairo_fill(context)
+        cairo_set_line_width(context, lineWidth)
         cairo_set_line_cap(context, CAIRO_LINE_CAP_ROUND)
-        setSource(context, LinuxColor(secondary.red, secondary.green, secondary.blue, 0.2))
+        setSource(context, LinuxColor(secondary.red, secondary.green, secondary.blue, 0.16))
         cairo_arc(context, centerX, centerY, radius, 0, 2 * Double.pi)
         cairo_stroke(context)
-        if normalized > 0 {
-            let accent = normalized <= 15
-                ? LinuxColor(1, 59.0 / 255.0, 48.0 / 255.0)
-                : (normalized <= 35
-                    ? LinuxColor(1, 149.0 / 255.0, 0)
-                    : LinuxColor(52.0 / 255.0, 199.0 / 255.0, 89.0 / 255.0))
-            setSource(context, accent)
+        if outer > 0 {
+            setSource(context, withAlpha(accent, accent.alpha * 0.82))
             cairo_arc(
                 context, centerX, centerY, radius,
                 -Double.pi / 2,
-                -Double.pi / 2 + 2 * Double.pi * normalized / 100
+                -Double.pi / 2 + 2 * Double.pi * outer / 100
             )
             cairo_stroke(context)
         }
-        drawText(
-            context, String(format: "%.0f%%", normalized), family: "Sans",
-            size: 7.5 * scale, weight: 700, x: centerX, y: centerY,
-            alignment: 1, color: primary
-        )
+        if let inner {
+            let innerRadius = max(2, radius - 5.25 * scale)
+            cairo_set_line_width(context, 1.7 * scale)
+            setSource(context, LinuxColor(secondary.red, secondary.green, secondary.blue, 0.10))
+            cairo_arc(context, centerX, centerY, innerRadius, 0, 2 * Double.pi)
+            cairo_stroke(context)
+            if inner > 0 {
+                setSource(context, withAlpha(accent, accent.alpha * 0.52))
+                cairo_arc(
+                    context, centerX, centerY, innerRadius,
+                    -Double.pi / 2,
+                    -Double.pi / 2 + 2 * Double.pi * inner / 100
+                )
+                cairo_stroke(context)
+            }
+        }
+        let percentColor: LinuxColor = outer <= 15
+            ? LinuxColor(1, 59.0 / 255.0, 48.0 / 255.0)
+            : (outer <= 35 ? LinuxColor(1, 149.0 / 255.0, 0) : primary)
+        let number = String(format: "%.0f", outer)
+        let offset = number.count >= 3 ? 1.8 : 1.2
+        drawText(context, number, family: "Sans", size: 7.5 * scale, weight: 700,
+                 x: centerX - offset * scale, y: centerY, alignment: 1, color: percentColor)
+        drawText(context, "%", family: "Sans", size: 7.5 * scale, weight: 400,
+                 x: centerX + (number.count >= 3 ? 8.4 : 6.5) * scale,
+                 y: centerY, alignment: 1, color: percentColor)
+    }
+
+    private func quotaRingFrames(
+        width: Double, height: Double, scale: Double, count: Int
+    ) -> [(x: Double, y: Double, size: Double)] {
+        guard count == 1 || count == 2 else { return [] }
+        let size = (count == 1 ? 35.0 : 29.0) * scale
+        let trailing = (count == 1 ? 36.0 : 28.0) * scale
+        let spacing = 5 * scale
+        let totalHeight = size * Double(count) + spacing * Double(max(0, count - 1))
+        let top = (height - totalHeight) / 2
+        let x = width - trailing - size
+        return (0..<count).map { index in
+            (x, top + Double(index) * (size + spacing), size)
+        }
+    }
+
+    private func dialQuotaColor(
+        _ provider: SubscriptionProvider,
+        theme: LinuxClockTheme,
+        primary: LinuxColor
+    ) -> LinuxColor {
+        switch theme {
+        case .classic, .glacier, .gufeng, .railgun:
+            switch provider {
+            case .codex: return LinuxColor(0.06, 0.64, 0.50)
+            case .claude: return LinuxColor(0.85, 0.40, 0.28)
+            case .antigravity: return LinuxColor(0.55, 0.36, 0.96)
+            case .cursor: return LinuxColor(0.10, 0.62, 0.92)
+            case .grokBot: return LinuxColor(0.39, 0.40, 0.95)
+            case .zhipu: return LinuxColor(0, 0, 0)
+            }
+        case .glass, .midnight, .luxe, .sky, .custom:
+            return primary
+        }
+    }
+
+    private func quotaRingSurface(theme: LinuxClockTheme, primary: LinuxColor) -> LinuxColor {
+        switch theme {
+        case .glass: return LinuxColor(0, 0, 0, 0.20)
+        case .midnight, .luxe: return LinuxColor(0, 0, 0, 0.12)
+        case .sky: return LinuxColor(1, 1, 1, 0.16)
+        case .custom: return LinuxColor(primary.red, primary.green, primary.blue, 0.035)
+        default: return LinuxColor(1, 1, 1, 0.32)
+        }
+    }
+
+    private func drawQuotaTooltip(
+        _ context: OpaquePointer,
+        indicator: DialQuotaIndicator,
+        frame: (x: Double, y: Double, size: Double),
+        width: Double,
+        height: Double,
+        scale: Double
+    ) {
+        var lines = ["\(indicator.provider.emoji) \(indicator.provider.displayName)"]
+        lines += indicator.details.map {
+            "\(L10n.shared.tr($0.labelKey)) \(String(format: "%.0f%%", $0.remainingPercent))"
+        }
+        let boxWidth = 126 * scale
+        let boxHeight = (10 + Double(lines.count) * 12) * scale
+        let boxX = max(6 * scale, frame.x - boxWidth - 5 * scale)
+        let boxY = min(max(5 * scale, frame.y + frame.size / 2 - boxHeight / 2), height - boxHeight - 5 * scale)
+        roundedRectangle(context, x: boxX, y: boxY, width: boxWidth, height: boxHeight, radius: 6 * scale)
+        setSource(context, LinuxColor(0.97, 0.97, 0.98, 0.97))
+        cairo_fill_preserve(context)
+        setSource(context, LinuxColor(0.40, 0.40, 0.44, 0.45))
+        cairo_set_line_width(context, 0.6 * scale)
+        cairo_stroke(context)
+        for (index, line) in lines.enumerated() {
+            drawText(
+                context, line, family: "Noto Color Emoji, Sans", size: 8.2 * scale,
+                weight: index == 0 ? 600 : 400, x: boxX + 6 * scale,
+                y: boxY + (8 + Double(index) * 12) * scale + 4 * scale,
+                alignment: 0, color: LinuxColor(0.12, 0.12, 0.14)
+            )
+        }
+    }
+
+    private func roundedRectangle(
+        _ context: OpaquePointer,
+        x: Double, y: Double, width: Double, height: Double, radius: Double
+    ) {
+        cairo_new_sub_path(context)
+        cairo_arc(context, x + width - radius, y + radius, radius, -Double.pi / 2, 0)
+        cairo_arc(context, x + width - radius, y + height - radius, radius, 0, Double.pi / 2)
+        cairo_arc(context, x + radius, y + height - radius, radius, Double.pi / 2, Double.pi)
+        cairo_arc(context, x + radius, y + radius, radius, Double.pi, 3 * Double.pi / 2)
+        cairo_close_path(context)
     }
 
     private func roundHand(

@@ -3,6 +3,38 @@ import XCTest
 @testable import TokenClock
 
 final class SubscriptionAccountStoreTests: XCTestCase {
+    func testDialQuotaResolverMapsAntigravityModelGroups() throws {
+        let groups = [
+            ProviderQuotaGroup(id: "gemini", name: "Gemini Models", buckets: [
+                quotaBucket("gw", used: 20, minutes: 10_080),
+                quotaBucket("g5", used: 30, minutes: 300),
+            ]),
+            ProviderQuotaGroup(id: "other", name: "Claude and GPT models", buckets: [
+                quotaBucket("ow", used: 40, minutes: 10_080),
+                quotaBucket("o5", used: 50, minutes: 300),
+            ]),
+        ]
+        let indicator = try XCTUnwrap(DialQuotaResolver.resolve(
+            provider: .antigravity, groups: groups
+        ))
+        XCTAssertEqual(indicator.outerRemainingPercent, 80)
+        XCTAssertEqual(indicator.innerRemainingPercent, 60)
+        XCTAssertEqual(indicator.details.map(\.remainingPercent), [80, 70, 60, 50])
+    }
+
+    func testDialQuotaResolverMapsCursorModelGroups() throws {
+        let groups = [ProviderQuotaGroup(id: "cursor", name: "Models", buckets: [
+            quotaBucket("cursor", name: "Cursor Models", used: 2, minutes: 44_640),
+            quotaBucket("other", name: "Other Models", used: 100, minutes: 44_640),
+        ])]
+        let indicator = try XCTUnwrap(DialQuotaResolver.resolve(provider: .cursor, groups: groups))
+        XCTAssertEqual(indicator.outerRemainingPercent, 0)
+        XCTAssertEqual(indicator.innerRemainingPercent, 98)
+        XCTAssertEqual(indicator.details.map(\.labelKey), [
+            "quota.dial.cursorModels", "quota.dial.otherModels",
+        ])
+    }
+
     func testOpaqueCredentialIdentifierIsStableAndDoesNotContainTheSecret() {
         let first = SubscriptionAccountIdentity.opaqueID(namespace: "zhipu", secret: "secret-api-key")
         let second = SubscriptionAccountIdentity.opaqueID(namespace: "zhipu", secret: "secret-api-key")
@@ -53,4 +85,16 @@ final class SubscriptionAccountStoreTests: XCTestCase {
             id: "weekly", name: "Codex", usedPercent: used, windowMinutes: 10_080, resetsAt: nil
         )])
     }
+}
+
+private func quotaBucket(
+    _ id: String,
+    name: String = "Quota",
+    used: Double,
+    minutes: Int
+) -> CodexQuotaBucket {
+    CodexQuotaBucket(
+        id: id, name: name, usedPercent: used,
+        windowMinutes: minutes, resetsAt: nil
+    )
 }

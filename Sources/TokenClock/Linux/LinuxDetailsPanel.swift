@@ -7,7 +7,7 @@ private enum LinuxGroupingMode: Int {
 }
 
 private enum LinuxQuotaProvider: String, CaseIterable {
-    case codex, claude, antigravity, cursor, grokBot
+    case codex, claude, antigravity, cursor, grokBot, zhipu
 }
 
 /// Theme-aware Linux counterpart of macOS `DetailDropdownView`.
@@ -48,11 +48,13 @@ final class LinuxDetailsPanel: @unchecked Sendable {
     private var antigravityQuota = ProviderQuotaSnapshot.idle(source: "Antigravity local service")
     private var cursorQuota = ProviderQuotaSnapshot.idle(source: "Cursor dashboard")
     private var grokBotQuota = ProviderQuotaSnapshot.idle(source: "Cursor Grok Bot API")
+    private var zhipuQuota = ProviderQuotaSnapshot.idle(source: "ZCode Coding Plan")
     private let quotaService = CodexQuotaService()
     private let claudeQuotaService = ClaudeQuotaService()
     private let antigravityQuotaService = AntigravityQuotaService()
     private let cursorQuotaService = CursorQuotaService()
     private let grokBotQuotaService = GrokBotQuotaService()
+    private let zhipuQuotaService = ZhipuQuotaService()
     private let subscriptionAccountStore = SubscriptionAccountStore.shared
     private var activeSubscriptionAccountIDs: [SubscriptionProvider: String] = [:]
     private var expandedQuotaEmails: Set<String> = []
@@ -62,16 +64,35 @@ final class LinuxDetailsPanel: @unchecked Sendable {
     private var pendingAntigravityQuota: ProviderQuotaSnapshot?
     private var pendingCursorQuota: ProviderQuotaSnapshot?
     private var pendingGrokBotQuota: ProviderQuotaSnapshot?
+    private var pendingZhipuQuota: ProviderQuotaSnapshot?
     private var quotaFetchInFlight = false
     private var claudeQuotaFetchInFlight = false
     private var antigravityQuotaFetchInFlight = false
     private var cursorQuotaFetchInFlight = false
     private var grokBotQuotaFetchInFlight = false
+    private var zhipuQuotaFetchInFlight = false
     private var quotaOrderEditing = false
-    private var dialQuotaProvider: LinuxQuotaProvider = {
-        guard let raw = UserDefaults.standard.string(for: .dialQuotaProvider),
-              let provider = LinuxQuotaProvider(rawValue: raw) else { return .codex }
-        return provider
+    private var dialQuotaProviders: [LinuxQuotaProvider] = {
+        if let forced = ProcessInfo.processInfo.environment["TC_DIAL_QUOTA_PROVIDERS"] {
+            return Array(forced.split(separator: ",").compactMap {
+                LinuxQuotaProvider(rawValue: String($0))
+            }.prefix(2))
+        }
+        let defaults = UserDefaults.standard
+        var providers: [LinuxQuotaProvider] = []
+        for raw in defaults.stringArray(forKey: SettingsKey.dialQuotaProviders.rawValue) ?? [] {
+            if let provider = LinuxQuotaProvider(rawValue: raw), !providers.contains(provider) {
+                providers.append(provider)
+            }
+        }
+        if defaults.object(forKey: SettingsKey.dialQuotaProviders.rawValue) != nil {
+            return Array(providers.prefix(2))
+        }
+        if let raw = defaults.string(for: .dialQuotaProvider),
+           let provider = LinuxQuotaProvider(rawValue: raw) {
+            providers = [provider]
+        }
+        return Array((providers.isEmpty ? [.codex] : providers).prefix(2))
     }()
     private var quotaProviderOrder: [LinuxQuotaProvider] = {
         let saved = UserDefaults.standard.stringArray(forKey: SettingsKey.subscriptionQuotaOrder.rawValue) ?? []
@@ -98,22 +119,16 @@ final class LinuxDetailsPanel: @unchecked Sendable {
         self.onUsageIncludesCache = onUsageIncludesCache
         self.onDialQuotaChange = onDialQuotaChange
         buildWindow(parent: parent)
+        if ProcessInfo.processInfo.environment["TC_QUOTA_MOCK"] == "accounts" {
+            seedQuotaAccountMock()
+        }
     }
 
-    var dialQuotaRemainingPercent: Double? {
-        let live: [CodexQuotaBucket]
-        switch dialQuotaProvider {
-        case .codex: live = codexQuota.buckets
-        case .claude: live = claudeQuota.buckets
-        case .antigravity: live = antigravityQuota.groups.flatMap(\.buckets)
-        case .cursor: live = cursorQuota.groups.flatMap(\.buckets)
-        case .grokBot: live = grokBotQuota.groups.flatMap(\.buckets)
+    var dialQuotaIndicators: [DialQuotaIndicator] {
+        dialQuotaProviders.compactMap { provider in
+            let subscription = subscriptionProvider(provider)
+            return DialQuotaResolver.resolve(provider: subscription, groups: quotaGroups(for: provider))
         }
-        let provider = subscriptionProvider(dialQuotaProvider)
-        let buckets = live.isEmpty
-            ? subscriptionAccounts(for: provider).first?.groups.flatMap(\.buckets) ?? []
-            : live
-        return buckets.map(\.remainingPercent).min()
     }
 
     var isVisible: Bool {
@@ -129,12 +144,16 @@ final class LinuxDetailsPanel: @unchecked Sendable {
         theme: LinuxClockTheme,
         size: LinuxClockSize
     ) {
+        let dialStyleChanged = self.theme != theme
         self.tools = tools
         self.notifications = notifications
         self.weather = weather
         self.useFahrenheit = useFahrenheit
         self.theme = theme
         self.size = size
+        if dialStyleChanged, let quotaWindow, gtk_widget_get_visible(quotaWindow) != 0 {
+            rebuildQuotaWindow()
+        }
         if isVisible {
             scheduleRebuild()
         } else {
@@ -196,6 +215,7 @@ final class LinuxDetailsPanel: @unchecked Sendable {
             cycleQuickContrast()
             onQuickContrast()
             applyThemeIfNeeded(force: true)
+            rebuildQuotaWindow()
         case "details:history":
             onHistoryUsage()
         case "details:quota-refresh", "details:quota-retry":
@@ -204,15 +224,25 @@ final class LinuxDetailsPanel: @unchecked Sendable {
             quotaOrderEditing.toggle()
             rebuildQuotaWindow()
             return
-        case "details:quota-dial":
-            guard let active = gtk_combo_box_get_active_id(tc_gtk_combo_box(widget)),
-                  let provider = LinuxQuotaProvider(rawValue: String(cString: active)) else { return }
-            dialQuotaProvider = provider
-            UserDefaults.standard.setString(provider.rawValue, for: .dialQuotaProvider)
-            onDialQuotaChange()
-            return
         default:
-            if name.hasPrefix("details:quota-email:") {
+            if name.hasPrefix("details:quota-dial:") {
+                guard let provider = LinuxQuotaProvider(
+                    rawValue: String(name.dropFirst("details:quota-dial:".count))
+                ) else { return }
+                if dialQuotaProviders.contains(provider) {
+                    dialQuotaProviders.removeAll { $0 == provider }
+                } else if dialQuotaProviders.count < 2 {
+                    dialQuotaProviders.append(provider)
+                }
+                UserDefaults.standard.set(
+                    dialQuotaProviders.map(\.rawValue),
+                    forKey: SettingsKey.dialQuotaProviders.rawValue
+                )
+                UserDefaults.standard.removeObject(forKey: SettingsKey.dialQuotaProvider.rawValue)
+                onDialQuotaChange()
+                rebuildQuotaWindow()
+                return
+            } else if name.hasPrefix("details:quota-email:") {
                 let id = String(name.dropFirst("details:quota-email:".count))
                 if expandedQuotaEmails.contains(id) { expandedQuotaEmails.remove(id) }
                 else { expandedQuotaEmails.insert(id) }
@@ -664,6 +694,7 @@ final class LinuxDetailsPanel: @unchecked Sendable {
                   let content = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0) else { return }
             quotaWindow = created
             quotaContent = content
+            gtk_widget_set_name(created, "tokenclock-quota-window-root")
             gtk_window_set_title(tc_gtk_window(created), tr("quota.windowTitle"))
             gtk_window_set_default_size(tc_gtk_window(created), 430, 650)
             gtk_window_set_resizable(tc_gtk_window(created), 1)
@@ -712,24 +743,40 @@ final class LinuxDetailsPanel: @unchecked Sendable {
         _ = appendControl("↻", name: "details:quota-refresh", to: heading)
         gtk_box_pack_start(tc_gtk_box(content), heading, 0, 0, 0)
 
-        if let selectorRow = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8),
+        if let selectorBox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6),
            let selectorLabel = gtk_label_new(tr("quota.dialDisplay")),
-           let selector = gtk_combo_box_text_new() {
+           let selectorGrid = gtk_grid_new() {
             gtk_label_set_xalign(tc_gtk_label(selectorLabel), 0)
             tc_gtk_add_class(selectorLabel, "tokenclock-quota-provider")
-            gtk_box_pack_start(tc_gtk_box(selectorRow), selectorLabel, 0, 0, 0)
-            for provider in LinuxQuotaProvider.allCases {
-                gtk_combo_box_text_append(
-                    tc_gtk_combo_box_text(selector), provider.rawValue, quotaProviderTitle(provider)
+            gtk_box_pack_start(tc_gtk_box(selectorBox), selectorLabel, 0, 0, 0)
+            gtk_grid_set_column_spacing(tc_gtk_grid(selectorGrid), 10)
+            gtk_grid_set_row_spacing(tc_gtk_grid(selectorGrid), 5)
+            for (index, provider) in LinuxQuotaProvider.allCases.enumerated() {
+                guard let toggle = gtk_check_button_new(),
+                      let labelBox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 5) else { continue }
+                let selected = dialQuotaProviders.contains(provider)
+                gtk_toggle_button_set_active(tc_gtk_toggle_button(toggle), selected ? 1 : 0)
+                gtk_widget_set_sensitive(toggle, selected || dialQuotaProviders.count < 2 ? 1 : 0)
+                gtk_widget_set_name(toggle, "details:quota-dial:\(provider.rawValue)")
+                gtk_widget_set_tooltip_text(toggle, tr("quota.dialDisplayHelp"))
+                let dot = gtk_label_new(nil)
+                gtk_label_set_markup(
+                    tc_gtk_label(dot),
+                    "<span foreground=\"\(quotaDialHexColor(provider))\">●</span>"
+                )
+                let title = gtk_label_new(subscriptionProvider(provider).displayName)
+                gtk_label_set_xalign(tc_gtk_label(title), 0)
+                gtk_box_pack_start(tc_gtk_box(labelBox), dot, 0, 0, 0)
+                gtk_box_pack_start(tc_gtk_box(labelBox), title, 1, 1, 0)
+                gtk_container_add(tc_gtk_container(toggle), labelBox)
+                _ = tc_gtk_on_clicked(toggle, linuxDetailsAction, opaque)
+                gtk_grid_attach(
+                    tc_gtk_grid(selectorGrid), toggle,
+                    gint(index % 3), gint(index / 3), 1, 1
                 )
             }
-            _ = gtk_combo_box_set_active_id(tc_gtk_combo_box(selector), dialQuotaProvider.rawValue)
-            gtk_widget_set_name(selector, "details:quota-dial")
-            gtk_widget_set_hexpand(selector, 1)
-            gtk_widget_set_tooltip_text(selector, tr("quota.dialDisplayHelp"))
-            _ = tc_gtk_on_changed(selector, linuxDetailsAction, opaque)
-            gtk_box_pack_start(tc_gtk_box(selectorRow), selector, 1, 1, 0)
-            gtk_box_pack_start(tc_gtk_box(content), selectorRow, 0, 0, 0)
+            gtk_box_pack_start(tc_gtk_box(selectorBox), selectorGrid, 0, 0, 0)
+            gtk_box_pack_start(tc_gtk_box(content), selectorBox, 0, 0, 0)
         }
 
         for (index, provider) in quotaProviderOrder.enumerated() {
@@ -780,6 +827,9 @@ final class LinuxDetailsPanel: @unchecked Sendable {
         case .grokBot:
             appendProviderQuotaSection("😶 Grok Bot", snapshot: grokBotQuota,
                 unavailable: "Grok Bot quota unavailable; check Cursor sign-in", to: content)
+        case .zhipu:
+            appendProviderQuotaSection("🅉 Z.ai", snapshot: zhipuQuota,
+                unavailable: "Z.ai quota unavailable; check ZCode sign-in", to: content)
         }
     }
 
@@ -795,6 +845,7 @@ final class LinuxDetailsPanel: @unchecked Sendable {
         case .antigravity: return .antigravity
         case .cursor: return .cursor
         case .grokBot: return .grokBot
+        case .zhipu: return .zhipu
         }
     }
 
@@ -805,6 +856,52 @@ final class LinuxDetailsPanel: @unchecked Sendable {
         case .antigravity: return antigravityQuota.status == .loading
         case .cursor: return cursorQuota.status == .loading
         case .grokBot: return grokBotQuota.status == .loading
+        case .zhipu: return zhipuQuota.status == .loading
+        }
+    }
+
+    private func quotaGroups(for provider: LinuxQuotaProvider) -> [ProviderQuotaGroup] {
+        let live: [ProviderQuotaGroup]
+        switch provider {
+        case .codex:
+            live = codexQuota.buckets.isEmpty ? [] : [ProviderQuotaGroup(
+                id: "codex:subscription", name: "Subscription", buckets: codexQuota.buckets
+            )]
+        case .claude:
+            live = claudeQuota.buckets.isEmpty ? [] : [ProviderQuotaGroup(
+                id: "claude:subscription", name: "Subscription", buckets: claudeQuota.buckets
+            )]
+        case .antigravity: live = antigravityQuota.groups
+        case .cursor: live = cursorQuota.groups
+        case .grokBot: live = grokBotQuota.groups
+        case .zhipu: live = zhipuQuota.groups
+        }
+        if !live.isEmpty { return live }
+        return subscriptionAccounts(for: subscriptionProvider(provider)).first?.groups ?? []
+    }
+
+    private func quotaDialHexColor(_ provider: LinuxQuotaProvider) -> String {
+        let color: LinuxColor
+        switch theme {
+        case .classic, .glacier, .gufeng, .railgun:
+            color = defaultQuotaColor(subscriptionProvider(provider))
+        case .glass, .midnight, .luxe, .sky, .custom:
+            color = quickContrastColor ?? theme.textPrimaryColor
+        }
+        let red = Int((min(1, max(0, color.red)) * 255).rounded())
+        let green = Int((min(1, max(0, color.green)) * 255).rounded())
+        let blue = Int((min(1, max(0, color.blue)) * 255).rounded())
+        return String(format: "#%02x%02x%02x", red, green, blue)
+    }
+
+    private func defaultQuotaColor(_ provider: SubscriptionProvider) -> LinuxColor {
+        switch provider {
+        case .codex: return LinuxColor(0.06, 0.64, 0.50)
+        case .claude: return LinuxColor(0.85, 0.40, 0.28)
+        case .antigravity: return LinuxColor(0.55, 0.36, 0.96)
+        case .cursor: return LinuxColor(0.10, 0.62, 0.92)
+        case .grokBot: return LinuxColor(0.39, 0.40, 0.95)
+        case .zhipu: return LinuxColor(0, 0, 0)
         }
     }
 
@@ -1141,6 +1238,27 @@ final class LinuxDetailsPanel: @unchecked Sendable {
             refreshedAt: now,
             source: "Cursor Grok Bot API"
         )
+        rememberSubscriptionAccount(
+            provider: .antigravity,
+            identity: SubscriptionAccountIdentity(id: "antigravity-account", email: nil),
+            plan: nil,
+            groups: [
+                ProviderQuotaGroup(id: "antigravity:gemini", name: "Gemini Models", buckets: [
+                    CodexQuotaBucket(id: "gemini-weekly", name: "Weekly", usedPercent: 12,
+                                     windowMinutes: 10_080, resetsAt: now.addingTimeInterval(4 * 86_400)),
+                    CodexQuotaBucket(id: "gemini-five-hour", name: "5-hour", usedPercent: 22,
+                                     windowMinutes: 300, resetsAt: now.addingTimeInterval(3 * 3_600)),
+                ]),
+                ProviderQuotaGroup(id: "antigravity:other", name: "GPT and Claude Models", buckets: [
+                    CodexQuotaBucket(id: "other-weekly", name: "Weekly", usedPercent: 35,
+                                     windowMinutes: 10_080, resetsAt: now.addingTimeInterval(4 * 86_400)),
+                    CodexQuotaBucket(id: "other-five-hour", name: "5-hour", usedPercent: 45,
+                                     windowMinutes: 300, resetsAt: now.addingTimeInterval(3 * 3_600)),
+                ]),
+            ],
+            refreshedAt: now,
+            source: "Antigravity local service"
+        )
     }
 
     private func rememberClaudeQuota(_ snapshot: ClaudeQuotaSnapshot) {
@@ -1317,6 +1435,16 @@ final class LinuxDetailsPanel: @unchecked Sendable {
                 _ = tc_gtk_idle_add(linuxDetailsGrokBotQuotaReady, self.opaque)
             }
         }
+        if !zhipuQuotaFetchInFlight && (force || zhipuQuota.status != .available || zhipuQuota.isStale) {
+            zhipuQuotaFetchInFlight = true
+            zhipuQuota = .loading(previous: zhipuQuota)
+            DispatchQueue.global(qos: .utility).async { [weak self] in
+                guard let self else { return }
+                let snapshot = self.zhipuQuotaService.fetch()
+                self.quotaLock.lock(); self.pendingZhipuQuota = snapshot; self.quotaLock.unlock()
+                _ = tc_gtk_idle_add(linuxDetailsZhipuQuotaReady, self.opaque)
+            }
+        }
         quotaDidChange()
     }
 
@@ -1370,6 +1498,13 @@ final class LinuxDetailsPanel: @unchecked Sendable {
         quotaLock.lock(); let snapshot = pendingGrokBotQuota; pendingGrokBotQuota = nil; quotaLock.unlock()
         grokBotQuotaFetchInFlight = false
         if let snapshot { grokBotQuota = snapshot; rememberProviderQuota(snapshot, provider: .grokBot) }
+        quotaDidChange()
+    }
+
+    fileprivate func applyPendingZhipuQuota() {
+        quotaLock.lock(); let snapshot = pendingZhipuQuota; pendingZhipuQuota = nil; quotaLock.unlock()
+        zhipuQuotaFetchInFlight = false
+        if let snapshot { zhipuQuota = snapshot; rememberProviderQuota(snapshot, provider: .zhipu) }
         quotaDidChange()
     }
 
@@ -1445,6 +1580,7 @@ final class LinuxDetailsPanel: @unchecked Sendable {
         tc_gtk_apply_css(
             """
             #tokenclock-details-window { background: transparent; }
+            #tokenclock-quota-window-root { background: \(background); }
             #tokenclock-details-card {
               background: \(background);
               border: 1px solid \(border);
@@ -1581,5 +1717,10 @@ private func linuxDetailsCursorQuotaReady(_ data: gpointer?) -> gboolean {
 
 private func linuxDetailsGrokBotQuotaReady(_ data: gpointer?) -> gboolean {
     detailsPanel(from: data)?.applyPendingGrokBotQuota()
+    return 0
+}
+
+private func linuxDetailsZhipuQuotaReady(_ data: gpointer?) -> gboolean {
+    detailsPanel(from: data)?.applyPendingZhipuQuota()
     return 0
 }

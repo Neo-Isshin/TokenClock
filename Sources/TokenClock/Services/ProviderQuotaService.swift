@@ -14,6 +14,175 @@ struct ProviderQuotaGroup: Identifiable, Equatable, Codable, Sendable {
     let buckets: [CodexQuotaBucket]
 }
 
+/// Reads the active ZCode Z.ai / BigModel Coding Plan configuration and queries
+/// the same quota endpoint used by ZCode's Coding Plan usage screen.
+final class ZhipuQuotaService: @unchecked Sendable {
+    private struct Credential {
+        let apiKey: String
+        let baseURL: String
+        let providerID: String
+    }
+
+    private let fileManager: FileManager
+    private let zcodeHome: String
+
+    init(fileManager: FileManager = .default, zcodeHome: String = ZhipuQuotaService.defaultZcodeHome()) {
+        self.fileManager = fileManager
+        self.zcodeHome = zcodeHome
+    }
+
+    private static func defaultZcodeHome() -> String {
+        let environment = ProcessInfo.processInfo.environment
+        if let configured = environment["ZCODE_HOME"], !configured.isEmpty { return configured }
+        if let configRoot = environment["XDG_CONFIG_HOME"], !configRoot.isEmpty {
+            return configRoot + "/zcode"
+        }
+        return NSHomeDirectory() + "/.config/zcode"
+    }
+
+    func fetch() -> ProviderQuotaSnapshot {
+        let source = "ZCode Coding Plan"
+        guard let credential = credentialFromConfig() else {
+            return .unavailable("ZCode Coding Plan login was not found.", source: source)
+        }
+        guard let data = request(credential: credential),
+              var snapshot = Self.decodeResponse(data, providerID: credential.providerID) else {
+            return .unavailable("GLM Coding Plan quota was not available.", source: source)
+        }
+        snapshot.account = SubscriptionAccountIdentity(
+            id: SubscriptionAccountIdentity.opaqueID(
+                namespace: credential.providerID, secret: credential.apiKey
+            ),
+            email: nil
+        )
+        return snapshot
+    }
+
+    static func decodeResponse(
+        _ data: Data,
+        providerID: String = "bigmodel",
+        now: Date = Date()
+    ) -> ProviderQuotaSnapshot? {
+        guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              (root["success"] as? Bool) == true,
+              let payload = root["data"] as? [String: Any],
+              let rawLimits = payload["limits"] as? [[String: Any]] else { return nil }
+
+        var buckets: [CodexQuotaBucket] = []
+        for (index, raw) in rawLimits.enumerated() {
+            let type = (raw["type"] as? String ?? "quota").uppercased()
+            let unit = integer(raw["unit"])
+            let number = integer(raw["number"])
+            let suppliedPercent = double(raw["percentage"])
+            let limit = double(raw["usage"])
+            let used = double(raw["currentValue"])
+            let usedPercent = suppliedPercent ?? {
+                guard let limit, limit > 0, let used else { return nil }
+                return used / limit * 100
+            }()
+            guard let usedPercent else { continue }
+
+            let windowMinutes: Int
+            let name: String
+            if type == "TOKENS_LIMIT", unit == 3, number == 5 {
+                windowMinutes = 300; name = "5-hour quota"
+            } else if type == "TOKENS_LIMIT", unit == 6, number == 1 {
+                windowMinutes = 10_080; name = "Weekly quota"
+            } else if type == "TIME_LIMIT" {
+                windowMinutes = 43_200; name = "Monthly MCP quota"
+            } else {
+                windowMinutes = 0
+                name = type.replacingOccurrences(of: "_", with: " ").capitalized
+            }
+            buckets.append(CodexQuotaBucket(
+                id: "zhipu:\(type):\(unit):\(number):\(index)",
+                name: name,
+                usedPercent: min(100, max(0, usedPercent)),
+                windowMinutes: windowMinutes,
+                resetsAt: milliseconds(raw["nextResetTime"])
+            ))
+        }
+        guard !buckets.isEmpty else { return nil }
+        let level = payload["level"] as? String
+        let providerName = providerID.contains("zai") ? "Z.ai Coding Plan" : "BigModel Coding Plan"
+        return ProviderQuotaSnapshot(
+            status: .available,
+            groups: [ProviderQuotaGroup(
+                id: "zhipu:plan", name: "Subscription", buckets: buckets
+            )],
+            planType: level,
+            refreshedAt: now,
+            source: providerName,
+            message: nil,
+            account: SubscriptionAccountIdentity(id: providerID, email: nil)
+        )
+    }
+
+    private func credentialFromConfig() -> Credential? {
+        let path = zcodeHome.lowercased().hasSuffix("config.json")
+            ? zcodeHome : zcodeHome + "/v2/config.json"
+        guard fileManager.fileExists(atPath: path),
+              let data = fileManager.contents(atPath: path),
+              let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let providers = root["provider"] as? [String: Any] else { return nil }
+        let priority = [
+            "builtin:bigmodel-coding-plan", "builtin:zai-coding-plan",
+            "builtin:bigmodel-start-plan", "builtin:zai-start-plan",
+        ]
+        let ordered = priority + providers.keys.filter { !priority.contains($0) }.sorted()
+        for id in ordered {
+            guard id.contains("coding-plan") || id.contains("start-plan"),
+                  let provider = providers[id] as? [String: Any],
+                  (provider["enabled"] as? Bool) != false,
+                  let options = provider["options"] as? [String: Any],
+                  let apiKey = options["apiKey"] as? String, !apiKey.isEmpty,
+                  let baseURL = options["baseURL"] as? String, !baseURL.isEmpty else { continue }
+            return Credential(apiKey: apiKey, baseURL: baseURL, providerID: id)
+        }
+        return nil
+    }
+
+    private func request(credential: Credential) -> Data? {
+        let host = credential.baseURL.contains("api.z.ai")
+            ? "https://api.z.ai" : "https://open.bigmodel.cn"
+        guard let endpoint = URL(string: host + "/api/monitor/usage/quota/limit") else { return nil }
+        var request = URLRequest(url: endpoint)
+        request.timeoutInterval = 15
+        request.setValue("application/json, text/plain, */*", forHTTPHeaderField: "Accept")
+        request.setValue("Bearer \(credential.apiKey)", forHTTPHeaderField: "Authorization")
+        let semaphore = DispatchSemaphore(value: 0)
+        let box = HTTPResultBox()
+        URLSession.shared.dataTask(with: request) { data, response, _ in
+            box.store(data: data, response: response)
+            semaphore.signal()
+        }.resume()
+        guard semaphore.wait(timeout: .now() + 16) == .success,
+              let response = box.load(), response.statusCode == 200 else { return nil }
+        return response.data
+    }
+
+    private final class HTTPResultBox: @unchecked Sendable {
+        private let lock = NSLock()
+        private var result: (data: Data, statusCode: Int)?
+        func store(data: Data?, response: URLResponse?) {
+            guard let data, let response = response as? HTTPURLResponse else { return }
+            lock.withLock { result = (data, response.statusCode) }
+        }
+        func load() -> (data: Data, statusCode: Int)? { lock.withLock { result } }
+    }
+
+    private static func double(_ value: Any?) -> Double? {
+        if let value = value as? NSNumber { return value.doubleValue }
+        if let value = value as? String { return Double(value) }
+        return nil
+    }
+    private static func integer(_ value: Any?) -> Int { Int(double(value) ?? 0) }
+    private static func milliseconds(_ value: Any?) -> Date? {
+        guard let value = double(value), value > 0 else { return nil }
+        return Date(timeIntervalSince1970: value / 1_000)
+    }
+}
+
 struct ProviderQuotaSnapshot: Equatable, Sendable {
     var status: CodexQuotaStatus
     var groups: [ProviderQuotaGroup]
