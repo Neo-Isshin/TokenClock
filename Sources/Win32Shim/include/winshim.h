@@ -220,6 +220,8 @@ typedef struct {
     const char *forecast_summary; /* emoji/city/temp \t-ish encoded as summary|label */
     const char *forecast_slots;   /* time|emoji|temp, four slots separated by \t */
     int notification_unread_count; /* forecast-bar bell state; bell remains visible at zero */
+    double dial_quota_remaining; /* 0...100; smallest active window for selected provider */
+    int dial_quota_visible;
     const char *quota_label;      /* left chip label beside percent */
     const char *quota_text;       /* quota panel: typed tab-separated rows */
     int detail_grouping;         /* 0 session / 1 model */

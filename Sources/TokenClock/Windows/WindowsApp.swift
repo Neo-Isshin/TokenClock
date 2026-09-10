@@ -163,6 +163,11 @@ final class WindowsApp: @unchecked Sendable {
     private var overviewCustomStart = Calendar.current.date(byAdding: .day, value: -6, to: Date()) ?? Date()
     private var overviewCustomEnd = Date()
     private var quotaOrderEditing = false
+    private var dialQuotaProvider: SubscriptionProvider = {
+        guard let raw = UserDefaults.standard.string(for: .dialQuotaProvider),
+              let provider = SubscriptionProvider(rawValue: raw) else { return .codex }
+        return provider
+    }()
     private var quotaProviderOrder: [SubscriptionProvider] = {
         let saved = UserDefaults.standard.stringArray(for: .subscriptionQuotaOrder) ?? []
         var order = saved.compactMap(SubscriptionProvider.init(rawValue:))
@@ -292,6 +297,7 @@ final class WindowsApp: @unchecked Sendable {
         let forecast = detailsVisible
             ? forecastOverlay(weatherInfo: weatherSnapshot.1)
             : (summary: "", slots: "", visible: false)
+        let dialQuotaRemaining = dialQuotaRemainingPercent()
 
         // 固定高详情卡只渲染当前可见页；滚轮改变起始行。展开父项不会再改变窗口高度，
         // 也不会推动表盘。天气趋势占 76pt 时少显示两行，剩余行可继续滚动查看。
@@ -349,6 +355,8 @@ final class WindowsApp: @unchecked Sendable {
             ov.forecast_summary = ptrs[12]
             ov.forecast_slots = ptrs[13]
             ov.notification_unread_count = Int32(model.unreadNotificationCount)
+            ov.dial_quota_remaining = dialQuotaRemaining ?? 0
+            ov.dial_quota_visible = dialQuotaRemaining == nil ? 0 : 1
             ov.quota_label = ptrs[14]
             ov.quota_text = ptrs[15]
             ov.detail_grouping = groupingMode == .model ? 1 : 0
@@ -1080,6 +1088,16 @@ final class WindowsApp: @unchecked Sendable {
         case 983:
             quotaOrderEditing.toggle()
             rebuildSubscriptionQuotaDialog()
+        case 984:
+            guard let dialog = quotaDlg else { return }
+            let selected = settingsEditText(dialog, 984)
+            if let provider = SubscriptionProvider.allCases.first(where: {
+                "\($0.emoji) \($0.displayName)" == selected
+            }) {
+                dialQuotaProvider = provider
+                UserDefaults.standard.setString(provider.rawValue, for: .dialQuotaProvider)
+                render()
+            }
         case 990...995:
             moveQuotaProvider(atDefaultIndex: Int(id - 990), by: -1)
             rebuildSubscriptionQuotaDialog()
@@ -1121,13 +1139,14 @@ final class WindowsApp: @unchecked Sendable {
         }
         typealias Card = (provider: SubscriptionProvider, title: String, status: CodexQuotaStatus, accounts: [SubscriptionAccountRecord])
         let allCards: [Card] = quotaProviderOrder.map { provider in
+            let title = "\(provider.emoji) \(provider.displayName)"
             switch provider {
-            case .codex: return (provider, "⚛️ Codex", codex.status, subscriptionAccounts(for: provider))
-            case .claude: return (provider, "✳️ Claude Code", claude.status, subscriptionAccounts(for: provider))
-            case .antigravity: return (provider, "🔃 Antigravity", antigravity.status, subscriptionAccounts(for: provider))
-            case .cursor: return (provider, "💎 Cursor", cursor.status, subscriptionAccounts(for: provider))
-            case .grokBot: return (provider, "😶 Grok Bot", grokBot.status, subscriptionAccounts(for: provider))
-            case .zhipu: return (provider, "🅉 Zhipu GLM", zhipu.status, subscriptionAccounts(for: provider))
+            case .codex: return (provider, title, codex.status, subscriptionAccounts(for: provider))
+            case .claude: return (provider, title, claude.status, subscriptionAccounts(for: provider))
+            case .antigravity: return (provider, title, antigravity.status, subscriptionAccounts(for: provider))
+            case .cursor: return (provider, title, cursor.status, subscriptionAccounts(for: provider))
+            case .grokBot: return (provider, title, grokBot.status, subscriptionAccounts(for: provider))
+            case .zhipu: return (provider, title, zhipu.status, subscriptionAccounts(for: provider))
             }
         }
         let cards = allCards.filter {
@@ -1143,7 +1162,7 @@ final class WindowsApp: @unchecked Sendable {
         let estimatedRows = cards.reduce(0) { total, card in
             total + card.accounts.reduce(0) { $0 + max(1, $1.groups.flatMap(\.buckets).count) + 1 }
         }
-        let contentHeight = max(680, 220 + (twoColumns ? (estimatedRows + 1) / 2 : estimatedRows) * 82)
+        let contentHeight = max(720, 262 + (twoColumns ? (estimatedRows + 1) / 2 : estimatedRows) * 82)
         dlg_reset_content(dialog, Int32(contentHeight))
         dlg_add_title(dialog, L10n.shared.tr("quota.windowTitle"), 24, 16, 270, 30)
         dlg_add_subtitle(dialog, L10n.shared.tr("quota.windowSubtitle"), 24, 47, dialogWidth - 80, 22)
@@ -1155,7 +1174,14 @@ final class WindowsApp: @unchecked Sendable {
             dlg_add_push(dialog, 982, L10n.shared.language == .en ? "Close" : "关闭", dialogWidth - 134, 204, 100, 30)
             return
         }
-        var columnY: [Int32] = [82, 82]
+        let providerChoices = SubscriptionProvider.allCases.map { "\($0.emoji) \($0.displayName)" }
+        dlg_add_section(dialog, L10n.shared.tr("quota.dialDisplay"), 24, 82, 92, 22)
+        dlg_add_combo(
+            dialog, 984, providerChoices.joined(separator: "\t"),
+            "\(dialQuotaProvider.emoji) \(dialQuotaProvider.displayName)",
+            112, 78, min(220, dialogWidth - 146), 30
+        )
+        var columnY: [Int32] = [124, 124]
         let cardWidth: Int32 = twoColumns ? 414 : dialogWidth - 56
         quotaEditControls.removeAll()
         quotaEmailControls.removeAll()
@@ -1243,6 +1269,22 @@ final class WindowsApp: @unchecked Sendable {
         guard quotaProviderOrder.indices.contains(destination) else { return }
         quotaProviderOrder.swapAt(source, destination)
         UserDefaults.standard.setStringArray(quotaProviderOrder.map(\.rawValue), for: .subscriptionQuotaOrder)
+    }
+
+    private func dialQuotaRemainingPercent() -> Double? {
+        let live: [CodexQuotaBucket]
+        switch dialQuotaProvider {
+        case .codex: live = codexQuotaState.snapshot().buckets
+        case .claude: live = claudeQuotaState.snapshot().buckets
+        case .antigravity: live = antigravityQuotaState.snapshot().groups.flatMap(\.buckets)
+        case .cursor: live = cursorQuotaState.snapshot().groups.flatMap(\.buckets)
+        case .grokBot: live = grokBotQuotaState.snapshot().groups.flatMap(\.buckets)
+        case .zhipu: live = zhipuQuotaState.snapshot().groups.flatMap(\.buckets)
+        }
+        let buckets = live.isEmpty
+            ? subscriptionAccounts(for: dialQuotaProvider).first?.groups.flatMap(\.buckets) ?? []
+            : live
+        return buckets.map(\.remainingPercent).min()
     }
 
     private func syncSubscriptionAccounts(

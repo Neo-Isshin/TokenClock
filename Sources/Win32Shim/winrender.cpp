@@ -1119,6 +1119,24 @@ void win_render_clock(int w, int h, int hh, int mm, int ss, const win_theme *t, 
         textCEmojiLine(ov->weather, cxd, cyd - r * 0.42 + 16.0 * S, (float)(13.0 * S), t->text_primary);
         textC(ov->today_label, cxd, cyd + r * 0.28, (float)(9.0 * S), t->text_secondary, false);
         textC(ov->tokens,   cxd, cyd + r * 0.40, (float)(20.0 * S), t->text_primary, true);
+        if (ov->dial_quota_visible) {
+            const double remaining = max(0.0, min(100.0, ov->dial_quota_remaining));
+            const double ringX = cxd + 42.0 * S;
+            const double ringY = cyd + r * 0.40;
+            const double ringR = 14.0 * S;
+            Gdiplus::Pen track(cr((t->text_secondary & 0x00ffffffu) | 0x38000000u), (Gdiplus::REAL)(3.0 * S));
+            Gdiplus::RectF ringRect((Gdiplus::REAL)(ringX - ringR), (Gdiplus::REAL)(ringY - ringR),
+                                    (Gdiplus::REAL)(ringR * 2.0), (Gdiplus::REAL)(ringR * 2.0));
+            gfx.DrawEllipse(&track, ringRect);
+            const unsigned int accent = remaining <= 15.0 ? 0xFFFF3B30u
+                : (remaining <= 35.0 ? 0xFFFF9500u : 0xFF34C759u);
+            Gdiplus::Pen progress(cr(accent), (Gdiplus::REAL)(3.0 * S));
+            progress.SetLineCap(Gdiplus::LineCapRound, Gdiplus::LineCapRound, Gdiplus::DashCapRound);
+            if (remaining > 0.0) gfx.DrawArc(&progress, ringRect, -90.0f, (Gdiplus::REAL)(remaining * 3.6));
+            char percent[16];
+            sprintf_s(percent, "%.0f%%", remaining);
+            textC(percent, ringX, ringY, (float)(7.5 * S), t->text_primary, true);
+        }
         textC(ov->messages, cxd, cyd + r * 0.40 + 18.0 * S, (float)(10.0 * S), t->text_secondary, false);
         textEmoji(ov->rate, cxd + r * 0.62, cyd, (float)(25.0 * S), t->text_primary);
         if (!expanded) {
