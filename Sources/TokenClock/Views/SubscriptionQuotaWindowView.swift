@@ -67,32 +67,40 @@ struct SubscriptionQuotaWindowView: View {
                     .buttonStyle(.bordered)
                     .disabled(isLoading)
                 }
-                HStack(spacing: 8) {
+                VStack(alignment: .leading, spacing: 7) {
                     Text(L10n.shared.tr("quota.dialDisplay"))
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(.secondary)
-                    Menu {
+                    LazyVGrid(
+                        columns: [GridItem(.adaptive(minimum: 105), spacing: 12)],
+                        alignment: .leading,
+                        spacing: 7
+                    ) {
                         ForEach(viewModel.dialQuotaProviderOptions) { provider in
-                            Button {
-                                viewModel.dialQuotaProvider = provider
-                            } label: {
-                                if provider == viewModel.dialQuotaProvider {
-                                    Label("\(provider.emoji) \(provider.displayName)", systemImage: "checkmark")
-                                } else {
-                                    Text("\(provider.emoji) \(provider.displayName)")
+                            let isSelected = viewModel.dialQuotaProviders.contains(provider)
+                            Toggle(isOn: Binding(
+                                get: { isSelected },
+                                set: { value in
+                                    if value != isSelected { viewModel.toggleDialQuotaProvider(provider) }
+                                }
+                            )) {
+                                HStack(spacing: 5) {
+                                    Circle()
+                                        .fill(viewModel.selectedTheme.dialQuotaColor(
+                                            for: provider,
+                                            contrastColor: viewModel.effectiveDialPrimary
+                                        ).opacity(0.78))
+                                        .frame(width: 7, height: 7)
+                                    Text(provider.displayName)
+                                        .lineLimit(1)
                                 }
                             }
+                            .toggleStyle(.checkbox)
+                            .font(.system(size: 11, weight: .medium))
+                            .disabled(!isSelected && viewModel.dialQuotaProviders.count == 2)
                         }
-                    } label: {
-                        Label(
-                            "\(viewModel.dialQuotaProvider.emoji) \(viewModel.dialQuotaProvider.displayName)",
-                            systemImage: "circle.dashed"
-                        )
                     }
-                    .buttonStyle(.bordered)
-                    .disabled(viewModel.dialQuotaProviderOptions.isEmpty)
                     .help(L10n.shared.tr("quota.dialDisplayHelp"))
-                    Spacer()
                 }
             }
             .padding(.horizontal, 20)

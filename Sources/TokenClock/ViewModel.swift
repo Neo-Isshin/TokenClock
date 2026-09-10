@@ -110,24 +110,50 @@ final class ViewModel: ObservableObject {
     @Published private(set) var zhipuQuota = ProviderQuotaSnapshot.idle(source: "ZCode Coding Plan")
     @Published private(set) var subscriptionAccounts = SubscriptionAccountStore.shared.records()
     @Published private(set) var activeSubscriptionAccountIDs: [SubscriptionProvider: String] = [:]
-    @Published var dialQuotaProvider: SubscriptionProvider = {
-        guard let raw = UserDefaults.standard.string(for: .dialQuotaProvider),
-              let provider = SubscriptionProvider(rawValue: raw) else { return .codex }
-        return provider
-    }() {
-        didSet { UserDefaults.standard.setString(dialQuotaProvider.rawValue, for: .dialQuotaProvider) }
-    }
+    @Published private(set) var dialQuotaProviders: [SubscriptionProvider] = {
+        let defaults = UserDefaults.standard
+        var providers: [SubscriptionProvider] = []
+        for raw in defaults.stringArray(forKey: SettingsKey.dialQuotaProviders.rawValue) ?? [] {
+            if let provider = SubscriptionProvider(rawValue: raw), !providers.contains(provider) {
+                providers.append(provider)
+            }
+        }
+        if defaults.object(forKey: SettingsKey.dialQuotaProviders.rawValue) != nil {
+            return Array(providers.prefix(2))
+        }
+        if let raw = defaults.string(for: .dialQuotaProvider),
+           let provider = SubscriptionProvider(rawValue: raw) {
+            providers = [provider]
+        }
+        return Array((providers.isEmpty ? [.codex] : providers).prefix(2))
+    }()
     @Published private(set) var notifications: [TokenClockNotification] = []
     var unreadNotificationCount: Int { notifications.filter { !$0.isRead }.count }
 
-    /// The dial uses the most constrained active window for the chosen provider.
-    /// Before the first on-demand refresh, fall back to the newest persisted snapshot.
-    var dialQuotaRemainingPercent: Double? {
-        quotaBuckets(for: dialQuotaProvider).map(\.remainingPercent).min()
+    var dialQuotaIndicators: [DialQuotaIndicator] {
+        dialQuotaProviders.compactMap { provider in
+            DialQuotaResolver.resolve(provider: provider, groups: quotaGroups(for: provider))
+        }
     }
 
     var dialQuotaProviderOptions: [SubscriptionProvider] {
-        SubscriptionProvider.allCases.filter { !quotaBuckets(for: $0).isEmpty }
+        SubscriptionProvider.allCases.filter {
+            dialQuotaProviders.contains($0)
+                || DialQuotaResolver.resolve(provider: $0, groups: quotaGroups(for: $0)) != nil
+        }
+    }
+
+    func toggleDialQuotaProvider(_ provider: SubscriptionProvider) {
+        if let index = dialQuotaProviders.firstIndex(of: provider) {
+            dialQuotaProviders.remove(at: index)
+        } else {
+            guard dialQuotaProviders.count < 2 else { return }
+            dialQuotaProviders.append(provider)
+        }
+        UserDefaults.standard.setStringArray(
+            dialQuotaProviders.map(\.rawValue), for: .dialQuotaProviders
+        )
+        UserDefaults.standard.setString(dialQuotaProviders.first?.rawValue, for: .dialQuotaProvider)
     }
 
     @Published var windowOpacity: Double = 1.0 { didSet { UserDefaults.standard.set(windowOpacity, forKey: SettingsKey.windowOpacity.rawValue) } }
@@ -451,18 +477,24 @@ final class ViewModel: ObservableObject {
         }
     }
 
-    private func quotaBuckets(for provider: SubscriptionProvider) -> [CodexQuotaBucket] {
-        let live: [CodexQuotaBucket]
+    private func quotaGroups(for provider: SubscriptionProvider) -> [ProviderQuotaGroup] {
+        let live: [ProviderQuotaGroup]
         switch provider {
-        case .codex: live = codexQuota.buckets
-        case .claude: live = claudeQuota.buckets
-        case .antigravity: live = antigravityQuota.groups.flatMap(\.buckets)
-        case .cursor: live = cursorQuota.groups.flatMap(\.buckets)
-        case .grokBot: live = grokBotQuota.groups.flatMap(\.buckets)
-        case .zhipu: live = zhipuQuota.groups.flatMap(\.buckets)
+        case .codex:
+            live = codexQuota.buckets.isEmpty ? [] : [ProviderQuotaGroup(
+                id: "codex:subscription", name: "Subscription", buckets: codexQuota.buckets
+            )]
+        case .claude:
+            live = claudeQuota.buckets.isEmpty ? [] : [ProviderQuotaGroup(
+                id: "claude:subscription", name: "Subscription", buckets: claudeQuota.buckets
+            )]
+        case .antigravity: live = antigravityQuota.groups
+        case .cursor: live = cursorQuota.groups
+        case .grokBot: live = grokBotQuota.groups
+        case .zhipu: live = zhipuQuota.groups
         }
         if !live.isEmpty { return live }
-        return subscriptionAccounts(for: provider).first?.groups.flatMap(\.buckets) ?? []
+        return subscriptionAccounts(for: provider).first?.groups ?? []
     }
 
     func updateSubscriptionAccount(id: String, note: String, manualPlan: String?) {

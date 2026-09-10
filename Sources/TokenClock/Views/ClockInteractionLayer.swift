@@ -6,33 +6,70 @@ import SwiftUI
 /// hit test instead of a full rectangular content shape.
 /// （自 main 分支移植：SwiftUI 的 tap 手势会吞掉窗口拖拽的鼠标序列，点击/拖动改由 AppKit 分发；
 /// 拖动超过 3pt 判定为拖拽并移动窗口，否则视为点击切换详情面板。）
+struct ClockTooltipRegion: Equatable {
+    let rect: NSRect
+    let text: String
+}
+
 struct ClockInteractionLayer: NSViewRepresentable {
+    var tooltipRegions: [ClockTooltipRegion] = []
     let onClick: () -> Void
     var onDragStart: () -> Void = {}
+    var onTooltipHover: (String?) -> Void = { _ in }
+
+    init(
+        tooltipRegions: [ClockTooltipRegion] = [],
+        onClick: @escaping () -> Void,
+        onDragStart: @escaping () -> Void = {},
+        onTooltipHover: @escaping (String?) -> Void = { _ in }
+    ) {
+        self.tooltipRegions = tooltipRegions
+        self.onClick = onClick
+        self.onDragStart = onDragStart
+        self.onTooltipHover = onTooltipHover
+    }
 
     func makeNSView(context: Context) -> ClockInteractionNSView {
-        ClockInteractionNSView(onClick: onClick, onDragStart: onDragStart)
+        ClockInteractionNSView(
+            onClick: onClick,
+            onDragStart: onDragStart,
+            onTooltipHover: onTooltipHover,
+            tooltipRegions: tooltipRegions
+        )
     }
 
     func updateNSView(_ nsView: ClockInteractionNSView, context: Context) {
         nsView.onClick = onClick
         nsView.onDragStart = onDragStart
+        nsView.onTooltipHover = onTooltipHover
+        nsView.updateTooltipRegions(tooltipRegions)
     }
 }
 
 final class ClockInteractionNSView: NSView {
     var onClick: () -> Void
     var onDragStart: () -> Void
+    var onTooltipHover: (String?) -> Void
     private var dragStartMouse: NSPoint?
     private var dragStartOrigin: NSPoint?
     private var mouseDownTime: TimeInterval?
     private var isDragging = false
     private let dragThreshold: CGFloat = 5
     private let clickDurationLimit: TimeInterval = 0.35
+    private var tooltipRegions: [ClockTooltipRegion]
+    private var tooltipTrackingArea: NSTrackingArea?
+    private var hoveredTooltipText: String?
 
-    init(onClick: @escaping () -> Void, onDragStart: @escaping () -> Void = {}) {
+    init(
+        onClick: @escaping () -> Void,
+        onDragStart: @escaping () -> Void = {},
+        onTooltipHover: @escaping (String?) -> Void = { _ in },
+        tooltipRegions: [ClockTooltipRegion] = []
+    ) {
         self.onClick = onClick
         self.onDragStart = onDragStart
+        self.onTooltipHover = onTooltipHover
+        self.tooltipRegions = tooltipRegions
         super.init(frame: .zero)
     }
 
@@ -44,6 +81,51 @@ final class ClockInteractionNSView: NSView {
         true
     }
 
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        window?.acceptsMouseMovedEvents = true
+        if window == nil { setHoveredTooltip(nil) }
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let tooltipTrackingArea { removeTrackingArea(tooltipTrackingArea) }
+        let area = NSTrackingArea(
+            rect: .zero,
+            options: [.mouseEnteredAndExited, .mouseMoved, .activeAlways, .inVisibleRect],
+            owner: self,
+            userInfo: nil
+        )
+        addTrackingArea(area)
+        tooltipTrackingArea = area
+    }
+
+    func updateTooltipRegions(_ regions: [ClockTooltipRegion]) {
+        guard regions != tooltipRegions else { return }
+        tooltipRegions = regions
+        if let hoveredTooltipText,
+           !regions.contains(where: { $0.text == hoveredTooltipText }) {
+            self.hoveredTooltipText = nil
+            DispatchQueue.main.async { [weak self] in self?.onTooltipHover(nil) }
+        }
+    }
+
+    func tooltipText(at point: NSPoint) -> String? {
+        tooltipRegions.first { $0.rect.contains(point) }?.text
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        updateHoveredTooltip(at: convert(event.locationInWindow, from: nil))
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        updateHoveredTooltip(at: convert(event.locationInWindow, from: nil))
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        setHoveredTooltip(nil)
+    }
+
     override func hitTest(_ point: NSPoint) -> NSView? {
         let dx = point.x - bounds.midX
         let dy = point.y - bounds.midY
@@ -53,6 +135,7 @@ final class ClockInteractionNSView: NSView {
 
     override func mouseDown(with event: NSEvent) {
         guard let window else { return }
+        setHoveredTooltip(nil)
         dragStartMouse = screenPoint(for: event, in: window)
         dragStartOrigin = window.frame.origin
         mouseDownTime = event.timestamp
@@ -109,5 +192,15 @@ final class ClockInteractionNSView: NSView {
         dragStartOrigin = nil
         mouseDownTime = nil
         isDragging = false
+    }
+
+    private func updateHoveredTooltip(at point: NSPoint) {
+        setHoveredTooltip(tooltipText(at: point))
+    }
+
+    private func setHoveredTooltip(_ text: String?) {
+        guard text != hoveredTooltipText else { return }
+        hoveredTooltipText = text
+        onTooltipHover(text)
     }
 }
