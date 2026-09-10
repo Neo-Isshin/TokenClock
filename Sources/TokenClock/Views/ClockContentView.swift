@@ -160,12 +160,20 @@ struct ClockContentView: View {
 
             // SwiftUI's tap recognizer consumes the window-drag mouse sequence on recent
             // runtimes. Keep the glass visuals intact and route click/drag through AppKit.
-            ClockInteractionLayer {
-                viewModel.isExpanded.toggle()
-            } onDragStart: {
-                viewModel.isExpanded = false
-                onClockDragStart()
-            }
+            ClockInteractionLayer(
+                tooltipRegions: quotaTooltipRegions(
+                    quotaIndicators,
+                    diameter: d,
+                    scale: s
+                ),
+                onClick: {
+                    viewModel.isExpanded.toggle()
+                },
+                onDragStart: {
+                    viewModel.isExpanded = false
+                    onClockDragStart()
+                }
+            )
             .frame(width: d, height: d)
             .accessibilityHidden(true)
 
@@ -284,6 +292,30 @@ struct ClockContentView: View {
                 .shadow(color: Color.white.opacity(0.15), radius: 0.45 * scale, y: -0.25 * scale)
         }
         .frame(width: size, height: size)
+    }
+
+    private func quotaTooltipRegions(
+        _ indicators: [DialQuotaIndicator],
+        diameter: CGFloat,
+        scale s: CGFloat
+    ) -> [ClockTooltipRegion] {
+        guard indicators.count == 1 || indicators.count == 2 else { return [] }
+        let ringSize = (indicators.count == 1 ? 35 : 29) * s
+        let trailing = (indicators.count == 1 ? 36 : 28) * s
+        let spacing = 5 * s
+        let totalHeight = ringSize * CGFloat(indicators.count)
+            + spacing * CGFloat(max(0, indicators.count - 1))
+        let top = (diameter - totalHeight) / 2
+        let x = diameter - trailing - ringSize
+        return indicators.enumerated().map { index, indicator in
+            let swiftUITop = top + CGFloat(index) * (ringSize + spacing)
+            let appKitY = diameter - swiftUITop - ringSize
+            return ClockTooltipRegion(
+                rect: NSRect(x: x, y: appKitY, width: ringSize, height: ringSize)
+                    .insetBy(dx: -3 * s, dy: -3 * s),
+                text: indicator.provider.displayName
+            )
+        }
     }
 
     private func quotaPercentColor(_ remaining: Double) -> Color {

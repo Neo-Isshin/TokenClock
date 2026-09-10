@@ -54,6 +54,24 @@ final class ClockInteractionTests: XCTestCase {
         XCTAssertEqual(window.frame.origin, origin)
     }
 
+    func testQuotaTooltipRegionKeepsClockClickHandling() throws {
+        var clickCount = 0
+        let (_, view) = makeWindow { clickCount += 1 }
+        view.updateTooltipRegions([
+            ClockTooltipRegion(
+                rect: NSRect(x: 170, y: 100, width: 35, height: 35),
+                text: "Codex"
+            ),
+        ])
+
+        XCTAssertEqual(view.tooltipText(at: NSPoint(x: 180, y: 110)), "Codex")
+        XCTAssertNil(view.tooltipText(at: NSPoint(x: 80, y: 80)))
+
+        view.mouseDown(with: try event(.leftMouseDown, at: NSPoint(x: 180, y: 110)))
+        view.mouseUp(with: try event(.leftMouseUp, at: NSPoint(x: 180, y: 110)))
+        XCTAssertEqual(clickCount, 1)
+    }
+
     func testUnpairedMouseUpAfterNativeTrackingDoesNotToggleAgain() throws {
         var clickCount = 0
         let (_, view) = makeWindow { clickCount += 1 }

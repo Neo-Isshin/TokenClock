@@ -6,20 +6,41 @@ import SwiftUI
 /// hit test instead of a full rectangular content shape.
 /// （自 main 分支移植：SwiftUI 的 tap 手势会吞掉窗口拖拽的鼠标序列，点击/拖动改由 AppKit 分发；
 /// 拖动超过 3pt 判定为拖拽并移动窗口，否则视为点击切换详情面板。）
+struct ClockTooltipRegion: Equatable {
+    let rect: NSRect
+    let text: String
+}
+
 struct ClockInteractionLayer: NSViewRepresentable {
+    var tooltipRegions: [ClockTooltipRegion] = []
     let onClick: () -> Void
     var onDragStart: () -> Void = {}
 
+    init(
+        tooltipRegions: [ClockTooltipRegion] = [],
+        onClick: @escaping () -> Void,
+        onDragStart: @escaping () -> Void = {}
+    ) {
+        self.tooltipRegions = tooltipRegions
+        self.onClick = onClick
+        self.onDragStart = onDragStart
+    }
+
     func makeNSView(context: Context) -> ClockInteractionNSView {
-        ClockInteractionNSView(onClick: onClick, onDragStart: onDragStart)
+        ClockInteractionNSView(
+            onClick: onClick,
+            onDragStart: onDragStart,
+            tooltipRegions: tooltipRegions
+        )
     }
 
     func updateNSView(_ nsView: ClockInteractionNSView, context: Context) {
         nsView.onClick = onClick
         nsView.onDragStart = onDragStart
+        nsView.updateTooltipRegions(tooltipRegions)
     }
 }
-final class ClockInteractionNSView: NSView {
+final class ClockInteractionNSView: NSView, NSViewToolTipOwner {
     var onClick: () -> Void
     var onDragStart: () -> Void
     private var dragStartMouse: NSPoint?
@@ -28,10 +49,19 @@ final class ClockInteractionNSView: NSView {
     private var isDragging = false
     private let dragThreshold: CGFloat = 5
     private let clickDurationLimit: TimeInterval = 0.35
+    private var tooltipRegions: [ClockTooltipRegion]
+    private var tooltipTags: [NSView.ToolTipTag] = []
+    private var tooltipTextByTag: [NSView.ToolTipTag: String] = [:]
+    private var tooltipBoundsSize = NSSize.zero
 
-    init(onClick: @escaping () -> Void, onDragStart: @escaping () -> Void = {}) {
+    init(
+        onClick: @escaping () -> Void,
+        onDragStart: @escaping () -> Void = {},
+        tooltipRegions: [ClockTooltipRegion] = []
+    ) {
         self.onClick = onClick
         self.onDragStart = onDragStart
+        self.tooltipRegions = tooltipRegions
         super.init(frame: .zero)
     }
 
@@ -41,6 +71,32 @@ final class ClockInteractionNSView: NSView {
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
         true
+    }
+
+    override func layout() {
+        super.layout()
+        if tooltipBoundsSize != bounds.size {
+            rebuildToolTips()
+        }
+    }
+
+    func updateTooltipRegions(_ regions: [ClockTooltipRegion]) {
+        guard regions != tooltipRegions || tooltipBoundsSize != bounds.size else { return }
+        tooltipRegions = regions
+        rebuildToolTips()
+    }
+
+    func tooltipText(at point: NSPoint) -> String? {
+        tooltipRegions.first { $0.rect.contains(point) }?.text
+    }
+
+    func view(
+        _ view: NSView,
+        stringForToolTip tag: NSView.ToolTipTag,
+        point: NSPoint,
+        userData data: UnsafeMutableRawPointer?
+    ) -> String {
+        tooltipTextByTag[tag] ?? ""
     }
 
     override func hitTest(_ point: NSPoint) -> NSView? {
@@ -108,5 +164,18 @@ final class ClockInteractionNSView: NSView {
         dragStartOrigin = nil
         mouseDownTime = nil
         isDragging = false
+    }
+
+    private func rebuildToolTips() {
+        for tag in tooltipTags { removeToolTip(tag) }
+        tooltipTags.removeAll(keepingCapacity: true)
+        tooltipTextByTag.removeAll(keepingCapacity: true)
+        tooltipBoundsSize = bounds.size
+        guard bounds.width > 0, bounds.height > 0 else { return }
+        for region in tooltipRegions where region.rect.intersects(bounds) {
+            let tag = addToolTip(region.rect.intersection(bounds), owner: self, userData: nil)
+            tooltipTags.append(tag)
+            tooltipTextByTag[tag] = region.text
+        }
     }
 }
