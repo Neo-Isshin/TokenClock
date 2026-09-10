@@ -98,6 +98,8 @@ enum SettingsKey: String {
     case dropdownShowPercentage = "TC_dropdownShowPercentage"
     /// Subscription Quota 窗口内 provider 的用户自定义顺序。
     case subscriptionQuotaOrder = "TC_subscriptionQuotaOrder"
+    /// 表盘额度环当前展示的 provider。
+    case dialQuotaProvider = "TC_dialQuotaProvider"
     /// Subscription Quota 已发现账号、用户备注、手动套餐与最近额度快照（不含凭据）。
     case subscriptionQuotaAccounts = "TC_subscriptionQuotaAccounts"
     /// One-time OpenClaw history rebuild after cron/content accounting fixes.
