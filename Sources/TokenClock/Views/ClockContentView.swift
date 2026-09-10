@@ -63,13 +63,9 @@ struct ClockContentView: View {
                     VStack(spacing: 2) {
                         HStack(spacing: 3 * s) {
                             Text(L10n.shared.tr("clock.todayTokens"))
-                            if let remaining = viewModel.dialQuotaRemainingPercent {
-                                Text("·")
-                                Text(viewModel.dialQuotaProvider.emoji)
-                                Text(String(format: "%.0f%%", remaining))
-                                    .fontWeight(.semibold)
-                                    .foregroundColor(dialQuotaTextColor(remaining))
-                            }
+                            Text(viewModel.rateEmoji)
+                                .font(.system(size: 10 * s))
+                                .baselineOffset(0.5 * s)
                         }
                         .font(.system(size: 9 * s))
                         .foregroundColor(viewModel.effectiveDialSecondary)
@@ -105,12 +101,13 @@ struct ClockContentView: View {
                     Spacer()
                 }
 
-                // 右侧：速率 emoji
+                // 右侧：所选订阅工具的剩余额度
                 HStack {
                     Spacer()
-                    Text(viewModel.rateEmoji)
-                        .font(.system(size: 28 * s))
-                        .padding(.trailing, 28 * s)
+                    if let remaining = viewModel.dialQuotaRemainingPercent {
+                        dialQuotaRing(remaining: remaining, scale: s)
+                            .padding(.trailing, 28 * s)
+                    }
                 }
 
                 // 指针置于文字之上：单独一层只渲染指针 + 中心点
@@ -173,10 +170,22 @@ struct ClockContentView: View {
         .accessibilityAddTraits(.isButton)
     }
 
-    private func dialQuotaTextColor(_ remaining: Double) -> Color {
-        if remaining <= 15 { return .red }
-        if remaining <= 35 { return .orange }
-        return viewModel.effectiveDialSecondary
+    private func dialQuotaRing(remaining: Double, scale s: CGFloat) -> some View {
+        let normalized = min(100, max(0, remaining))
+        let accent: Color = normalized <= 15 ? .red : (normalized <= 35 ? .orange : .green)
+        return ZStack {
+            Circle()
+                .stroke(viewModel.effectiveDialSecondary.opacity(0.22), lineWidth: 2.5 * s)
+            Circle()
+                .trim(from: 0, to: normalized / 100)
+                .stroke(accent, style: StrokeStyle(lineWidth: 2.5 * s, lineCap: .round))
+                .rotationEffect(.degrees(-90))
+            Text(String(format: "%.0f%%", normalized))
+                .font(.system(size: 8 * s, weight: .bold, design: .rounded))
+                .foregroundColor(viewModel.effectiveDialPrimary)
+                .minimumScaleFactor(0.75)
+        }
+        .frame(width: 30 * s, height: 30 * s)
     }
 
     /// VoiceOver 朗读摘要：时间 + 今日 token + 消息数（已随语言本地化）。
