@@ -107,7 +107,7 @@ struct ClockContentView: View {
                 HStack {
                     Spacer()
                     if let remaining = quotaPercents.first {
-                        dialQuotaRing(
+                        dialQuotaRings(
                             remaining: remaining,
                             secondaryRemaining: quotaPercents.dropFirst().first,
                             scale: s
@@ -176,40 +176,55 @@ struct ClockContentView: View {
         .accessibilityAddTraits(.isButton)
     }
 
-    private func dialQuotaRing(
+    private func dialQuotaRings(
         remaining: Double,
         secondaryRemaining: Double?,
         scale s: CGFloat
     ) -> some View {
         let normalized = min(100, max(0, remaining))
         let secondary = secondaryRemaining.map { min(100, max(0, $0)) }
-        return ZStack {
-            Circle()
-                .strokeBorder(viewModel.effectiveDialSecondary.opacity(0.22), lineWidth: 3.25 * s)
-            Circle()
-                .trim(from: 0, to: normalized / 100)
-                .stroke(quotaRingAccent(normalized), style: StrokeStyle(lineWidth: 3.25 * s, lineCap: .round))
-                .rotationEffect(.degrees(-90))
-                .padding(1.625 * s)
-            Circle()
-                .inset(by: 5.5 * s)
-                .stroke(viewModel.effectiveDialSecondary.opacity(0.18), lineWidth: 2.25 * s)
+        return VStack(spacing: 3 * s) {
+            quotaRing(
+                remaining: normalized,
+                size: 30 * s,
+                lineWidth: 3.25 * s,
+                fontSize: 7.5 * s
+            )
             if let secondary {
+                quotaRing(
+                    remaining: secondary,
+                    size: 19 * s,
+                    lineWidth: 2.25 * s,
+                    fontSize: 5.5 * s
+                )
+            } else {
                 Circle()
-                    .inset(by: 5.5 * s)
-                    .trim(from: 0, to: secondary / 100)
-                    .stroke(
-                        quotaRingAccent(secondary),
-                        style: StrokeStyle(lineWidth: 2.25 * s, lineCap: .round)
-                    )
-                    .rotationEffect(.degrees(-90))
+                    .strokeBorder(viewModel.effectiveDialSecondary.opacity(0.18), lineWidth: 2.25 * s)
+                    .frame(width: 19 * s, height: 19 * s)
             }
-            Text(String(format: "%.0f%%", normalized))
-                .font(.system(size: 7.5 * s, weight: .bold, design: .rounded))
+        }
+    }
+
+    private func quotaRing(
+        remaining: Double,
+        size: CGFloat,
+        lineWidth: CGFloat,
+        fontSize: CGFloat
+    ) -> some View {
+        ZStack {
+            Circle()
+                .strokeBorder(viewModel.effectiveDialSecondary.opacity(0.22), lineWidth: lineWidth)
+            Circle()
+                .trim(from: 0, to: remaining / 100)
+                .stroke(quotaRingAccent(remaining), style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
+                .rotationEffect(.degrees(-90))
+                .padding(lineWidth / 2)
+            Text(String(format: "%.0f%%", remaining))
+                .font(.system(size: fontSize, weight: .bold, design: .rounded))
                 .foregroundColor(viewModel.effectiveDialPrimary)
                 .minimumScaleFactor(0.75)
         }
-        .frame(width: 30 * s, height: 30 * s)
+        .frame(width: size, height: size)
     }
 
     private func quotaRingAccent(_ remaining: Double) -> Color {
