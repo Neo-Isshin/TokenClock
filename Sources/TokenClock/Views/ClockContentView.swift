@@ -115,7 +115,7 @@ struct ClockContentView: View {
                             lineWidth: 3 * s,
                             fontSize: 8.5 * s
                         )
-                            .padding(.trailing, 28 * s)
+                            .padding(.trailing, 36 * s)
                     } else if quotaIndicators.count == 2 {
                         VStack(alignment: .trailing, spacing: 5 * s) {
                             ForEach(quotaIndicators) { indicator in
@@ -123,9 +123,9 @@ struct ClockContentView: View {
                                     provider: indicator.provider,
                                     outerRemaining: indicator.outerRemainingPercent,
                                     innerRemaining: indicator.innerRemainingPercent,
-                                    size: 26 * s,
-                                    lineWidth: 2.2 * s,
-                                    fontSize: 6.5 * s
+                                    size: 29 * s,
+                                    lineWidth: 2.5 * s,
+                                    fontSize: 7.2 * s
                                 )
                             }
                         }
@@ -346,7 +346,7 @@ extension SubscriptionProvider {
         case .antigravity: return Color(red: 0.55, green: 0.36, blue: 0.96)
         case .cursor: return Color(red: 0.10, green: 0.62, blue: 0.92)
         case .grokBot: return Color(red: 0.39, green: 0.40, blue: 0.95)
-        case .zhipu: return Color(red: 0.15, green: 0.44, blue: 0.95)
+        case .zhipu: return .black
         }
     }
 }

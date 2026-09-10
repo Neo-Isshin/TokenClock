@@ -97,8 +97,7 @@ struct SubscriptionQuotaWindowView: View {
                             .toggleStyle(.checkbox)
                             .font(.system(size: 11, weight: .medium))
                             .disabled(
-                                (isSelected && viewModel.dialQuotaProviders.count == 1)
-                                    || (!isSelected && viewModel.dialQuotaProviders.count == 2)
+                                !isSelected && viewModel.dialQuotaProviders.count == 2
                             )
                         }
                     }

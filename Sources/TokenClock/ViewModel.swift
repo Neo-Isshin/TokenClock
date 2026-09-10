@@ -122,14 +122,17 @@ final class ViewModel: ObservableObject {
     @Published private(set) var subscriptionAccounts = SubscriptionAccountStore.shared.records()
     @Published private(set) var activeSubscriptionAccountIDs: [SubscriptionProvider: String] = [:]
     @Published private(set) var dialQuotaProviders: [SubscriptionProvider] = {
+        let defaults = UserDefaults.standard
         var providers: [SubscriptionProvider] = []
-        for raw in UserDefaults.standard.stringArray(forKey: SettingsKey.dialQuotaProviders.rawValue) ?? [] {
+        for raw in defaults.stringArray(forKey: SettingsKey.dialQuotaProviders.rawValue) ?? [] {
             if let provider = SubscriptionProvider(rawValue: raw), !providers.contains(provider) {
                 providers.append(provider)
             }
         }
-        if providers.isEmpty,
-           let raw = UserDefaults.standard.string(for: .dialQuotaProvider),
+        if defaults.object(forKey: SettingsKey.dialQuotaProviders.rawValue) != nil {
+            return Array(providers.prefix(2))
+        }
+        if let raw = defaults.string(for: .dialQuotaProvider),
            let provider = SubscriptionProvider(rawValue: raw) {
             providers = [provider]
         }
@@ -152,7 +155,6 @@ final class ViewModel: ObservableObject {
 
     func toggleDialQuotaProvider(_ provider: SubscriptionProvider) {
         if let index = dialQuotaProviders.firstIndex(of: provider) {
-            guard dialQuotaProviders.count > 1 else { return }
             dialQuotaProviders.remove(at: index)
         } else {
             guard dialQuotaProviders.count < 2 else { return }
