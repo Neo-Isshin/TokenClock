@@ -9,6 +9,7 @@ struct LinuxClockSnapshot {
     let useFahrenheit: Bool
     let theme: LinuxClockTheme
     let size: LinuxClockSize
+    let quotaRemainingPercent: Double?
 }
 
 /// Cairo/Pango port of macOS normal's `ClockFaceView` + `ClockContentView`.
@@ -291,6 +292,17 @@ final class LinuxClockRenderer: @unchecked Sendable {
                  x: width / 2, y: height - 91 * scale, alignment: 1, color: secondary)
         drawText(context, totalTokens, family: "Sans", size: 20 * scale, weight: 700,
                  x: width / 2, y: height - 71 * scale, alignment: 1, color: primary)
+        if let remaining = snapshot.quotaRemainingPercent {
+            drawQuotaRing(
+                context,
+                remaining: remaining,
+                centerX: width / 2 + 42 * scale,
+                centerY: height - 71 * scale,
+                scale: scale,
+                primary: primary,
+                secondary: secondary
+            )
+        }
         drawText(context, L10n.shared.tr("clock.messagesCount", totalMessages), family: "Sans", size: 10 * scale, weight: 400,
                  x: width / 2, y: height - 51 * scale, alignment: 1, color: secondary)
 
@@ -305,6 +317,43 @@ final class LinuxClockRenderer: @unchecked Sendable {
 
         drawText(context, UsageAggregator.rateEmoji(tools), family: "Noto Color Emoji, Emoji, Sans", size: 28 * scale, weight: 400,
                  x: width - 22 * scale, y: height / 2, alignment: 2, color: LinuxColor(1, 1, 1))
+    }
+
+    private func drawQuotaRing(
+        _ context: OpaquePointer,
+        remaining: Double,
+        centerX: Double,
+        centerY: Double,
+        scale: Double,
+        primary: LinuxColor,
+        secondary: LinuxColor
+    ) {
+        let normalized = min(100, max(0, remaining))
+        let radius = 14 * scale
+        cairo_set_line_width(context, 3 * scale)
+        cairo_set_line_cap(context, CAIRO_LINE_CAP_ROUND)
+        setSource(context, LinuxColor(secondary.red, secondary.green, secondary.blue, 0.2))
+        cairo_arc(context, centerX, centerY, radius, 0, 2 * Double.pi)
+        cairo_stroke(context)
+        if normalized > 0 {
+            let accent = normalized <= 15
+                ? LinuxColor(1, 59.0 / 255.0, 48.0 / 255.0)
+                : (normalized <= 35
+                    ? LinuxColor(1, 149.0 / 255.0, 0)
+                    : LinuxColor(52.0 / 255.0, 199.0 / 255.0, 89.0 / 255.0))
+            setSource(context, accent)
+            cairo_arc(
+                context, centerX, centerY, radius,
+                -Double.pi / 2,
+                -Double.pi / 2 + 2 * Double.pi * normalized / 100
+            )
+            cairo_stroke(context)
+        }
+        drawText(
+            context, String(format: "%.0f%%", normalized), family: "Sans",
+            size: 7.5 * scale, weight: 700, x: centerX, y: centerY,
+            alignment: 1, color: primary
+        )
     }
 
     private func roundHand(

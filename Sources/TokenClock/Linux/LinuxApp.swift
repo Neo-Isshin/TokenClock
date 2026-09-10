@@ -168,7 +168,8 @@ final class LinuxApp: @unchecked Sendable {
             onUsageIncludesCache: { [weak self] value in
                 self?.model.setUsageIncludesCacheRead(value)
                 self?.refreshUI()
-            }
+            },
+            onDialQuotaChange: { [weak self] in self?.refreshClock() }
         )
         detailsPanel?.setOpacity(windowOpacity)
         themePicker = LinuxThemePicker(parent: createdWindow, owner: self)
@@ -412,7 +413,8 @@ final class LinuxApp: @unchecked Sendable {
                 weather: weatherService.weather,
                 useFahrenheit: useFahrenheit,
                 theme: selectedTheme,
-                size: selectedSize
+                size: selectedSize,
+                quotaRemainingPercent: detailsPanel?.dialQuotaRemainingPercent
             )
         )
     }

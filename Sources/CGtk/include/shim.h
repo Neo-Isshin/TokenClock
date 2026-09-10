@@ -40,6 +40,14 @@ static inline GtkProgressBar *tc_gtk_progress_bar(GtkWidget *widget) {
     return GTK_PROGRESS_BAR(widget);
 }
 
+static inline GtkComboBox *tc_gtk_combo_box(GtkWidget *widget) {
+    return GTK_COMBO_BOX(widget);
+}
+
+static inline GtkComboBoxText *tc_gtk_combo_box_text(GtkWidget *widget) {
+    return GTK_COMBO_BOX_TEXT(widget);
+}
+
 static inline GtkRevealer *tc_gtk_revealer(GtkWidget *widget) {
     return GTK_REVEALER(widget);
 }
@@ -114,6 +122,12 @@ static inline gulong tc_gtk_on_clicked(
     GtkWidget *widget, TCGtkVoidCallback callback, gpointer data
 ) {
     return g_signal_connect(widget, "clicked", G_CALLBACK(callback), data);
+}
+
+static inline gulong tc_gtk_on_changed(
+    GtkWidget *widget, TCGtkVoidCallback callback, gpointer data
+) {
+    return g_signal_connect(widget, "changed", G_CALLBACK(callback), data);
 }
 
 static inline gulong tc_gtk_on_activate(

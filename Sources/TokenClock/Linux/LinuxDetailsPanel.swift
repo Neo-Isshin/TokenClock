@@ -24,6 +24,7 @@ final class LinuxDetailsPanel: @unchecked Sendable {
     private let onNotifications: () -> Void
     private let onQuickContrast: () -> Void
     private let onUsageIncludesCache: (Bool) -> Void
+    private let onDialQuotaChange: () -> Void
 
     private var tools: [ToolUsage] = []
     private var notifications: [TokenClockNotification] = []
@@ -67,6 +68,11 @@ final class LinuxDetailsPanel: @unchecked Sendable {
     private var cursorQuotaFetchInFlight = false
     private var grokBotQuotaFetchInFlight = false
     private var quotaOrderEditing = false
+    private var dialQuotaProvider: LinuxQuotaProvider = {
+        guard let raw = UserDefaults.standard.string(for: .dialQuotaProvider),
+              let provider = LinuxQuotaProvider(rawValue: raw) else { return .codex }
+        return provider
+    }()
     private var quotaProviderOrder: [LinuxQuotaProvider] = {
         let saved = UserDefaults.standard.stringArray(forKey: SettingsKey.subscriptionQuotaOrder.rawValue) ?? []
         var order = saved.compactMap(LinuxQuotaProvider.init(rawValue:))
@@ -82,14 +88,32 @@ final class LinuxDetailsPanel: @unchecked Sendable {
         onHistoryUsage: @escaping () -> Void,
         onNotifications: @escaping () -> Void,
         onQuickContrast: @escaping () -> Void,
-        onUsageIncludesCache: @escaping (Bool) -> Void
+        onUsageIncludesCache: @escaping (Bool) -> Void,
+        onDialQuotaChange: @escaping () -> Void
     ) {
         self.parent = parent
         self.onHistoryUsage = onHistoryUsage
         self.onNotifications = onNotifications
         self.onQuickContrast = onQuickContrast
         self.onUsageIncludesCache = onUsageIncludesCache
+        self.onDialQuotaChange = onDialQuotaChange
         buildWindow(parent: parent)
+    }
+
+    var dialQuotaRemainingPercent: Double? {
+        let live: [CodexQuotaBucket]
+        switch dialQuotaProvider {
+        case .codex: live = codexQuota.buckets
+        case .claude: live = claudeQuota.buckets
+        case .antigravity: live = antigravityQuota.groups.flatMap(\.buckets)
+        case .cursor: live = cursorQuota.groups.flatMap(\.buckets)
+        case .grokBot: live = grokBotQuota.groups.flatMap(\.buckets)
+        }
+        let provider = subscriptionProvider(dialQuotaProvider)
+        let buckets = live.isEmpty
+            ? subscriptionAccounts(for: provider).first?.groups.flatMap(\.buckets) ?? []
+            : live
+        return buckets.map(\.remainingPercent).min()
     }
 
     var isVisible: Bool {
@@ -179,6 +203,13 @@ final class LinuxDetailsPanel: @unchecked Sendable {
         case "details:quota-edit":
             quotaOrderEditing.toggle()
             rebuildQuotaWindow()
+            return
+        case "details:quota-dial":
+            guard let active = gtk_combo_box_get_active_id(tc_gtk_combo_box(widget)),
+                  let provider = LinuxQuotaProvider(rawValue: String(cString: active)) else { return }
+            dialQuotaProvider = provider
+            UserDefaults.standard.setString(provider.rawValue, for: .dialQuotaProvider)
+            onDialQuotaChange()
             return
         default:
             if name.hasPrefix("details:quota-email:") {
@@ -645,7 +676,7 @@ final class LinuxDetailsPanel: @unchecked Sendable {
             seedQuotaAccountMock()
         }
         refreshQuota()
-        rebuildQuotaWindow()
+        quotaDidChange()
         if let quotaWindow {
             gtk_widget_show_all(quotaWindow)
             gtk_window_present(tc_gtk_window(quotaWindow))
@@ -680,6 +711,26 @@ final class LinuxDetailsPanel: @unchecked Sendable {
         )
         _ = appendControl("↻", name: "details:quota-refresh", to: heading)
         gtk_box_pack_start(tc_gtk_box(content), heading, 0, 0, 0)
+
+        if let selectorRow = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8),
+           let selectorLabel = gtk_label_new(tr("quota.dialDisplay")),
+           let selector = gtk_combo_box_text_new() {
+            gtk_label_set_xalign(tc_gtk_label(selectorLabel), 0)
+            tc_gtk_add_class(selectorLabel, "tokenclock-quota-provider")
+            gtk_box_pack_start(tc_gtk_box(selectorRow), selectorLabel, 0, 0, 0)
+            for provider in LinuxQuotaProvider.allCases {
+                gtk_combo_box_text_append(
+                    tc_gtk_combo_box_text(selector), provider.rawValue, quotaProviderTitle(provider)
+                )
+            }
+            _ = gtk_combo_box_set_active_id(tc_gtk_combo_box(selector), dialQuotaProvider.rawValue)
+            gtk_widget_set_name(selector, "details:quota-dial")
+            gtk_widget_set_hexpand(selector, 1)
+            gtk_widget_set_tooltip_text(selector, tr("quota.dialDisplayHelp"))
+            _ = tc_gtk_on_changed(selector, linuxDetailsAction, opaque)
+            gtk_box_pack_start(tc_gtk_box(selectorRow), selector, 1, 1, 0)
+            gtk_box_pack_start(tc_gtk_box(content), selectorRow, 0, 0, 0)
+        }
 
         for (index, provider) in quotaProviderOrder.enumerated() {
             if index > 0 { gtk_box_pack_start(tc_gtk_box(content), separator(), 0, 0, 4) }
@@ -733,13 +784,8 @@ final class LinuxDetailsPanel: @unchecked Sendable {
     }
 
     private func quotaProviderTitle(_ provider: LinuxQuotaProvider) -> String {
-        switch provider {
-        case .codex: return "⚛️ Codex"
-        case .claude: return "✳️ Claude Code"
-        case .antigravity: return "🔃 Antigravity"
-        case .cursor: return "💎 Cursor"
-        case .grokBot: return "😶 Grok Bot"
-        }
+        let subscription = subscriptionProvider(provider)
+        return "\(subscription.emoji) \(subscription.displayName)"
     }
 
     private func subscriptionProvider(_ provider: LinuxQuotaProvider) -> SubscriptionProvider {
@@ -1271,7 +1317,7 @@ final class LinuxDetailsPanel: @unchecked Sendable {
                 _ = tc_gtk_idle_add(linuxDetailsGrokBotQuotaReady, self.opaque)
             }
         }
-        rebuildQuotaWindow()
+        quotaDidChange()
     }
 
     fileprivate func applyPendingQuota() {
@@ -1284,7 +1330,7 @@ final class LinuxDetailsPanel: @unchecked Sendable {
             codexQuota = snapshot
             rememberCodexQuota(snapshot)
         }
-        rebuildQuotaWindow()
+        quotaDidChange()
     }
 
     fileprivate func applyPendingClaudeQuota() {
@@ -1297,7 +1343,7 @@ final class LinuxDetailsPanel: @unchecked Sendable {
             claudeQuota = snapshot
             rememberClaudeQuota(snapshot)
         }
-        rebuildQuotaWindow()
+        quotaDidChange()
     }
 
     fileprivate func applyPendingAntigravityQuota() {
@@ -1307,7 +1353,7 @@ final class LinuxDetailsPanel: @unchecked Sendable {
             antigravityQuota = snapshot
             rememberProviderQuota(snapshot, provider: .antigravity)
         }
-        rebuildQuotaWindow()
+        quotaDidChange()
     }
 
     fileprivate func applyPendingCursorQuota() {
@@ -1317,14 +1363,19 @@ final class LinuxDetailsPanel: @unchecked Sendable {
             cursorQuota = snapshot
             rememberProviderQuota(snapshot, provider: .cursor)
         }
-        rebuildQuotaWindow()
+        quotaDidChange()
     }
 
     fileprivate func applyPendingGrokBotQuota() {
         quotaLock.lock(); let snapshot = pendingGrokBotQuota; pendingGrokBotQuota = nil; quotaLock.unlock()
         grokBotQuotaFetchInFlight = false
         if let snapshot { grokBotQuota = snapshot; rememberProviderQuota(snapshot, provider: .grokBot) }
+        quotaDidChange()
+    }
+
+    private func quotaDidChange() {
         rebuildQuotaWindow()
+        onDialQuotaChange()
     }
 
     private func scheduleRebuild() {
