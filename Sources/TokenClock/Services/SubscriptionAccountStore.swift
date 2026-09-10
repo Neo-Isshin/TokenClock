@@ -11,7 +11,7 @@ enum SubscriptionProvider: String, CaseIterable, Codable, Identifiable, Sendable
         case .antigravity: return "Antigravity"
         case .cursor: return "Cursor"
         case .grokBot: return "Grok Bot"
-        case .zhipu: return "Zhipu GLM"
+        case .zhipu: return "Z.ai"
         }
     }
 

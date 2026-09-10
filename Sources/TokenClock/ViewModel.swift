@@ -2,6 +2,12 @@ import SwiftUI
 import Combine
 import AppKit
 
+struct DialQuotaIndicator: Identifiable, Equatable {
+    let provider: SubscriptionProvider
+    let remainingPercent: Double
+    var id: SubscriptionProvider { provider }
+}
+
 /// 表盘文字颜色覆盖模式（「表盘外观 ▸ 文字颜色」）
 enum DialTextMode: Int {
     case theme = 0    // 跟随主题
@@ -114,33 +120,52 @@ final class ViewModel: ObservableObject {
     @Published private(set) var zhipuQuota = ProviderQuotaSnapshot.idle(source: "ZCode Coding Plan")
     @Published private(set) var subscriptionAccounts = SubscriptionAccountStore.shared.records()
     @Published private(set) var activeSubscriptionAccountIDs: [SubscriptionProvider: String] = [:]
-    @Published var dialQuotaProvider: SubscriptionProvider = {
-        guard let raw = UserDefaults.standard.string(for: .dialQuotaProvider),
-              let provider = SubscriptionProvider(rawValue: raw) else { return .codex }
-        return provider
-    }() {
-        didSet { UserDefaults.standard.setString(dialQuotaProvider.rawValue, for: .dialQuotaProvider) }
-    }
+    @Published private(set) var dialQuotaProviders: [SubscriptionProvider] = {
+        var providers: [SubscriptionProvider] = []
+        for raw in UserDefaults.standard.stringArray(forKey: SettingsKey.dialQuotaProviders.rawValue) ?? [] {
+            if let provider = SubscriptionProvider(rawValue: raw), !providers.contains(provider) {
+                providers.append(provider)
+            }
+        }
+        if providers.isEmpty,
+           let raw = UserDefaults.standard.string(for: .dialQuotaProvider),
+           let provider = SubscriptionProvider(rawValue: raw) {
+            providers = [provider]
+        }
+        return Array((providers.isEmpty ? [.codex] : providers).prefix(2))
+    }()
     @Published private(set) var notifications: [TokenClockNotification] = []
     var unreadNotificationCount: Int { notifications.filter { !$0.isRead }.count }
 
-    /// The dial uses the most constrained active window for the chosen provider.
-    /// Before the first on-demand refresh, fall back to the newest persisted snapshot.
-    var dialQuotaRemainingPercent: Double? {
-        dialQuotaRemainingPercents.first
-    }
-
-    /// Up to two real quota windows, ordered from most to least constrained.
-    var dialQuotaRemainingPercents: [Double] {
-        quotaBuckets(for: dialQuotaProvider)
-            .map(\.remainingPercent)
-            .sorted()
-            .prefix(2)
-            .map { $0 }
+    /// One ring per selected provider. Prefer its weekly window; if the provider exposes
+    /// a different subscription period, use its longest-duration bucket instead.
+    var dialQuotaIndicators: [DialQuotaIndicator] {
+        dialQuotaProviders.compactMap { provider in
+            weeklyQuotaRemainingPercent(for: provider).map {
+                DialQuotaIndicator(provider: provider, remainingPercent: $0)
+            }
+        }
     }
 
     var dialQuotaProviderOptions: [SubscriptionProvider] {
-        SubscriptionProvider.allCases.filter { !quotaBuckets(for: $0).isEmpty }
+        SubscriptionProvider.allCases.filter {
+            dialQuotaProviders.contains($0) || !quotaBuckets(for: $0).isEmpty
+        }
+    }
+
+    func toggleDialQuotaProvider(_ provider: SubscriptionProvider) {
+        if let index = dialQuotaProviders.firstIndex(of: provider) {
+            guard dialQuotaProviders.count > 1 else { return }
+            dialQuotaProviders.remove(at: index)
+        } else {
+            guard dialQuotaProviders.count < 2 else { return }
+            dialQuotaProviders.append(provider)
+        }
+        UserDefaults.standard.setStringArray(
+            dialQuotaProviders.map(\.rawValue), for: .dialQuotaProviders
+        )
+        // Keep older platform builds on the primary selected provider.
+        UserDefaults.standard.setString(dialQuotaProviders.first?.rawValue, for: .dialQuotaProvider)
     }
 
     @Published var windowOpacity: Double = 1.0 { didSet { UserDefaults.standard.set(windowOpacity, forKey: SettingsKey.windowOpacity.rawValue) } }
@@ -561,6 +586,21 @@ final class ViewModel: ObservableObject {
         }
         if !live.isEmpty { return live }
         return subscriptionAccounts(for: provider).first?.groups.flatMap(\.buckets) ?? []
+    }
+
+    private func weeklyQuotaRemainingPercent(for provider: SubscriptionProvider) -> Double? {
+        let buckets = quotaBuckets(for: provider)
+        let weekly = buckets.filter { bucket in
+            let name = bucket.name.lowercased()
+            return bucket.windowMinutes == 10_080
+                || abs(bucket.windowMinutes - 10_080) <= 1_440
+                || name.contains("week")
+                || name.contains("周")
+                || name.contains("週")
+        }
+        if let remaining = weekly.map(\.remainingPercent).min() { return remaining }
+        guard let longestWindow = buckets.map(\.windowMinutes).max() else { return nil }
+        return buckets.filter { $0.windowMinutes == longestWindow }.map(\.remainingPercent).min()
     }
 
     func updateSubscriptionAccount(id: String, note: String, manualPlan: String?) {

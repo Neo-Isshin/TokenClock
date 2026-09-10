@@ -23,7 +23,7 @@ struct ClockContentView: View {
         // 表盘大小随用户设置缩放：d = 直径，s = 相对中档(240)的缩放比。
         let d = viewModel.clockSize.diameter
         let s = viewModel.clockSize.scale
-        let quotaPercents = viewModel.dialQuotaRemainingPercents
+        let quotaIndicators = viewModel.dialQuotaIndicators
 
         // 外层：流动柔光在底，圆形玻璃盘体在上。
         // `.clear` 玻璃会透出 / 折射底层柔光，呈现晶莹剔透 + 微微流动的质感，
@@ -106,13 +106,31 @@ struct ClockContentView: View {
                 // 右侧：所选订阅工具的剩余额度
                 HStack {
                     Spacer()
-                    if let remaining = quotaPercents.first {
-                        dialQuotaRings(
-                            remaining: remaining,
-                            secondaryRemaining: quotaPercents.dropFirst().first,
-                            scale: s
+                    if quotaIndicators.count == 1, let indicator = quotaIndicators.first {
+                        quotaRing(
+                            remaining: indicator.remainingPercent,
+                            size: 30 * s,
+                            lineWidth: 3.25 * s,
+                            fontSize: 7.5 * s
                         )
                             .padding(.trailing, 36 * s)
+                    } else if quotaIndicators.count == 2 {
+                        VStack(alignment: .trailing, spacing: 4 * s) {
+                            ForEach(quotaIndicators) { indicator in
+                                HStack(spacing: 2 * s) {
+                                    Text(indicator.provider.emoji)
+                                        .font(.system(size: 8 * s))
+                                        .frame(width: 10 * s)
+                                    quotaRing(
+                                        remaining: indicator.remainingPercent,
+                                        size: 30 * s,
+                                        lineWidth: 3.25 * s,
+                                        fontSize: 7.5 * s
+                                    )
+                                }
+                            }
+                        }
+                        .padding(.trailing, 36 * s)
                     }
                 }
 
@@ -176,35 +194,6 @@ struct ClockContentView: View {
         .accessibilityAddTraits(.isButton)
     }
 
-    private func dialQuotaRings(
-        remaining: Double,
-        secondaryRemaining: Double?,
-        scale s: CGFloat
-    ) -> some View {
-        let normalized = min(100, max(0, remaining))
-        let secondary = secondaryRemaining.map { min(100, max(0, $0)) }
-        return VStack(spacing: 3 * s) {
-            quotaRing(
-                remaining: normalized,
-                size: 30 * s,
-                lineWidth: 3.25 * s,
-                fontSize: 7.5 * s
-            )
-            if let secondary {
-                quotaRing(
-                    remaining: secondary,
-                    size: 19 * s,
-                    lineWidth: 2.25 * s,
-                    fontSize: 5.5 * s
-                )
-            } else {
-                Circle()
-                    .strokeBorder(viewModel.effectiveDialSecondary.opacity(0.18), lineWidth: 2.25 * s)
-                    .frame(width: 19 * s, height: 19 * s)
-            }
-        }
-    }
-
     private func quotaRing(
         remaining: Double,
         size: CGFloat,
@@ -241,12 +230,15 @@ struct ClockContentView: View {
                                      time,
                                      viewModel.totalTokensFormatted,
                                      viewModel.totalMessagesFormatted)
-        guard let remaining = viewModel.dialQuotaRemainingPercent else { return summary }
-        return summary + ", " + L10n.shared.tr(
-            "quota.dialAccessibility",
-            viewModel.dialQuotaProvider.displayName,
-            Int(remaining.rounded())
-        )
+        let quotas = viewModel.dialQuotaIndicators.map {
+            L10n.shared.tr(
+                "quota.dialAccessibility",
+                $0.provider.displayName,
+                Int($0.remainingPercent.rounded())
+            )
+        }
+        guard !quotas.isEmpty else { return summary }
+        return summary + ", " + quotas.joined(separator: ", ")
     }
 
     @ViewBuilder

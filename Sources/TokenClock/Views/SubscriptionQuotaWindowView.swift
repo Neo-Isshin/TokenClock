@@ -73,19 +73,26 @@ struct SubscriptionQuotaWindowView: View {
                         .foregroundStyle(.secondary)
                     Menu {
                         ForEach(viewModel.dialQuotaProviderOptions) { provider in
+                            let isSelected = viewModel.dialQuotaProviders.contains(provider)
                             Button {
-                                viewModel.dialQuotaProvider = provider
+                                viewModel.toggleDialQuotaProvider(provider)
                             } label: {
-                                if provider == viewModel.dialQuotaProvider {
+                                if isSelected {
                                     Label("\(provider.emoji) \(provider.displayName)", systemImage: "checkmark")
                                 } else {
                                     Text("\(provider.emoji) \(provider.displayName)")
                                 }
                             }
+                            .disabled(
+                                (isSelected && viewModel.dialQuotaProviders.count == 1)
+                                    || (!isSelected && viewModel.dialQuotaProviders.count == 2)
+                            )
                         }
                     } label: {
                         Label(
-                            "\(viewModel.dialQuotaProvider.emoji) \(viewModel.dialQuotaProvider.displayName)",
+                            viewModel.dialQuotaProviders
+                                .map { "\($0.emoji) \($0.displayName)" }
+                                .joined(separator: " + "),
                             systemImage: "circle.dashed"
                         )
                     }

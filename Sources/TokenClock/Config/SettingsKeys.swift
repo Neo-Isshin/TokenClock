@@ -100,6 +100,8 @@ enum SettingsKey: String {
     case subscriptionQuotaOrder = "TC_subscriptionQuotaOrder"
     /// 表盘额度环当前展示的 provider。
     case dialQuotaProvider = "TC_dialQuotaProvider"
+    /// 表盘额度环展示的 provider 列表；最多两个。单数 key 保留用于旧版本兼容。
+    case dialQuotaProviders = "TC_dialQuotaProviders"
     /// Subscription Quota 已发现账号、用户备注、手动套餐与最近额度快照（不含凭据）。
     case subscriptionQuotaAccounts = "TC_subscriptionQuotaAccounts"
     /// One-time OpenClaw history rebuild after cron/content accounting fixes.
