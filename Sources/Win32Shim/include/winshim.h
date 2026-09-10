@@ -129,6 +129,7 @@ void  dlg_add_subtitle(void *dlg, const char *text_utf8, int x, int y, int w, in
 void  dlg_add_section(void *dlg, const char *text_utf8, int x, int y, int w, int h);  /* compact semibold section title */
 void  dlg_add_card(void *dlg, int x, int y, int w, int h);                            /* rounded Fluent surface */
 void  dlg_add_progress(void *dlg, int x, int y, int w, int h, int percent);             /* red/orange/green quota bar */
+void  dlg_add_swatch(void *dlg, int x, int y, int size, unsigned int argb);
 void  dlg_add_nav(void *dlg, int id, const char *title_utf8, const char *subtitle_utf8,
                   int x, int y, int w, int h);                                        /* macOS-like settings row */
 void  dlg_add_disclosure(void *dlg, int id, const char *title_utf8, const char *subtitle_utf8,
@@ -220,8 +221,13 @@ typedef struct {
     const char *forecast_summary; /* emoji/city/temp \t-ish encoded as summary|label */
     const char *forecast_slots;   /* time|emoji|temp, four slots separated by \t */
     int notification_unread_count; /* forecast-bar bell state; bell remains visible at zero */
-    double dial_quota_remaining; /* 0...100; smallest active window for selected provider */
-    int dial_quota_visible;
+    int dial_quota_count;        /* 0...2 provider indicators */
+    double dial_quota_outer1, dial_quota_inner1;
+    double dial_quota_outer2, dial_quota_inner2;
+    int dial_quota_has_inner1, dial_quota_has_inner2;
+    unsigned int dial_quota_color1, dial_quota_color2;
+    const char *dial_quota_tooltip1;
+    const char *dial_quota_tooltip2;
     const char *quota_label;      /* left chip label beside percent */
     const char *quota_text;       /* quota panel: typed tab-separated rows */
     int detail_grouping;         /* 0 session / 1 model */
@@ -237,6 +243,7 @@ void gdip_init(void);
 void gdip_shutdown(void);
 void win_render_set_opacity(double alpha);  /* SourceConstantAlpha for UpdateLayeredWindow */
 void win_render_clock(int w, int h, int hh, int mm, int ss, const win_theme *t, const win_overlay *ov);
+int win_quota_tooltip_at(int x, int y, char *out_utf8, int out_size);
 /* Internal bridge used by winshim.c's normal HWND paint path. */
 void win_render_detail_paint(void *hdc, int w, int h);
 void win_detail_present(int show, int dial_height, int main_width, int card_width, int card_height);

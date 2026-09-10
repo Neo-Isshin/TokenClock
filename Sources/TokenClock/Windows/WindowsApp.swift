@@ -163,10 +163,22 @@ final class WindowsApp: @unchecked Sendable {
     private var overviewCustomStart = Calendar.current.date(byAdding: .day, value: -6, to: Date()) ?? Date()
     private var overviewCustomEnd = Date()
     private var quotaOrderEditing = false
-    private var dialQuotaProvider: SubscriptionProvider = {
-        guard let raw = UserDefaults.standard.string(for: .dialQuotaProvider),
-              let provider = SubscriptionProvider(rawValue: raw) else { return .codex }
-        return provider
+    private var dialQuotaProviders: [SubscriptionProvider] = {
+        let defaults = UserDefaults.standard
+        var providers: [SubscriptionProvider] = []
+        for raw in defaults.stringArray(for: .dialQuotaProviders) ?? [] {
+            if let provider = SubscriptionProvider(rawValue: raw), !providers.contains(provider) {
+                providers.append(provider)
+            }
+        }
+        if defaults.object(forKey: SettingsKey.dialQuotaProviders.rawValue) != nil {
+            return Array(providers.prefix(2))
+        }
+        if let raw = defaults.string(for: .dialQuotaProvider),
+           let provider = SubscriptionProvider(rawValue: raw) {
+            providers = [provider]
+        }
+        return Array((providers.isEmpty ? [.codex] : providers).prefix(2))
     }()
     private var quotaProviderOrder: [SubscriptionProvider] = {
         let saved = UserDefaults.standard.stringArray(for: .subscriptionQuotaOrder) ?? []
@@ -297,7 +309,7 @@ final class WindowsApp: @unchecked Sendable {
         let forecast = detailsVisible
             ? forecastOverlay(weatherInfo: weatherSnapshot.1)
             : (summary: "", slots: "", visible: false)
-        let dialQuotaRemaining = dialQuotaRemainingPercent()
+        let quotaIndicators = dialQuotaIndicators()
 
         // 固定高详情卡只渲染当前可见页；滚轮改变起始行。展开父项不会再改变窗口高度，
         // 也不会推动表盘。天气趋势占 76pt 时少显示两行，剩余行可继续滚动查看。
@@ -336,9 +348,11 @@ final class WindowsApp: @unchecked Sendable {
         }
 
         var wt = selectedTheme.winTheme
+        let quotaTooltip1 = quotaIndicators.first.map(dialQuotaTooltip) ?? ""
+        let quotaTooltip2 = quotaIndicators.dropFirst().first.map(dialQuotaTooltip) ?? ""
         Self.withCStrings([date, weather, todayLabel, tokens, messages, tool1, tool2, rate, dialImagePath,
                            detailText, detailControls, detailHeader, forecast.summary, forecast.slots,
-                           "", ""]) { ptrs in
+                           quotaTooltip1, quotaTooltip2, "", ""]) { ptrs in
             var ov = win_overlay()
             ov.date = ptrs[0]
             ov.weather = ptrs[1]
@@ -355,10 +369,23 @@ final class WindowsApp: @unchecked Sendable {
             ov.forecast_summary = ptrs[12]
             ov.forecast_slots = ptrs[13]
             ov.notification_unread_count = Int32(model.unreadNotificationCount)
-            ov.dial_quota_remaining = dialQuotaRemaining ?? 0
-            ov.dial_quota_visible = dialQuotaRemaining == nil ? 0 : 1
-            ov.quota_label = ptrs[14]
-            ov.quota_text = ptrs[15]
+            ov.dial_quota_count = Int32(quotaIndicators.count)
+            if let first = quotaIndicators.first {
+                ov.dial_quota_outer1 = first.outerRemainingPercent
+                ov.dial_quota_inner1 = first.innerRemainingPercent ?? 0
+                ov.dial_quota_has_inner1 = first.innerRemainingPercent == nil ? 0 : 1
+                ov.dial_quota_color1 = dialQuotaColor(first.provider, themeTextColor: wt.text_primary)
+            }
+            if let second = quotaIndicators.dropFirst().first {
+                ov.dial_quota_outer2 = second.outerRemainingPercent
+                ov.dial_quota_inner2 = second.innerRemainingPercent ?? 0
+                ov.dial_quota_has_inner2 = second.innerRemainingPercent == nil ? 0 : 1
+                ov.dial_quota_color2 = dialQuotaColor(second.provider, themeTextColor: wt.text_primary)
+            }
+            ov.dial_quota_tooltip1 = ptrs[14]
+            ov.dial_quota_tooltip2 = ptrs[15]
+            ov.quota_label = ptrs[16]
+            ov.quota_text = ptrs[17]
             ov.detail_grouping = groupingMode == .model ? 1 : 0
             ov.detail_percentage = valueMode == .costPercent ? 1 : 0
             ov.detail_includes_cache = usageIncludesCache ? 1 : 0
@@ -865,11 +892,14 @@ final class WindowsApp: @unchecked Sendable {
     // MARK: - 托盘菜单
 
     func buildMenu(menu: UnsafeMutableRawPointer?) {
-        guard let menu else { return }
+        guard let menu,
+              let appearanceMenu = menu_create(),
+              let weatherTimeMenu = menu_create(),
+              let generalMenu = menu_create() else { return }
         let L = L10n.shared
 
         // macOS normal 使用独立 3x3 visual picker；菜单项直接打开同构的缩略图面板。
-        addMenuItem(menu, cmdThemePicker, L.tr("menu.clockFace"), false)
+        addMenuItem(appearanceMenu, cmdThemePicker, L.tr("menu.clockFace"), false)
         let savedThemes = WindowsSavedCustomTheme.loadAll()
         if !savedThemes.isEmpty, let savedMenu = menu_create() {
             let activeId = UserDefaults.standard.string(for: .activeCustomThemeId)
@@ -877,57 +907,55 @@ final class WindowsApp: @unchecked Sendable {
                 addMenuItem(savedMenu, cmdSavedThemeBase + Int32(index), saved.name,
                             selectedTheme == .custom && activeId == saved.id)
             }
-            addSubmenu(menu, L.tr("menu.myClockFaces"), savedMenu)
+            addSubmenu(appearanceMenu, L.tr("menu.myClockFaces"), savedMenu)
             if let deleteMenu = menu_create() {
                 for (index, saved) in savedThemes.prefix(32).enumerated() {
                     addMenuItem(deleteMenu, cmdDeleteThemeBase + Int32(index), saved.name, false)
                 }
-                addSubmenu(menu, L.language == .en ? "Delete Custom Face" : "删除自定义表盘", deleteMenu)
+                addSubmenu(appearanceMenu, L.language == .en ? "Delete Custom Face" : "删除自定义表盘", deleteMenu)
             }
         }
-        addMenuItem(menu, cmdEditCustom, L.language == .en ? "✏️ Edit Custom Theme…" : "✏️ 编辑自定义主题…", false)
+        addMenuItem(appearanceMenu, cmdEditCustom, L.language == .en ? "✏️ Edit Custom Theme…" : "✏️ 编辑自定义主题…", false)
+        addSeparator(appearanceMenu)
         // 尺寸子菜单
         if let sm = menu_create() {
             addMenuItem(sm, cmdSizeSmall,  L.tr("size.small"),      clockSizeRaw == "small")
             addMenuItem(sm, cmdSizeMedium, L.tr("size.medium"),     clockSizeRaw != "small" && clockSizeRaw != "large" && clockSizeRaw != "extraLarge")
             addMenuItem(sm, cmdSizeLarge,  L.tr("size.large"),      clockSizeRaw == "large")
             addMenuItem(sm, cmdSizeXL,     L.tr("size.extraLarge"), clockSizeRaw == "extraLarge")
-            addSubmenu(menu, L.tr("menu.size"), sm)
+            addSubmenu(appearanceMenu, L.tr("menu.size"), sm)
         }
-        addMenuItem(menu, cmdApi, L.tr("menu.api", Int(apiPort)), false)
-        addSeparator(menu)
+        addMenuItem(generalMenu, cmdApi, L.tr("menu.api", Int(apiPort)), false)
         if let om = menu_create() {
             for (index, percent) in Self.opacityLevels.enumerated() {
                 addMenuItem(om, cmdOpacityBase + Int32(index), "\(percent)%",
                             Int((windowOpacity * 100).rounded()) == percent)
             }
-            addSubmenu(menu, L.tr("menu.opacity"), om)
+            addSubmenu(appearanceMenu, L.tr("menu.opacity"), om)
         }
-        addSeparator(menu)
-        addMenuItem(menu, cmdTopmost, L.tr("menu.alwaysOnTop"), alwaysOnTop)
-        addSeparator(menu)
+        addMenuItem(generalMenu, cmdTopmost, L.tr("menu.alwaysOnTop"), alwaysOnTop)
 
         // 温度单位
         if let um = menu_create() {
             addMenuItem(um, cmdTempC, L.tr("menu.celsius"), !useFahrenheit)
             addMenuItem(um, cmdTempF, L.tr("menu.fahrenheit"), useFahrenheit)
-            addSubmenu(menu, L.tr("menu.temperature"), um)
+            addSubmenu(weatherTimeMenu, L.tr("menu.temperature"), um)
         }
         // 城市（Auto=IP 定位 + 6 预置）
         if let cm = menu_create() {
             for (i, c) in Self.cities.enumerated() {
                 addMenuItem(cm, cmdCityBase + Int32(i), cityLabel(c), c == selectedCity)
             }
-            addSubmenu(menu, L.tr("menu.city"), cm)
+            addSubmenu(weatherTimeMenu, L.tr("menu.city"), cm)
         }
         // 时区
         if let zm = menu_create() {
             for (i, tz) in Self.timezones.enumerated() {
                 addMenuItem(zm, cmdTzBase + Int32(i), tzLabel(tz), tz == selectedTimezoneRaw)
             }
-            addSubmenu(menu, L.tr("menu.timezone"), zm)
+            addSubmenu(weatherTimeMenu, L.tr("menu.timezone"), zm)
         }
-        addSeparator(menu)
+        addSeparator(generalMenu)
 
         // 语言子菜单
         if let lm = menu_create() {
@@ -935,18 +963,20 @@ final class WindowsApp: @unchecked Sendable {
             addMenuItem(lm, cmdLangHans, AppLanguage.zhHans.displayName, lang == .zhHans)
             addMenuItem(lm, cmdLangHant, AppLanguage.zhHant.displayName, lang == .zhHant)
             addMenuItem(lm, cmdLangEn,   AppLanguage.en.displayName,     lang == .en)
-            addSubmenu(menu, L.tr("menu.language"), lm)
+            addSubmenu(generalMenu, L.tr("menu.language"), lm)
         }
-        addMenuItem(menu, cmdRefresh, L.language == .en ? "Refresh Now" : "立即刷新", false)
+        addMenuItem(generalMenu, cmdRefresh, L.language == .en ? "Refresh Now" : "立即刷新", false)
         let unread = model.unreadNotificationCount
         if unread > 0 {
-            addMenuItem(menu, cmdNotifications, "🔔 \(L.tr("notification.title")) (\(unread))", false)
+            addMenuItem(generalMenu, cmdNotifications, "🔔 \(L.tr("notification.title")) (\(unread))", false)
         }
+        addSubmenu(menu, L.tr("menu.appearance"), appearanceMenu)
+        addSubmenu(menu, L.tr("menu.weatherTime"), weatherTimeMenu)
+        addSubmenu(menu, L.tr("menu.general"), generalMenu)
         addSeparator(menu)
         addMenuItem(menu, cmdSettings, L.tr("menu.settings"), false)
         addSeparator(menu)
-        addMenuItem(menu, cmdLaunch, L.tr("menu.launchAtLogin"), launchAtLogin)
-        addSeparator(menu)
+        addMenuItem(generalMenu, cmdLaunch, L.tr("menu.launchAtLogin"), launchAtLogin)
         addMenuItem(menu, cmdAbout, L.tr("menu.about"), false)
         addMenuItem(menu, cmdVisibility, L.tr(mainVisible ? "menu.hide" : "menu.show"), false)
         addMenuItem(menu, cmdQuit, L.tr("menu.quit"), false)
@@ -1088,16 +1118,12 @@ final class WindowsApp: @unchecked Sendable {
         case 983:
             quotaOrderEditing.toggle()
             rebuildSubscriptionQuotaDialog()
-        case 984:
-            guard let dialog = quotaDlg else { return }
-            let selected = settingsEditText(dialog, 984)
-            if let provider = SubscriptionProvider.allCases.first(where: {
-                "\($0.emoji) \($0.displayName)" == selected
-            }) {
-                dialQuotaProvider = provider
-                UserDefaults.standard.setString(provider.rawValue, for: .dialQuotaProvider)
-                render()
-            }
+        case 1300...1305:
+            let index = Int(id - 1300)
+            guard SubscriptionProvider.allCases.indices.contains(index) else { return }
+            toggleDialQuotaProvider(SubscriptionProvider.allCases[index])
+            rebuildSubscriptionQuotaDialog()
+            render()
         case 990...995:
             moveQuotaProvider(atDefaultIndex: Int(id - 990), by: -1)
             rebuildSubscriptionQuotaDialog()
@@ -1174,14 +1200,23 @@ final class WindowsApp: @unchecked Sendable {
             dlg_add_push(dialog, 982, L10n.shared.language == .en ? "Close" : "关闭", dialogWidth - 134, 204, 100, 30)
             return
         }
-        let providerChoices = SubscriptionProvider.allCases.map { "\($0.emoji) \($0.displayName)" }
-        dlg_add_section(dialog, L10n.shared.tr("quota.dialDisplay"), 24, 82, 92, 22)
-        dlg_add_combo(
-            dialog, 984, providerChoices.joined(separator: "\t"),
-            "\(dialQuotaProvider.emoji) \(dialQuotaProvider.displayName)",
-            112, 78, min(220, dialogWidth - 146), 30
-        )
-        var columnY: [Int32] = [124, 124]
+        dlg_add_section(dialog, L10n.shared.tr("quota.dialDisplay"), 24, 82, 54, 22)
+        let selectorColumns = twoColumns ? 6 : 3
+        let selectorTheme = selectedTheme.winTheme
+        for (index, provider) in SubscriptionProvider.allCases.enumerated() {
+            let column = index % selectorColumns
+            let row = index / selectorColumns
+            let x = Int32(82 + column * 128)
+            let y = Int32(78 + row * 30)
+            let color = dialQuotaColor(provider, themeTextColor: selectorTheme.text_primary)
+            dlg_add_swatch(dialog, x, y + 8, 8, color)
+            dlg_add_check(
+                dialog, 1300 + Int32(index), provider.displayName,
+                x + 12, y, 112, 24, dialQuotaProviders.contains(provider) ? 1 : 0
+            )
+        }
+        let providerStartY: Int32 = twoColumns ? 116 : 146
+        var columnY: [Int32] = [providerStartY, providerStartY]
         let cardWidth: Int32 = twoColumns ? 414 : dialogWidth - 56
         quotaEditControls.removeAll()
         quotaEmailControls.removeAll()
@@ -1271,20 +1306,70 @@ final class WindowsApp: @unchecked Sendable {
         UserDefaults.standard.setStringArray(quotaProviderOrder.map(\.rawValue), for: .subscriptionQuotaOrder)
     }
 
-    private func dialQuotaRemainingPercent() -> Double? {
-        let live: [CodexQuotaBucket]
-        switch dialQuotaProvider {
-        case .codex: live = codexQuotaState.snapshot().buckets
-        case .claude: live = claudeQuotaState.snapshot().buckets
-        case .antigravity: live = antigravityQuotaState.snapshot().groups.flatMap(\.buckets)
-        case .cursor: live = cursorQuotaState.snapshot().groups.flatMap(\.buckets)
-        case .grokBot: live = grokBotQuotaState.snapshot().groups.flatMap(\.buckets)
-        case .zhipu: live = zhipuQuotaState.snapshot().groups.flatMap(\.buckets)
+    private func dialQuotaIndicators() -> [DialQuotaIndicator] {
+        dialQuotaProviders.compactMap { provider in
+            DialQuotaResolver.resolve(provider: provider, groups: dialQuotaGroups(for: provider))
         }
-        let buckets = live.isEmpty
-            ? subscriptionAccounts(for: dialQuotaProvider).first?.groups.flatMap(\.buckets) ?? []
-            : live
-        return buckets.map(\.remainingPercent).min()
+    }
+
+    private func dialQuotaGroups(for provider: SubscriptionProvider) -> [ProviderQuotaGroup] {
+        let live: [ProviderQuotaGroup]
+        switch provider {
+        case .codex:
+            let buckets = codexQuotaState.snapshot().buckets
+            live = buckets.isEmpty ? [] : [ProviderQuotaGroup(
+                id: "codex:subscription", name: "Subscription", buckets: buckets
+            )]
+        case .claude:
+            let buckets = claudeQuotaState.snapshot().buckets
+            live = buckets.isEmpty ? [] : [ProviderQuotaGroup(
+                id: "claude:subscription", name: "Subscription", buckets: buckets
+            )]
+        case .antigravity: live = antigravityQuotaState.snapshot().groups
+        case .cursor: live = cursorQuotaState.snapshot().groups
+        case .grokBot: live = grokBotQuotaState.snapshot().groups
+        case .zhipu: live = zhipuQuotaState.snapshot().groups
+        }
+        if !live.isEmpty { return live }
+        return subscriptionAccounts(for: provider).first?.groups ?? []
+    }
+
+    private func toggleDialQuotaProvider(_ provider: SubscriptionProvider) {
+        if let index = dialQuotaProviders.firstIndex(of: provider) {
+            dialQuotaProviders.remove(at: index)
+        } else {
+            guard dialQuotaProviders.count < 2 else { return }
+            dialQuotaProviders.append(provider)
+        }
+        UserDefaults.standard.setStringArray(dialQuotaProviders.map(\.rawValue), for: .dialQuotaProviders)
+        UserDefaults.standard.setString(dialQuotaProviders.first?.rawValue, for: .dialQuotaProvider)
+    }
+
+    private func dialQuotaTooltip(_ indicator: DialQuotaIndicator) -> String {
+        var lines = ["\(indicator.provider.emoji) \(indicator.provider.displayName)"]
+        for detail in indicator.details {
+            lines.append("\(L10n.shared.tr(detail.labelKey)) \(String(format: "%.0f%%", detail.remainingPercent))")
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    private func dialQuotaColor(
+        _ provider: SubscriptionProvider,
+        themeTextColor: UInt32
+    ) -> UInt32 {
+        switch selectedTheme {
+        case .classic, .glacier, .gufeng, .railgun:
+            switch provider {
+            case .codex: return 0xFF10A37F
+            case .claude: return 0xFFD96647
+            case .antigravity: return 0xFF8C5CF5
+            case .cursor: return 0xFF1A9EEB
+            case .grokBot: return 0xFF6366F2
+            case .zhipu: return 0xFF000000
+            }
+        case .glass, .midnight, .luxe, .sky, .custom:
+            return themeTextColor
+        }
     }
 
     private func syncSubscriptionAccounts(

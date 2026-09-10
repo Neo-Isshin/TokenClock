@@ -100,6 +100,8 @@ enum SettingsKey: String {
     case subscriptionQuotaOrder = "TC_subscriptionQuotaOrder"
     /// 表盘额度环当前展示的 provider。
     case dialQuotaProvider = "TC_dialQuotaProvider"
+    /// Up to two providers shown on the dial; the singular key remains a compatibility fallback.
+    case dialQuotaProviders = "TC_dialQuotaProviders"
     case subscriptionQuotaAccounts = "TC_subscriptionQuotaAccounts"
     /// One-time OpenClaw history rebuild after cron/content accounting fixes.
     case openclawHistoryRepairVersion = "TC_openclawHistoryRepairVersion"

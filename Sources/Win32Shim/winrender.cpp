@@ -32,6 +32,9 @@ static wchar_t    g_dial_image_path[MAX_PATH] = {0};
 static Gdiplus::Bitmap *g_material_face_cache = NULL;
 static int        g_material_face_cache_style = 0;
 static int        g_material_face_cache_size = 0;
+static RECT       g_quota_hit_rects[2] = {};
+static char       g_quota_tooltips[2][1024] = {};
+static int        g_quota_hit_count = 0;
 
 struct theme_picker_state {
     win_theme themes[9];
@@ -58,6 +61,19 @@ static Gdiplus::Color fluent_cr(HWND hwnd, int role, BYTE alpha = 255) {
 static double deg2rad(double d) { return d * 3.14159265358979 / 180.0; }
 extern "C" {
 static int to_wide(const char *u8, wchar_t *buf, int n);
+
+int win_quota_tooltip_at(int x, int y, char *out_utf8, int out_size) {
+    if (!out_utf8 || out_size <= 0) return 0;
+    out_utf8[0] = 0;
+    POINT point = {x, y};
+    for (int i = 0; i < g_quota_hit_count; ++i) {
+        if (PtInRect(&g_quota_hit_rects[i], point) && g_quota_tooltips[i][0]) {
+            strncpy_s(out_utf8, (size_t)out_size, g_quota_tooltips[i], _TRUNCATE);
+            return 1;
+        }
+    }
+    return 0;
+}
 }
 
 // GDI+ renders Segoe UI Emoji through its monochrome outline fallback.  That made the
@@ -1114,31 +1130,106 @@ void win_render_clock(int w, int h, int hh, int mm, int ss, const win_theme *t, 
         gfx.DrawString(wb, -1, &f, rect, &sf, &b);
     };
 
+    g_quota_hit_count = 0;
     if (ov) {
+        auto drawQuotaRing = [&](int index, double ringX, double ringY, double size,
+                                 double outer, double inner, bool hasInner,
+                                 unsigned int color, const char *tooltip) {
+            const double scale = size / 30.0;
+            const double radius = size / 2.0;
+            const double outerWidth = (ov->dial_quota_count == 1 ? 3.0 : 2.5) * S;
+            const double innerWidth = 1.7 * scale;
+            const double innerRadius = max(2.0 * S, radius - 5.25 * scale);
+            outer = max(0.0, min(100.0, outer));
+            inner = max(0.0, min(100.0, inner));
+
+            int textR = (t->text_primary >> 16) & 0xff;
+            int textG = (t->text_primary >> 8) & 0xff;
+            int textB = t->text_primary & 0xff;
+            bool lightText = (textR * 299 + textG * 587 + textB * 114) / 1000 > 150;
+            Gdiplus::SolidBrush shadow(Gdiplus::Color(26, 0, 0, 0));
+            gfx.FillEllipse(&shadow, (Gdiplus::REAL)(ringX - radius),
+                            (Gdiplus::REAL)(ringY - radius + 1.0 * S),
+                            (Gdiplus::REAL)size, (Gdiplus::REAL)size);
+            Gdiplus::SolidBrush surface(lightText
+                ? Gdiplus::Color(42, 0, 0, 0)
+                : Gdiplus::Color(68, 255, 255, 255));
+            gfx.FillEllipse(&surface, (Gdiplus::REAL)(ringX - radius),
+                            (Gdiplus::REAL)(ringY - radius),
+                            (Gdiplus::REAL)size, (Gdiplus::REAL)size);
+
+            Gdiplus::RectF outerRect((Gdiplus::REAL)(ringX - radius + outerWidth / 2),
+                                     (Gdiplus::REAL)(ringY - radius + outerWidth / 2),
+                                     (Gdiplus::REAL)(size - outerWidth),
+                                     (Gdiplus::REAL)(size - outerWidth));
+            Gdiplus::Pen outerTrack(cr((t->text_secondary & 0x00ffffffu) | 0x26000000u),
+                                    (Gdiplus::REAL)outerWidth);
+            gfx.DrawEllipse(&outerTrack, outerRect);
+            Gdiplus::Pen outerProgress(cr((color & 0x00ffffffu) | 0xD6000000u),
+                                       (Gdiplus::REAL)outerWidth);
+            outerProgress.SetLineCap(Gdiplus::LineCapRound, Gdiplus::LineCapRound, Gdiplus::DashCapRound);
+            if (outer > 0) gfx.DrawArc(&outerProgress, outerRect, -90.0f, (Gdiplus::REAL)(outer * 3.6));
+
+            if (hasInner) {
+                Gdiplus::RectF innerRect((Gdiplus::REAL)(ringX - innerRadius),
+                                         (Gdiplus::REAL)(ringY - innerRadius),
+                                         (Gdiplus::REAL)(innerRadius * 2),
+                                         (Gdiplus::REAL)(innerRadius * 2));
+                Gdiplus::Pen innerTrack(cr((t->text_secondary & 0x00ffffffu) | 0x1C000000u),
+                                        (Gdiplus::REAL)innerWidth);
+                gfx.DrawEllipse(&innerTrack, innerRect);
+                Gdiplus::Pen innerProgress(cr((color & 0x00ffffffu) | 0x88000000u),
+                                           (Gdiplus::REAL)innerWidth);
+                innerProgress.SetLineCap(Gdiplus::LineCapRound, Gdiplus::LineCapRound, Gdiplus::DashCapRound);
+                if (inner > 0) gfx.DrawArc(&innerProgress, innerRect, -90.0f, (Gdiplus::REAL)(inner * 3.6));
+            }
+
+            char digits[16]; sprintf_s(digits, "%.0f", outer);
+            const float fontSize = (float)((ov->dial_quota_count == 1 ? 8.5 : 7.2) * S);
+            const double numberWidth = strlen(digits) * fontSize * 0.56;
+            const double percentWidth = fontSize * 0.48;
+            const double totalWidth = numberWidth + percentWidth;
+            unsigned int textColor = outer <= 15 ? 0xFFFF3B30u
+                : (outer <= 35 ? 0xFFFF9500u : t->text_primary);
+            textC(digits, ringX - totalWidth / 2 + numberWidth / 2, ringY,
+                  fontSize, textColor, true);
+            textC("%", ringX + totalWidth / 2 - percentWidth / 2, ringY,
+                  fontSize, textColor, false);
+
+            if (index < 2) {
+                g_quota_hit_rects[index] = {
+                    (LONG)floor(ringX - radius - 3 * S),
+                    (LONG)floor(ringY - radius - 3 * S),
+                    (LONG)ceil(ringX + radius + 3 * S),
+                    (LONG)ceil(ringY + radius + 3 * S)
+                };
+                strncpy_s(g_quota_tooltips[index], sizeof(g_quota_tooltips[index]),
+                          tooltip ? tooltip : "", _TRUNCATE);
+                g_quota_hit_count = max(g_quota_hit_count, index + 1);
+            }
+        };
+
         textC(ov->date,    cxd, cyd - r * 0.42, (float)(11.0 * S), t->text_secondary, false);
         textCEmojiLine(ov->weather, cxd, cyd - r * 0.42 + 16.0 * S, (float)(13.0 * S), t->text_primary);
         textC(ov->today_label, cxd, cyd + r * 0.28, (float)(9.0 * S), t->text_secondary, false);
+        textEmoji(ov->rate, cxd + 32.0 * S, cyd + r * 0.28, (float)(11.0 * S), t->text_secondary);
         textC(ov->tokens,   cxd, cyd + r * 0.40, (float)(20.0 * S), t->text_primary, true);
-        if (ov->dial_quota_visible) {
-            const double remaining = max(0.0, min(100.0, ov->dial_quota_remaining));
-            const double ringX = cxd + 42.0 * S;
-            const double ringY = cyd + r * 0.40;
-            const double ringR = 14.0 * S;
-            Gdiplus::Pen track(cr((t->text_secondary & 0x00ffffffu) | 0x38000000u), (Gdiplus::REAL)(3.0 * S));
-            Gdiplus::RectF ringRect((Gdiplus::REAL)(ringX - ringR), (Gdiplus::REAL)(ringY - ringR),
-                                    (Gdiplus::REAL)(ringR * 2.0), (Gdiplus::REAL)(ringR * 2.0));
-            gfx.DrawEllipse(&track, ringRect);
-            const unsigned int accent = remaining <= 15.0 ? 0xFFFF3B30u
-                : (remaining <= 35.0 ? 0xFFFF9500u : 0xFF34C759u);
-            Gdiplus::Pen progress(cr(accent), (Gdiplus::REAL)(3.0 * S));
-            progress.SetLineCap(Gdiplus::LineCapRound, Gdiplus::LineCapRound, Gdiplus::DashCapRound);
-            if (remaining > 0.0) gfx.DrawArc(&progress, ringRect, -90.0f, (Gdiplus::REAL)(remaining * 3.6));
-            char percent[16];
-            sprintf_s(percent, "%.0f%%", remaining);
-            textC(percent, ringX, ringY, (float)(7.5 * S), t->text_primary, true);
+        if (ov->dial_quota_count == 1) {
+            drawQuotaRing(0, cxd + r * 0.575, cyd, 35.0 * S,
+                          ov->dial_quota_outer1, ov->dial_quota_inner1,
+                          ov->dial_quota_has_inner1 != 0, ov->dial_quota_color1,
+                          ov->dial_quota_tooltip1);
+        } else if (ov->dial_quota_count >= 2) {
+            drawQuotaRing(0, cxd + r * 0.665, cyd - 17.0 * S, 29.0 * S,
+                          ov->dial_quota_outer1, ov->dial_quota_inner1,
+                          ov->dial_quota_has_inner1 != 0, ov->dial_quota_color1,
+                          ov->dial_quota_tooltip1);
+            drawQuotaRing(1, cxd + r * 0.665, cyd + 17.0 * S, 29.0 * S,
+                          ov->dial_quota_outer2, ov->dial_quota_inner2,
+                          ov->dial_quota_has_inner2 != 0, ov->dial_quota_color2,
+                          ov->dial_quota_tooltip2);
         }
         textC(ov->messages, cxd, cyd + r * 0.40 + 18.0 * S, (float)(10.0 * S), t->text_secondary, false);
-        textEmoji(ov->rate, cxd + r * 0.62, cyd, (float)(25.0 * S), t->text_primary);
         if (!expanded) {
             textLEmojiLine(ov->tool_left1, cxd - r * 0.62, cyd - 10.0 * S, (float)(13.0 * S), t->text_primary);
             textLEmojiLine(ov->tool_left2, cxd - r * 0.62, cyd + 12.0 * S, (float)(13.0 * S), t->text_primary);

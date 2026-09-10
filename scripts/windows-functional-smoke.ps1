@@ -298,13 +298,12 @@ Click-Client $detail ([int]($detail0.width*0.80)) (32+$forecastOffset) "detail-s
 $quotaDialog=Wait-DialogControl "TCDialog" $pidApp 982 8000
 if($quotaDialog-eq[IntPtr]::Zero){throw "Subscription Quota window did not open"}
 Capture "04b-detail-subscription-quota" $quotaDialog
-$selector=[TCWinTest]::GetDlgItem($quotaDialog,984)
+$selector=[TCWinTest]::GetDlgItem($quotaDialog,1304)
 if($selector -eq [IntPtr]::Zero){throw "Dial quota provider selector is missing"}
-[void][TCWinTest]::SendMessage($selector,0x014E,[IntPtr]4,[IntPtr]::Zero)
-[void][TCWinTest]::PostMessage($quotaDialog,0x0111,[IntPtr]984,[IntPtr]::Zero)
+[void][TCWinTest]::PostMessage($quotaDialog,0x0111,[IntPtr]1304,[IntPtr]::Zero)
 Start-Sleep -Milliseconds 300
 $dialQuotaSettings=Get-Content -Raw -LiteralPath "$Out\localappdata\TokenClock\settings.json" | ConvertFrom-Json
-if($dialQuotaSettings.TC_dialQuotaProvider -ne 'grokBot'){throw "Dial quota provider selection did not persist"}
+if(@($dialQuotaSettings.TC_dialQuotaProviders) -notcontains 'grokBot'){throw "Dial quota provider selection did not persist"}
 Capture-Screen "04d-dial-quota-ring"
 if([TCWinTest]::GetDlgItem($quotaDialog,1100)-eq[IntPtr]::Zero){throw "Subscription account edit control is missing"}
 if([TCWinTest]::GetDlgItem($quotaDialog,1104)-eq[IntPtr]::Zero){throw "Independent Grok Bot quota card is missing"}

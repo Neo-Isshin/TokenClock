@@ -32,6 +32,8 @@ static BYTE  g_detail_alpha = 255;
 static int   g_detail_applied_alpha = -1;
 static int   g_topmost = 1;
 static int   g_main_visible = 1;
+static HWND  g_quota_tooltip = NULL;
+static wchar_t g_quota_tooltip_text[1024] = {0};
 
 static COLORREF to_cr(unsigned int rgb) {
     return RGB((rgb >> 16) & 0xff, (rgb >> 8) & 0xff, rgb & 0xff);
@@ -43,6 +45,44 @@ static int to_wide(const char *u8, wchar_t *buf, int buf_len) {
     int n = MultiByteToWideChar(CP_UTF8, 0, u8, -1, buf, buf_len);
     if (n == 0 && GetLastError() == ERROR_INSUFFICIENT_BUFFER && buf_len > 0) { buf[0] = 0; return 0; }
     return n;   /* includes the terminating NUL on success */
+}
+
+static void hide_quota_tooltip(void) {
+    if (IsWindow(g_quota_tooltip)) ShowWindow(g_quota_tooltip, SW_HIDE);
+    g_quota_tooltip_text[0] = 0;
+}
+
+static void show_quota_tooltip(const char *text_utf8) {
+    wchar_t text[1024];
+    if (to_wide(text_utf8, text, ARRAYSIZE(text)) == 0 || !text[0]) {
+        hide_quota_tooltip(); return;
+    }
+    if (!IsWindow(g_quota_tooltip)) {
+        g_quota_tooltip = CreateWindowExW(
+            WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE | WS_EX_TRANSPARENT,
+            L"STATIC", L"", WS_POPUP | WS_BORDER | SS_LEFT | SS_NOPREFIX,
+            0, 0, 100, 40, NULL, NULL, GetModuleHandleW(NULL), NULL
+        );
+        if (g_quota_tooltip) {
+            SendMessageW(g_quota_tooltip, WM_SETFONT, (WPARAM)GetStockObject(DEFAULT_GUI_FONT), TRUE);
+        }
+    }
+    if (!IsWindow(g_quota_tooltip)) return;
+    if (wcscmp(g_quota_tooltip_text, text) != 0) {
+        wcscpy_s(g_quota_tooltip_text, ARRAYSIZE(g_quota_tooltip_text), text);
+        SetWindowTextW(g_quota_tooltip, text);
+    }
+    HDC dc = GetDC(g_quota_tooltip);
+    HGDIOBJ old_font = SelectObject(dc, GetStockObject(DEFAULT_GUI_FONT));
+    RECT measured = {0, 0, 340, 0};
+    DrawTextW(dc, text, -1, &measured, DT_CALCRECT | DT_LEFT | DT_NOPREFIX);
+    SelectObject(dc, old_font);
+    ReleaseDC(g_quota_tooltip, dc);
+    int width = max(88, min(360, measured.right - measured.left + 16));
+    int height = max(30, measured.bottom - measured.top + 12);
+    POINT cursor; GetCursorPos(&cursor);
+    SetWindowPos(g_quota_tooltip, HWND_TOPMOST, cursor.x + 12, cursor.y + 16,
+                 width, height, SWP_NOACTIVATE | SWP_SHOWWINDOW);
 }
 
 static void add_tray(void) {
@@ -306,12 +346,14 @@ static LRESULT CALLBACK wnd_proc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
         return 0;
 
     case WM_RBUTTONUP: {
+        hide_quota_tooltip();
         POINT pt; GetCursorPos(&pt);
         show_context_menu(h, pt.x, pt.y);
         return 0;
     }
 
     case WM_LBUTTONDOWN: {
+        hide_quota_tooltip();
         g_mouse_down = 1; g_mouse_dragged = 0;
         /* Detail is a separate non-layered sibling, so the entire visible dial host is draggable. */
         g_mouse_can_drag = 1;
@@ -322,6 +364,16 @@ static LRESULT CALLBACK wnd_proc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
     }
 
     case WM_MOUSEMOVE:
+        if (!g_mouse_down) {
+            char tooltip[1024];
+            if (win_quota_tooltip_at(GET_X_LPARAM(lp), GET_Y_LPARAM(lp), tooltip, sizeof(tooltip))) {
+                show_quota_tooltip(tooltip);
+            } else {
+                hide_quota_tooltip();
+            }
+            TRACKMOUSEEVENT tracking = {sizeof(tracking), TME_LEAVE, h, 0};
+            TrackMouseEvent(&tracking);
+        }
         if (g_mouse_down && (wp & MK_LBUTTON) && g_mouse_can_drag) {
             POINT now; GetCursorPos(&now);
             int dx = now.x - g_mouse_down_screen.x, dy = now.y - g_mouse_down_screen.y;
@@ -331,6 +383,10 @@ static LRESULT CALLBACK wnd_proc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
                              0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
             }
         }
+        return 0;
+
+    case WM_MOUSELEAVE:
+        hide_quota_tooltip();
         return 0;
 
     case WM_LBUTTONUP:
@@ -353,6 +409,8 @@ static LRESULT CALLBACK wnd_proc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
         return HTCLIENT;    /* manual drag preserves click interaction */
 
     case WM_DESTROY:
+        if (IsWindow(g_quota_tooltip)) DestroyWindow(g_quota_tooltip);
+        g_quota_tooltip = NULL;
         if (IsWindow(g_detail_hwnd)) DestroyWindow(g_detail_hwnd);
         remove_tray();
         if (g_cb.on_destroy) g_cb.on_destroy(g_cb.ctx);
@@ -432,6 +490,7 @@ void win_show(void *hwnd, int show) {
         BringWindowToTop((HWND)hwnd);
         SetForegroundWindow((HWND)hwnd);  /* tray click is direct user input, foreground is allowed */
     } else {
+        if ((HWND)hwnd == g_hwnd) hide_quota_tooltip();
         ShowWindow((HWND)hwnd, SW_HIDE);
     }
     if ((HWND)hwnd == g_hwnd && IsWindow(g_detail_hwnd))
@@ -559,6 +618,7 @@ static unsigned int g_dlg_edit_rgb = 0xffffffffu;
 #define TC_EDIT_INNER_PROP L"TokenClock.EditInner"
 #define TC_DIALOG_VISUAL_PROP L"TokenClock.DialogVisual"
 #define TC_SCROLL_CLIPPED_PROP L"TokenClock.ScrollClipped"
+#define TC_SWATCH_COLOR_PROP L"TokenClock.SwatchColor"
 
 typedef struct {
     int card_count;
@@ -1152,6 +1212,23 @@ static LRESULT CALLBACK dlg_proc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
         return (LRESULT)dlg_edit_brush(h);
     }
     case WM_DRAWITEM:
+        if ((DRAWITEMSTRUCT *)lp && ((DRAWITEMSTRUCT *)lp)->CtlType == ODT_STATIC) {
+            DRAWITEMSTRUCT *draw = (DRAWITEMSTRUCT *)lp;
+            UINT_PTR stored = (UINT_PTR)GetPropW(draw->hwndItem, TC_SWATCH_COLOR_PROP);
+            if (stored != 0) {
+                unsigned int color = (unsigned int)(stored - 1);
+                FillRect(draw->hDC, &draw->rcItem, dlg_background_brush(h));
+                HBRUSH brush = CreateSolidBrush(to_cr(color));
+                HGDIOBJ old_brush = SelectObject(draw->hDC, brush);
+                HGDIOBJ old_pen = SelectObject(draw->hDC, GetStockObject(NULL_PEN));
+                Ellipse(draw->hDC, draw->rcItem.left, draw->rcItem.top,
+                        draw->rcItem.right, draw->rcItem.bottom);
+                SelectObject(draw->hDC, old_pen);
+                SelectObject(draw->hDC, old_brush);
+                DeleteObject(brush);
+                return TRUE;
+            }
+        }
         if ((DRAWITEMSTRUCT *)lp && ((DRAWITEMSTRUCT *)lp)->CtlType == ODT_BUTTON) {
             dlg_draw_owner_button(h, (DRAWITEMSTRUCT *)lp); return TRUE;
         }
@@ -1344,6 +1421,14 @@ void dlg_add_progress(void *dlg, int x, int y, int w, int h, int percent) {
     CreateWindowExW(0, L"TCDialogProgress", L"", WS_CHILD | WS_VISIBLE,
                     x, y, w, h, (HWND)dlg, NULL, GetModuleHandleW(NULL),
                     (void *)(INT_PTR)max(0, min(100, percent)));
+}
+
+void dlg_add_swatch(void *dlg, int x, int y, int size, unsigned int argb) {
+    HWND swatch = CreateWindowExW(
+        0, L"STATIC", L"", WS_CHILD | WS_VISIBLE | WS_DISABLED | SS_OWNERDRAW,
+        x, y, size, size, (HWND)dlg, NULL, GetModuleHandleW(NULL), NULL
+    );
+    if (swatch) SetPropW(swatch, TC_SWATCH_COLOR_PROP, (HANDLE)((UINT_PTR)argb + 1));
 }
 
 void dlg_add_nav(void *dlg, int id, const char *title_utf8, const char *subtitle_utf8,
