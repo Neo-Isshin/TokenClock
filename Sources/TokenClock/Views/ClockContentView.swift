@@ -111,9 +111,9 @@ struct ClockContentView: View {
                             provider: indicator.provider,
                             outerRemaining: indicator.outerRemainingPercent,
                             innerRemaining: indicator.innerRemainingPercent,
-                            size: 28 * s,
-                            lineWidth: 2.4 * s,
-                            fontSize: 7 * s
+                            size: 35 * s,
+                            lineWidth: 3 * s,
+                            fontSize: 8.5 * s
                         )
                             .padding(.trailing, 28 * s)
                     } else if quotaIndicators.count == 2 {
@@ -123,9 +123,9 @@ struct ClockContentView: View {
                                     provider: indicator.provider,
                                     outerRemaining: indicator.outerRemainingPercent,
                                     innerRemaining: indicator.innerRemainingPercent,
-                                    size: 28 * s,
-                                    lineWidth: 2.4 * s,
-                                    fontSize: 7 * s
+                                    size: 26 * s,
+                                    lineWidth: 2.2 * s,
+                                    fontSize: 6.5 * s
                                 )
                             }
                         }
@@ -206,34 +206,82 @@ struct ClockContentView: View {
         let scale = size / 30
         let innerInset = 5.25 * scale
         let innerLineWidth = 1.7 * scale
+        let accent = provider.dialQuotaColor
+        let outerGradient = AngularGradient(
+            colors: [accent.opacity(0.46), accent.opacity(0.76), accent.opacity(0.58)],
+            center: .center,
+            startAngle: .degrees(-90),
+            endAngle: .degrees(270)
+        )
+        let innerGradient = AngularGradient(
+            colors: [accent.opacity(0.28), accent.opacity(0.52), accent.opacity(0.36)],
+            center: .center,
+            startAngle: .degrees(-90),
+            endAngle: .degrees(270)
+        )
         return ZStack {
             Circle()
-                .strokeBorder(viewModel.effectiveDialSecondary.opacity(0.14), lineWidth: lineWidth)
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            Color.white.opacity(0.13),
+                            viewModel.effectiveDialPrimary.opacity(0.025),
+                            Color.black.opacity(0.045),
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+                .overlay {
+                    Circle()
+                        .strokeBorder(
+                            LinearGradient(
+                                colors: [
+                                    Color.white.opacity(0.24),
+                                    viewModel.effectiveDialPrimary.opacity(0.07),
+                                ],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            ),
+                            lineWidth: 0.65 * scale
+                        )
+                }
+                .shadow(
+                    color: Color.black.opacity(0.10),
+                    radius: 2 * scale,
+                    x: 0,
+                    y: 1.1 * scale
+                )
+            Circle()
+                .strokeBorder(viewModel.effectiveDialSecondary.opacity(0.11), lineWidth: lineWidth)
             Circle()
                 .trim(from: 0, to: outer / 100)
                 .stroke(
-                    provider.dialQuotaColor.opacity(0.68),
+                    outerGradient,
                     style: StrokeStyle(lineWidth: lineWidth, lineCap: .round)
                 )
                 .rotationEffect(.degrees(-90))
                 .padding(lineWidth / 2)
+                .shadow(color: accent.opacity(0.16), radius: 1.3 * scale, y: 0.5 * scale)
             if let inner {
                 Circle()
                     .inset(by: innerInset)
-                    .stroke(viewModel.effectiveDialSecondary.opacity(0.11), lineWidth: innerLineWidth)
+                    .stroke(viewModel.effectiveDialSecondary.opacity(0.08), lineWidth: innerLineWidth)
                 Circle()
                     .inset(by: innerInset)
                     .trim(from: 0, to: inner / 100)
                     .stroke(
-                        provider.dialQuotaColor.opacity(0.48),
+                        innerGradient,
                         style: StrokeStyle(lineWidth: innerLineWidth, lineCap: .round)
                     )
                     .rotationEffect(.degrees(-90))
+                    .shadow(color: accent.opacity(0.10), radius: 0.8 * scale)
             }
             Text(String(format: "%.0f%%", outer))
                 .font(.system(size: fontSize, weight: .bold, design: .rounded))
                 .foregroundColor(quotaPercentColor(outer))
                 .minimumScaleFactor(0.75)
+                .shadow(color: Color.white.opacity(0.15), radius: 0.45 * scale, y: -0.25 * scale)
         }
         .frame(width: size, height: size)
     }
