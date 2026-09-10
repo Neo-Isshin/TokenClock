@@ -374,6 +374,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         opacityItem.submenu = opacityMenu
         appearanceMenu.addItem(opacityItem)
 
+        appearanceMenu.addItem(.separator())
+        appearanceMenu.addItem(NSMenuItem(
+            title: tr("menu.dialResetDefaults"),
+            action: #selector(resetNormalAppearance(_:)),
+            keyEquivalent: ""
+        ))
+
         let alwaysOnTopItem = NSMenuItem(title: tr("menu.alwaysOnTop"),
                                          action: #selector(toggleAlwaysOnTop(_:)), keyEquivalent: "")
         alwaysOnTopItem.state = viewModel.alwaysOnTop ? .on : .off
@@ -498,6 +505,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     @objc private func setDropdownTextColorPreset(_ sender: NSMenuItem) {
         viewModel.dropdownTextColorHex = sender.representedObject as? String
+        setupRightClickMenu()
+    }
+
+    /// Restores the selected face's authored text palette without changing the face itself.
+    @objc private func resetNormalAppearance(_ sender: NSMenuItem) {
+        viewModel.dialTextMode = .theme
+        viewModel.dialTextColorHex = "#FFFFFF"
+        viewModel.dropdownTextColorHex = nil
         setupRightClickMenu()
     }
 

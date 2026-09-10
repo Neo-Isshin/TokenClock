@@ -43,6 +43,11 @@ final class ClockTicker: ObservableObject {
 
 @MainActor
 final class ViewModel: ObservableObject {
+    // Glass and Normal intentionally keep independent dial text overrides.  A color chosen for
+    // a photographic Glass face must not make a light Normal face unreadable after switching
+    // installed variants.
+    private static let normalDialTextModeKey = "TC_normalDialTextMode"
+    private static let normalDialTextColorKey = "TC_normalDialTextColor"
     @Published var tools: [ToolUsage] {
         didSet { updateSortedTools() }
     }
@@ -183,10 +188,10 @@ final class ViewModel: ObservableObject {
     @Published var resolvedCityName: String = ""
 
     @Published var dialTextMode: DialTextMode = .theme {
-        didSet { UserDefaults.standard.setInt(dialTextMode.rawValue, for: .dialTextMode) }
+        didSet { UserDefaults.standard.set(dialTextMode.rawValue, forKey: Self.normalDialTextModeKey) }
     }
     @Published var dialTextColorHex: String = "#FFFFFF" {
-        didSet { UserDefaults.standard.setString(dialTextColorHex, for: .dialTextColor) }
+        didSet { UserDefaults.standard.set(dialTextColorHex, forKey: Self.normalDialTextColorKey) }
     }
     @Published var dropdownTextColorHex: String? = nil {
         didSet { UserDefaults.standard.setString(dropdownTextColorHex, for: .dropdownTextColor) }
@@ -313,9 +318,11 @@ final class ViewModel: ObservableObject {
         if let s = UserDefaults.standard.string(for: .selectedTimezone) { selectedTimezone = s }
         if UserDefaults.standard.object(forKey: SettingsKey.windowOpacity.rawValue) != nil { windowOpacity = UserDefaults.standard.double(forKey: SettingsKey.windowOpacity.rawValue) }
         if UserDefaults.standard.object(forKey: SettingsKey.cursorCloudFetchEnabled.rawValue) != nil { cursorCloudFetchEnabled = UserDefaults.standard.bool(for: .cursorCloudFetchEnabled) }
-        if let raw = UserDefaults.standard.object(forKey: SettingsKey.dialTextMode.rawValue) as? Int,
+        if let raw = UserDefaults.standard.object(forKey: Self.normalDialTextModeKey) as? Int,
            let mode = DialTextMode(rawValue: raw) { dialTextMode = mode }
-        if let hex = UserDefaults.standard.string(for: .dialTextColor) { dialTextColorHex = hex }
+        if let hex = UserDefaults.standard.string(forKey: Self.normalDialTextColorKey) {
+            dialTextColorHex = hex
+        }
         if let hex = UserDefaults.standard.string(for: .dropdownTextColor), CodableColor(hex: hex) != nil {
             dropdownTextColorHex = hex
         }
@@ -688,6 +695,11 @@ final class ViewModel: ObservableObject {
     }
 
     private func loadTheme() {
+        if let forced = ProcessInfo.processInfo.environment["TOKENCLOCK_THEME"],
+           let theme = ClockFaceTheme(rawValue: forced) {
+            selectedTheme = theme
+            return
+        }
         if let saved = UserDefaults.standard.string(for: .selectedTheme),
            let theme = ClockFaceTheme(rawValue: saved) {
             selectedTheme = theme

@@ -85,6 +85,10 @@ struct ThemePickerView: View {
             }
         }
         .onTapGesture {
+            // Selecting an authored built-in face restores its complete palette.  Panel and
+            // dial overrides remain available afterwards, but never leak across faces.
+            viewModel.dialTextMode = .theme
+            viewModel.dropdownTextColorHex = nil
             viewModel.selectedTheme = theme
             viewModel.saveTheme()
             // 延迟关闭，让用户看到选中效果

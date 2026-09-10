@@ -207,7 +207,7 @@ enum ClockFaceTheme: String, CaseIterable, Identifiable {
         case .gufeng: return Color(red: 0.650, green: 0.500, blue: 0.350)
         case .railgun: return Color(red: 0.750, green: 0.650, blue: 0.580)
         case .sky: return Color(red: 0.620, green: 0.780, blue: 0.920)
-        case .glass: return Color(white: 1.0).opacity(0.7)                    // 白刻度（次）
+        case .glass: return Color(red: 0.16, green: 0.16, blue: 0.18).opacity(0.52)
                 case .glacier: return Color(red: 0.10, green: 0.20, blue: 0.42).opacity(0.55)
         case .custom: return custom.tickMarkColor.swiftUIColor
         }
@@ -221,7 +221,7 @@ enum ClockFaceTheme: String, CaseIterable, Identifiable {
         case .gufeng: return Color(red: 0.350, green: 0.220, blue: 0.160)
         case .railgun: return Color(red: 0.620, green: 0.470, blue: 0.380)
         case .sky: return Color(red: 0.960, green: 0.920, blue: 0.780)
-        case .glass: return Color.white                                       // 白刻度（主，12/3/6/9）
+        case .glass: return Color(red: 0.16, green: 0.16, blue: 0.18).opacity(0.82)
                 case .glacier: return Color(red: 0.10, green: 0.20, blue: 0.42)
         case .custom: return custom.majorTickMarkColor.swiftUIColor
         }
@@ -234,11 +234,11 @@ enum ClockFaceTheme: String, CaseIterable, Identifiable {
     var numberColor: Color {
         switch self {
         case .classic: return .clear
-        case .midnight: return Color(red: 0.400, green: 0.533, blue: 0.667)
+        case .midnight: return Color(red: 0.480, green: 0.620, blue: 0.750)
         case .luxe: return Color(red: 0.667, green: 0.567, blue: 0.333)
         case .gufeng: return Color(red: 0.300, green: 0.200, blue: 0.150)
         case .railgun: return Color(red: 0.500, green: 0.350, blue: 0.300)
-        case .sky: return Color(red: 0.220, green: 0.380, blue: 0.560)
+        case .sky: return Color(red: 0.140, green: 0.270, blue: 0.410)
         case .glass: return .clear                                        // 玻璃盘保持简洁，不画数字
                 case .glacier: return Color(red: 0.10, green: 0.20, blue: 0.42)
         case .custom: return custom.numberColor.swiftUIColor
@@ -325,8 +325,8 @@ enum ClockFaceTheme: String, CaseIterable, Identifiable {
         case .luxe: return Color(red: 0.910, green: 0.835, blue: 0.639)
         case .gufeng: return Color(red: 0.250, green: 0.180, blue: 0.130)
         case .railgun: return Color(red: 0.500, green: 0.350, blue: 0.300)
-        case .sky: return Color(red: 0.180, green: 0.340, blue: 0.520)
-        case .glass: return Color.white                                       // 白字：复古图案盘上高对比
+        case .sky: return Color(red: 0.100, green: 0.220, blue: 0.360)
+        case .glass: return Color(red: 0.16, green: 0.16, blue: 0.18)
         case .glacier: return Color(red: 0.10, green: 0.20, blue: 0.42)
         case .custom: return custom.textPrimaryColor.swiftUIColor
         }
@@ -334,13 +334,13 @@ enum ClockFaceTheme: String, CaseIterable, Identifiable {
 
     var textSecondaryColor: Color {
         switch self {
-        case .classic: return Color(red: 0.45, green: 0.45, blue: 0.48)
+        case .classic: return Color(red: 0.43, green: 0.43, blue: 0.46)
         case .midnight: return Color(red: 0.533, green: 0.600, blue: 0.667)
         case .luxe: return Color(red: 0.600, green: 0.533, blue: 0.400)
-        case .gufeng: return Color(red: 0.500, green: 0.380, blue: 0.280)
-        case .railgun: return Color(red: 0.680, green: 0.560, blue: 0.480)
-        case .sky: return Color(red: 0.380, green: 0.520, blue: 0.660)
-        case .glass: return Color(white: 1.0).opacity(0.8)                    // 白字（次级，略淡以保留层级）
+        case .gufeng: return Color(red: 0.460, green: 0.330, blue: 0.230)
+        case .railgun: return Color(red: 0.460, green: 0.310, blue: 0.270)
+        case .sky: return Color(red: 0.160, green: 0.290, blue: 0.430)
+        case .glass: return Color(red: 0.38, green: 0.40, blue: 0.44)
                 case .glacier: return Color(red: 0.10, green: 0.20, blue: 0.42).opacity(0.7)
         case .custom: return custom.textSecondaryColor.swiftUIColor
         }
@@ -386,13 +386,13 @@ enum ClockFaceTheme: String, CaseIterable, Identifiable {
 
     var dropdownHeaderColor: Color {
         switch self {
-        case .classic: return Color(red: 0.55, green: 0.55, blue: 0.58)
+        case .classic: return Color(red: 0.42, green: 0.42, blue: 0.45)
         case .midnight: return Color(red: 0.533, green: 0.600, blue: 0.667)
         case .luxe: return Color(red: 0.667, green: 0.567, blue: 0.400)
         case .gufeng: return Color(red: 0.450, green: 0.320, blue: 0.220)
-        case .railgun: return Color(red: 0.620, green: 0.470, blue: 0.380)
-        case .sky: return Color(red: 0.300, green: 0.480, blue: 0.660)
-        case .glass: return Color(red: 0.55, green: 0.55, blue: 0.58)
+        case .railgun: return Color(red: 0.460, green: 0.310, blue: 0.270)
+        case .sky: return Color(red: 0.160, green: 0.290, blue: 0.430)
+        case .glass: return Color(red: 0.42, green: 0.42, blue: 0.45)
                 case .glacier: return Color(red: 0.10, green: 0.20, blue: 0.42).opacity(0.7)
         case .custom: return custom.dropdownSubtextColor.swiftUIColor
         }
@@ -405,7 +405,7 @@ enum ClockFaceTheme: String, CaseIterable, Identifiable {
         case .luxe: return Color(red: 0.910, green: 0.835, blue: 0.639)
         case .gufeng: return Color(red: 0.280, green: 0.200, blue: 0.150)
         case .railgun: return Color(red: 0.500, green: 0.350, blue: 0.300)
-        case .sky: return Color(red: 0.180, green: 0.340, blue: 0.520)
+        case .sky: return Color(red: 0.100, green: 0.220, blue: 0.360)
         case .glass: return Color(red: 0.18, green: 0.18, blue: 0.20)
         case .glacier: return Color(red: 0.10, green: 0.20, blue: 0.42)
         case .custom: return custom.dropdownTextColor.swiftUIColor
@@ -414,13 +414,13 @@ enum ClockFaceTheme: String, CaseIterable, Identifiable {
 
     var dropdownSubtextColor: Color {
         switch self {
-        case .classic: return Color(red: 0.45, green: 0.45, blue: 0.48)
+        case .classic: return Color(red: 0.42, green: 0.42, blue: 0.45)
         case .midnight: return Color(red: 0.533, green: 0.600, blue: 0.667)
         case .luxe: return Color(red: 0.600, green: 0.533, blue: 0.400)
-        case .gufeng: return Color(red: 0.520, green: 0.400, blue: 0.300)
-        case .railgun: return Color(red: 0.680, green: 0.560, blue: 0.480)
-        case .sky: return Color(red: 0.380, green: 0.520, blue: 0.660)
-        case .glass: return Color(red: 0.45, green: 0.45, blue: 0.48)
+        case .gufeng: return Color(red: 0.460, green: 0.330, blue: 0.230)
+        case .railgun: return Color(red: 0.460, green: 0.310, blue: 0.270)
+        case .sky: return Color(red: 0.160, green: 0.290, blue: 0.430)
+        case .glass: return Color(red: 0.42, green: 0.42, blue: 0.45)
         case .glacier: return Color(red: 0.10, green: 0.20, blue: 0.42).opacity(0.7)
         case .custom: return custom.dropdownSubtextColor.swiftUIColor
         }
