@@ -130,7 +130,6 @@ struct ClockContentView: View {
                             }
                         }
                         .padding(.trailing, 28 * s)
-                        .offset(y: -7 * s)
                     }
                 }
 
