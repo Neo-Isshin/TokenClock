@@ -65,6 +65,7 @@ struct ClockContentView: View {
                             Text(L10n.shared.tr("clock.todayTokens"))
                             Text(viewModel.rateEmoji)
                                 .font(.system(size: 10 * s))
+                                .scaleEffect(1.5)
                                 .baselineOffset(0.5 * s)
                         }
                         .font(.system(size: 9 * s))
@@ -106,7 +107,7 @@ struct ClockContentView: View {
                     Spacer()
                     if let remaining = viewModel.dialQuotaRemainingPercent {
                         dialQuotaRing(remaining: remaining, scale: s)
-                            .padding(.trailing, 28 * s)
+                            .padding(.trailing, 36 * s)
                     }
                 }
 
@@ -175,10 +176,10 @@ struct ClockContentView: View {
         let accent: Color = normalized <= 15 ? .red : (normalized <= 35 ? .orange : .green)
         return ZStack {
             Circle()
-                .stroke(viewModel.effectiveDialSecondary.opacity(0.22), lineWidth: 2.5 * s)
+                .stroke(viewModel.effectiveDialSecondary.opacity(0.22), lineWidth: 3.5 * s)
             Circle()
                 .trim(from: 0, to: normalized / 100)
-                .stroke(accent, style: StrokeStyle(lineWidth: 2.5 * s, lineCap: .round))
+                .stroke(accent, style: StrokeStyle(lineWidth: 3.5 * s, lineCap: .round))
                 .rotationEffect(.degrees(-90))
             Text(String(format: "%.0f%%", normalized))
                 .font(.system(size: 8 * s, weight: .bold, design: .rounded))
