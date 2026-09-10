@@ -186,14 +186,17 @@ struct ClockContentView: View {
                 Text(hoveredQuotaLabel)
                     .font(.system(size: 8.5 * s, weight: .semibold, design: .rounded))
                     .foregroundColor(Color.black.opacity(0.84))
+                    .multilineTextAlignment(.leading)
+                    .lineSpacing(1 * s)
+                    .fixedSize(horizontal: true, vertical: true)
                     .padding(.horizontal, 6 * s)
                     .padding(.vertical, 3 * s)
                     .background(
-                        Capsule()
+                        RoundedRectangle(cornerRadius: 6 * s, style: .continuous)
                             .fill(Color.white.opacity(0.92))
                     )
                     .overlay {
-                        Capsule()
+                        RoundedRectangle(cornerRadius: 6 * s, style: .continuous)
                             .strokeBorder(Color.black.opacity(0.12), lineWidth: 0.5 * s)
                     }
                     .shadow(color: Color.black.opacity(0.13), radius: 2 * s, y: 1 * s)
@@ -342,9 +345,29 @@ struct ClockContentView: View {
             return ClockTooltipRegion(
                 rect: NSRect(x: x, y: appKitY, width: ringSize, height: ringSize)
                     .insetBy(dx: -3 * s, dy: -3 * s),
-                text: "\(indicator.provider.emoji) \(indicator.provider.displayName)"
+                text: quotaTooltipText(for: indicator)
             )
         }
+    }
+
+    private func quotaTooltipText(for indicator: DialQuotaIndicator) -> String {
+        var lines = ["\(indicator.provider.emoji) \(indicator.provider.displayName)"]
+        if indicator.provider == .cursor {
+            if let inner = indicator.innerRemainingPercent {
+                lines.append("Cursor Models \(String(format: "%.0f%%", inner))")
+            }
+            lines.append("Other Models \(String(format: "%.0f%%", indicator.outerRemainingPercent))")
+        } else {
+            lines.append(
+                "\(L10n.shared.tr("quota.weekly")) \(String(format: "%.0f%%", indicator.outerRemainingPercent))"
+            )
+            if let inner = indicator.innerRemainingPercent {
+                lines.append(
+                    "\(L10n.shared.tr("quota.hours", 5)) \(String(format: "%.0f%%", inner))"
+                )
+            }
+        }
+        return lines.joined(separator: "\n")
     }
 
     private func quotaTooltipPosition(
@@ -355,20 +378,19 @@ struct ClockContentView: View {
     ) -> CGPoint {
         let indicatorCount = indicators.count
         let ringSize = (indicatorCount == 1 ? 35 : 29) * s
+        let trailing = (indicatorCount == 1 ? 36 : 28) * s
         let spacing = 5 * s
         let totalHeight = ringSize * CGFloat(indicatorCount)
             + spacing * CGFloat(max(0, indicatorCount - 1))
         let clusterTop = (diameter - totalHeight) / 2
-        guard indicatorCount == 2,
-              let index = indicators.firstIndex(where: {
-                  "\($0.provider.emoji) \($0.provider.displayName)" == label
-              }) else {
-            return CGPoint(x: diameter - 62 * s, y: max(12 * s, clusterTop - 9 * s))
-        }
+        guard let index = indicators.firstIndex(where: {
+            quotaTooltipText(for: $0) == label
+        }) else { return CGPoint(x: diameter / 2, y: diameter / 2) }
         let ringCenterY = clusterTop
             + CGFloat(index) * (ringSize + spacing)
             + ringSize / 2
-        return CGPoint(x: diameter - 92 * s, y: ringCenterY)
+        let ringLeft = diameter - trailing - ringSize
+        return CGPoint(x: max(43 * s, ringLeft - 47 * s), y: ringCenterY)
     }
 
     private func quotaPercentColor(_ remaining: Double) -> Color {
