@@ -185,16 +185,16 @@ struct ClockContentView: View {
             if let hoveredQuotaLabel, !quotaIndicators.isEmpty {
                 Text(hoveredQuotaLabel)
                     .font(.system(size: 8.5 * s, weight: .semibold, design: .rounded))
-                    .foregroundColor(viewModel.effectiveDialPrimary)
+                    .foregroundColor(Color.black.opacity(0.84))
                     .padding(.horizontal, 6 * s)
                     .padding(.vertical, 3 * s)
                     .background(
                         Capsule()
-                            .fill(viewModel.selectedTheme.dialColor.opacity(0.88))
+                            .fill(Color.white.opacity(0.92))
                     )
                     .overlay {
                         Capsule()
-                            .strokeBorder(viewModel.effectiveDialPrimary.opacity(0.10), lineWidth: 0.5 * s)
+                            .strokeBorder(Color.black.opacity(0.12), lineWidth: 0.5 * s)
                     }
                     .shadow(color: Color.black.opacity(0.13), radius: 2 * s, y: 1 * s)
                     .position(quotaTooltipPosition(
