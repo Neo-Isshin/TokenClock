@@ -28,7 +28,7 @@ enum WindowsClockTheme: String, CaseIterable {
             t.show_ticks = 1; t.tick_color = clear; t.major_tick_color = clear
             t.show_numbers = 0; t.number_color = clear
             t.has_decoration = 0
-            t.text_primary = rgb(0.18, 0.18, 0.20); t.text_secondary = rgb(0.45, 0.45, 0.48)
+            t.text_primary = rgb(0.18, 0.18, 0.20); t.text_secondary = rgb(0.43, 0.43, 0.46)
 
         case .midnight:
             // macOS midnight：深海军盘 + 青色时分针 + 纯白秒针
@@ -39,7 +39,7 @@ enum WindowsClockTheme: String, CaseIterable {
             t.hour_w = 5.5; t.minute_w = 3.5; t.second_w = 1.2
             t.cap_outer = rgb(0.149, 0.776, 0.855); t.cap_inner = gray(1.0)
             t.show_ticks = 1; t.tick_color = rgb(0.290, 0.396, 0.502); t.major_tick_color = rgb(0.502, 0.871, 0.918)
-            t.show_numbers = 1; t.number_color = rgb(0.400, 0.533, 0.667)
+            t.show_numbers = 1; t.number_color = rgb(0.480, 0.620, 0.750)
             t.has_decoration = 0
             t.text_primary = rgb(0.878, 0.878, 0.878); t.text_secondary = rgb(0.533, 0.600, 0.667)
 
@@ -65,7 +65,7 @@ enum WindowsClockTheme: String, CaseIterable {
             t.show_ticks = 1; t.tick_color = rgb(0.650, 0.500, 0.350); t.major_tick_color = rgb(0.350, 0.220, 0.160)
             t.show_numbers = 2; t.number_color = rgb(0.300, 0.200, 0.150)   // 中文壹贰叁…
             t.has_decoration = 0
-            t.text_primary = rgb(0.250, 0.180, 0.130); t.text_secondary = rgb(0.500, 0.380, 0.280)
+            t.text_primary = rgb(0.250, 0.180, 0.130); t.text_secondary = rgb(0.460, 0.330, 0.230)
 
         case .railgun:
             // macOS railgun：暖米盘 + 珊瑚粉针 + 电光蓝秒针
@@ -77,7 +77,7 @@ enum WindowsClockTheme: String, CaseIterable {
             t.show_ticks = 1; t.tick_color = rgb(0.750, 0.650, 0.580); t.major_tick_color = rgb(0.620, 0.470, 0.380)
             t.show_numbers = 1; t.number_color = rgb(0.500, 0.350, 0.300)
             t.has_decoration = 0
-            t.text_primary = rgb(0.500, 0.350, 0.300); t.text_secondary = rgb(0.680, 0.560, 0.480)
+            t.text_primary = rgb(0.500, 0.350, 0.300); t.text_secondary = rgb(0.460, 0.310, 0.270)
 
         case .sky:
             // macOS sky：晴空蓝盘 + 明黄指针 + 橙秒针 + 太阳云朵装饰
@@ -87,12 +87,12 @@ enum WindowsClockTheme: String, CaseIterable {
             t.hour_w = 5.0; t.minute_w = 3.5; t.second_w = 1.5
             t.cap_outer = rgb(0.960, 0.878, 0.400); t.cap_inner = rgb(1.0, 0.580, 0.200)
             t.show_ticks = 1; t.tick_color = rgb(0.620, 0.780, 0.920); t.major_tick_color = rgb(0.960, 0.920, 0.780)
-            t.show_numbers = 1; t.number_color = rgb(0.220, 0.380, 0.560)
+            t.show_numbers = 1; t.number_color = rgb(0.140, 0.270, 0.410)
             t.has_decoration = 1   // 太阳 + 云朵
-            t.text_primary = rgb(0.180, 0.340, 0.520); t.text_secondary = rgb(0.380, 0.520, 0.660)
+            t.text_primary = rgb(0.100, 0.220, 0.360); t.text_secondary = rgb(0.160, 0.290, 0.430)
 
         case .glass:
-            // macOS glass：浅玻璃盘（glass_disc.png 贴图）+ 白色文字 + 墨色时分针 + 琥珀秒针。
+            // 浅玻璃贴图的高亮区域占比很大，因此默认使用墨色文字与刻度。
             // dial_fill 仅作贴图缺失时的兜底；文字/指针/秒针/中心点与 macOS 完全一致。
             t.dial_fill = rgb(0.91, 0.95, 0.99, 0.92); t.dial_rim = rgb(0.70, 0.82, 0.91, 0.85); t.rim_width = 1.5
             t.material_style = 1
@@ -100,11 +100,10 @@ enum WindowsClockTheme: String, CaseIterable {
             t.hour_color = rgb(0.16, 0.16, 0.18); t.minute_color = rgb(0.16, 0.16, 0.18); t.second_color = rgb(0.90, 0.42, 0.18)
             t.hour_w = 4.5; t.minute_w = 3.0; t.second_w = 1.5
             t.cap_outer = rgb(0.16, 0.16, 0.18); t.cap_inner = rgb(0.90, 0.42, 0.18)
-            t.show_ticks = 1; t.tick_color = gray(1.0, 0.7); t.major_tick_color = gray(1.0)
+            t.show_ticks = 1; t.tick_color = rgb(0.16, 0.16, 0.18, 0.52); t.major_tick_color = rgb(0.16, 0.16, 0.18, 0.82)
             t.show_numbers = 0; t.number_color = clear
             t.has_decoration = 0
-            // macOS glass：浅玻璃盘上用白字（对比由盘面渐变提供），与 ClockFaceView 实拍观感一致
-            t.text_primary = gray(1.0); t.text_secondary = gray(1.0, 0.8)
+            t.text_primary = rgb(0.16, 0.16, 0.18); t.text_secondary = rgb(0.38, 0.40, 0.44)
 
         case .glacier:
             // macOS glacier：雪白极简 + 藏蓝刻度数字 + 玫红秒针
@@ -122,13 +121,13 @@ enum WindowsClockTheme: String, CaseIterable {
         }
         // 下拉卡片配色（移植自 ClockFaceTheme.dropdownBgColor/Text/Subtext/Border）
         switch self {
-        case .classic:  t.dd_bg = rgb(0.94, 0.94, 0.95); t.dd_text = rgb(0.18, 0.18, 0.20); t.dd_subtext = rgb(0.45, 0.45, 0.48); t.dd_border = gray(0.82)
+        case .classic:  t.dd_bg = rgb(0.94, 0.94, 0.95); t.dd_text = rgb(0.18, 0.18, 0.20); t.dd_subtext = rgb(0.42, 0.42, 0.45); t.dd_border = gray(0.82)
         case .midnight: t.dd_bg = rgb(0.133, 0.184, 0.247); t.dd_text = rgb(0.878, 0.878, 0.878); t.dd_subtext = rgb(0.533, 0.600, 0.667); t.dd_border = rgb(0.200, 0.290, 0.400)
         case .luxe:     t.dd_bg = rgb(0.125, 0.125, 0.200); t.dd_text = rgb(0.910, 0.835, 0.639); t.dd_subtext = rgb(0.600, 0.533, 0.400); t.dd_border = rgb(0.250, 0.220, 0.150)
-        case .gufeng:   t.dd_bg = rgb(0.910, 0.878, 0.812); t.dd_text = rgb(0.280, 0.200, 0.150); t.dd_subtext = rgb(0.520, 0.400, 0.300); t.dd_border = rgb(0.650, 0.480, 0.320)
-        case .railgun:  t.dd_bg = rgb(0.925, 0.906, 0.875); t.dd_text = rgb(0.500, 0.350, 0.300); t.dd_subtext = rgb(0.680, 0.560, 0.480); t.dd_border = rgb(0.780, 0.680, 0.600)
-        case .sky:      t.dd_bg = rgb(0.600, 0.780, 0.920); t.dd_text = rgb(0.180, 0.340, 0.520); t.dd_subtext = rgb(0.380, 0.520, 0.660); t.dd_border = rgb(0.500, 0.680, 0.840)
-        case .glass:    t.dd_bg = rgb(0.93, 0.95, 0.97); t.dd_text = rgb(0.18, 0.18, 0.20); t.dd_subtext = rgb(0.45, 0.45, 0.48); t.dd_border = gray(0.82)
+        case .gufeng:   t.dd_bg = rgb(0.910, 0.878, 0.812); t.dd_text = rgb(0.280, 0.200, 0.150); t.dd_subtext = rgb(0.460, 0.330, 0.230); t.dd_border = rgb(0.650, 0.480, 0.320)
+        case .railgun:  t.dd_bg = rgb(0.925, 0.906, 0.875); t.dd_text = rgb(0.500, 0.350, 0.300); t.dd_subtext = rgb(0.460, 0.310, 0.270); t.dd_border = rgb(0.780, 0.680, 0.600)
+        case .sky:      t.dd_bg = rgb(0.600, 0.780, 0.920); t.dd_text = rgb(0.100, 0.220, 0.360); t.dd_subtext = rgb(0.160, 0.290, 0.430); t.dd_border = rgb(0.500, 0.680, 0.840)
+        case .glass:    t.dd_bg = rgb(0.93, 0.95, 0.97); t.dd_text = rgb(0.18, 0.18, 0.20); t.dd_subtext = rgb(0.42, 0.42, 0.45); t.dd_border = gray(0.82)
         case .glacier:  t.dd_bg = rgb(0.94, 0.97, 1.00); t.dd_text = rgb(0.10, 0.20, 0.42); t.dd_subtext = rgb(0.10, 0.20, 0.42, 0.7); t.dd_border = rgb(0.10, 0.20, 0.42, 0.22)
         default: break
         }

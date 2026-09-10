@@ -95,6 +95,7 @@ final class WindowsApp: @unchecked Sendable {
     private let cmdEditCustom: Int32 = 140
     private let cmdOpacityBase: Int32 = 150 // + 0...3 -> 25/50/75/100%
     private let cmdRefresh: Int32 = 160
+    private let cmdResetAppearance: Int32 = 170
     private let cmdSavedThemeBase: Int32 = 200
     private let cmdDeleteThemeBase: Int32 = 240
 
@@ -933,6 +934,8 @@ final class WindowsApp: @unchecked Sendable {
             }
             addSubmenu(appearanceMenu, L.tr("menu.opacity"), om)
         }
+        addSeparator(appearanceMenu)
+        addMenuItem(appearanceMenu, cmdResetAppearance, L.tr("menu.dialResetDefaults"), false)
         addMenuItem(generalMenu, cmdTopmost, L.tr("menu.alwaysOnTop"), alwaysOnTop)
 
         // 温度单位
@@ -1009,6 +1012,9 @@ final class WindowsApp: @unchecked Sendable {
         case cmdRefresh:
             scheduleScan(incremental: false)
             WindowsWeather.refresh(forCity: selectedCity)
+        case cmdResetAppearance:
+            UserDefaults.standard.remove(.quickContrastPreset)
+            render()
         case let c where c >= cmdCityBase && c < cmdCityBase + Int32(Self.cities.count):
             setCity(Self.cities[Int(c - cmdCityBase)])
         case let c where c >= cmdTzBase && c < cmdTzBase + Int32(Self.timezones.count):
@@ -2748,6 +2754,7 @@ final class WindowsApp: @unchecked Sendable {
     }
     private func setTheme(_ t: WindowsClockTheme) {
         UserDefaults.standard.setString(t.rawValue, for: .selectedTheme)
+        UserDefaults.standard.remove(.quickContrastPreset)
         if t != .custom { UserDefaults.standard.remove(.activeCustomThemeId) }
         render()
     }
@@ -2757,6 +2764,7 @@ final class WindowsApp: @unchecked Sendable {
         guard themes.indices.contains(index) else { return }
         let saved = themes[index]
         saved.config.save()
+        UserDefaults.standard.remove(.quickContrastPreset)
         UserDefaults.standard.setString(saved.id, for: .activeCustomThemeId)
         UserDefaults.standard.setString(WindowsClockTheme.custom.rawValue, for: .selectedTheme)
         render()
