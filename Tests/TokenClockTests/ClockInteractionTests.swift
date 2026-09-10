@@ -56,16 +56,32 @@ final class ClockInteractionTests: XCTestCase {
 
     func testQuotaTooltipRegionKeepsClockClickHandling() throws {
         var clickCount = 0
-        let (_, view) = makeWindow { clickCount += 1 }
+        var hoveredText: String?
+        let window = NSWindow(
+            contentRect: NSRect(x: 100, y: 100, width: 240, height: 240),
+            styleMask: .borderless,
+            backing: .buffered,
+            defer: false
+        )
+        let view = ClockInteractionNSView(
+            onClick: { clickCount += 1 },
+            onTooltipHover: { hoveredText = $0 }
+        )
+        view.frame = NSRect(x: 0, y: 0, width: 240, height: 240)
+        window.contentView = view
         view.updateTooltipRegions([
             ClockTooltipRegion(
                 rect: NSRect(x: 170, y: 100, width: 35, height: 35),
-                text: "Codex"
+                text: "⚛️ Codex"
             ),
         ])
 
-        XCTAssertEqual(view.tooltipText(at: NSPoint(x: 180, y: 110)), "Codex")
+        XCTAssertEqual(view.tooltipText(at: NSPoint(x: 180, y: 110)), "⚛️ Codex")
         XCTAssertNil(view.tooltipText(at: NSPoint(x: 80, y: 80)))
+        view.mouseMoved(with: try event(.mouseMoved, at: NSPoint(x: 180, y: 110)))
+        XCTAssertEqual(hoveredText, "⚛️ Codex")
+        view.mouseMoved(with: try event(.mouseMoved, at: NSPoint(x: 80, y: 80)))
+        XCTAssertNil(hoveredText)
 
         view.mouseDown(with: try event(.leftMouseDown, at: NSPoint(x: 180, y: 110)))
         view.mouseUp(with: try event(.leftMouseUp, at: NSPoint(x: 180, y: 110)))

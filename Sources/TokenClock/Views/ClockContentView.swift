@@ -5,6 +5,7 @@ import AppKit
 struct ClockContentView: View {
     @ObservedObject var viewModel: ViewModel
     @ObservedObject private var clockTicker: ClockTicker
+    @State private var hoveredQuotaLabel: String?
     let onNotificationClick: () -> Void
     let onClockDragStart: () -> Void
 
@@ -17,6 +18,7 @@ struct ClockContentView: View {
         self.onNotificationClick = onNotificationClick
         self.onClockDragStart = onClockDragStart
         self._clockTicker = ObservedObject(wrappedValue: viewModel.clockTicker)
+        self._hoveredQuotaLabel = State(initialValue: nil)
     }
 
     var body: some View {
@@ -172,10 +174,36 @@ struct ClockContentView: View {
                 onDragStart: {
                     viewModel.isExpanded = false
                     onClockDragStart()
+                },
+                onTooltipHover: { label in
+                    hoveredQuotaLabel = label
                 }
             )
             .frame(width: d, height: d)
             .accessibilityHidden(true)
+
+            if let hoveredQuotaLabel, !quotaIndicators.isEmpty {
+                Text(hoveredQuotaLabel)
+                    .font(.system(size: 8.5 * s, weight: .semibold, design: .rounded))
+                    .foregroundColor(viewModel.effectiveDialPrimary)
+                    .padding(.horizontal, 6 * s)
+                    .padding(.vertical, 3 * s)
+                    .background(
+                        Capsule()
+                            .fill(viewModel.selectedTheme.dialColor.opacity(0.88))
+                    )
+                    .overlay {
+                        Capsule()
+                            .strokeBorder(viewModel.effectiveDialPrimary.opacity(0.10), lineWidth: 0.5 * s)
+                    }
+                    .shadow(color: Color.black.opacity(0.13), radius: 2 * s, y: 1 * s)
+                    .position(quotaTooltipPosition(
+                        indicatorCount: quotaIndicators.count,
+                        diameter: d,
+                        scale: s
+                    ))
+                    .allowsHitTesting(false)
+            }
 
             VStack(spacing: 0) {
                 HStack(spacing: 4 * s) {
@@ -313,9 +341,22 @@ struct ClockContentView: View {
             return ClockTooltipRegion(
                 rect: NSRect(x: x, y: appKitY, width: ringSize, height: ringSize)
                     .insetBy(dx: -3 * s, dy: -3 * s),
-                text: indicator.provider.displayName
+                text: "\(indicator.provider.emoji) \(indicator.provider.displayName)"
             )
         }
+    }
+
+    private func quotaTooltipPosition(
+        indicatorCount: Int,
+        diameter: CGFloat,
+        scale s: CGFloat
+    ) -> CGPoint {
+        let ringSize = (indicatorCount == 1 ? 35 : 29) * s
+        let spacing = 5 * s
+        let totalHeight = ringSize * CGFloat(indicatorCount)
+            + spacing * CGFloat(max(0, indicatorCount - 1))
+        let clusterTop = (diameter - totalHeight) / 2
+        return CGPoint(x: diameter - 62 * s, y: max(12 * s, clusterTop - 9 * s))
     }
 
     private func quotaPercentColor(_ remaining: Double) -> Color {

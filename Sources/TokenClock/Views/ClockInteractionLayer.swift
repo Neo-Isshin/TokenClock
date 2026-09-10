@@ -15,21 +15,25 @@ struct ClockInteractionLayer: NSViewRepresentable {
     var tooltipRegions: [ClockTooltipRegion] = []
     let onClick: () -> Void
     var onDragStart: () -> Void = {}
+    var onTooltipHover: (String?) -> Void = { _ in }
 
     init(
         tooltipRegions: [ClockTooltipRegion] = [],
         onClick: @escaping () -> Void,
-        onDragStart: @escaping () -> Void = {}
+        onDragStart: @escaping () -> Void = {},
+        onTooltipHover: @escaping (String?) -> Void = { _ in }
     ) {
         self.tooltipRegions = tooltipRegions
         self.onClick = onClick
         self.onDragStart = onDragStart
+        self.onTooltipHover = onTooltipHover
     }
 
     func makeNSView(context: Context) -> ClockInteractionNSView {
         ClockInteractionNSView(
             onClick: onClick,
             onDragStart: onDragStart,
+            onTooltipHover: onTooltipHover,
             tooltipRegions: tooltipRegions
         )
     }
@@ -37,12 +41,14 @@ struct ClockInteractionLayer: NSViewRepresentable {
     func updateNSView(_ nsView: ClockInteractionNSView, context: Context) {
         nsView.onClick = onClick
         nsView.onDragStart = onDragStart
+        nsView.onTooltipHover = onTooltipHover
         nsView.updateTooltipRegions(tooltipRegions)
     }
 }
-final class ClockInteractionNSView: NSView, NSViewToolTipOwner {
+final class ClockInteractionNSView: NSView {
     var onClick: () -> Void
     var onDragStart: () -> Void
+    var onTooltipHover: (String?) -> Void
     private var dragStartMouse: NSPoint?
     private var dragStartOrigin: NSPoint?
     private var mouseDownTime: TimeInterval?
@@ -50,17 +56,18 @@ final class ClockInteractionNSView: NSView, NSViewToolTipOwner {
     private let dragThreshold: CGFloat = 5
     private let clickDurationLimit: TimeInterval = 0.35
     private var tooltipRegions: [ClockTooltipRegion]
-    private var tooltipTags: [NSView.ToolTipTag] = []
-    private var tooltipTextByTag: [NSView.ToolTipTag: String] = [:]
-    private var tooltipBoundsSize = NSSize.zero
+    private var tooltipTrackingArea: NSTrackingArea?
+    private var hoveredTooltipText: String?
 
     init(
         onClick: @escaping () -> Void,
         onDragStart: @escaping () -> Void = {},
+        onTooltipHover: @escaping (String?) -> Void = { _ in },
         tooltipRegions: [ClockTooltipRegion] = []
     ) {
         self.onClick = onClick
         self.onDragStart = onDragStart
+        self.onTooltipHover = onTooltipHover
         self.tooltipRegions = tooltipRegions
         super.init(frame: .zero)
     }
@@ -73,30 +80,49 @@ final class ClockInteractionNSView: NSView, NSViewToolTipOwner {
         true
     }
 
-    override func layout() {
-        super.layout()
-        if tooltipBoundsSize != bounds.size {
-            rebuildToolTips()
-        }
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        window?.acceptsMouseMovedEvents = true
+        if window == nil { setHoveredTooltip(nil) }
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let tooltipTrackingArea { removeTrackingArea(tooltipTrackingArea) }
+        let area = NSTrackingArea(
+            rect: .zero,
+            options: [.mouseEnteredAndExited, .mouseMoved, .activeAlways, .inVisibleRect],
+            owner: self,
+            userInfo: nil
+        )
+        addTrackingArea(area)
+        tooltipTrackingArea = area
     }
 
     func updateTooltipRegions(_ regions: [ClockTooltipRegion]) {
-        guard regions != tooltipRegions || tooltipBoundsSize != bounds.size else { return }
+        guard regions != tooltipRegions else { return }
         tooltipRegions = regions
-        rebuildToolTips()
+        if let hoveredTooltipText,
+           !regions.contains(where: { $0.text == hoveredTooltipText }) {
+            self.hoveredTooltipText = nil
+            DispatchQueue.main.async { [weak self] in self?.onTooltipHover(nil) }
+        }
     }
 
     func tooltipText(at point: NSPoint) -> String? {
         tooltipRegions.first { $0.rect.contains(point) }?.text
     }
 
-    func view(
-        _ view: NSView,
-        stringForToolTip tag: NSView.ToolTipTag,
-        point: NSPoint,
-        userData data: UnsafeMutableRawPointer?
-    ) -> String {
-        tooltipTextByTag[tag] ?? ""
+    override func mouseEntered(with event: NSEvent) {
+        updateHoveredTooltip(at: convert(event.locationInWindow, from: nil))
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        updateHoveredTooltip(at: convert(event.locationInWindow, from: nil))
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        setHoveredTooltip(nil)
     }
 
     override func hitTest(_ point: NSPoint) -> NSView? {
@@ -108,6 +134,7 @@ final class ClockInteractionNSView: NSView, NSViewToolTipOwner {
 
     override func mouseDown(with event: NSEvent) {
         guard let window else { return }
+        setHoveredTooltip(nil)
         dragStartMouse = screenPoint(for: event, in: window)
         dragStartOrigin = window.frame.origin
         mouseDownTime = event.timestamp
@@ -166,16 +193,13 @@ final class ClockInteractionNSView: NSView, NSViewToolTipOwner {
         isDragging = false
     }
 
-    private func rebuildToolTips() {
-        for tag in tooltipTags { removeToolTip(tag) }
-        tooltipTags.removeAll(keepingCapacity: true)
-        tooltipTextByTag.removeAll(keepingCapacity: true)
-        tooltipBoundsSize = bounds.size
-        guard bounds.width > 0, bounds.height > 0 else { return }
-        for region in tooltipRegions where region.rect.intersects(bounds) {
-            let tag = addToolTip(region.rect.intersection(bounds), owner: self, userData: nil)
-            tooltipTags.append(tag)
-            tooltipTextByTag[tag] = region.text
-        }
+    private func updateHoveredTooltip(at point: NSPoint) {
+        setHoveredTooltip(tooltipText(at: point))
+    }
+
+    private func setHoveredTooltip(_ text: String?) {
+        guard text != hoveredTooltipText else { return }
+        hoveredTooltipText = text
+        onTooltipHover(text)
     }
 }
