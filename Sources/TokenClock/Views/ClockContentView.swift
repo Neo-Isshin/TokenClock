@@ -354,20 +354,10 @@ struct ClockContentView: View {
 
     private func quotaTooltipText(for indicator: DialQuotaIndicator) -> String {
         var lines = ["\(indicator.provider.emoji) \(indicator.provider.displayName)"]
-        if indicator.provider == .cursor {
-            if let inner = indicator.innerRemainingPercent {
-                lines.append("Cursor Models \(String(format: "%.0f%%", inner))")
-            }
-            lines.append("Other Models \(String(format: "%.0f%%", indicator.outerRemainingPercent))")
-        } else {
+        for detail in indicator.details {
             lines.append(
-                "\(L10n.shared.tr("quota.weekly")) \(String(format: "%.0f%%", indicator.outerRemainingPercent))"
+                "\(L10n.shared.tr(detail.labelKey)) \(String(format: "%.0f%%", detail.remainingPercent))"
             )
-            if let inner = indicator.innerRemainingPercent {
-                lines.append(
-                    "\(L10n.shared.tr("quota.hours", 5)) \(String(format: "%.0f%%", inner))"
-                )
-            }
         }
         return lines.joined(separator: "\n")
     }

@@ -27,6 +27,129 @@ enum SubscriptionProvider: String, CaseIterable, Codable, Identifiable, Sendable
     }
 }
 
+struct DialQuotaDetail: Equatable, Sendable {
+    let labelKey: String
+    let remainingPercent: Double
+}
+
+struct DialQuotaIndicator: Identifiable, Equatable, Sendable {
+    let provider: SubscriptionProvider
+    let outerRemainingPercent: Double
+    let innerRemainingPercent: Double?
+    let details: [DialQuotaDetail]
+    var id: SubscriptionProvider { provider }
+}
+
+enum DialQuotaResolver {
+    static func resolve(
+        provider: SubscriptionProvider,
+        groups: [ProviderQuotaGroup]
+    ) -> DialQuotaIndicator? {
+        switch provider {
+        case .antigravity:
+            if let indicator = antigravity(groups: groups) { return indicator }
+        case .cursor:
+            if let indicator = cursor(groups: groups) { return indicator }
+        default:
+            break
+        }
+        return standard(provider: provider, groups: groups)
+    }
+
+    private static func standard(
+        provider: SubscriptionProvider,
+        groups: [ProviderQuotaGroup]
+    ) -> DialQuotaIndicator? {
+        let buckets = groups.flatMap(\.buckets)
+        guard let weekly = minimumRemaining(buckets.filter(isWeekly)) else { return nil }
+        let fiveHour = minimumRemaining(buckets.filter(isFiveHour))
+        var details = [DialQuotaDetail(labelKey: "quota.dial.weekly", remainingPercent: weekly)]
+        if let fiveHour {
+            details.append(DialQuotaDetail(labelKey: "quota.dial.fiveHour", remainingPercent: fiveHour))
+        }
+        return DialQuotaIndicator(
+            provider: provider,
+            outerRemainingPercent: weekly,
+            innerRemainingPercent: fiveHour,
+            details: details
+        )
+    }
+
+    private static func antigravity(groups: [ProviderQuotaGroup]) -> DialQuotaIndicator? {
+        let geminiBuckets = groups.filter { $0.name.lowercased().contains("gemini") }.flatMap(\.buckets)
+        let otherBuckets = groups.filter {
+            let name = $0.name.lowercased()
+            return name.contains("claude") || name.contains("gpt")
+        }.flatMap(\.buckets)
+        guard let geminiWeekly = minimumRemaining(geminiBuckets.filter(isWeekly)) else { return nil }
+        let otherWeekly = minimumRemaining(otherBuckets.filter(isWeekly))
+        var details = [
+            DialQuotaDetail(labelKey: "quota.dial.geminiWeekly", remainingPercent: geminiWeekly),
+        ]
+        if let value = minimumRemaining(geminiBuckets.filter(isFiveHour)) {
+            details.append(DialQuotaDetail(labelKey: "quota.dial.geminiFiveHour", remainingPercent: value))
+        }
+        if let otherWeekly {
+            details.append(DialQuotaDetail(labelKey: "quota.dial.claudeGPTWeekly", remainingPercent: otherWeekly))
+        }
+        if let value = minimumRemaining(otherBuckets.filter(isFiveHour)) {
+            details.append(DialQuotaDetail(labelKey: "quota.dial.claudeGPTFiveHour", remainingPercent: value))
+        }
+        return DialQuotaIndicator(
+            provider: .antigravity,
+            outerRemainingPercent: geminiWeekly,
+            innerRemainingPercent: otherWeekly,
+            details: details
+        )
+    }
+
+    private static func cursor(groups: [ProviderQuotaGroup]) -> DialQuotaIndicator? {
+        let buckets = groups.flatMap(\.buckets)
+        let cursorModels = minimumRemaining(buckets.filter { $0.name.lowercased().contains("cursor") })
+        guard let otherModels = minimumRemaining(
+            buckets.filter { $0.name.lowercased().contains("other") }
+        ) else { return nil }
+        var details: [DialQuotaDetail] = []
+        if let cursorModels {
+            details.append(DialQuotaDetail(
+                labelKey: "quota.dial.cursorModels", remainingPercent: cursorModels
+            ))
+        }
+        details.append(DialQuotaDetail(
+            labelKey: "quota.dial.otherModels", remainingPercent: otherModels
+        ))
+        return DialQuotaIndicator(
+            provider: .cursor,
+            outerRemainingPercent: otherModels,
+            innerRemainingPercent: cursorModels,
+            details: details
+        )
+    }
+
+    private static func minimumRemaining(_ buckets: [CodexQuotaBucket]) -> Double? {
+        buckets.map(\.remainingPercent).filter(\.isFinite).min()
+    }
+
+    private static func isWeekly(_ bucket: CodexQuotaBucket) -> Bool {
+        let name = bucket.name.lowercased()
+        return bucket.windowMinutes == 10_080
+            || abs(bucket.windowMinutes - 10_080) <= 1_440
+            || name.contains("week")
+            || name.contains("周")
+            || name.contains("週")
+    }
+
+    private static func isFiveHour(_ bucket: CodexQuotaBucket) -> Bool {
+        let name = bucket.name.lowercased()
+        return bucket.windowMinutes == 300
+            || name.contains("5-hour")
+            || name.contains("five hour")
+            || name.contains("5h")
+            || name.contains("5 小时")
+            || name.contains("5 小時")
+    }
+}
+
 struct SubscriptionAccountIdentity: Equatable, Sendable {
     let id: String
     let email: String?

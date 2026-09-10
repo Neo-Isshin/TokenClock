@@ -2,13 +2,6 @@ import SwiftUI
 import Combine
 import AppKit
 
-struct DialQuotaIndicator: Identifiable, Equatable {
-    let provider: SubscriptionProvider
-    let outerRemainingPercent: Double
-    let innerRemainingPercent: Double?
-    var id: SubscriptionProvider { provider }
-}
-
 /// 表盘文字颜色覆盖模式（「表盘外观 ▸ 文字颜色」）
 enum DialTextMode: Int {
     case theme = 0    // 跟随主题
@@ -144,12 +137,15 @@ final class ViewModel: ObservableObject {
     /// One indicator per provider: weekly outside and five-hour inside. Cursor's API uses
     /// model groups instead, so Other Models is outside and Cursor Models is inside.
     var dialQuotaIndicators: [DialQuotaIndicator] {
-        dialQuotaProviders.compactMap(dialQuotaIndicator)
+        dialQuotaProviders.compactMap { provider in
+            DialQuotaResolver.resolve(provider: provider, groups: quotaGroups(for: provider))
+        }
     }
 
     var dialQuotaProviderOptions: [SubscriptionProvider] {
         SubscriptionProvider.allCases.filter {
-            dialQuotaProviders.contains($0) || dialQuotaIndicator(for: $0) != nil
+            dialQuotaProviders.contains($0)
+                || DialQuotaResolver.resolve(provider: $0, groups: quotaGroups(for: $0)) != nil
         }
     }
 
@@ -573,56 +569,24 @@ final class ViewModel: ObservableObject {
         }
     }
 
-    private func quotaBuckets(for provider: SubscriptionProvider) -> [CodexQuotaBucket] {
-        let live: [CodexQuotaBucket]
+    private func quotaGroups(for provider: SubscriptionProvider) -> [ProviderQuotaGroup] {
+        let live: [ProviderQuotaGroup]
         switch provider {
-        case .codex: live = codexQuota.buckets
-        case .claude: live = claudeQuota.buckets
-        case .antigravity: live = antigravityQuota.groups.flatMap(\.buckets)
-        case .cursor: live = cursorQuota.groups.flatMap(\.buckets)
-        case .grokBot: live = grokBotQuota.groups.flatMap(\.buckets)
-        case .zhipu: live = zhipuQuota.groups.flatMap(\.buckets)
+        case .codex:
+            live = codexQuota.buckets.isEmpty ? [] : [ProviderQuotaGroup(
+                id: "codex:subscription", name: "Subscription", buckets: codexQuota.buckets
+            )]
+        case .claude:
+            live = claudeQuota.buckets.isEmpty ? [] : [ProviderQuotaGroup(
+                id: "claude:subscription", name: "Subscription", buckets: claudeQuota.buckets
+            )]
+        case .antigravity: live = antigravityQuota.groups
+        case .cursor: live = cursorQuota.groups
+        case .grokBot: live = grokBotQuota.groups
+        case .zhipu: live = zhipuQuota.groups
         }
         if !live.isEmpty { return live }
-        return subscriptionAccounts(for: provider).first?.groups.flatMap(\.buckets) ?? []
-    }
-
-    private func dialQuotaIndicator(for provider: SubscriptionProvider) -> DialQuotaIndicator? {
-        let buckets = quotaBuckets(for: provider)
-        if provider == .cursor {
-            let otherModels = buckets.filter { $0.name.lowercased().contains("other") }
-            let cursorModels = buckets.filter { $0.name.lowercased().contains("cursor") }
-            guard let outer = otherModels.map(\.remainingPercent).min() else { return nil }
-            return DialQuotaIndicator(
-                provider: provider,
-                outerRemainingPercent: outer,
-                innerRemainingPercent: cursorModels.map(\.remainingPercent).min()
-            )
-        }
-
-        let weekly = buckets.filter { bucket in
-            let name = bucket.name.lowercased()
-            return bucket.windowMinutes == 10_080
-                || abs(bucket.windowMinutes - 10_080) <= 1_440
-                || name.contains("week")
-                || name.contains("周")
-                || name.contains("週")
-        }
-        guard let outer = weekly.map(\.remainingPercent).min() else { return nil }
-        let fiveHour = buckets.filter { bucket in
-            let name = bucket.name.lowercased()
-            return bucket.windowMinutes == 300
-                || name.contains("5-hour")
-                || name.contains("five hour")
-                || name.contains("5h")
-                || name.contains("5 小时")
-                || name.contains("5 小時")
-        }
-        return DialQuotaIndicator(
-            provider: provider,
-            outerRemainingPercent: outer,
-            innerRemainingPercent: fiveHour.map(\.remainingPercent).min()
-        )
+        return subscriptionAccounts(for: provider).first?.groups ?? []
     }
 
     func updateSubscriptionAccount(id: String, note: String, manualPlan: String?) {
