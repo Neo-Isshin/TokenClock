@@ -886,7 +886,7 @@ final class LinuxDetailsPanel: @unchecked Sendable {
         case .classic, .glacier, .gufeng, .railgun:
             color = defaultQuotaColor(subscriptionProvider(provider))
         case .glass, .midnight, .luxe, .sky, .custom:
-            color = quickContrastColor ?? theme.textPrimaryColor
+            color = theme.textPrimaryColor
         }
         let red = Int((min(1, max(0, color.red)) * 255).rounded())
         let green = Int((min(1, max(0, color.green)) * 255).rounded())

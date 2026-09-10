@@ -171,7 +171,7 @@ enum LinuxClockTheme: String, CaseIterable, Sendable {
 
     var tickMarkColor: LinuxColor {
         switch self {
-        case .glass: return LinuxColor(1, 1, 1, 0.7)
+        case .glass: return LinuxColor(0.16, 0.16, 0.18, 0.52)
         case .classic: return .clear
         case .glacier: return LinuxColor(0.10, 0.20, 0.42, 0.55)
         case .midnight: return LinuxColor(0.290, 0.396, 0.502)
@@ -185,7 +185,7 @@ enum LinuxClockTheme: String, CaseIterable, Sendable {
 
     var majorTickMarkColor: LinuxColor {
         switch self {
-        case .glass: return LinuxColor(1, 1, 1)
+        case .glass: return LinuxColor(0.16, 0.16, 0.18, 0.82)
         case .classic: return .clear
         case .glacier: return LinuxColor(0.10, 0.20, 0.42)
         case .midnight: return LinuxColor(0.502, 0.871, 0.918)
@@ -201,11 +201,11 @@ enum LinuxClockTheme: String, CaseIterable, Sendable {
         switch self {
         case .glass, .classic: return .clear
         case .glacier: return LinuxColor(0.10, 0.20, 0.42)
-        case .midnight: return LinuxColor(0.400, 0.533, 0.667)
+        case .midnight: return LinuxColor(0.480, 0.620, 0.750)
         case .luxe: return LinuxColor(0.667, 0.567, 0.333)
         case .gufeng: return LinuxColor(0.300, 0.200, 0.150)
         case .railgun: return LinuxColor(0.500, 0.350, 0.300)
-        case .sky: return LinuxColor(0.220, 0.380, 0.560)
+        case .sky: return LinuxColor(0.140, 0.270, 0.410)
         case .custom: return custom.showNumbers ? custom.numberColor.linuxColor : .clear
         }
     }
@@ -266,28 +266,28 @@ enum LinuxClockTheme: String, CaseIterable, Sendable {
 
     var textPrimaryColor: LinuxColor {
         switch self {
-        case .glass: return LinuxColor(1, 1, 1)
+        case .glass: return LinuxColor(0.16, 0.16, 0.18)
         case .classic: return LinuxColor(0.18, 0.18, 0.20)
         case .glacier: return LinuxColor(0.10, 0.20, 0.42)
         case .midnight: return LinuxColor(0.878, 0.878, 0.878)
         case .luxe: return LinuxColor(0.910, 0.835, 0.639)
         case .gufeng: return LinuxColor(0.250, 0.180, 0.130)
         case .railgun: return LinuxColor(0.500, 0.350, 0.300)
-        case .sky: return LinuxColor(0.180, 0.340, 0.520)
+        case .sky: return LinuxColor(0.100, 0.220, 0.360)
         case .custom: return custom.textPrimaryColor.linuxColor
         }
     }
 
     var textSecondaryColor: LinuxColor {
         switch self {
-        case .glass: return LinuxColor(1, 1, 1, 0.8)
-        case .classic: return LinuxColor(0.45, 0.45, 0.48)
+        case .glass: return LinuxColor(0.38, 0.40, 0.44)
+        case .classic: return LinuxColor(0.43, 0.43, 0.46)
         case .glacier: return LinuxColor(0.10, 0.20, 0.42, 0.7)
         case .midnight: return LinuxColor(0.533, 0.600, 0.667)
         case .luxe: return LinuxColor(0.600, 0.533, 0.400)
-        case .gufeng: return LinuxColor(0.500, 0.380, 0.280)
-        case .railgun: return LinuxColor(0.680, 0.560, 0.480)
-        case .sky: return LinuxColor(0.380, 0.520, 0.660)
+        case .gufeng: return LinuxColor(0.460, 0.330, 0.230)
+        case .railgun: return LinuxColor(0.460, 0.310, 0.270)
+        case .sky: return LinuxColor(0.160, 0.290, 0.430)
         case .custom: return custom.textSecondaryColor.linuxColor
         }
     }
@@ -308,14 +308,14 @@ enum LinuxClockTheme: String, CaseIterable, Sendable {
 
     var dropdownHeaderColor: LinuxColor {
         switch self {
-        case .glass: return LinuxColor(0.55, 0.55, 0.58)
-        case .classic: return LinuxColor(0.55, 0.55, 0.58)
+        case .glass: return LinuxColor(0.42, 0.42, 0.45)
+        case .classic: return LinuxColor(0.42, 0.42, 0.45)
         case .glacier: return LinuxColor(0.10, 0.20, 0.42, 0.7)
         case .midnight: return LinuxColor(0.533, 0.600, 0.667)
         case .luxe: return LinuxColor(0.667, 0.567, 0.400)
         case .gufeng: return LinuxColor(0.450, 0.320, 0.220)
-        case .railgun: return LinuxColor(0.620, 0.470, 0.380)
-        case .sky: return LinuxColor(0.300, 0.480, 0.660)
+        case .railgun: return LinuxColor(0.460, 0.310, 0.270)
+        case .sky: return LinuxColor(0.160, 0.290, 0.430)
         case .custom: return custom.dropdownSubtextColor.linuxColor
         }
     }
@@ -328,20 +328,20 @@ enum LinuxClockTheme: String, CaseIterable, Sendable {
         case .luxe: return LinuxColor(0.910, 0.835, 0.639)
         case .gufeng: return LinuxColor(0.280, 0.200, 0.150)
         case .railgun: return LinuxColor(0.500, 0.350, 0.300)
-        case .sky: return LinuxColor(0.180, 0.340, 0.520)
+        case .sky: return LinuxColor(0.100, 0.220, 0.360)
         case .custom: return custom.dropdownTextColor.linuxColor
         }
     }
 
     var dropdownSubtextColor: LinuxColor {
         switch self {
-        case .glass, .classic: return LinuxColor(0.45, 0.45, 0.48)
+        case .glass, .classic: return LinuxColor(0.42, 0.42, 0.45)
         case .glacier: return LinuxColor(0.10, 0.20, 0.42, 0.7)
         case .midnight: return LinuxColor(0.533, 0.600, 0.667)
         case .luxe: return LinuxColor(0.600, 0.533, 0.400)
-        case .gufeng: return LinuxColor(0.520, 0.400, 0.300)
-        case .railgun: return LinuxColor(0.680, 0.560, 0.480)
-        case .sky: return LinuxColor(0.380, 0.520, 0.660)
+        case .gufeng: return LinuxColor(0.460, 0.330, 0.230)
+        case .railgun: return LinuxColor(0.460, 0.310, 0.270)
+        case .sky: return LinuxColor(0.160, 0.290, 0.430)
         case .custom: return custom.dropdownSubtextColor.linuxColor
         }
     }

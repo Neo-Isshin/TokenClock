@@ -48,17 +48,16 @@ final class LinuxClockRenderer: @unchecked Sendable {
         let centerY = height / 2
         let radius = min(width, height) / 2 - 4
         let theme = snapshot.theme
-        let quickTextColor = quickContrastColor()
 
         drawDial(context, centerX, centerY, radius, theme)
         if theme.hasDialDecoration {
             drawSkyDecoration(context, centerX, centerY, radius)
         }
         drawTickMarks(context, centerX, centerY, radius, theme)
-        drawNumbers(context, centerX, centerY, radius, theme, snapshot.size.scale, colorOverride: quickTextColor)
+        drawNumbers(context, centerX, centerY, radius, theme, snapshot.size.scale)
         drawHands(context, centerX, centerY, radius, theme, snapshot.date, snapshot.timeZone)
         drawCenterDot(context, centerX, centerY, theme)
-        drawOverlay(context, width, height, snapshot, colorOverride: quickTextColor)
+        drawOverlay(context, width, height, snapshot)
     }
 
     func quotaRingIndex(
@@ -704,12 +703,4 @@ final class LinuxClockRenderer: @unchecked Sendable {
         LinuxColor(color.red, color.green, color.blue, alpha)
     }
 
-    private func quickContrastColor() -> LinuxColor? {
-        switch UserDefaults.standard.int(for: .quickContrastPreset, default: 0) {
-        case 1: return LinuxColor(1, 1, 1)
-        case 2: return LinuxColor(0, 0, 0)
-        case 3: return LinuxColor(1, 214.0 / 255.0, 10.0 / 255.0)
-        default: return nil
-        }
-    }
 }

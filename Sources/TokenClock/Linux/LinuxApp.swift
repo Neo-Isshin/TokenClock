@@ -273,6 +273,11 @@ final class LinuxApp: @unchecked Sendable {
             gtk_menu_shell_append(tc_gtk_menu_shell(opacityMenu), item)
             opacityItems[value] = item
         }
+        gtk_menu_shell_append(tc_gtk_menu_shell(appearanceMenu), gtk_separator_menu_item_new())
+        appendMenuItem(
+            L10n.shared.tr("menu.dialResetDefaults"),
+            name: "reset-appearance", to: appearanceMenu
+        )
 
         appendMenuItem(
             menuSelectionLabel(alwaysOnTop, title: L10n.shared.tr("menu.alwaysOnTop")),
@@ -536,6 +541,10 @@ final class LinuxApp: @unchecked Sendable {
             let endpoint = Self.apiEndpointURL
             endpoint.withCString { tc_gtk_clipboard_set_text($0) }
             print("[TokenClock] Copied \(endpoint)")
+        case "reset-appearance":
+            UserDefaults.standard.remove(.quickContrastPreset)
+            updateDetailsPanel()
+            refreshUI()
         case "always-on-top": toggleAlwaysOnTop()
         case "details": toggleDetails()
         case "overview": overviewWindow?.show()
@@ -560,6 +569,7 @@ final class LinuxApp: @unchecked Sendable {
     private func selectTheme(_ theme: LinuxClockTheme) {
         selectedTheme = theme
         UserDefaults.standard.setString(theme.rawValue, for: .selectedTheme)
+        UserDefaults.standard.remove(.quickContrastPreset)
         for (candidate, item) in themeItems {
             gtk_menu_item_set_label(
                 tc_gtk_menu_item(item),
