@@ -2,6 +2,20 @@ import XCTest
 @testable import TokenClock
 
 final class L10nTests: XCTestCase {
+    func testContextMenuCategoryLabelsAreLocalizedInEverySupportedLanguage() {
+        let l10n = L10n.shared
+        let originalLanguage = l10n.language
+        defer { l10n.language = originalLanguage }
+
+        let keys = ["menu.appearance", "menu.weatherTime", "menu.general"]
+        for language in AppLanguage.allCases {
+            l10n.language = language
+            for key in keys {
+                XCTAssertNotEqual(l10n.tr(key), key, "\(key) fell back for \(language.rawValue)")
+            }
+        }
+    }
+
     func testCustomEditorStyleLabelsAreLocalizedInEverySupportedLanguage() {
         let l10n = L10n.shared
         let originalLanguage = l10n.language

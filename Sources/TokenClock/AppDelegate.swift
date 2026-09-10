@@ -289,11 +289,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     private func setupRightClickMenu() {
         let menu = NSMenu()
+        let appearanceMenu = NSMenu()
+        let weatherTimeMenu = NSMenu()
+        let generalMenu = NSMenu()
         let tr = L10n.shared.tr
 
         let themeItem = NSMenuItem(title: tr("menu.clockFace"),
                                   action: #selector(openThemePicker(_:)), keyEquivalent: "")
-        menu.addItem(themeItem)
+        appearanceMenu.addItem(themeItem)
 
         if !viewModel.savedCustomThemes.isEmpty {
             let savedMenu = NSMenu()
@@ -308,7 +311,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             }
             let savedItem = NSMenuItem(title: tr("menu.myClockFaces"), action: nil, keyEquivalent: "")
             savedItem.submenu = savedMenu
-            menu.addItem(savedItem)
+            appearanceMenu.addItem(savedItem)
         }
 
         // 表盘大小子菜单（小/中/大/特大）
@@ -322,9 +325,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
         let sizeItem = NSMenuItem(title: tr("size.title"), action: nil, keyEquivalent: "")
         sizeItem.submenu = sizeMenu
-        menu.addItem(sizeItem)
-
-        // 取消「表盘外观」嵌套：颜色与玻璃控制都直接作为一级菜单展示。
+        appearanceMenu.addItem(sizeItem)
 
         // — 文字颜色（解决浅色壁纸上白色文字不可见）—
         let textColorMenu = NSMenu()
@@ -342,7 +343,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         textColorMenu.addItem(customTextItem)
         let textColorItem = NSMenuItem(title: tr("menu.dialTextColor"), action: nil, keyEquivalent: "")
         textColorItem.submenu = textColorMenu
-        menu.addItem(textColorItem)
+        appearanceMenu.addItem(.separator())
+        appearanceMenu.addItem(textColorItem)
 
         // — 详情面板文字色（覆写下拉面板文字色；nil = 跟随主题）—
         let panelHex = viewModel.dropdownTextColorHex
@@ -368,7 +370,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         panelTextMenu.addItem(panelCustomItem)
         let panelTextItem = NSMenuItem(title: tr("menu.panelTextColor"), action: nil, keyEquivalent: "")
         panelTextItem.submenu = panelTextMenu
-        menu.addItem(panelTextItem)
+        appearanceMenu.addItem(panelTextItem)
+        let opacityInsertIndex = appearanceMenu.numberOfItems
 
         // — 玻璃底色（私有 tintColor SPI；27 Beta 可能渲染偏实心）—
         let tintMenu = NSMenu()
@@ -381,7 +384,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         tintMenu.addItem(customTintItem)
         let tintSubItem = NSMenuItem(title: tr("menu.dialTint"), action: nil, keyEquivalent: "")
         tintSubItem.submenu = tintMenu
-        menu.addItem(tintSubItem)
+        appearanceMenu.addItem(.separator())
+        appearanceMenu.addItem(tintSubItem)
 
         // — 毛玻璃底板透明度（公开 NSVisualEffectView.alphaValue；折射玻璃下层，0=无底板）—
         let backingMenu = NSMenu()
@@ -393,24 +397,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
         let backingItem = NSMenuItem(title: tr("menu.glassBacking"), action: nil, keyEquivalent: "")
         backingItem.submenu = backingMenu
-        menu.addItem(backingItem)
+        appearanceMenu.addItem(backingItem)
 
         // 液态玻璃折射总开关（实验性私有 API；关 → 回退公开 .clear 玻璃）
         let glassToggle = NSMenuItem(title: tr("menu.glassRefraction"),
                                      action: #selector(toggleGlassRefraction(_:)), keyEquivalent: "")
         glassToggle.state = viewModel.glassRefractionEnabled ? .on : .off
-        menu.addItem(glassToggle)
+        appearanceMenu.addItem(glassToggle)
 
         // 一键恢复默认：文字→跟随主题、材质→标准、底色→无
-        menu.addItem(.separator())
+        appearanceMenu.addItem(.separator())
         let resetItem = NSMenuItem(title: tr("menu.dialResetDefaults"),
                                    action: #selector(resetDialAppearance(_:)), keyEquivalent: "")
-        menu.addItem(resetItem)
+        appearanceMenu.addItem(resetItem)
 
         let apiItem = NSMenuItem(title: L10n.shared.tr("menu.api", Int(AppDelegate.resolveAPIServerPort())),
                                  action: #selector(copyAPIEndpoint(_:)), keyEquivalent: "")
-        menu.addItem(apiItem)
-        menu.addItem(.separator())
 
         let opacityMenu = NSMenu()
         for value in [25, 50, 75, 100] {
@@ -422,15 +424,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
         let opacityItem = NSMenuItem(title: tr("menu.opacity"), action: nil, keyEquivalent: "")
         opacityItem.submenu = opacityMenu
-        opacityItem.tag = 100 // tag for lookup in setOpacity
-        menu.addItem(opacityItem)
-        menu.addItem(.separator())
+        appearanceMenu.insertItem(opacityItem, at: opacityInsertIndex)
 
         let alwaysOnTopItem = NSMenuItem(title: tr("menu.alwaysOnTop"),
                                          action: #selector(toggleAlwaysOnTop(_:)), keyEquivalent: "")
         alwaysOnTopItem.state = viewModel.alwaysOnTop ? .on : .off
-        menu.addItem(alwaysOnTopItem)
-        menu.addItem(.separator())
 
         let tempItem = NSMenuItem(title: tr("menu.temperature"), action: nil, keyEquivalent: "")
         let tempMenu = NSMenu()
@@ -441,8 +439,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         tempMenu.addItem(celsiusItem)
         tempMenu.addItem(fahrenheitItem)
         tempItem.submenu = tempMenu
-        menu.addItem(tempItem)
-        menu.addItem(.separator())
 
         let cityMenu = NSMenu()
         let currentCity = viewModel.selectedCity
@@ -462,8 +458,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
         let cityItem = NSMenuItem(title: tr("menu.city"), action: nil, keyEquivalent: "")
         cityItem.submenu = cityMenu
-        menu.addItem(cityItem)
-        menu.addItem(.separator())
 
         let tzMenu = NSMenu()
         let currentTZ = viewModel.selectedTimezone
@@ -476,8 +470,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
         let tzItem = NSMenuItem(title: tr("menu.timezone"), action: nil, keyEquivalent: "")
         tzItem.submenu = tzMenu
-        menu.addItem(tzItem)
-        menu.addItem(.separator())
+        weatherTimeMenu.addItem(cityItem)
+        weatherTimeMenu.addItem(tzItem)
+        weatherTimeMenu.addItem(tempItem)
 
         // Language submenu
         let langMenu = NSMenu()
@@ -490,13 +485,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             langMenu.addItem(item)
         }
         langItem.submenu = langMenu
-        menu.addItem(langItem)
-        menu.addItem(.separator())
 
         let settingsItem = NSMenuItem(title: tr("menu.settings"),
                                       action: #selector(openSettings(_:)), keyEquivalent: ",")
-        menu.addItem(settingsItem)
-        menu.addItem(.separator())
 
         let launchItem = NSMenuItem(title: tr("menu.launchAtLogin"),
                                     action: #selector(toggleLaunchAtLogin(_:)), keyEquivalent: "")
@@ -504,15 +495,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
            LaunchAgentHelper.isRegistered(variant: variant) {
             launchItem.state = .on
         }
-        menu.addItem(launchItem)
-        menu.addItem(.separator())
 
         let aboutItem = NSMenuItem(title: tr("menu.about"),
                                    action: #selector(showAbout(_:)), keyEquivalent: "")
-        menu.addItem(aboutItem)
 
         let quitItem = NSMenuItem(title: tr("menu.quit"),
                                   action: #selector(quitApp(_:)), keyEquivalent: "q")
+
+        generalMenu.addItem(alwaysOnTopItem)
+        generalMenu.addItem(launchItem)
+        generalMenu.addItem(.separator())
+        generalMenu.addItem(langItem)
+        generalMenu.addItem(apiItem)
+
+        func categoryItem(title: String, symbol: String, submenu: NSMenu) -> NSMenuItem {
+            let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+            item.image = NSImage(systemSymbolName: symbol, accessibilityDescription: title)
+            item.submenu = submenu
+            return item
+        }
+
+        menu.addItem(categoryItem(
+            title: tr("menu.appearance"), symbol: "paintpalette", submenu: appearanceMenu
+        ))
+        menu.addItem(categoryItem(
+            title: tr("menu.weatherTime"), symbol: "cloud.sun", submenu: weatherTimeMenu
+        ))
+        menu.addItem(categoryItem(
+            title: tr("menu.general"), symbol: "gearshape", submenu: generalMenu
+        ))
+        menu.addItem(.separator())
+        menu.addItem(settingsItem)
+        menu.addItem(.separator())
+        menu.addItem(aboutItem)
         menu.addItem(quitItem)
 
         panel.menu = menu
@@ -642,7 +657,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         panel.alphaValue = value
         dropdownPanel.alphaValue = value
         viewModel.windowOpacity = value
-        if let opacityMenu = panel.menu?.items.first(where: { $0.tag == 100 })?.submenu {
+        if let opacityMenu = sender.menu {
             for item in opacityMenu.items {
                 item.state = (item.tag == sender.tag) ? .on : .off
             }
