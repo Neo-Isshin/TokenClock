@@ -198,7 +198,8 @@ struct ClockContentView: View {
                     }
                     .shadow(color: Color.black.opacity(0.13), radius: 2 * s, y: 1 * s)
                     .position(quotaTooltipPosition(
-                        indicatorCount: quotaIndicators.count,
+                        label: hoveredQuotaLabel,
+                        indicators: quotaIndicators,
                         diameter: d,
                         scale: s
                     ))
@@ -347,16 +348,27 @@ struct ClockContentView: View {
     }
 
     private func quotaTooltipPosition(
-        indicatorCount: Int,
+        label: String,
+        indicators: [DialQuotaIndicator],
         diameter: CGFloat,
         scale s: CGFloat
     ) -> CGPoint {
+        let indicatorCount = indicators.count
         let ringSize = (indicatorCount == 1 ? 35 : 29) * s
         let spacing = 5 * s
         let totalHeight = ringSize * CGFloat(indicatorCount)
             + spacing * CGFloat(max(0, indicatorCount - 1))
         let clusterTop = (diameter - totalHeight) / 2
-        return CGPoint(x: diameter - 62 * s, y: max(12 * s, clusterTop - 9 * s))
+        guard indicatorCount == 2,
+              let index = indicators.firstIndex(where: {
+                  "\($0.provider.emoji) \($0.provider.displayName)" == label
+              }) else {
+            return CGPoint(x: diameter - 62 * s, y: max(12 * s, clusterTop - 9 * s))
+        }
+        let ringCenterY = clusterTop
+            + CGFloat(index) * (ringSize + spacing)
+            + ringSize / 2
+        return CGPoint(x: diameter - 92 * s, y: ringCenterY)
     }
 
     private func quotaPercentColor(_ remaining: Double) -> Color {
