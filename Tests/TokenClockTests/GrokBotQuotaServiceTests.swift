@@ -3,6 +3,18 @@ import XCTest
 @testable import TokenClock
 
 final class GrokBotQuotaServiceTests: XCTestCase {
+    #if os(macOS)
+    func testDecryptsElectronSafeStorageFixture() {
+        XCTAssertEqual(
+            GrokBotNativeCredentialStore.decryptSafeStoragePayload(
+                "djEw5APYyxaXDmuSBIYmLjfxCivXhoFimiC4XKQV2XX7s3Q=",
+                password: "test-password"
+            ),
+            "native-token-fixture"
+        )
+    }
+    #endif
+
     func testDecodesIndependentWeeklyQuota() throws {
         let response = Data(#"""
         {

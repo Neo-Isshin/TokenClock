@@ -10,9 +10,9 @@ import FoundationNetworking
 
 /// Reads Grok Bot's separate weekly allowance from Cursor's Sand dashboard service.
 ///
-/// Grok Bot is metered on the signed-in Cursor account. Cursor Agent CLI credentials
-/// are tried first, followed by Cursor IDE. This never opens or decrypts
-/// `Grok Bot Safe Storage`.
+/// Grok Bot is metered on the signed-in Cursor account. Cursor Agent CLI credentials are tried
+/// first, followed by Cursor IDE, then a previously authorized standalone Grok Bot credential.
+/// Automatic refresh never presents Keychain UI; native authorization is user-initiated.
 final class GrokBotQuotaService: @unchecked Sendable {
     private static let source = "Cursor Grok Bot API"
     private static let endpoint =
@@ -24,11 +24,13 @@ final class GrokBotQuotaService: @unchecked Sendable {
     private enum CredentialOrigin {
         case cli
         case ide
+        case grokBot
 
         var sourceLabel: String {
             switch self {
             case .cli: return "Cursor Agent CLI"
             case .ide: return "Cursor IDE"
+            case .grokBot: return "Grok Bot"
             }
         }
     }
@@ -46,6 +48,7 @@ final class GrokBotQuotaService: @unchecked Sendable {
     private let stateDatabasePath: String
     private let environment: [String: String]
     private let homeDirectory: String
+    private let nativeCredentialStore: GrokBotNativeCredentialStore
 
     init(
         fileManager: FileManager = .default,
@@ -53,12 +56,14 @@ final class GrokBotQuotaService: @unchecked Sendable {
             "Cursor", "User", "globalStorage", "state.vscdb"
         ),
         environment: [String: String] = ProcessInfo.processInfo.environment,
-        homeDirectory: String = NSHomeDirectory()
+        homeDirectory: String = NSHomeDirectory(),
+        nativeCredentialStore: GrokBotNativeCredentialStore = .shared
     ) {
         self.fileManager = fileManager
         self.stateDatabasePath = stateDatabasePath
         self.environment = environment
         self.homeDirectory = homeDirectory
+        self.nativeCredentialStore = nativeCredentialStore
     }
 
     func fetch() -> ProviderQuotaSnapshot {
@@ -133,9 +138,22 @@ final class GrokBotQuotaService: @unchecked Sendable {
 
     private func credentialCandidates() -> [Credential] {
         var values: [Credential] = []
-        if let cli = credentialFromCLI() { values.append(cli) }
-        if let ide = credentialFromIDE(), !values.contains(where: { $0.token == ide.token }) {
-            values.append(ide)
+        if environment["TOKENCLOCK_DISABLE_CURSOR_CREDENTIALS"] != "1" {
+            if let cli = credentialFromCLI() { values.append(cli) }
+            if let ide = credentialFromIDE(), !values.contains(where: { $0.token == ide.token }) {
+                values.append(ide)
+            }
+        }
+        if let native = nativeCredentialStore.credential(),
+           !values.contains(where: { $0.token == native.accessToken }) {
+            values.append(Credential(
+                token: native.accessToken,
+                userID: native.userID,
+                email: native.email,
+                machineID: native.machineID,
+                membershipType: nil,
+                origin: .grokBot
+            ))
         }
         return values
     }
@@ -309,7 +327,7 @@ final class GrokBotQuotaService: @unchecked Sendable {
         switch credential.origin {
         case .cli:
             headers["x-cursor-client-type"] = "cli"
-        case .ide:
+        case .ide, .grokBot:
             guard let machineID = credential.machineID else { return nil }
             headers["x-cursor-checksum"] = Self.cursorChecksum(machineID: machineID)
             headers["x-cursor-client-source"] = "sand-desktop"

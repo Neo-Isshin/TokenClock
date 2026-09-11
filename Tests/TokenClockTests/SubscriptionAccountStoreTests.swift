@@ -3,6 +3,39 @@ import XCTest
 @testable import TokenClock
 
 final class SubscriptionAccountStoreTests: XCTestCase {
+    func testDefaultDialProviderChoosesMostConsumedQuotaThenPanelOrder() throws {
+        let codex = DialQuotaIndicator(
+            provider: .codex, outerRemainingPercent: 80,
+            innerRemainingPercent: nil, details: []
+        )
+        let claude = DialQuotaIndicator(
+            provider: .claude, outerRemainingPercent: 30,
+            innerRemainingPercent: nil, details: []
+        )
+        XCTAssertEqual(
+            DialQuotaResolver.defaultProvider(
+                from: [codex, claude], providerOrder: [.codex, .claude]
+            ),
+            .claude
+        )
+
+        let tiedCodex = DialQuotaIndicator(
+            provider: .codex, outerRemainingPercent: 30,
+            innerRemainingPercent: nil, details: []
+        )
+        let tiedClaude = DialQuotaIndicator(
+            provider: .claude, outerRemainingPercent: 30,
+            innerRemainingPercent: nil, details: []
+        )
+        XCTAssertEqual(
+            DialQuotaResolver.defaultProvider(
+                from: [tiedCodex, tiedClaude, tiedCodex],
+                providerOrder: [.claude, .claude, .codex]
+            ),
+            .claude
+        )
+    }
+
     func testOpaqueCredentialIdentifierIsStableAndDoesNotContainTheSecret() {
         let first = SubscriptionAccountIdentity.opaqueID(namespace: "zhipu", secret: "secret-api-key")
         let second = SubscriptionAccountIdentity.opaqueID(namespace: "zhipu", secret: "secret-api-key")
