@@ -30,15 +30,23 @@ ok()   { printf '  ✓ %s\n' "$*"; }
 die()  { printf '\n❌ %s\n' "$*" >&2; exit 1; }
 
 # ── 1. 构建依赖 ──
-step "Installing build deps (apt)"
-export DEBIAN_FRONTEND=noninteractive
-apt-get update -qq
-apt-get install -y --no-install-recommends \
-  libgtk-3-dev libsqlite3-dev libcurl4-openssl-dev adwaita-icon-theme \
-  fonts-noto-color-emoji fonts-noto-cjk librsvg2-common shared-mime-info \
-  pkg-config file ca-certificates wget libfuse2 \
-  >/dev/null
-ok "deps installed"
+if [ "${TOKENCLOCK_SKIP_APT:-0}" = 1 ]; then
+  step "Using preinstalled build deps"
+  command -v swift >/dev/null || die "swift is not installed"
+  pkg-config --exists gtk+-3.0 sqlite3 || die "preinstalled GTK/SQLite build deps are incomplete"
+  command -v wget >/dev/null || die "wget is not installed"
+  ok "preinstalled deps verified"
+else
+  step "Installing build deps (apt)"
+  export DEBIAN_FRONTEND=noninteractive
+  apt-get update -qq
+  apt-get install -y --no-install-recommends \
+    libgtk-3-dev libsqlite3-dev libcurl4-openssl-dev adwaita-icon-theme \
+    fonts-noto-color-emoji fonts-noto-cjk librsvg2-common shared-mime-info \
+    pkg-config file ca-certificates wget libfuse2 \
+    >/dev/null
+  ok "deps installed"
+fi
 
 # ── 2. 编译 ──
 step "Building TokenClock (swift build -c release · x86_64 · static stdlib)"
