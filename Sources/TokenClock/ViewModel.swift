@@ -537,8 +537,9 @@ final class ViewModel: ObservableObject {
         for provider in SubscriptionProvider.allCases where !order.contains(provider) {
             order.append(provider)
         }
-        let indicators = order.compactMap {
-            DialQuotaResolver.resolve(provider: $0, groups: quotaGroups(for: $0))
+        let indicators: [DialQuotaIndicator] = order.compactMap { provider -> DialQuotaIndicator? in
+            guard quotaStatus(for: provider) == .available else { return nil }
+            return DialQuotaResolver.resolve(provider: provider, groups: quotaGroups(for: provider))
         }
         guard let provider = DialQuotaResolver.defaultProvider(
             from: indicators, providerOrder: order
@@ -547,6 +548,17 @@ final class ViewModel: ObservableObject {
         shouldAutomaticallySelectDialQuotaProvider = false
         UserDefaults.standard.setStringArray([provider.rawValue], for: .dialQuotaProviders)
         UserDefaults.standard.setString(provider.rawValue, for: .dialQuotaProvider)
+    }
+
+    private func quotaStatus(for provider: SubscriptionProvider) -> CodexQuotaStatus {
+        switch provider {
+        case .codex: return codexQuota.status
+        case .claude: return claudeQuota.status
+        case .antigravity: return antigravityQuota.status
+        case .cursor: return cursorQuota.status
+        case .grokBot: return grokBotQuota.status
+        case .zhipu: return zhipuQuota.status
+        }
     }
 
     func subscriptionAccounts(for provider: SubscriptionProvider) -> [SubscriptionAccountRecord] {
