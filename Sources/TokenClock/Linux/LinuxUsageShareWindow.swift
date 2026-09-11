@@ -72,6 +72,9 @@ final class LinuxUsageShareWindow: @unchecked Sendable {
         model.persistCurrentUsage()
         selectedDate = min(initialDate, Date())
         refresh()
+        if let output = ProcessInfo.processInfo.environment["TC_SHARE_OUTPUT"] {
+            _ = renderer.writePNG(data: data, to: output)
+        }
         guard let window else { return }
         gtk_widget_show_all(window)
         gtk_window_present(tc_gtk_window(window))
