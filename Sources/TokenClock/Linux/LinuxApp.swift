@@ -14,6 +14,7 @@ final class LinuxApp: @unchecked Sendable {
     private var themePicker: LinuxThemePicker?
     private var settingsWindow: LinuxSettingsWindow?
     private var overviewWindow: LinuxUsageOverviewWindow?
+    private var shareWindow: LinuxUsageShareWindow?
     private var notificationWindow: LinuxNotificationWindow?
     private var themeItems: [LinuxClockTheme: UnsafeMutablePointer<GtkWidget>] = [:]
     private var sizeItems: [LinuxClockSize: UnsafeMutablePointer<GtkWidget>] = [:]
@@ -163,9 +164,11 @@ final class LinuxApp: @unchecked Sendable {
         _ = tc_gtk_on_leave(createdDial, linuxLeave, opaque)
         _ = tc_gtk_on_draw(createdDial, linuxDraw, opaque)
 
+        shareWindow = LinuxUsageShareWindow(parent: createdWindow, model: model)
         detailsPanel = LinuxDetailsPanel(
             parent: createdWindow,
             onHistoryUsage: { [weak self] in self?.overviewWindow?.show() },
+            onShareUsage: { [weak self] in self?.shareWindow?.show() },
             onNotifications: { [weak self] in self?.showNotifications() },
             onQuickContrast: { [weak self] in self?.refreshUI() },
             onUsageIncludesCache: { [weak self] value in
@@ -177,7 +180,11 @@ final class LinuxApp: @unchecked Sendable {
         detailsPanel?.setOpacity(windowOpacity)
         themePicker = LinuxThemePicker(parent: createdWindow, owner: self)
         settingsWindow = LinuxSettingsWindow(parent: createdWindow, owner: self, model: model)
-        overviewWindow = LinuxUsageOverviewWindow(parent: createdWindow, model: model)
+        overviewWindow = LinuxUsageOverviewWindow(
+            parent: createdWindow,
+            model: model,
+            onShare: { [weak self] date in self?.shareWindow?.show(initialDate: date) }
+        )
         notificationWindow = LinuxNotificationWindow(parent: createdWindow) { [weak self] route in
             self?.notificationWindow?.hide()
             self?.overviewWindow?.show(route: route)
@@ -191,6 +198,9 @@ final class LinuxApp: @unchecked Sendable {
         refreshUI()
         if ProcessInfo.processInfo.environment["TC_OVERVIEW"] != nil {
             overviewWindow?.show()
+        }
+        if ProcessInfo.processInfo.environment["TC_SHARE"] != nil {
+            shareWindow?.show()
         }
         if ProcessInfo.processInfo.environment["TC_OPEN_QUOTA_ON_LAUNCH"] == "1" {
             detailsPanel?.showQuotaWindow()
@@ -363,6 +373,7 @@ final class LinuxApp: @unchecked Sendable {
         )
 
         gtk_menu_shell_append(tc_gtk_menu_shell(root), gtk_separator_menu_item_new())
+        appendMenuItem(L10n.shared.tr("menu.shareUsage"), name: "share", to: root)
         appendMenuItem(L10n.shared.tr("menu.settings"), name: "settings", to: root)
         gtk_menu_shell_append(tc_gtk_menu_shell(root), gtk_separator_menu_item_new())
         appendMenuItem(L10n.shared.tr("menu.about"), name: "about", to: root)
@@ -548,6 +559,7 @@ final class LinuxApp: @unchecked Sendable {
         case "always-on-top": toggleAlwaysOnTop()
         case "details": toggleDetails()
         case "overview": overviewWindow?.show()
+        case "share": shareWindow?.show()
         case "refresh": scheduleScan(incremental: true)
         case "settings": showSettings()
         case "launch-at-login": toggleAutostart()
@@ -689,6 +701,7 @@ final class LinuxApp: @unchecked Sendable {
         themePicker?.refreshLanguage()
         settingsWindow?.refreshLanguage()
         overviewWindow?.refreshLanguage()
+        shareWindow?.refreshLanguage()
         rebuildContextMenu()
         refreshClock()
     }

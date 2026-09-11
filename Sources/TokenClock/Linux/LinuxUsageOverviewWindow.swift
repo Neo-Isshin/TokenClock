@@ -7,6 +7,7 @@ final class LinuxUsageOverviewWindow: @unchecked Sendable {
     private enum ChartStyle { case automatic, line, stacked }
 
     private let model: LinuxUsageModel
+    private let onShare: (Date) -> Void
     private var window: UnsafeMutablePointer<GtkWidget>?
     private var root: UnsafeMutablePointer<GtkWidget>?
     private var period: Period = .week
@@ -20,8 +21,12 @@ final class LinuxUsageOverviewWindow: @unchecked Sendable {
     private var endEntry: UnsafeMutablePointer<GtkWidget>?
     private lazy var opaque = Unmanaged.passUnretained(self).toOpaque()
 
-    init(parent: UnsafeMutablePointer<GtkWidget>, model: LinuxUsageModel) {
+    init(
+        parent: UnsafeMutablePointer<GtkWidget>, model: LinuxUsageModel,
+        onShare: @escaping (Date) -> Void = { _ in }
+    ) {
         self.model = model
+        self.onShare = onShare
         guard let created = gtk_window_new(GTK_WINDOW_TOPLEVEL),
               let scroll = gtk_scrolled_window_new(nil, nil),
               let content = gtk_box_new(GTK_ORIENTATION_VERTICAL, 14) else { return }
@@ -107,6 +112,7 @@ final class LinuxUsageOverviewWindow: @unchecked Sendable {
         case "overview:chart:line": chartStyle = .line
         case "overview:chart:bars": chartStyle = .stacked
         case "overview:overview": selectedDayKey = nil
+        case "overview:share": onShare(shareDate); return
         case "overview:apply":
             if let startEntry, let parsed = parseDate(String(cString: gtk_entry_get_text(tc_gtk_entry(startEntry)))) {
                 customStart = parsed
@@ -174,6 +180,7 @@ final class LinuxUsageOverviewWindow: @unchecked Sendable {
         appendButton(grouping == .tool ? "✓  \(L10n.shared.tr("overview.byTool"))" : L10n.shared.tr("overview.byTool"), name: "overview:group:tool", to: controls)
         appendButton(grouping == .model ? "✓  \(L10n.shared.tr("overview.byModel"))" : L10n.shared.tr("overview.byModel"), name: "overview:group:model", to: controls)
         appendButton(includesCacheRead ? "✓  \(L10n.shared.tr("overview.includeCache"))" : L10n.shared.tr("overview.includeCache"), name: "overview:include-cache", to: controls)
+        appendButton("⇧", name: "overview:share", to: controls)
         gtk_box_pack_start(tc_gtk_box(root), controls, 0, 0, 0)
 
         let chartControls = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6)
@@ -497,6 +504,11 @@ final class LinuxUsageOverviewWindow: @unchecked Sendable {
         case .custom: start = Calendar.current.startOfDay(for: customStart)
         }
         return (min(start, end), max(start, end))
+    }
+
+    private var shareDate: Date {
+        if let selectedDayKey, let selected = parseDate(selectedDayKey) { return selected }
+        return min(selectedDates.1, Date())
     }
 
     private func dateKey(_ date: Date) -> String { DateHelper.dateKey(from: date) }

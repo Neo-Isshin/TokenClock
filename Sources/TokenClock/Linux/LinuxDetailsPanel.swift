@@ -21,6 +21,7 @@ final class LinuxDetailsPanel: @unchecked Sendable {
     private var quotaWindow: UnsafeMutablePointer<GtkWidget>?
     private var quotaContent: UnsafeMutablePointer<GtkWidget>?
     private let onHistoryUsage: () -> Void
+    private let onShareUsage: () -> Void
     private let onNotifications: () -> Void
     private let onQuickContrast: () -> Void
     private let onUsageIncludesCache: (Bool) -> Void
@@ -112,6 +113,7 @@ final class LinuxDetailsPanel: @unchecked Sendable {
     init(
         parent: UnsafeMutablePointer<GtkWidget>,
         onHistoryUsage: @escaping () -> Void,
+        onShareUsage: @escaping () -> Void,
         onNotifications: @escaping () -> Void,
         onQuickContrast: @escaping () -> Void,
         onUsageIncludesCache: @escaping (Bool) -> Void,
@@ -119,6 +121,7 @@ final class LinuxDetailsPanel: @unchecked Sendable {
     ) {
         self.parent = parent
         self.onHistoryUsage = onHistoryUsage
+        self.onShareUsage = onShareUsage
         self.onNotifications = onNotifications
         self.onQuickContrast = onQuickContrast
         self.onUsageIncludesCache = onUsageIncludesCache
@@ -223,6 +226,8 @@ final class LinuxDetailsPanel: @unchecked Sendable {
             rebuildQuotaWindow()
         case "details:history":
             onHistoryUsage()
+        case "details:share":
+            onShareUsage()
         case "details:quota-refresh", "details:quota-retry":
             refreshQuota(force: true)
         case "details:quota-edit":
@@ -350,19 +355,27 @@ final class LinuxDetailsPanel: @unchecked Sendable {
             name: "details:cache", prominent: true, to: displayRow
         )
         if let cacheControl {
-            gtk_widget_set_size_request(cacheControl, 64, -1)
+            gtk_widget_set_size_request(cacheControl, 52, -1)
             tc_gtk_add_class(cacheControl, "tokenclock-detail-third-chip")
         }
         _ = appendTextColorControl(
             "\(tr("detail.textColorLine1"))\n\(tr("detail.textColorLine2"))",
-            width: 58,
+            width: 48,
             to: displayRow
         )
         _ = appendHistoryControl(
             "\(tr("detail.historyUsageLine1"))\n\(tr("detail.historyUsageLine2"))",
-            width: 80,
+            width: 62,
             to: displayRow
         )
+        let shareControl = appendControl(
+            "⇧  \(tr("detail.shareImageLine1"))\n   \(tr("detail.shareImageLine2"))",
+            name: "details:share", prominent: true, to: displayRow
+        )
+        if let shareControl {
+            gtk_widget_set_size_request(shareControl, 52, -1)
+            tc_gtk_add_class(shareControl, "tokenclock-detail-third-chip")
+        }
         let valueControl = appendControl(
             valueMode == .costPercent
                 ? "✓  \(tr("detail.byPercent"))\n   \(tr("detail.todayUsage"))"
@@ -370,7 +383,7 @@ final class LinuxDetailsPanel: @unchecked Sendable {
             name: "details:value-mode", prominent: true, to: displayRow
         )
         if let valueControl {
-            gtk_widget_set_size_request(valueControl, 86, -1)
+            gtk_widget_set_size_request(valueControl, 70, -1)
             tc_gtk_add_class(valueControl, "tokenclock-detail-third-chip")
             gtk_widget_set_tooltip_text(valueControl, tr("detail.valueModeHelp"))
         }

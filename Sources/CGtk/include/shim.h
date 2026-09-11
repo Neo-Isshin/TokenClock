@@ -137,6 +137,33 @@ static inline gulong tc_gtk_on_changed(
     return g_signal_connect(widget, "changed", G_CALLBACK(callback), data);
 }
 
+static inline int tc_gtk_choose_date(
+    GtkWidget *parent_widget, const char *title,
+    int initial_year, int initial_month, int initial_day,
+    int *out_year, int *out_month, int *out_day
+) {
+    GtkWidget *dialog = gtk_dialog_new_with_buttons(
+        title, GTK_WINDOW(parent_widget), GTK_DIALOG_MODAL,
+        "_Cancel", GTK_RESPONSE_CANCEL, "_Select", GTK_RESPONSE_ACCEPT, NULL
+    );
+    GtkWidget *calendar = gtk_calendar_new();
+    gtk_calendar_select_month(GTK_CALENDAR(calendar), initial_month - 1, initial_year);
+    gtk_calendar_select_day(GTK_CALENDAR(calendar), initial_day);
+    gtk_container_set_border_width(GTK_CONTAINER(calendar), 12);
+    gtk_box_pack_start(GTK_BOX(gtk_dialog_get_content_area(GTK_DIALOG(dialog))), calendar, TRUE, TRUE, 0);
+    gtk_widget_show_all(dialog);
+    int accepted = gtk_dialog_run(GTK_DIALOG(dialog)) == GTK_RESPONSE_ACCEPT;
+    if (accepted) {
+        guint year = 0, month = 0, day = 0;
+        gtk_calendar_get_date(GTK_CALENDAR(calendar), &year, &month, &day);
+        if (out_year) *out_year = (int)year;
+        if (out_month) *out_month = (int)month + 1;
+        if (out_day) *out_day = (int)day;
+    }
+    gtk_widget_destroy(dialog);
+    return accepted;
+}
+
 static inline gulong tc_gtk_on_activate(
     GtkWidget *widget, TCGtkVoidCallback callback, gpointer data
 ) {
@@ -450,6 +477,42 @@ static inline char *tc_gtk_choose_folder(
     }
     gtk_widget_destroy(dialog);
     return selected;
+}
+
+static inline char *tc_gtk_choose_save_file(
+    GtkWidget *parent_widget, const char *title, const char *suggested_name
+) {
+    GtkWidget *dialog = gtk_file_chooser_dialog_new(
+        title, GTK_WINDOW(parent_widget), GTK_FILE_CHOOSER_ACTION_SAVE,
+        "_Cancel", GTK_RESPONSE_CANCEL, "_Save", GTK_RESPONSE_ACCEPT, NULL
+    );
+    gtk_file_chooser_set_do_overwrite_confirmation(GTK_FILE_CHOOSER(dialog), TRUE);
+    if (suggested_name != NULL && suggested_name[0] != '\0') {
+        gtk_file_chooser_set_current_name(GTK_FILE_CHOOSER(dialog), suggested_name);
+    }
+    GtkFileFilter *filter = gtk_file_filter_new();
+    gtk_file_filter_set_name(filter, "PNG image");
+    gtk_file_filter_add_mime_type(filter, "image/png");
+    gtk_file_chooser_add_filter(GTK_FILE_CHOOSER(dialog), filter);
+    char *selected = NULL;
+    if (gtk_dialog_run(GTK_DIALOG(dialog)) == GTK_RESPONSE_ACCEPT) {
+        selected = gtk_file_chooser_get_filename(GTK_FILE_CHOOSER(dialog));
+    }
+    gtk_widget_destroy(dialog);
+    return selected;
+}
+
+static inline int tc_gtk_clipboard_set_png(const char *path) {
+    GError *error = NULL;
+    GdkPixbuf *pixbuf = gdk_pixbuf_new_from_file(path, &error);
+    if (pixbuf == NULL) {
+        if (error != NULL) g_error_free(error);
+        return 0;
+    }
+    gtk_clipboard_set_image(gtk_clipboard_get(GDK_SELECTION_CLIPBOARD), pixbuf);
+    gtk_clipboard_store(gtk_clipboard_get(GDK_SELECTION_CLIPBOARD));
+    g_object_unref(pixbuf);
+    return 1;
 }
 
 static inline void tc_g_free(gpointer pointer) {
