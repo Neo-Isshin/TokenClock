@@ -34,7 +34,7 @@ if [ "${TOKENCLOCK_SKIP_APT:-0}" = 1 ]; then
   step "Using preinstalled build deps"
   command -v swift >/dev/null || die "swift is not installed"
   pkg-config --exists gtk+-3.0 sqlite3 || die "preinstalled GTK/SQLite build deps are incomplete"
-  command -v wget >/dev/null || die "wget is not installed"
+  command -v wget >/dev/null || command -v curl >/dev/null || die "wget or curl is required"
   ok "preinstalled deps verified"
 else
   step "Installing build deps (apt)"
@@ -102,7 +102,12 @@ step "Fetching linuxdeploy"
 TOOLS="$ROOT/.appimage-tools"
 mkdir -p "$TOOLS"
 LD="$TOOLS/linuxdeploy-$ARCH.AppImage"
-[ -f "$LD" ] || wget -q -O "$LD" "https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-$ARCH.AppImage"
+if [ ! -f "$LD" ]; then
+  download_url="https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-$ARCH.AppImage"
+  if command -v wget >/dev/null; then wget -q -O "$LD" "$download_url"
+  else curl -fsSL -o "$LD" "$download_url"
+  fi
+fi
 [ -s "$LD" ] || die "linuxdeploy download failed (empty file)"
 chmod +x "$LD"
 ok "linuxdeploy ready"
