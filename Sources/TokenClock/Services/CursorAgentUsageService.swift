@@ -181,7 +181,7 @@ final class CursorAgentUsageService: @unchecked Sendable {
         if sessionToken != nil && userId != nil { return }
         loadCredentialsFromStateDb()
         if sessionToken == nil,
-           let native = GrokBotNativeCredentialStore.shared.credential() {
+           let native = GrokBotNativeCredentialStore.shared.currentCredential {
             sessionToken = native.accessToken
             userId = native.userID
         }
