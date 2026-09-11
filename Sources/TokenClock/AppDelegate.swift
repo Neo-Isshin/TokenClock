@@ -10,6 +10,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var viewModel: ViewModel!
     private var settingsWindow: NSWindow?
     private var overviewWindow: NSWindow?
+    private var shareWindow: NSWindow?
     private var subscriptionQuotaWindow: NSWindow?
     private var subscriptionAccountEditorWindow: NSWindow?
     private var aboutWindow: NSWindow?
@@ -74,6 +75,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             },
             onSubscriptionQuota: { [weak self] in self?.showSubscriptionQuotaWindow() },
             onHistoryUsage: { [weak self] in self?.showUsageOverviewWindow() },
+            onShareUsage: { [weak self] in self?.showUsageShareWindow() },
             onNotificationClick: { [weak self] in self?.toggleNotificationCenter() }
         )
         let detailContentView = NSHostingView(rootView: detailView)
@@ -444,6 +446,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
         let settingsItem = NSMenuItem(title: tr("menu.settings"),
                                       action: #selector(openSettings(_:)), keyEquivalent: ",")
+        let shareItem = NSMenuItem(title: tr("menu.shareUsage"),
+                                   action: #selector(openUsageShare(_:)), keyEquivalent: "")
+        shareItem.image = NSImage(systemSymbolName: "square.and.arrow.up", accessibilityDescription: shareItem.title)
 
         let launchItem = NSMenuItem(title: tr("menu.launchAtLogin"),
                                     action: #selector(toggleLaunchAtLogin(_:)), keyEquivalent: "")
@@ -480,6 +485,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             title: tr("menu.general"), symbol: "gearshape", submenu: generalMenu
         ))
         menu.addItem(.separator())
+        menu.addItem(shareItem)
         menu.addItem(settingsItem)
         menu.addItem(.separator())
         menu.addItem(aboutItem)
@@ -759,6 +765,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         updateStatusBarItemPresentation()
         settingsWindow?.title = L10n.shared.tr("settings.title")
         overviewWindow?.title = L10n.shared.tr("overview.title")
+        shareWindow?.title = L10n.shared.tr("share.title")
         subscriptionQuotaWindow?.title = L10n.shared.tr("quota.windowTitle")
     }
 
@@ -768,6 +775,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     @objc private func openUsageOverview(_ sender: NSMenuItem) {
         showUsageOverviewWindow()
+    }
+
+    @objc private func openUsageShare(_ sender: NSMenuItem) {
+        showUsageShareWindow()
     }
 
     @objc private func copyAPIEndpoint(_ sender: NSMenuItem) {
@@ -820,7 +831,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         viewModel.persistCurrentUsage()
         if let window = overviewWindow {
             if let route {
-                window.contentView = NSHostingView(rootView: UsageOverviewView(route: route))
+                window.contentView = NSHostingView(rootView: UsageOverviewView(
+                    route: route,
+                    onShare: { [weak self] date in self?.showUsageShareWindow(initialDate: date) }
+                ))
             }
             window.level = .floating
             window.makeKeyAndOrderFront(nil)
@@ -837,11 +851,46 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         window.minSize = NSSize(width: 780, height: 560)
         window.isReleasedWhenClosed = false
         window.delegate = self
-        window.contentView = NSHostingView(rootView: UsageOverviewView(route: route))
+        window.contentView = NSHostingView(rootView: UsageOverviewView(
+            route: route,
+            onShare: { [weak self] date in self?.showUsageShareWindow(initialDate: date) }
+        ))
         window.level = .floating
         window.center()
         window.makeKeyAndOrderFront(nil)
         overviewWindow = window
+    }
+
+    private func showUsageShareWindow(initialDate: Date = Date()) {
+        NSApp.activate(ignoringOtherApps: true)
+        viewModel.persistCurrentUsage()
+
+        let makeContent = { [weak self] in
+            UsageShareWindowView(initialDate: initialDate) { [weak self] in
+                self?.shareWindow?.close()
+            }
+        }
+        if let window = shareWindow {
+            window.contentView = NSHostingView(rootView: makeContent())
+            window.level = .floating
+            window.makeKeyAndOrderFront(nil)
+            return
+        }
+
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 430, height: 570),
+            styleMask: [.titled, .closable, .miniaturizable],
+            backing: .buffered,
+            defer: false
+        )
+        window.title = L10n.shared.tr("share.title")
+        window.isReleasedWhenClosed = false
+        window.delegate = self
+        window.contentView = NSHostingView(rootView: makeContent())
+        window.level = .floating
+        window.center()
+        window.makeKeyAndOrderFront(nil)
+        shareWindow = window
     }
 
     private func showSubscriptionQuotaWindow() {
@@ -1071,6 +1120,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 settingsWindow = nil
             } else if let window = closingWindow, window == overviewWindow {
                 overviewWindow = nil
+            } else if let window = closingWindow, window == shareWindow {
+                shareWindow = nil
             } else if let window = closingWindow, window == subscriptionQuotaWindow {
                 closeSubscriptionAccountEditor(restoreQuotaFocus: false)
                 subscriptionQuotaWindow = nil
@@ -1235,6 +1286,7 @@ private struct DropdownPanelView: View {
     let onResizeEnded: () -> Void
     let onSubscriptionQuota: () -> Void
     let onHistoryUsage: () -> Void
+    let onShareUsage: () -> Void
     let onNotificationClick: () -> Void
 
     var body: some View {
@@ -1255,6 +1307,7 @@ private struct DropdownPanelView: View {
                 quickContrastPreset: viewModel.quickContrastPreset,
                 onQuickContrast: { viewModel.cycleQuickContrast() },
                 onHistoryUsage: onHistoryUsage,
+                onShareUsage: onShareUsage,
                 onSubscriptionQuota: onSubscriptionQuota,
                 unreadNotificationCount: viewModel.unreadNotificationCount,
                 onNotificationClick: onNotificationClick
