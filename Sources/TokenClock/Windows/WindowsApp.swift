@@ -179,7 +179,12 @@ final class WindowsApp: @unchecked Sendable {
            let provider = SubscriptionProvider(rawValue: raw) {
             providers = [provider]
         }
-        return Array((providers.isEmpty ? [.codex] : providers).prefix(2))
+        return Array(providers.prefix(2))
+    }()
+    private var shouldAutomaticallySelectDialQuotaProvider: Bool = {
+        let defaults = UserDefaults.standard
+        return defaults.object(forKey: SettingsKey.dialQuotaProviders.rawValue) == nil
+            && defaults.object(forKey: SettingsKey.dialQuotaProvider.rawValue) == nil
     }()
     private var quotaProviderOrder: [SubscriptionProvider] = {
         let saved = UserDefaults.standard.stringArray(for: .subscriptionQuotaOrder) ?? []
@@ -1115,7 +1120,10 @@ final class WindowsApp: @unchecked Sendable {
 
     fileprivate func handleQuotaCmd(_ id: Int32) {
         switch id {
-        case 980: rebuildSubscriptionQuotaDialog()
+        case 980:
+            selectAutomaticDialQuotaProviderIfReady()
+            rebuildSubscriptionQuotaDialog()
+            render()
         case 981:
             refreshSubscriptionQuotas(force: true)
             rebuildSubscriptionQuotaDialog()
@@ -1341,6 +1349,7 @@ final class WindowsApp: @unchecked Sendable {
     }
 
     private func toggleDialQuotaProvider(_ provider: SubscriptionProvider) {
+        shouldAutomaticallySelectDialQuotaProvider = false
         if let index = dialQuotaProviders.firstIndex(of: provider) {
             dialQuotaProviders.remove(at: index)
         } else {
@@ -1349,6 +1358,24 @@ final class WindowsApp: @unchecked Sendable {
         }
         UserDefaults.standard.setStringArray(dialQuotaProviders.map(\.rawValue), for: .dialQuotaProviders)
         UserDefaults.standard.setString(dialQuotaProviders.first?.rawValue, for: .dialQuotaProvider)
+    }
+
+    private func selectAutomaticDialQuotaProviderIfReady() {
+        guard shouldAutomaticallySelectDialQuotaProvider, dialQuotaProviders.isEmpty else { return }
+        let statuses = [
+            codexQuotaState.snapshot().status, claudeQuotaState.snapshot().status,
+            antigravityQuotaState.snapshot().status, cursorQuotaState.snapshot().status,
+            grokBotQuotaState.snapshot().status, zhipuQuotaState.snapshot().status,
+        ]
+        guard statuses.allSatisfy({ $0 != .idle && $0 != .loading }) else { return }
+        let indicators = dialQuotaIndicators()
+        guard let provider = DialQuotaResolver.defaultProvider(
+            from: indicators, providerOrder: quotaProviderOrder
+        ) else { return }
+        dialQuotaProviders = [provider]
+        shouldAutomaticallySelectDialQuotaProvider = false
+        UserDefaults.standard.setStringArray([provider.rawValue], for: .dialQuotaProviders)
+        UserDefaults.standard.setString(provider.rawValue, for: .dialQuotaProvider)
     }
 
     private func dialQuotaTooltip(_ indicator: DialQuotaIndicator) -> String {

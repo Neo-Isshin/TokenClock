@@ -3,6 +3,23 @@ import XCTest
 @testable import TokenClock
 
 final class SubscriptionAccountStoreTests: XCTestCase {
+    func testDefaultDialProviderChoosesMostConsumedQuotaThenPanelOrder() {
+        let codex = DialQuotaIndicator(
+            provider: .codex, outerRemainingPercent: 80,
+            innerRemainingPercent: nil, details: []
+        )
+        let claude = DialQuotaIndicator(
+            provider: .claude, outerRemainingPercent: 30,
+            innerRemainingPercent: nil, details: []
+        )
+        XCTAssertEqual(
+            DialQuotaResolver.defaultProvider(
+                from: [codex, claude], providerOrder: [.codex, .claude]
+            ),
+            .claude
+        )
+    }
+
     func testDialQuotaResolverMapsAntigravityModelGroups() throws {
         let groups = [
             ProviderQuotaGroup(id: "gemini", name: "Gemini Models", buckets: [
