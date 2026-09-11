@@ -180,6 +180,18 @@ final class CursorAgentUsageService: @unchecked Sendable {
     private func refreshCredentialsIfNeeded() async {
         if sessionToken != nil && userId != nil { return }
         loadCredentialsFromStateDb()
+        if sessionToken == nil,
+           let native = GrokBotNativeCredentialStore.shared.credential() {
+            sessionToken = native.accessToken
+            userId = native.userID
+        }
+    }
+
+    /// Called after the user explicitly authorizes Grok Bot native credentials.
+    func resetCredentials() {
+        sessionToken = nil
+        userId = nil
+        lastFetchTime = .distantPast
     }
 
     /// 同步从 Cursor IDE 的 state.vscdb 读 access token

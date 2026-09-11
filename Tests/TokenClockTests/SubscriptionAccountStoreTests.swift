@@ -3,6 +3,43 @@ import XCTest
 @testable import TokenClock
 
 final class SubscriptionAccountStoreTests: XCTestCase {
+    func testDefaultDialProviderChoosesMostConsumedQuotaThenPanelOrder() throws {
+        let codex = try XCTUnwrap(DialQuotaResolver.resolve(
+            provider: .codex,
+            groups: [ProviderQuotaGroup(id: "codex", name: "Subscription", buckets: [
+                bucket("codex-weekly", used: 20, minutes: 10_080),
+            ])]
+        ))
+        let claude = try XCTUnwrap(DialQuotaResolver.resolve(
+            provider: .claude,
+            groups: [ProviderQuotaGroup(id: "claude", name: "Subscription", buckets: [
+                bucket("claude-weekly", used: 70, minutes: 10_080),
+            ])]
+        ))
+        XCTAssertEqual(
+            DialQuotaResolver.defaultProvider(
+                from: [codex, claude], providerOrder: [.codex, .claude]
+            ),
+            .claude
+        )
+
+        let tiedCodex = DialQuotaIndicator(
+            provider: .codex, outerRemainingPercent: 30,
+            innerRemainingPercent: nil, details: []
+        )
+        let tiedClaude = DialQuotaIndicator(
+            provider: .claude, outerRemainingPercent: 30,
+            innerRemainingPercent: nil, details: []
+        )
+        XCTAssertEqual(
+            DialQuotaResolver.defaultProvider(
+                from: [tiedCodex, tiedClaude, tiedCodex],
+                providerOrder: [.claude, .claude, .codex]
+            ),
+            .claude
+        )
+    }
+
     func testDialQuotaResolverMapsAntigravityModelGroups() throws {
         let groups = [
             ProviderQuotaGroup(id: "gemini", name: "Gemini Models", buckets: [

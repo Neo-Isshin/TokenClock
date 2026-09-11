@@ -147,7 +147,49 @@ struct SubscriptionQuotaWindowView: View {
 
     @ViewBuilder
     private func providerView(_ provider: SubscriptionProvider) -> some View {
-        accountProviderSection(provider, title: "\(provider.emoji) \(provider.displayName)")
+        let title = "\(provider.emoji) \(provider.displayName)"
+        if provider == .grokBot, viewModel.grokBotAuthorizationVisible {
+            ZStack {
+                accountProviderSection(provider, title: title)
+                    .saturation(0)
+                    .opacity(0.34)
+                    .allowsHitTesting(false)
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(Color(nsColor: .windowBackgroundColor).opacity(0.76))
+                VStack(spacing: 8) {
+                    Image(systemName: "lock.shield")
+                        .font(.system(size: 19, weight: .semibold))
+                    Text(L10n.shared.tr("quota.grokBotAuthorizationTitle"))
+                        .font(.system(size: 12, weight: .bold, design: .rounded))
+                    Text(L10n.shared.tr("quota.grokBotAuthorizationBody"))
+                        .font(.system(size: 9.5))
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Button {
+                        viewModel.authorizeGrokBotNativeAccess()
+                    } label: {
+                        if viewModel.grokBotNativeAccessState == .authorizing {
+                            HStack(spacing: 6) {
+                                ProgressView().controlSize(.small)
+                                Text(L10n.shared.tr("quota.grokBotAuthorizing"))
+                            }
+                        } else {
+                            Label(
+                                L10n.shared.tr("quota.grokBotAuthorize"),
+                                systemImage: "key"
+                            )
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                    .disabled(viewModel.grokBotNativeAccessState == .authorizing)
+                }
+                .padding(16)
+            }
+        } else {
+            accountProviderSection(provider, title: title)
+        }
     }
 
     private func reorderControls(for provider: SubscriptionProvider, at index: Int, count: Int) -> some View {
@@ -190,7 +232,8 @@ struct SubscriptionQuotaWindowView: View {
         case .claude: return !viewModel.claudeQuota.buckets.isEmpty
         case .antigravity: return !viewModel.antigravityQuota.groups.isEmpty
         case .cursor: return !viewModel.cursorQuota.groups.isEmpty
-        case .grokBot: return !viewModel.grokBotQuota.groups.isEmpty
+        case .grokBot:
+            return !viewModel.grokBotQuota.groups.isEmpty || viewModel.grokBotAuthorizationVisible
         case .zhipu: return !viewModel.zhipuQuota.groups.isEmpty
         }
     }

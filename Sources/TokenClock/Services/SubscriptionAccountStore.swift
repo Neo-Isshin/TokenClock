@@ -41,6 +41,24 @@ struct DialQuotaIndicator: Identifiable, Equatable, Sendable {
 }
 
 enum DialQuotaResolver {
+    /// First-run default: surface the provider whose primary quota card has been consumed most.
+    /// The caller supplies panel order so ties stay deterministic and match what the user sees.
+    static func defaultProvider(
+        from indicators: [DialQuotaIndicator],
+        providerOrder: [SubscriptionProvider]
+    ) -> SubscriptionProvider? {
+        var positions: [SubscriptionProvider: Int] = [:]
+        for (index, provider) in providerOrder.enumerated() where positions[provider] == nil {
+            positions[provider] = index
+        }
+        return indicators.min {
+            if $0.outerRemainingPercent != $1.outerRemainingPercent {
+                return $0.outerRemainingPercent < $1.outerRemainingPercent
+            }
+            return (positions[$0.provider] ?? Int.max) < (positions[$1.provider] ?? Int.max)
+        }?.provider
+    }
+
     static func resolve(
         provider: SubscriptionProvider,
         groups: [ProviderQuotaGroup]

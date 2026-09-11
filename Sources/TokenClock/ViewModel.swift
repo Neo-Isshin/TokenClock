@@ -63,7 +63,10 @@ final class ViewModel: ObservableObject {
     var visibleTools: [ToolUsage] {
         sortedTools.filter {
             enabledTools.contains($0.name)
-                || ($0.name == "Grok Bot" && enabledTools.contains("Cursor Agent"))
+                || ($0.name == "Grok Bot" && (
+                    enabledTools.contains("Cursor Agent")
+                        || grokBotNativeAccessState != .unavailable
+                ))
         }
     }
 
@@ -111,6 +114,8 @@ final class ViewModel: ObservableObject {
     @Published private(set) var antigravityQuota = ProviderQuotaSnapshot.idle(source: "Antigravity local service")
     @Published private(set) var cursorQuota = ProviderQuotaSnapshot.idle(source: "Cursor dashboard")
     @Published private(set) var grokBotQuota = ProviderQuotaSnapshot.idle(source: "Cursor Grok Bot API")
+    @Published private(set) var grokBotNativeAccessState =
+        GrokBotNativeCredentialStore.shared.accessState
     @Published private(set) var zhipuQuota = ProviderQuotaSnapshot.idle(source: "ZCode Coding Plan")
     @Published private(set) var subscriptionAccounts = SubscriptionAccountStore.shared.records()
     @Published private(set) var activeSubscriptionAccountIDs: [SubscriptionProvider: String] = [:]
@@ -129,7 +134,12 @@ final class ViewModel: ObservableObject {
            let provider = SubscriptionProvider(rawValue: raw) {
             providers = [provider]
         }
-        return Array((providers.isEmpty ? [.codex] : providers).prefix(2))
+        return Array(providers.prefix(2))
+    }()
+    private var shouldAutomaticallySelectDialQuotaProvider: Bool = {
+        let defaults = UserDefaults.standard
+        return defaults.object(forKey: SettingsKey.dialQuotaProviders.rawValue) == nil
+            && defaults.object(forKey: SettingsKey.dialQuotaProvider.rawValue) == nil
     }()
     @Published private(set) var notifications: [TokenClockNotification] = []
     var unreadNotificationCount: Int { notifications.filter { !$0.isRead }.count }
@@ -149,7 +159,18 @@ final class ViewModel: ObservableObject {
         }
     }
 
+    var grokBotAuthorizationVisible: Bool {
+        if ProcessInfo.processInfo.environment["TC_GROK_BOT_AUTH_OVERLAY"] == "1" {
+            return true
+        }
+        return grokBotQuota.status == .unavailable
+            && grokBotQuota.groups.isEmpty
+            && (grokBotNativeAccessState == .authorizationRequired
+                || grokBotNativeAccessState == .authorizing)
+    }
+
     func toggleDialQuotaProvider(_ provider: SubscriptionProvider) {
+        shouldAutomaticallySelectDialQuotaProvider = false
         if let index = dialQuotaProviders.firstIndex(of: provider) {
             dialQuotaProviders.remove(at: index)
         } else {
@@ -498,6 +519,7 @@ final class ViewModel: ObservableObject {
                 guard !Task.isCancelled else { return }
                 self?.codexQuota = result
                 self?.rememberCodexQuota(result)
+                self?.selectAutomaticDialQuotaProviderIfReady()
             }
         }
         if claudeQuota.status != .loading {
@@ -509,6 +531,7 @@ final class ViewModel: ObservableObject {
                 guard !Task.isCancelled else { return }
                 self?.claudeQuota = result
                 self?.rememberClaudeQuota(result)
+                self?.selectAutomaticDialQuotaProviderIfReady()
             }
         }
         if antigravityQuota.status != .loading {
@@ -520,6 +543,7 @@ final class ViewModel: ObservableObject {
                 guard !Task.isCancelled else { return }
                 self?.antigravityQuota = result
                 self?.rememberProviderQuota(result, provider: .antigravity)
+                self?.selectAutomaticDialQuotaProviderIfReady()
             }
         }
         if cursorQuota.status != .loading {
@@ -531,22 +555,10 @@ final class ViewModel: ObservableObject {
                 guard !Task.isCancelled else { return }
                 self?.cursorQuota = result
                 self?.rememberProviderQuota(result, provider: .cursor)
+                self?.selectAutomaticDialQuotaProviderIfReady()
             }
         }
-        if grokBotQuota.status != .loading {
-            grokBotQuotaTask?.cancel()
-            grokBotQuota = .loading(previous: grokBotQuota)
-            let service = grokBotQuotaService
-            grokBotQuotaTask = Task { [weak self] in
-                let result = await Task.detached(priority: .utility) { service.fetch() }.value
-                guard !Task.isCancelled else { return }
-                if ProcessInfo.processInfo.environment["TC_QUOTA_DIAGNOSTICS"] == "1" {
-                    print("[GrokBotQuota] status=\(result.status.rawValue) message=\(result.message ?? "none")")
-                }
-                self?.grokBotQuota = result
-                self?.rememberProviderQuota(result, provider: .grokBot)
-            }
-        }
+        refreshGrokBotQuota()
         if zhipuQuota.status != .loading {
             zhipuQuotaTask?.cancel()
             zhipuQuota = .loading(previous: zhipuQuota)
@@ -556,8 +568,70 @@ final class ViewModel: ObservableObject {
                 guard !Task.isCancelled else { return }
                 self?.zhipuQuota = result
                 self?.rememberProviderQuota(result, provider: .zhipu)
+                self?.selectAutomaticDialQuotaProviderIfReady()
             }
         }
+    }
+
+    private func refreshGrokBotQuota() {
+        guard grokBotQuota.status != .loading else { return }
+        grokBotQuotaTask?.cancel()
+        grokBotQuota = .loading(previous: grokBotQuota)
+        grokBotNativeAccessState = GrokBotNativeCredentialStore.shared.accessState
+        let service = grokBotQuotaService
+        grokBotQuotaTask = Task { [weak self] in
+            let result = await Task.detached(priority: .utility) { service.fetch() }.value
+            guard !Task.isCancelled else { return }
+            if ProcessInfo.processInfo.environment["TC_QUOTA_DIAGNOSTICS"] == "1" {
+                print("[GrokBotQuota] status=\(result.status.rawValue) message=\(result.message ?? "none")")
+            }
+            self?.grokBotQuota = result
+            self?.grokBotNativeAccessState = GrokBotNativeCredentialStore.shared.accessState
+            self?.rememberProviderQuota(result, provider: .grokBot)
+            self?.selectAutomaticDialQuotaProviderIfReady()
+        }
+    }
+
+    func authorizeGrokBotNativeAccess() {
+        guard grokBotNativeAccessState != .authorizing else { return }
+        grokBotNativeAccessState = .authorizing
+        Task { [weak self] in
+            let authorized = await Task.detached(priority: .userInitiated) {
+                GrokBotNativeCredentialStore.shared.authorize()
+            }.value
+            guard let self else { return }
+            self.grokBotNativeAccessState = GrokBotNativeCredentialStore.shared.accessState
+            guard authorized else { return }
+            self.cursorAgentService.resetCredentials()
+            self.refreshGrokBotQuota()
+            self.refreshUsageData()
+        }
+    }
+
+    private func selectAutomaticDialQuotaProviderIfReady() {
+        guard shouldAutomaticallySelectDialQuotaProvider, dialQuotaProviders.isEmpty else { return }
+        let statuses = [
+            codexQuota.status, claudeQuota.status, antigravityQuota.status,
+            cursorQuota.status, grokBotQuota.status, zhipuQuota.status,
+        ]
+        guard statuses.allSatisfy({ $0 != .idle && $0 != .loading }) else { return }
+        let savedOrder = UserDefaults.standard.stringArray(
+            forKey: SettingsKey.subscriptionQuotaOrder.rawValue
+        ) ?? []
+        var order = savedOrder.compactMap(SubscriptionProvider.init(rawValue:))
+        for provider in SubscriptionProvider.allCases where !order.contains(provider) {
+            order.append(provider)
+        }
+        let indicators = order.compactMap {
+            DialQuotaResolver.resolve(provider: $0, groups: quotaGroups(for: $0))
+        }
+        guard let provider = DialQuotaResolver.defaultProvider(
+            from: indicators, providerOrder: order
+        ) else { return }
+        dialQuotaProviders = [provider]
+        shouldAutomaticallySelectDialQuotaProvider = false
+        UserDefaults.standard.setStringArray([provider.rawValue], for: .dialQuotaProviders)
+        UserDefaults.standard.setString(provider.rawValue, for: .dialQuotaProvider)
     }
 
     func subscriptionAccounts(for provider: SubscriptionProvider) -> [SubscriptionAccountRecord] {
@@ -1308,6 +1382,8 @@ final class ViewModel: ObservableObject {
 
         let enabled = enabledTools
         let rateWindow = rateWindowMinutes
+        let grokBotNativeInstance = grokBotNativeAccessState != .unavailable
+        let shouldScanCursorUsage = enabled.contains("Cursor Agent") || grokBotNativeInstance
 
         Task.detached(priority: .utility) { [weak self] in
             guard let self = self else {
@@ -1330,7 +1406,7 @@ final class ViewModel: ObservableObject {
             if enabled.contains("Antigravity") { incremental ? self.antigravityService.incrementalScan() : self.antigravityService.fullScan() }
             if enabled.contains("Cline") { incremental ? self.clineService.incrementalScan() : self.clineService.fullScan() }
             if enabled.contains("Continue") { incremental ? self.continueService.incrementalScan() : self.continueService.fullScan() }
-            if enabled.contains("Cursor Agent") { incremental ? self.cursorAgentService.incrementalScan() : self.cursorAgentService.fullScan() }
+            if shouldScanCursorUsage { incremental ? self.cursorAgentService.incrementalScan() : self.cursorAgentService.fullScan() }
             if enabled.contains("ZCode") { incremental ? self.zcodeService.incrementalScan() : self.zcodeService.fullScan() }
 
             if !incremental, enabled.contains("OpenClaw"),
@@ -1428,9 +1504,11 @@ final class ViewModel: ObservableObject {
                 let u = self.continueService.todayUsage()
                 results["Continue"] = ToolSnapshot(tokens: u.tokens, messages: u.messages, recent: self.continueService.recentUsage(minutes: rateWindow).tokens, hourly: self.continueService.currentHourTokens(), active: self.continueService.isActive(), cacheRate: u.cacheRate, sessions: self.continueService.todaySessions())
             }
-            if enabled.contains("Cursor Agent") {
+            if shouldScanCursorUsage {
                 let u = self.cursorAgentService.todayUsage()
-                results["Cursor Agent"] = ToolSnapshot(tokens: u.tokens, messages: u.messages, recent: self.cursorAgentService.recentUsage(minutes: rateWindow).tokens, hourly: self.cursorAgentService.currentHourTokens(), active: self.cursorAgentService.isActive(), cacheRate: u.cacheRate, cost: self.cursorAgentService.todayCost(), cacheRead: self.cursorAgentService.todayCacheReadTokens(), sessions: self.cursorAgentService.todaySessions())
+                if enabled.contains("Cursor Agent") {
+                    results["Cursor Agent"] = ToolSnapshot(tokens: u.tokens, messages: u.messages, recent: self.cursorAgentService.recentUsage(minutes: rateWindow).tokens, hourly: self.cursorAgentService.currentHourTokens(), active: self.cursorAgentService.isActive(), cacheRate: u.cacheRate, cost: self.cursorAgentService.todayCost(), cacheRead: self.cursorAgentService.todayCacheReadTokens(), sessions: self.cursorAgentService.todaySessions())
+                }
                 let bot = self.cursorAgentService.todayGrokBotUsage()
                 results["Grok Bot"] = ToolSnapshot(
                     tokens: bot.tokens,
