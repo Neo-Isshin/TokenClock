@@ -1368,7 +1368,16 @@ final class WindowsApp: @unchecked Sendable {
             grokBotQuotaState.snapshot().status, zhipuQuotaState.snapshot().status,
         ]
         guard statuses.allSatisfy({ $0 != .idle && $0 != .loading }) else { return }
-        let indicators = dialQuotaIndicators()
+        let indicators = dialQuotaIndicators().filter { indicator in
+            switch indicator.provider {
+            case .codex: return codexQuotaState.snapshot().status == .available
+            case .claude: return claudeQuotaState.snapshot().status == .available
+            case .antigravity: return antigravityQuotaState.snapshot().status == .available
+            case .cursor: return cursorQuotaState.snapshot().status == .available
+            case .grokBot: return grokBotQuotaState.snapshot().status == .available
+            case .zhipu: return zhipuQuotaState.snapshot().status == .available
+            }
+        }
         guard let provider = DialQuotaResolver.defaultProvider(
             from: indicators, providerOrder: quotaProviderOrder
         ) else { return }
