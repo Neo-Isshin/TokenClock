@@ -129,17 +129,14 @@ struct UsageShareCardView: View {
                 Text(TokenFormat.compact(data.totalTokens))
                     .font(.system(size: 58 * scale, weight: .heavy, design: .rounded))
                     .foregroundStyle(.white)
-                    .tracking(-2 * scale)
                 Text(L10n.shared.tr("share.tokens"))
                     .font(.system(size: 10 * scale, weight: .bold, design: .rounded))
-                    .tracking(2.4 * scale)
                     .foregroundStyle(Color.white.opacity(0.52))
                 Spacer().frame(height: 25 * scale)
                 summaryRow
                 Spacer().frame(height: 29 * scale)
                 Text(L10n.shared.tr("share.toolBreakdown"))
                     .font(.system(size: 10 * scale, weight: .bold, design: .rounded))
-                    .tracking(1.9 * scale)
                     .foregroundStyle(Color.white.opacity(0.50))
                 Spacer().frame(height: 13 * scale)
                 breakdown
@@ -175,7 +172,6 @@ struct UsageShareCardView: View {
                         .font(.system(size: 17 * scale, weight: .bold, design: .rounded))
                     Text(L10n.shared.tr("share.dailyUsage"))
                         .font(.system(size: 8.5 * scale, weight: .bold, design: .rounded))
-                        .tracking(1.4 * scale)
                         .foregroundStyle(Color.white.opacity(0.48))
                 }
             }
@@ -219,7 +215,6 @@ struct UsageShareCardView: View {
                     .foregroundStyle(.white)
                 Text(label)
                     .font(.system(size: 8 * scale, weight: .bold, design: .rounded))
-                    .tracking(1.2 * scale)
                     .foregroundStyle(Color.white.opacity(0.44))
             }
             Spacer()
