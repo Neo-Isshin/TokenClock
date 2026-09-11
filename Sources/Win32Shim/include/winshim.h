@@ -156,6 +156,8 @@ int   dlg_modal_cb(void *dlg, dlg_on_cmd_t on_cmd, void *ctx);  /* 同 dlg_modal
 int win_pick_color(unsigned int initial_argb, unsigned int *out_argb);
 int win_pick_folder(void *owner, const char *title_utf8, const char *initial_utf8,
                     char *out_utf8, int out_size);
+int win_pick_save_file(void *owner, const char *title_utf8, const char *suggested_utf8,
+                       char *out_utf8, int out_size);
 
 /* --- GDI helpers (called from Swift on_paint with the hdc it received) --- */
 void gdi_clear(void *hdc, int w, int h, unsigned int rgb);
@@ -251,6 +253,24 @@ void win_detail_present(int show, int dial_height, int main_width, int card_widt
 /* Non-zero when TokenClock has a native colored vector replacement for the
  * leading semantic emoji in a UTF-8 label. Used by Windows regression tests. */
 int win_color_icon_supported_utf8(const char *text_utf8);
+
+typedef struct {
+    const char *date;
+    const char *tokens;
+    const char *token_label;
+    const char *messages;
+    const char *message_label;
+    const char *cache;
+    const char *cache_label;
+    const char *breakdown_label;
+    const char *rows;       /* emoji TAB name TAB token-value TAB 0...1 fraction; newline rows */
+    const char *empty_label;
+    const char *quote;
+    const char *generated_by;
+} win_share_card;
+
+int win_share_card_save_png(const win_share_card *card, const char *path_utf8);
+int win_share_card_copy(const win_share_card *card);
 
 /* --- outbound HTTP(S) client (implemented in winclient.c, WinHTTP) ---
  * Synchronous and intended for Swift worker queues. Uses NO_PROXY, never follows redirects,

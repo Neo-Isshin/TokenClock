@@ -1677,6 +1677,29 @@ int win_pick_folder(void *owner, const char *title_utf8, const char *initial_utf
     return WideCharToMultiByte(CP_UTF8, 0, selected, -1, out_utf8, out_size, NULL, NULL) > 0 ? 1 : 0;
 }
 
+int win_pick_save_file(void *owner, const char *title_utf8, const char *suggested_utf8,
+                       char *out_utf8, int out_size) {
+    if (!out_utf8 || out_size <= 0) return 0;
+    out_utf8[0] = 0;
+    wchar_t title[256], path[MAX_PATH];
+    if (to_wide(title_utf8, title, 256) == 0) title[0] = 0;
+    if (to_wide(suggested_utf8, path, MAX_PATH) == 0) path[0] = 0;
+    static const wchar_t filter[] = L"PNG image (*.png)\0*.png\0All files (*.*)\0*.*\0\0";
+    OPENFILENAMEW dialog;
+    memset(&dialog, 0, sizeof(dialog));
+    dialog.lStructSize = sizeof(dialog);
+    dialog.hwndOwner = (HWND)owner;
+    dialog.lpstrTitle = title;
+    dialog.lpstrFile = path;
+    dialog.nMaxFile = MAX_PATH;
+    dialog.lpstrFilter = filter;
+    dialog.nFilterIndex = 1;
+    dialog.lpstrDefExt = L"png";
+    dialog.Flags = OFN_OVERWRITEPROMPT | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR;
+    if (!GetSaveFileNameW(&dialog)) return 0;
+    return WideCharToMultiByte(CP_UTF8, 0, path, -1, out_utf8, out_size, NULL, NULL) > 0 ? 1 : 0;
+}
+
 /* --- GDI helpers --- */
 void gdi_clear(void *hdc, int w, int h, unsigned int rgb) {
     RECT rc = {0, 0, w, h};

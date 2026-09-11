@@ -654,6 +654,173 @@ static LRESULT CALLBACK theme_picker_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM
 
 extern "C" {
 
+static void share_rounded_path(
+    Gdiplus::GraphicsPath &path, float x, float y, float width, float height, float radius
+) {
+    const float diameter = radius * 2.0f;
+    path.AddArc(x, y, diameter, diameter, 180, 90);
+    path.AddArc(x + width - diameter, y, diameter, diameter, 270, 90);
+    path.AddArc(x + width - diameter, y + height - diameter, diameter, diameter, 0, 90);
+    path.AddArc(x, y + height - diameter, diameter, diameter, 90, 90);
+    path.CloseFigure();
+}
+
+static void share_draw_text(
+    Gdiplus::Graphics &graphics, const wchar_t *value, float size, int weight,
+    float x, float y, float width, float height, int alignment,
+    Gdiplus::Color color, const wchar_t *familyName = L"Segoe UI"
+) {
+    Gdiplus::FontFamily family(familyName);
+    Gdiplus::Font font(&family, size, weight >= 700 ? Gdiplus::FontStyleBold : Gdiplus::FontStyleRegular, Gdiplus::UnitPixel);
+    Gdiplus::SolidBrush brush(color);
+    Gdiplus::StringFormat format;
+    format.SetAlignment(alignment == 2 ? Gdiplus::StringAlignmentFar
+                                      : alignment == 1 ? Gdiplus::StringAlignmentCenter
+                                                       : Gdiplus::StringAlignmentNear);
+    format.SetLineAlignment(Gdiplus::StringAlignmentCenter);
+    format.SetTrimming(Gdiplus::StringTrimmingEllipsisCharacter);
+    Gdiplus::RectF rect(x, y, width, height);
+    graphics.DrawString(value ? value : L"", -1, &font, rect, &format, &brush);
+}
+
+static Gdiplus::Bitmap *render_share_card(const win_share_card *card) {
+    if (!card) return NULL;
+    Gdiplus::Bitmap *bitmap = new Gdiplus::Bitmap(1200, 1500, PixelFormat32bppARGB);
+    if (!bitmap || bitmap->GetLastStatus() != Gdiplus::Ok) { delete bitmap; return NULL; }
+    Gdiplus::Graphics graphics(bitmap);
+    graphics.SetSmoothingMode(Gdiplus::SmoothingModeAntiAlias);
+    graphics.SetInterpolationMode(Gdiplus::InterpolationModeHighQualityBicubic);
+    graphics.SetTextRenderingHint(Gdiplus::TextRenderingHintAntiAliasGridFit);
+
+    Gdiplus::LinearGradientBrush background(
+        Gdiplus::PointF(0, 0), Gdiplus::PointF(1200, 1500),
+        Gdiplus::Color(255, 9, 14, 31), Gdiplus::Color(255, 28, 20, 59)
+    );
+    Gdiplus::Color colors[3] = {
+        Gdiplus::Color(255, 9, 14, 31), Gdiplus::Color(255, 14, 28, 56), Gdiplus::Color(255, 28, 20, 59)
+    };
+    Gdiplus::REAL positions[3] = {0.0f, 0.55f, 1.0f};
+    background.SetInterpolationColors(colors, positions, 3);
+    graphics.FillRectangle(&background, 0, 0, 1200, 1500);
+    Gdiplus::SolidBrush cyanGlow(Gdiplus::Color(56, 12, 106, 148));
+    graphics.FillEllipse(&cyanGlow, 710, -220, 720, 720);
+    Gdiplus::SolidBrush purpleGlow(Gdiplus::Color(62, 96, 36, 150));
+    graphics.FillEllipse(&purpleGlow, -360, 1120, 760, 760);
+
+    wchar_t date[256], tokens[128], tokenLabel[128], messages[128], messageLabel[128];
+    wchar_t cache[128], cacheLabel[128], breakdown[256], empty[512], quote[1024], generated[256];
+    to_wide(card->date, date, 256); to_wide(card->tokens, tokens, 128);
+    to_wide(card->token_label, tokenLabel, 128); to_wide(card->messages, messages, 128);
+    to_wide(card->message_label, messageLabel, 128); to_wide(card->cache, cache, 128);
+    to_wide(card->cache_label, cacheLabel, 128); to_wide(card->breakdown_label, breakdown, 256);
+    to_wide(card->empty_label, empty, 512); to_wide(card->quote, quote, 1024);
+    to_wide(card->generated_by, generated, 256);
+
+    Gdiplus::SolidBrush logoFill(Gdiplus::Color(26, 255, 255, 255));
+    Gdiplus::Pen logoBorder(Gdiplus::Color(64, 255, 255, 255), 2.0f);
+    graphics.FillEllipse(&logoFill, 76, 76, 76, 76);
+    graphics.DrawEllipse(&logoBorder, 76, 76, 76, 76);
+    share_draw_text(graphics, L"◷", 36, 700, 76, 76, 76, 76, 1, Gdiplus::Color(245, 255, 255, 255));
+    share_draw_text(graphics, L"TokenClock", 34, 700, 172, 80, 400, 54, 0, Gdiplus::Color(255, 255, 255, 255));
+    share_draw_text(graphics, L"DAILY AI USAGE", 17, 700, 172, 128, 400, 36, 0, Gdiplus::Color(130, 255, 255, 255));
+    share_draw_text(graphics, date, 26, 600, 660, 80, 464, 56, 2, Gdiplus::Color(190, 255, 255, 255));
+
+    share_draw_text(graphics, tokens, 116, 700, 76, 220, 700, 150, 0, Gdiplus::Color(255, 255, 255, 255));
+    share_draw_text(graphics, tokenLabel, 20, 700, 78, 350, 360, 44, 0, Gdiplus::Color(135, 255, 255, 255));
+
+    auto summaryCard = [&](float x, const wchar_t *value, const wchar_t *label, Gdiplus::Color tint, const wchar_t *glyph) {
+        Gdiplus::GraphicsPath path; share_rounded_path(path, x, 430, 512, 128, 30);
+        Gdiplus::SolidBrush fill(Gdiplus::Color(17, 255, 255, 255)); graphics.FillPath(&fill, &path);
+        Gdiplus::Pen border(Gdiplus::Color(28, 255, 255, 255), 1.5f); graphics.DrawPath(&border, &path);
+        Gdiplus::SolidBrush iconBg(Gdiplus::Color(44, tint.GetR(), tint.GetG(), tint.GetB()));
+        graphics.FillEllipse(&iconBg, x + 28.0f, 466.0f, 56.0f, 56.0f);
+        share_draw_text(graphics, glyph, 25, 700, x + 28, 466, 56, 56, 1, tint);
+        share_draw_text(graphics, value, 34, 700, x + 104, 452, 360, 54, 0, Gdiplus::Color(255, 255, 255, 255));
+        share_draw_text(graphics, label, 16, 700, x + 104, 500, 360, 36, 0, Gdiplus::Color(120, 255, 255, 255));
+    };
+    summaryCard(76, messages, messageLabel, Gdiplus::Color(255, 195, 48, 222), L"●");
+    summaryCard(612, cache, cacheLabel, Gdiplus::Color(255, 255, 117, 31), L"◆");
+    share_draw_text(graphics, breakdown, 20, 700, 76, 600, 500, 42, 0, Gdiplus::Color(130, 255, 255, 255));
+
+    wchar_t rows[8192];
+    if (to_wide(card->rows, rows, 8192) > 0 && rows[0]) {
+        const Gdiplus::Color palette[7] = {
+            Gdiplus::Color(255, 87, 204, 250), Gdiplus::Color(255, 143, 115, 250),
+            Gdiplus::Color(255, 250, 135, 158), Gdiplus::Color(255, 79, 219, 166),
+            Gdiplus::Color(255, 255, 184, 82), Gdiplus::Color(255, 107, 163, 250),
+            Gdiplus::Color(255, 184, 194, 219)
+        };
+        int index = 0;
+        wchar_t *line = rows;
+        while (*line && index < 7) {
+            wchar_t *newline = wcschr(line, L'\n'); if (newline) *newline = 0;
+            wchar_t *fields[4] = {line, (wchar_t *)L"", (wchar_t *)L"", (wchar_t *)L"0"};
+            int field = 1;
+            for (wchar_t *cursor = line; *cursor && field < 4; ++cursor) {
+                if (*cursor == L'\t') { *cursor = 0; fields[field++] = cursor + 1; }
+            }
+            const float y = 660.0f + index * 74.0f;
+            tc_color_icon icon = color_icon_for(fields[0]);
+            if (icon != TC_ICON_NONE) {
+                draw_color_icon(graphics, icon, 94, y + 24, 30);
+            } else {
+                share_draw_text(graphics, fields[0], 24, 600, 76, y, 40, 48, 1,
+                                Gdiplus::Color(235, 255, 255, 255), L"Segoe UI Emoji");
+            }
+            share_draw_text(graphics, fields[1], 25, 600, 122, y, 760, 48, 0, Gdiplus::Color(220, 255, 255, 255));
+            share_draw_text(graphics, fields[2], 25, 700, 900, y, 224, 48, 2, Gdiplus::Color(255, 255, 255, 255));
+            Gdiplus::GraphicsPath track; share_rounded_path(track, 76, y + 54, 1048, 10, 5);
+            Gdiplus::SolidBrush trackBrush(Gdiplus::Color(20, 255, 255, 255)); graphics.FillPath(&trackBrush, &track);
+            const double fraction = min(1.0, max(0.0, _wtof(fields[3])));
+            if (fraction > 0) {
+                Gdiplus::GraphicsPath progress;
+                share_rounded_path(progress, 76, y + 54, max(6.0f, (float)(1048.0 * fraction)), 10, 5);
+                Gdiplus::SolidBrush progressBrush(palette[index]); graphics.FillPath(&progressBrush, &progress);
+            }
+            ++index;
+            if (!newline) break;
+            line = newline + 1;
+        }
+    } else {
+        share_draw_text(graphics, empty, 26, 500, 76, 760, 1048, 80, 1, Gdiplus::Color(150, 255, 255, 255));
+    }
+
+    Gdiplus::GraphicsPath quotePath; share_rounded_path(quotePath, 76, 1230, 1048, 144, 32);
+    Gdiplus::SolidBrush quoteFill(Gdiplus::Color(14, 255, 255, 255)); graphics.FillPath(&quoteFill, &quotePath);
+    Gdiplus::Pen quoteBorder(Gdiplus::Color(20, 255, 255, 255), 1.0f); graphics.DrawPath(&quoteBorder, &quotePath);
+    share_draw_text(graphics, L"“", 66, 700, 100, 1236, 70, 80, 1, Gdiplus::Color(210, 30, 190, 225));
+    share_draw_text(graphics, quote, 26, 500, 168, 1246, 890, 94, 0, Gdiplus::Color(190, 255, 255, 255));
+    share_draw_text(graphics, generated, 18, 500, 76, 1400, 500, 36, 0, Gdiplus::Color(100, 255, 255, 255));
+    share_draw_text(graphics, L"tokenclock", 18, 600, 700, 1400, 424, 36, 2, Gdiplus::Color(100, 255, 255, 255));
+    return bitmap;
+}
+
+int win_share_card_save_png(const win_share_card *card, const char *path_utf8) {
+    wchar_t path[MAX_PATH];
+    if (!card || to_wide(path_utf8, path, MAX_PATH) == 0) return 0;
+    Gdiplus::Bitmap *bitmap = render_share_card(card);
+    if (!bitmap) return 0;
+    const CLSID png = {0x557cf406, 0x1a04, 0x11d3, {0x9a, 0x73, 0x00, 0x00, 0xf8, 0x1e, 0xf3, 0x2e}};
+    const Gdiplus::Status status = bitmap->Save(path, &png, NULL);
+    delete bitmap;
+    return status == Gdiplus::Ok ? 1 : 0;
+}
+
+int win_share_card_copy(const win_share_card *card) {
+    Gdiplus::Bitmap *bitmap = render_share_card(card);
+    if (!bitmap) return 0;
+    HBITMAP handle = NULL;
+    const Gdiplus::Status status = bitmap->GetHBITMAP(Gdiplus::Color(255, 9, 14, 31), &handle);
+    delete bitmap;
+    if (status != Gdiplus::Ok || !handle) return 0;
+    if (!OpenClipboard(g_hwnd)) { DeleteObject(handle); return 0; }
+    EmptyClipboard();
+    const HANDLE result = SetClipboardData(CF_BITMAP, handle);
+    CloseClipboard();
+    if (!result) { DeleteObject(handle); return 0; }
+    return 1;
+}
+
 void gdip_init(void) {
     Gdiplus::GdiplusStartupInput si;
     Gdiplus::GdiplusStartup(&g_gdip_token, &si, NULL);
@@ -1479,21 +1646,21 @@ void win_render_clock(int w, int h, int hh, int mm, int ss, const win_theme *t, 
                     gfx.DrawString(parts[4 + i], -1, controlFont, rect, &sfC2, &mainBrush);
                 }
 
-                // Row 3: cache scope, current text colour, compact history launcher, value toggle.
+                // Row 3: cache scope, text colour, history, sharing, and value toggle.
                 const double compactTop = contentTop + 97.0 * S, compactH = 38.0 * S;
                 const double compactLeft = cardLeft + 6.0 * S;
-                const double compactSlots[4] = {67.0 * S, 61.0 * S, 87.0 * S, 93.0 * S};
+                const double compactSlots[5] = {55.0 * S, 50.0 * S, 65.0 * S, 55.0 * S, 83.0 * S};
                 double compactOffset = 0;
-                for (int i = 0; i < 4; i++) {
+                for (int i = 0; i < 5; i++) {
                     const double x = compactLeft + compactOffset + 1.5 * S;
                     const double w = compactSlots[i] - 3.0 * S;
                     compactOffset += compactSlots[i];
                     Gdiplus::GraphicsPath chip; roundedPath(chip, x, compactTop, w, compactH, compactH / 2.0);
                     const bool selectedValue = (i == 0 && ov->detail_includes_cache)
-                        || (i == 3 && ov->detail_percentage);
+                        || (i == 4 && ov->detail_percentage);
                     Gdiplus::SolidBrush bg(cr(alpha(t->dd_text, selectedValue ? 44 : 18))); gfx.FillPath(&bg, &chip);
                     Gdiplus::Pen border(cr(alpha(t->dd_text, selectedValue ? 76 : 34)), (Gdiplus::REAL)(0.6 * S)); gfx.DrawPath(&border, &chip);
-                    const int titleIndex = i < 3 ? 6 + i : 10;
+                    const int titleIndex = 6 + i;
                     const double leadingW = 15.0 * S;
                     const double trailingW = 0;
                     Gdiplus::RectF titleRect((Gdiplus::REAL)(x + 3.0 * S + leadingW), (Gdiplus::REAL)(compactTop + 3.0 * S),
@@ -1530,6 +1697,19 @@ void win_render_clock(int w, int h, int hh, int mm, int ss, const win_theme *t, 
                                         (float)(11.0 * S), (float)(11.0 * S));
                         gfx.DrawLine(&glyphPen, glyphX, glyphY, glyphX, glyphY - (float)(3.5 * S));
                         gfx.DrawLine(&glyphPen, glyphX, glyphY, glyphX + (float)(3.0 * S), glyphY + (float)(1.5 * S));
+                    } else if (i == 3) {
+                        gfx.DrawLine(&glyphPen, glyphX, glyphY + (float)(5.0 * S),
+                                     glyphX, glyphY - (float)(4.0 * S));
+                        gfx.DrawLine(&glyphPen, glyphX, glyphY - (float)(4.0 * S),
+                                     glyphX - (float)(3.0 * S), glyphY - (float)(1.0 * S));
+                        gfx.DrawLine(&glyphPen, glyphX, glyphY - (float)(4.0 * S),
+                                     glyphX + (float)(3.0 * S), glyphY - (float)(1.0 * S));
+                        gfx.DrawLine(&glyphPen, glyphX - (float)(5.0 * S), glyphY + (float)(2.0 * S),
+                                     glyphX - (float)(5.0 * S), glyphY + (float)(6.0 * S));
+                        gfx.DrawLine(&glyphPen, glyphX - (float)(5.0 * S), glyphY + (float)(6.0 * S),
+                                     glyphX + (float)(5.0 * S), glyphY + (float)(6.0 * S));
+                        gfx.DrawLine(&glyphPen, glyphX + (float)(5.0 * S), glyphY + (float)(6.0 * S),
+                                     glyphX + (float)(5.0 * S), glyphY + (float)(2.0 * S));
                     } else {
                         gfx.DrawEllipse(&glyphPen, glyphX - (float)(5.8 * S), glyphY - (float)(5.8 * S),
                                         (float)(11.6 * S), (float)(11.6 * S));

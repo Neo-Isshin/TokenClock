@@ -96,6 +96,7 @@ final class WindowsApp: @unchecked Sendable {
     private let cmdOpacityBase: Int32 = 150 // + 0...3 -> 25/50/75/100%
     private let cmdRefresh: Int32 = 160
     private let cmdResetAppearance: Int32 = 170
+    private let cmdShare: Int32 = 180
     private let cmdSavedThemeBase: Int32 = 200
     private let cmdDeleteThemeBase: Int32 = 240
 
@@ -141,6 +142,7 @@ final class WindowsApp: @unchecked Sendable {
     fileprivate var editorDlg: UnsafeMutableRawPointer?
     fileprivate var settingsDlg: UnsafeMutableRawPointer?
     fileprivate var overviewDlg: UnsafeMutableRawPointer?
+    fileprivate var shareDlg: UnsafeMutableRawPointer?
     fileprivate var notificationsDlg: UnsafeMutableRawPointer?
     fileprivate var quotaDlg: UnsafeMutableRawPointer?
     fileprivate var aboutDlg: UnsafeMutableRawPointer?
@@ -163,6 +165,8 @@ final class WindowsApp: @unchecked Sendable {
     private var overviewIncludesCacheRead = false
     private var overviewCustomStart = Calendar.current.date(byAdding: .day, value: -6, to: Date()) ?? Date()
     private var overviewCustomEnd = Date()
+    private var shareDate = Date()
+    private var pendingShareOutputPath = ProcessInfo.processInfo.environment["TC_SHARE_OUTPUT"]
     private var quotaOrderEditing = false
     private var dialQuotaProviders: [SubscriptionProvider] = {
         let defaults = UserDefaults.standard
@@ -261,6 +265,7 @@ final class WindowsApp: @unchecked Sendable {
         if ProcessInfo.processInfo.environment["TC_DETAIL"] != nil { detailsVisible = true }
         if ProcessInfo.processInfo.environment["TC_SETTINGS"] != nil { openSettings() }
         if ProcessInfo.processInfo.environment["TC_OVERVIEW"] != nil { openUsageOverview() }
+        if ProcessInfo.processInfo.environment["TC_SHARE"] != nil { openUsageShare() }
         if ProcessInfo.processInfo.environment["TC_CUSTOM"] != nil { openCustomThemeEditor() }
 
         _ = win_run(&cb)
@@ -293,6 +298,14 @@ final class WindowsApp: @unchecked Sendable {
         if !didStartup {
             didStartup = true
             applyStartupAppearance()
+        }
+        if let output = pendingShareOutputPath {
+            pendingShareOutputPath = nil
+            model.persistCurrentUsage()
+            let data = UsageShareBuilder.load(date: Date())
+            _ = withWindowsShareCard(data) { card in
+                output.withCString { win_share_card_save_png(card, $0) }
+            }
         }
 
         let now = Date()
@@ -337,7 +350,8 @@ final class WindowsApp: @unchecked Sendable {
             L.tr("detail.groupBySession"), L.tr("detail.groupByModel"),
             "\(L.tr("detail.cacheDataLine1"))\n\(L.tr("detail.cacheDataLine2"))",
             "\(L.tr("detail.textColorLine1"))\n\(L.tr("detail.textColorLine2"))",
-            "\(L.tr("detail.historyUsageLine1"))\n\(L.tr("detail.historyUsageLine2"))", "", modeLabel,
+            "\(L.tr("detail.historyUsageLine1"))\n\(L.tr("detail.historyUsageLine2"))",
+            "\(L.tr("detail.shareImageLine1"))\n\(L.tr("detail.shareImageLine2"))", modeLabel,
         ].joined(separator: "\t")
         let detailHeader = [L.tr(groupingMode == .model ? "detail.model" : "detail.instance"),
                             L.tr(valueMode == .tokens ? "detail.todayUsage" : "detail.cost"),
@@ -849,14 +863,16 @@ final class WindowsApp: @unchecked Sendable {
         } else if controlsY >= 97, controlsY < 136 {
             let compactX = min(307, max(0, localX - 6.0))
             let item: Int
-            if compactX < 67 {
+            if compactX < 55 {
                 item = 0
-            } else if compactX < 128 {
+            } else if compactX < 105 {
                 item = 1
-            } else if compactX < 215 {
+            } else if compactX < 170 {
                 item = 2
-            } else {
+            } else if compactX < 225 {
                 item = 3
+            } else {
+                item = 4
             }
             if item == 0 {
                 UserDefaults.standard.setBool(!usageIncludesCache, for: .usageIncludesCacheRead)
@@ -864,6 +880,8 @@ final class WindowsApp: @unchecked Sendable {
                 cycleQuickContrast()
             } else if item == 2 {
                 openUsageOverview()
+            } else if item == 3 {
+                openUsageShare()
             } else {
                 setValueMode(valueMode.next)
             }
@@ -982,6 +1000,7 @@ final class WindowsApp: @unchecked Sendable {
         addSubmenu(menu, L.tr("menu.weatherTime"), weatherTimeMenu)
         addSubmenu(menu, L.tr("menu.general"), generalMenu)
         addSeparator(menu)
+        addMenuItem(menu, cmdShare, L.tr("menu.shareUsage"), false)
         addMenuItem(menu, cmdSettings, L.tr("menu.settings"), false)
         addSeparator(menu)
         addMenuItem(generalMenu, cmdLaunch, L.tr("menu.launchAtLogin"), launchAtLogin)
@@ -1008,6 +1027,7 @@ final class WindowsApp: @unchecked Sendable {
         case cmdAbout:      showAbout()
         case cmdSettings:   openSettings()
         case cmdOverview:   openUsageOverview()
+        case cmdShare:      openUsageShare()
         case cmdNotifications: openNotifications()
         case cmdThemePicker: openThemePicker()
         case cmdEditCustom: openCustomThemeEditor()
@@ -1655,6 +1675,10 @@ final class WindowsApp: @unchecked Sendable {
         case 907: overviewChartStyle = .line
         case 908: overviewChartStyle = .stacked
         case 909: overviewSelectedDayKey = nil
+        case 910:
+            let date = overviewSelectedDayKey.flatMap(parseOverviewDate) ?? min(overviewDates.1, Date())
+            openUsageShare(initialDate: date)
+            return
         case 1000...1099:
             let dates = overviewDates
             let data = UsageOverviewBuilder.load(
@@ -1708,6 +1732,7 @@ final class WindowsApp: @unchecked Sendable {
         dlg_add_push(dlg, 903, overviewGrouping == .tool ? "✓  \(L10n.shared.tr("overview.byTool"))" : L10n.shared.tr("overview.byTool"), 606, 54, 88, 28)
         dlg_add_push(dlg, 904, overviewGrouping == .model ? "✓  \(L10n.shared.tr("overview.byModel"))" : L10n.shared.tr("overview.byModel"), 700, 54, 88, 28)
         dlg_add_push(dlg, 905, overviewIncludesCacheRead ? "✓  \(L10n.shared.tr("overview.includeCache"))" : L10n.shared.tr("overview.includeCache"), 474, 54, 126, 28)
+        dlg_add_push(dlg, 910, "⇧  \(L10n.shared.tr("share.share"))", 360, 54, 106, 28)
         dlg_add_push(dlg, 906, overviewChartStyle == .automatic ? "✓ ▦" : "▦", 24, 86, 48, 26)
         dlg_add_push(dlg, 907, overviewChartStyle == .line ? "✓ 📈" : "📈", 78, 86, 54, 26)
         dlg_add_push(dlg, 908, overviewChartStyle == .stacked ? "✓ 📊" : "📊", 138, 86, 54, 26)
@@ -1919,6 +1944,141 @@ final class WindowsApp: @unchecked Sendable {
     private func overviewNumber(_ value: Int) -> String {
         let formatter = NumberFormatter(); formatter.numberStyle = .decimal
         return formatter.string(from: NSNumber(value: value)) ?? "\(value)"
+    }
+
+    // MARK: - Share usage
+
+    private func openUsageShare(initialDate: Date = Date()) {
+        model.persistCurrentUsage()
+        shareDate = min(initialDate, Date())
+        guard shareDlg == nil,
+              let dialog = dlg_create(L10n.shared.tr("share.title"), 620, 700) else { return }
+        shareDlg = dialog
+        renderShareDialog()
+        _ = dlg_modal_cb(dialog, shareCmdCb, nil)
+        shareDlg = nil
+        dlg_destroy(dialog)
+    }
+
+    fileprivate func handleShareCmd(_ id: Int32) {
+        switch id {
+        case 1601:
+            shareDate = Calendar.current.date(byAdding: .day, value: -1, to: shareDate) ?? shareDate
+            renderShareDialog()
+        case 1602:
+            shareDate = min(Date(), Calendar.current.date(byAdding: .day, value: 1, to: shareDate) ?? shareDate)
+            renderShareDialog()
+        case 1603:
+            updateShareDateFromEditor()
+            renderShareDialog()
+        case 1604:
+            updateShareDateFromEditor()
+            let data = UsageShareBuilder.load(date: shareDate)
+            let copied = withWindowsShareCard(data) { win_share_card_copy($0) != 0 }
+            if copied, let dialog = shareDlg { dlg_set_text(dialog, 1604, "✓  \(L10n.shared.tr("share.copyImage"))") }
+        case 1605:
+            updateShareDateFromEditor()
+            saveWindowsShareImage()
+        case 1606:
+            if let dialog = shareDlg { dlg_end(dialog, 0) }
+        default: break
+        }
+    }
+
+    private func renderShareDialog() {
+        guard let dialog = shareDlg else { return }
+        let data = UsageShareBuilder.load(date: shareDate)
+        dlg_reset_content(dialog, 680)
+        dlg_add_title(dialog, L10n.shared.tr("share.title"), 24, 14, 300, 30)
+        dlg_add_subtitle(dialog, L10n.shared.tr("share.chooseDate"), 24, 48, 160, 22)
+        dlg_add_push(dialog, 1601, "‹", 188, 44, 34, 28)
+        dlg_add_edit(dialog, 1600, data.dateKey, 228, 44, 126, 28)
+        dlg_add_push(dialog, 1602, "›", 360, 44, 34, 28)
+        dlg_add_push(dialog, 1603, L10n.shared.tr("settings.done"), 402, 44, 82, 28)
+
+        appendShareMetricCard(dialog, x: 22, title: L10n.shared.tr("share.tokens"), value: TokenFormat.compact(data.totalTokens))
+        appendShareMetricCard(dialog, x: 216, title: L10n.shared.tr("share.messages"), value: overviewNumber(data.messages))
+        appendShareMetricCard(dialog, x: 410, title: L10n.shared.tr("share.cache"), value: String(format: "%.2f%%", data.averageCacheRate * 100))
+
+        dlg_add_section(dialog, L10n.shared.tr("share.toolBreakdown"), 24, 190, 300, 24)
+        dlg_add_card(dialog, 22, 218, 566, 278)
+        if data.rows.isEmpty {
+            dlg_add_subtitle(dialog, L10n.shared.tr("share.noUsage"), 42, 246, 526, 44)
+        } else {
+            for (index, row) in data.rows.enumerated() {
+                let y = 230 + Int32(index * 36)
+                dlg_add_static(dialog, "\(row.emoji)  \(row.name)", 40, y, 368, 24)
+                dlg_add_static(dialog, TokenFormat.compact(row.tokens), 430, y, 132, 24)
+                if index + 1 < data.rows.count { dlg_add_sep(dialog, 40, y + 30, 522) }
+            }
+        }
+
+        dlg_add_card(dialog, 22, 508, 566, 82)
+        dlg_add_static(dialog, "“", 40, 520, 34, 38)
+        dlg_add_subtitle(dialog, L10n.shared.tr(data.quoteKey), 76, 518, 488, 54)
+        dlg_add_push(dialog, 1604, L10n.shared.tr("share.copyImage"), 22, 616, 132, 32)
+        dlg_add_push(dialog, 1605, L10n.shared.tr("share.savePNG"), 346, 616, 126, 32)
+        dlg_add_push(dialog, 1606, L10n.shared.tr("about.close"), 480, 616, 108, 32)
+    }
+
+    private func appendShareMetricCard(
+        _ dialog: UnsafeMutableRawPointer, x: Int32, title: String, value: String
+    ) {
+        dlg_add_card(dialog, x, 92, 178, 78)
+        dlg_add_subtitle(dialog, title, x + 14, 102, 150, 20)
+        dlg_add_title(dialog, value, x + 14, 124, 150, 30)
+    }
+
+    private func updateShareDateFromEditor() {
+        guard let dialog = shareDlg,
+              let date = parseOverviewDate(settingsEditText(dialog, 1600)) else { return }
+        shareDate = min(date, Date())
+    }
+
+    private func saveWindowsShareImage() {
+        guard let dialog = shareDlg else { return }
+        let data = UsageShareBuilder.load(date: shareDate)
+        var buffer = [CChar](repeating: 0, count: 1_024)
+        let suggested = "TokenClock-\(data.dateKey).png"
+        let accepted = buffer.withUnsafeMutableBufferPointer { output in
+            L10n.shared.tr("share.savePNG").withCString { title in
+                suggested.withCString { name in
+                    win_pick_save_file(dialog, title, name, output.baseAddress, Int32(output.count))
+                }
+            }
+        }
+        guard accepted != 0 else { return }
+        let path = buffer.withUnsafeBufferPointer { String(cString: $0.baseAddress!) }
+        _ = withWindowsShareCard(data) { pointer in
+            path.withCString { win_share_card_save_png(pointer, $0) }
+        }
+    }
+
+    private func withWindowsShareCard<T>(
+        _ data: UsageShareData,
+        _ body: (UnsafePointer<win_share_card>) -> T
+    ) -> T {
+        let rows = data.rows.map { row in
+            let name = row.name.replacingOccurrences(of: "\t", with: " ")
+                .replacingOccurrences(of: "\n", with: " ")
+            return "\(row.emoji)\t\(name)\t\(TokenFormat.compact(row.tokens))\t\(String(format: "%.6f", row.fraction))"
+        }.joined(separator: "\n")
+        let values = [
+            overviewDisplayDate(data.date), TokenFormat.compact(data.totalTokens), L10n.shared.tr("share.tokens"),
+            overviewNumber(data.messages), L10n.shared.tr("share.messages"),
+            String(format: "%.2f%%", data.averageCacheRate * 100), L10n.shared.tr("share.cache"),
+            L10n.shared.tr("share.toolBreakdown"), rows, L10n.shared.tr("share.noUsage"),
+            L10n.shared.tr(data.quoteKey), L10n.shared.tr("share.generatedBy"),
+        ]
+        return Self.withCStrings(values) { pointers in
+            var card = win_share_card()
+            card.date = pointers[0]; card.tokens = pointers[1]; card.token_label = pointers[2]
+            card.messages = pointers[3]; card.message_label = pointers[4]
+            card.cache = pointers[5]; card.cache_label = pointers[6]
+            card.breakdown_label = pointers[7]; card.rows = pointers[8]
+            card.empty_label = pointers[9]; card.quote = pointers[10]; card.generated_by = pointers[11]
+            return withUnsafePointer(to: &card, body)
+        }
     }
 
     private func overviewBar(_ value: Int, maximum: Int) -> String {
@@ -3016,6 +3176,9 @@ private let settingsCmdCb: @convention(c) (UnsafeMutableRawPointer?, Int32) -> V
 }
 private let overviewCmdCb: @convention(c) (UnsafeMutableRawPointer?, Int32) -> Void = { _, id in
     WindowsApp.shared.handleOverviewCmd(id)
+}
+private let shareCmdCb: @convention(c) (UnsafeMutableRawPointer?, Int32) -> Void = { _, id in
+    WindowsApp.shared.handleShareCmd(id)
 }
 private let notificationsCmdCb: @convention(c) (UnsafeMutableRawPointer?, Int32) -> Void = { _, id in
     WindowsApp.shared.handleNotificationsCmd(id)

@@ -157,7 +157,7 @@ let package = Package(
         ),
         .testTarget(
             name: "TokenClockTests",
-            dependencies: ["TokenClock"],
+            dependencies: ["TokenClock", "Win32Shim"],
             path: "Tests/TokenClockTests"
         ),
     ]
