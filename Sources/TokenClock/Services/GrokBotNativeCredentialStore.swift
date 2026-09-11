@@ -31,6 +31,7 @@ final class GrokBotNativeCredentialStore: @unchecked Sendable {
 
     private let lock = NSLock()
     private var cachedCredential: GrokBotNativeCredential?
+    private var cachedSafeStoragePassword: String?
     private var authorizationInProgress = false
 
     var hasSignedInInstance: Bool {
@@ -54,7 +55,11 @@ final class GrokBotNativeCredentialStore: @unchecked Sendable {
     }
 
     var currentCredential: GrokBotNativeCredential? {
-        lock.withLock { cachedCredential }
+        let cached = lock.withLock { (cachedCredential, cachedSafeStoragePassword) }
+        guard let password = cached.1,
+              let refreshed = decodeCredential(password: password) else { return cached.0 }
+        lock.withLock { cachedCredential = refreshed }
+        return refreshed
     }
 
     private func credential(allowInteraction: Bool) -> GrokBotNativeCredential? {
@@ -62,7 +67,10 @@ final class GrokBotNativeCredentialStore: @unchecked Sendable {
         guard hasSignedInInstance else { return nil }
         guard let password = safeStoragePassword(allowInteraction: allowInteraction),
               let credential = decodeCredential(password: password) else { return nil }
-        lock.withLock { cachedCredential = credential }
+        lock.withLock {
+            cachedSafeStoragePassword = password
+            cachedCredential = credential
+        }
         return credential
     }
 
@@ -74,7 +82,10 @@ final class GrokBotNativeCredentialStore: @unchecked Sendable {
     }
 
     func clearCachedCredential() {
-        lock.withLock { cachedCredential = nil }
+        lock.withLock {
+            cachedCredential = nil
+            cachedSafeStoragePassword = nil
+        }
     }
 
     #if os(macOS)
