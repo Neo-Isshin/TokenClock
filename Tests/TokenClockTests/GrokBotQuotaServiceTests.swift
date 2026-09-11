@@ -49,6 +49,17 @@ final class GrokBotQuotaServiceTests: XCTestCase {
         XCTAssertNil(GrokBotQuotaService.decodeResponse(Data(#"{"hasAvailableUsage":true}"#.utf8)))
     }
 
+    func testAutomaticFetchNeverWaitsForNativeKeychainAuthorization() {
+        let started = Date()
+        let snapshot = GrokBotQuotaService(
+            stateDatabasePath: "/tokenclock/no-cursor-ide-state.vscdb",
+            environment: ["TOKENCLOCK_DISABLE_CURSOR_CREDENTIALS": "1"],
+            homeDirectory: "/tokenclock/no-cursor-home"
+        ).fetch()
+        XCTAssertEqual(snapshot.status, .unavailable)
+        XCTAssertLessThan(Date().timeIntervalSince(started), 1)
+    }
+
     func testCursorChecksumMatchesSandClientAlgorithm() {
         XCTAssertEqual(
             GrokBotQuotaService.cursorChecksum(
