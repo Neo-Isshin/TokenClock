@@ -144,7 +144,7 @@ final class GrokBotQuotaService: @unchecked Sendable {
                 values.append(ide)
             }
         }
-        if let native = nativeCredentialStore.credential(),
+        if let native = nativeCredentialStore.currentCredential,
            !values.contains(where: { $0.token == native.accessToken }) {
             values.append(Credential(
                 token: native.accessToken,

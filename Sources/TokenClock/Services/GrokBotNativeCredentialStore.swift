@@ -53,7 +53,11 @@ final class GrokBotNativeCredentialStore: @unchecked Sendable {
         }
     }
 
-    func credential(allowInteraction: Bool = false) -> GrokBotNativeCredential? {
+    var currentCredential: GrokBotNativeCredential? {
+        lock.withLock { cachedCredential }
+    }
+
+    private func credential(allowInteraction: Bool) -> GrokBotNativeCredential? {
         if let cached = lock.withLock({ cachedCredential }) { return cached }
         guard hasSignedInInstance else { return nil }
         guard let password = safeStoragePassword(allowInteraction: allowInteraction),
@@ -63,6 +67,7 @@ final class GrokBotNativeCredentialStore: @unchecked Sendable {
     }
 
     func authorize() -> Bool {
+        if currentCredential != nil { return true }
         lock.withLock { authorizationInProgress = true }
         defer { lock.withLock { authorizationInProgress = false } }
         return credential(allowInteraction: true) != nil
