@@ -27,6 +27,7 @@ struct UsageOverviewView: View {
     }
 
     private let initialRoute: UsageOverviewRoute?
+    private let onShare: (Date) -> Void
 
     @State private var period: Period = .week
     @State private var grouping: UsageOverviewGrouping = .tool
@@ -46,8 +47,9 @@ struct UsageOverviewView: View {
         endDate: Date(), grouping: .model
     )
 
-    init(route: UsageOverviewRoute? = nil) {
+    init(route: UsageOverviewRoute? = nil, onShare: @escaping (Date) -> Void = { _ in }) {
         initialRoute = route
+        self.onShare = onShare
     }
 
     var body: some View {
@@ -112,7 +114,20 @@ struct UsageOverviewView: View {
             .buttonStyle(.bordered)
             .controlSize(.small)
             .tint(includesCacheRead ? .orange : .accentColor)
+            Button { onShare(shareDate) } label: {
+                Image(systemName: "square.and.arrow.up")
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+            .help(L10n.shared.tr("menu.shareUsage"))
         }
+    }
+
+    private var shareDate: Date {
+        if let selectedDayKey, let selected = date(from: selectedDayKey) {
+            return selected
+        }
+        return min(overview.endDate, Date())
     }
 
     private var customRange: some View {

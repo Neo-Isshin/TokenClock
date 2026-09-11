@@ -70,6 +70,7 @@ struct DetailDropdownView: View {
     var quickContrastPreset: QuickContrastPreset? = nil
     var onQuickContrast: (() -> Void)? = nil
     var onHistoryUsage: (() -> Void)? = nil
+    var onShareUsage: (() -> Void)? = nil
     var onSubscriptionQuota: (() -> Void)? = nil
     var unreadNotificationCount: Int = 0
     var onNotificationClick: (() -> Void)? = nil
@@ -88,6 +89,7 @@ struct DetailDropdownView: View {
     @State private var cacheHovered = false
     @State private var textColorHovered = false
     @State private var historyHovered = false
+    @State private var shareHovered = false
     @State private var notificationHovered = false
 
     private var textColor: Color { dropdownTextColorOverride ?? theme.dropdownTextColor }
@@ -206,7 +208,7 @@ struct DetailDropdownView: View {
                         hovered: cacheHovered,
                         action: { onUsageIncludesCacheToggle?() }
                     )
-                    .frame(width: 64)
+                    .frame(width: 52)
                     .onHover { cacheHovered = $0 }
 
                     compactAction(
@@ -218,7 +220,7 @@ struct DetailDropdownView: View {
                         hovered: textColorHovered,
                         action: { onQuickContrast?() }
                     )
-                    .frame(width: 58)
+                    .frame(width: 48)
                     .onHover { textColorHovered = $0 }
 
                     compactAction(
@@ -229,8 +231,19 @@ struct DetailDropdownView: View {
                         hovered: historyHovered,
                         action: { onHistoryUsage?() }
                     )
-                    .frame(width: 80)
+                    .frame(width: 62)
                     .onHover { historyHovered = $0 }
+
+                    compactAction(
+                        icon: "square.and.arrow.up",
+                        title: "\(L10n.shared.tr("detail.shareImageLine1"))\n\(L10n.shared.tr("detail.shareImageLine2"))",
+                        subtitle: "",
+                        selected: false,
+                        hovered: shareHovered,
+                        action: { onShareUsage?() }
+                    )
+                    .frame(width: 52)
+                    .onHover { shareHovered = $0 }
 
                     compactAction(
                         icon: "dollarsign.circle",
@@ -240,7 +253,7 @@ struct DetailDropdownView: View {
                         hovered: percentHovered,
                         action: { onValueModeChange?(valueMode.next) }
                     )
-                    .frame(width: 82)
+                    .frame(width: 70)
                     .help(L10n.shared.tr("detail.valueModeHelp"))
                     .onHover { percentHovered = $0 }
                 }
