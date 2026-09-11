@@ -1527,8 +1527,10 @@ final class LinuxDetailsPanel: @unchecked Sendable {
             cursorQuota.status, grokBotQuota.status, zhipuQuota.status,
         ]
         guard statuses.allSatisfy({ $0 != .idle && $0 != .loading }) else { return }
-        let indicators = quotaProviderOrder.compactMap { provider in
-            DialQuotaResolver.resolve(
+        let indicators: [DialQuotaIndicator] = quotaProviderOrder.compactMap {
+            provider -> DialQuotaIndicator? in
+            guard quotaProviderStatus(provider) == .available else { return nil }
+            return DialQuotaResolver.resolve(
                 provider: subscriptionProvider(provider), groups: quotaGroups(for: provider)
             )
         }
@@ -1542,6 +1544,17 @@ final class LinuxDetailsPanel: @unchecked Sendable {
             [provider.rawValue], forKey: SettingsKey.dialQuotaProviders.rawValue
         )
         UserDefaults.standard.setString(provider.rawValue, for: .dialQuotaProvider)
+    }
+
+    private func quotaProviderStatus(_ provider: LinuxQuotaProvider) -> CodexQuotaStatus {
+        switch provider {
+        case .codex: return codexQuota.status
+        case .claude: return claudeQuota.status
+        case .antigravity: return antigravityQuota.status
+        case .cursor: return cursorQuota.status
+        case .grokBot: return grokBotQuota.status
+        case .zhipu: return zhipuQuota.status
+        }
     }
 
     private func scheduleRebuild() {
