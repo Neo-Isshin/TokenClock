@@ -92,7 +92,12 @@ final class LinuxDetailsPanel: @unchecked Sendable {
            let provider = LinuxQuotaProvider(rawValue: raw) {
             providers = [provider]
         }
-        return Array((providers.isEmpty ? [.codex] : providers).prefix(2))
+        return Array(providers.prefix(2))
+    }()
+    private var shouldAutomaticallySelectDialQuotaProvider: Bool = {
+        let defaults = UserDefaults.standard
+        return defaults.object(forKey: SettingsKey.dialQuotaProviders.rawValue) == nil
+            && defaults.object(forKey: SettingsKey.dialQuotaProvider.rawValue) == nil
     }()
     private var quotaProviderOrder: [LinuxQuotaProvider] = {
         let saved = UserDefaults.standard.stringArray(forKey: SettingsKey.subscriptionQuotaOrder.rawValue) ?? []
@@ -226,6 +231,7 @@ final class LinuxDetailsPanel: @unchecked Sendable {
             return
         default:
             if name.hasPrefix("details:quota-dial:") {
+                shouldAutomaticallySelectDialQuotaProvider = false
                 guard let provider = LinuxQuotaProvider(
                     rawValue: String(name.dropFirst("details:quota-dial:".count))
                 ) else { return }
@@ -1509,8 +1515,33 @@ final class LinuxDetailsPanel: @unchecked Sendable {
     }
 
     private func quotaDidChange() {
+        selectAutomaticDialQuotaProviderIfReady()
         rebuildQuotaWindow()
         onDialQuotaChange()
+    }
+
+    private func selectAutomaticDialQuotaProviderIfReady() {
+        guard shouldAutomaticallySelectDialQuotaProvider, dialQuotaProviders.isEmpty else { return }
+        let statuses = [
+            codexQuota.status, claudeQuota.status, antigravityQuota.status,
+            cursorQuota.status, grokBotQuota.status, zhipuQuota.status,
+        ]
+        guard statuses.allSatisfy({ $0 != .idle && $0 != .loading }) else { return }
+        let indicators = quotaProviderOrder.compactMap { provider in
+            DialQuotaResolver.resolve(
+                provider: subscriptionProvider(provider), groups: quotaGroups(for: provider)
+            )
+        }
+        let providerOrder = quotaProviderOrder.map(subscriptionProvider)
+        guard let selected = DialQuotaResolver.defaultProvider(
+            from: indicators, providerOrder: providerOrder
+        ), let provider = LinuxQuotaProvider(rawValue: selected.rawValue) else { return }
+        dialQuotaProviders = [provider]
+        shouldAutomaticallySelectDialQuotaProvider = false
+        UserDefaults.standard.set(
+            [provider.rawValue], forKey: SettingsKey.dialQuotaProviders.rawValue
+        )
+        UserDefaults.standard.setString(provider.rawValue, for: .dialQuotaProvider)
     }
 
     private func scheduleRebuild() {
