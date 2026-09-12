@@ -1,5 +1,5 @@
 {
-  "_meta": {"generatedAt": "2026-09-08T01:48:12Z", "unit": "USD/MTok", "source": "BerriAI/litellm model_prices_and_context_window.json", "officialOverrides": 29, "officialReviewAfter": "2026-11-21", "models": 287},
+  "_meta": {"generatedAt": "2026-09-12T07:57:29Z", "unit": "USD/MTok", "source": "BerriAI/litellm model_prices_and_context_window.json", "officialOverrides": 29, "officialReviewAfter": "2026-11-21", "models": 287},
   "models": {
     "chat-latest": {"in": 5.0, "out": 30.0, "cr": 0.5, "p": "openai"},
     "chatgpt-4o-latest": {"in": 5.0, "out": 15.0, "p": "openai"},
