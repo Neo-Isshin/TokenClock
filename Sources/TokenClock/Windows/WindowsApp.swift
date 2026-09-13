@@ -171,6 +171,7 @@ final class WindowsApp: @unchecked Sendable {
     private var shareDays = 7
     private var shareWeekIndex = 1
     private var shareStyle: UsageShareStyle = .ink
+    private var shareIncludesCacheRead = false
     private var sharePeriod: UsageSharePeriod {
         switch shareMode {
         case .recent: return .recent(days: shareDays, ending: shareDate)
@@ -1997,6 +1998,7 @@ final class WindowsApp: @unchecked Sendable {
         shareDate = min(initialDate, Date())
         shareMode = .recent
         shareDays = Calendar.current.isDateInToday(shareDate) ? 7 : 1
+        shareIncludesCacheRead = false
         guard shareDlg == nil,
               let dialog = dlg_create(L10n.shared.tr("share.title"), 620, 780) else { return }
         shareDlg = dialog
@@ -2018,7 +2020,9 @@ final class WindowsApp: @unchecked Sendable {
         case 1603:
             renderShareDialog()
         case 1604:
-            let data = UsageShareBuilder.load(period: sharePeriod)
+            let data = UsageShareBuilder.load(
+                period: sharePeriod, includingCacheRead: shareIncludesCacheRead
+            )
             let copied = withWindowsShareCard(data, style: shareStyle) { win_share_card_copy($0) != 0 }
             if copied, let dialog = shareDlg { dlg_set_text(dialog, 1604, "✓  \(L10n.shared.tr("share.copyImage"))") }
         case 1605:
@@ -2038,6 +2042,11 @@ final class WindowsApp: @unchecked Sendable {
         case 1615: shareStyle = .ink; renderShareDialog()
         case 1616: shareStyle = .paper; renderShareDialog()
         case 1617: shareStyle = .cobalt; renderShareDialog()
+        case 1620:
+            if let dialog = shareDlg {
+                shareIncludesCacheRead = dlg_check_get(dialog, 1620) != 0
+            }
+            renderShareDialog()
         default: break
         }
     }
@@ -2060,7 +2069,9 @@ final class WindowsApp: @unchecked Sendable {
 
     private func renderShareDialog() {
         guard let dialog = shareDlg else { return }
-        let data = UsageShareBuilder.load(period: sharePeriod)
+        let data = UsageShareBuilder.load(
+            period: sharePeriod, includingCacheRead: shareIncludesCacheRead
+        )
         dlg_reset_content(dialog, 760)
         dlg_add_title(dialog, L10n.shared.tr("share.title"), 24, 14, 300, 30)
         dlg_add_subtitle(dialog, L10n.shared.tr("share.rangeHint"), 24, 44, 360, 22)
@@ -2080,8 +2091,14 @@ final class WindowsApp: @unchecked Sendable {
         }
         dlg_add_push(dialog, 1603, L10n.shared.tr("settings.done"), 500, 111, 88, 28)
         dlg_add_subtitle(dialog, "\(data.dateKey)  —  \(data.endDateKey)", 24, 146, 400, 20)
+        dlg_add_check(dialog, 1620, L10n.shared.tr("share.includeCache"),
+                      438, 143, 150, 26, shareIncludesCacheRead ? 1 : 0)
 
-        appendShareMetricCard(dialog, x: 22, title: L10n.shared.tr("share.tokens"), value: TokenFormat.compact(data.totalTokens))
+        appendShareMetricCard(
+            dialog, x: 22,
+            title: L10n.shared.tr(data.includesCacheRead ? "share.tokensWithCache" : "share.tokens"),
+            value: TokenFormat.compact(data.totalTokens)
+        )
         appendShareMetricCard(dialog, x: 216, title: L10n.shared.tr("share.messages"), value: overviewNumber(data.messages))
         appendShareMetricCard(dialog, x: 410, title: L10n.shared.tr("share.cache"), value: String(format: "%.2f%%", data.averageCacheRate * 100))
 
@@ -2132,7 +2149,9 @@ final class WindowsApp: @unchecked Sendable {
 
     private func saveWindowsShareImage() {
         guard let dialog = shareDlg else { return }
-        let data = UsageShareBuilder.load(period: sharePeriod)
+        let data = UsageShareBuilder.load(
+            period: sharePeriod, includingCacheRead: shareIncludesCacheRead
+        )
         var buffer = [CChar](repeating: 0, count: 1_024)
         let suggested = "TokenClock-\(data.dateKey)-\(data.endDateKey).png"
         let accepted = buffer.withUnsafeMutableBufferPointer { output in
@@ -2160,7 +2179,8 @@ final class WindowsApp: @unchecked Sendable {
             return "\(row.emoji)\t\(name)\t\(TokenFormat.compact(row.tokens))\t\(String(format: "%.6f", row.fraction))"
         }.joined(separator: "\n")
         let values = [
-            "\(data.dateKey) — \(data.endDateKey)", TokenFormat.compact(data.totalTokens), L10n.shared.tr("share.tokens"),
+            "\(data.dateKey) — \(data.endDateKey)", TokenFormat.compact(data.totalTokens),
+            L10n.shared.tr(data.includesCacheRead ? "share.tokensWithCache" : "share.tokens"),
             overviewNumber(data.messages), L10n.shared.tr("share.messages"),
             String(format: "%.2f%%", data.averageCacheRate * 100), L10n.shared.tr("share.cache"),
             L10n.shared.tr("share.toolBreakdown"), rows, L10n.shared.tr("share.noUsage"),

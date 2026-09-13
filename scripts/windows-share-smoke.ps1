@@ -18,6 +18,7 @@ public static class TCShareSmoke {
   [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr h,out uint pid);
   [DllImport("user32.dll")] public static extern IntPtr GetDlgItem(IntPtr h,int id);
   [DllImport("user32.dll")] public static extern bool PostMessage(IntPtr h,uint m,IntPtr w,IntPtr l);
+  [DllImport("user32.dll")] public static extern IntPtr SendMessage(IntPtr h,uint m,IntPtr w,IntPtr l);
   [DllImport("user32.dll",CharSet=CharSet.Unicode)] public static extern IntPtr SendMessage(IntPtr h,uint m,IntPtr w,StringBuilder text);
   [DllImport("user32.dll",CharSet=CharSet.Unicode)] public static extern bool SetWindowText(IntPtr h,string text);
   [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr h,out RECT rect);
@@ -43,9 +44,15 @@ try {
         if($dialog-eq[IntPtr]::Zero){Start-Sleep -Milliseconds 50}
     }
     if($dialog-eq[IntPtr]::Zero){throw 'Share dialog did not appear'}
-    foreach($id in 1600,1604,1605,1606){
+    foreach($id in 1600,1604,1605,1606,1620){
         if([TCShareSmoke]::GetDlgItem($dialog,$id)-eq[IntPtr]::Zero){throw "Share control $id is missing"}
     }
+    $cache=[TCShareSmoke]::GetDlgItem($dialog,1620)
+    [void][TCShareSmoke]::SendMessage($cache,0x00F1,[IntPtr]1,[IntPtr]::Zero)
+    [void][TCShareSmoke]::PostMessage($dialog,0x0111,[IntPtr]1620,[IntPtr]::Zero)
+    Start-Sleep -Milliseconds 200
+    $cache=[TCShareSmoke]::GetDlgItem($dialog,1620)
+    if([TCShareSmoke]::SendMessage($cache,0x00F0,[IntPtr]::Zero,[IntPtr]::Zero).ToInt32()-ne1){throw 'Include Cache toggle did not persist after refresh'}
 
     function Read-ShareDate {
         $text=New-Object Text.StringBuilder 64
