@@ -164,6 +164,27 @@ static inline int tc_gtk_choose_date(
     return accepted;
 }
 
+static inline int tc_gtk_choose_integer(
+    GtkWidget *parent_widget, const char *title,
+    int initial, int minimum, int maximum
+) {
+    GtkWidget *dialog = gtk_dialog_new_with_buttons(
+        title, GTK_WINDOW(parent_widget), GTK_DIALOG_MODAL,
+        "_Cancel", GTK_RESPONSE_CANCEL, "_Apply", GTK_RESPONSE_ACCEPT, NULL
+    );
+    GtkWidget *spin = gtk_spin_button_new_with_range(minimum, maximum, 1);
+    gtk_spin_button_set_value(GTK_SPIN_BUTTON(spin), initial);
+    gtk_container_set_border_width(GTK_CONTAINER(spin), 12);
+    gtk_box_pack_start(GTK_BOX(gtk_dialog_get_content_area(GTK_DIALOG(dialog))), spin, TRUE, TRUE, 0);
+    gtk_widget_show_all(dialog);
+    int selected = 0;
+    if (gtk_dialog_run(GTK_DIALOG(dialog)) == GTK_RESPONSE_ACCEPT) {
+        selected = gtk_spin_button_get_value_as_int(GTK_SPIN_BUTTON(spin));
+    }
+    gtk_widget_destroy(dialog);
+    return selected;
+}
+
 static inline gulong tc_gtk_on_activate(
     GtkWidget *widget, TCGtkVoidCallback callback, gpointer data
 ) {

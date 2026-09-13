@@ -196,6 +196,7 @@ final class LinuxApp: @unchecked Sendable {
         detailsPanel?.hide()
         tc_gtk_shape_circle(createdWindow, diameter)
         refreshUI()
+        detailsPanel?.refreshSelectedDialQuotas()
         if ProcessInfo.processInfo.environment["TC_OVERVIEW"] != nil {
             overviewWindow?.show()
         }
@@ -408,6 +409,10 @@ final class LinuxApp: @unchecked Sendable {
         guard let dial else { return }
         updateDetailsPanel()
         gtk_widget_queue_draw(dial)
+    }
+
+    fileprivate func refreshSelectedDialQuotas() {
+        detailsPanel?.refreshSelectedDialQuotas()
     }
 
     private func updateDetailsPanel() {
@@ -894,6 +899,7 @@ private func linuxScanFinished(_ data: gpointer?) -> gboolean {
 private func linuxWeatherTick(_ data: gpointer?) -> gboolean {
     guard let app = app(from: data) else { return 0 }
     app.refreshWeather()
+    app.refreshSelectedDialQuotas()
     return 1
 }
 

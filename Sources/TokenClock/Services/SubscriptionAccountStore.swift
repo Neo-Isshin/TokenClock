@@ -41,6 +41,21 @@ struct DialQuotaIndicator: Identifiable, Equatable, Sendable {
 }
 
 enum DialQuotaResolver {
+    /// Persisted percentages are snapshots, not current quota state.
+    static func freshGroups(
+        _ groups: [ProviderQuotaGroup], refreshedAt: Date?,
+        now: Date = Date(), maximumAge: TimeInterval = 15 * 60
+    ) -> [ProviderQuotaGroup] {
+        guard let refreshedAt,
+              now.timeIntervalSince(refreshedAt) >= 0,
+              now.timeIntervalSince(refreshedAt) <= maximumAge else { return [] }
+        return groups.compactMap { group in
+            let buckets = group.buckets.filter { $0.resetsAt.map { $0 > now } ?? true }
+            guard !buckets.isEmpty else { return nil }
+            return ProviderQuotaGroup(id: group.id, name: group.name, buckets: buckets)
+        }
+    }
+
     static func defaultProvider(
         from indicators: [DialQuotaIndicator],
         providerOrder: [SubscriptionProvider]

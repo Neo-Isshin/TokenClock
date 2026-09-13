@@ -135,8 +135,13 @@ final class LinuxDetailsPanel: @unchecked Sendable {
     var dialQuotaIndicators: [DialQuotaIndicator] {
         dialQuotaProviders.compactMap { provider in
             let subscription = subscriptionProvider(provider)
-            return DialQuotaResolver.resolve(provider: subscription, groups: quotaGroups(for: provider))
+            return DialQuotaResolver.resolve(provider: subscription, groups: freshQuotaGroups(for: provider))
         }
+    }
+
+    func refreshSelectedDialQuotas() {
+        guard !dialQuotaProviders.isEmpty else { return }
+        refreshQuota(providers: Set(dialQuotaProviders))
     }
 
     var isVisible: Bool {
@@ -244,6 +249,7 @@ final class LinuxDetailsPanel: @unchecked Sendable {
                     dialQuotaProviders.removeAll { $0 == provider }
                 } else if dialQuotaProviders.count < 2 {
                     dialQuotaProviders.append(provider)
+                    refreshQuota(providers: [provider])
                 }
                 UserDefaults.standard.set(
                     dialQuotaProviders.map(\.rawValue),
@@ -355,27 +361,19 @@ final class LinuxDetailsPanel: @unchecked Sendable {
             name: "details:cache", prominent: true, to: displayRow
         )
         if let cacheControl {
-            gtk_widget_set_size_request(cacheControl, 52, -1)
+            gtk_widget_set_size_request(cacheControl, 64, -1)
             tc_gtk_add_class(cacheControl, "tokenclock-detail-third-chip")
         }
         _ = appendTextColorControl(
             "\(tr("detail.textColorLine1"))\n\(tr("detail.textColorLine2"))",
-            width: 48,
+            width: 58,
             to: displayRow
         )
         _ = appendHistoryControl(
             "\(tr("detail.historyUsageLine1"))\n\(tr("detail.historyUsageLine2"))",
-            width: 62,
+            width: 80,
             to: displayRow
         )
-        let shareControl = appendControl(
-            "⇧  \(tr("detail.shareImageLine1"))\n   \(tr("detail.shareImageLine2"))",
-            name: "details:share", prominent: true, to: displayRow
-        )
-        if let shareControl {
-            gtk_widget_set_size_request(shareControl, 52, -1)
-            tc_gtk_add_class(shareControl, "tokenclock-detail-third-chip")
-        }
         let valueControl = appendControl(
             valueMode == .costPercent
                 ? "✓  \(tr("detail.byPercent"))\n   \(tr("detail.todayUsage"))"
@@ -383,7 +381,7 @@ final class LinuxDetailsPanel: @unchecked Sendable {
             name: "details:value-mode", prominent: true, to: displayRow
         )
         if let valueControl {
-            gtk_widget_set_size_request(valueControl, 70, -1)
+            gtk_widget_set_size_request(valueControl, 86, -1)
             tc_gtk_add_class(valueControl, "tokenclock-detail-third-chip")
             gtk_widget_set_tooltip_text(valueControl, tr("detail.valueModeHelp"))
         }
@@ -454,6 +452,7 @@ final class LinuxDetailsPanel: @unchecked Sendable {
             gtk_box_pack_start(tc_gtk_box(trailing), forecastLabel, 0, 0, 0)
         }
         if let notificationButton = gtk_button_new(),
+           let actions = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0),
            let notificationContent = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 1),
            let bell = gtk_image_new_from_icon_name("notifications-symbolic", GTK_ICON_SIZE_MENU) {
             let unread = notifications.contains { !$0.isRead }
@@ -469,7 +468,16 @@ final class LinuxDetailsPanel: @unchecked Sendable {
             }
             gtk_container_add(tc_gtk_container(notificationButton), notificationContent)
             _ = tc_gtk_on_clicked(notificationButton, linuxDetailsAction, opaque)
-            gtk_box_pack_start(tc_gtk_box(trailing), notificationButton, 0, 0, 0)
+            gtk_box_pack_start(tc_gtk_box(actions), notificationButton, 0, 0, 0)
+            if let shareButton = gtk_button_new_with_label("↗") {
+                gtk_widget_set_name(shareButton, "details:share")
+                gtk_button_set_relief(tc_gtk_button(shareButton), GTK_RELIEF_NONE)
+                gtk_widget_set_opacity(shareButton, 0.55)
+                gtk_widget_set_tooltip_text(shareButton, tr("menu.shareUsage"))
+                _ = tc_gtk_on_clicked(shareButton, linuxDetailsAction, opaque)
+                gtk_box_pack_start(tc_gtk_box(actions), shareButton, 0, 0, 0)
+            }
+            gtk_box_pack_start(tc_gtk_box(trailing), actions, 0, 0, 0)
         }
         gtk_box_pack_end(tc_gtk_box(header), trailing, 0, 0, 0)
         gtk_box_pack_start(tc_gtk_box(box), header, 0, 0, 0)
@@ -899,6 +907,23 @@ final class LinuxDetailsPanel: @unchecked Sendable {
         return subscriptionAccounts(for: subscriptionProvider(provider)).first?.groups ?? []
     }
 
+    private func freshQuotaGroups(for provider: LinuxQuotaProvider) -> [ProviderQuotaGroup] {
+        let state: (CodexQuotaStatus, Date?)
+        switch provider {
+        case .codex: state = (codexQuota.status, codexQuota.refreshedAt)
+        case .claude: state = (claudeQuota.status, claudeQuota.refreshedAt)
+        case .antigravity: state = (antigravityQuota.status, antigravityQuota.refreshedAt)
+        case .cursor: state = (cursorQuota.status, cursorQuota.refreshedAt)
+        case .grokBot: state = (grokBotQuota.status, grokBotQuota.refreshedAt)
+        case .zhipu: state = (zhipuQuota.status, zhipuQuota.refreshedAt)
+        }
+        guard state.0 != .unavailable else { return [] }
+        let saved = subscriptionAccounts(for: subscriptionProvider(provider)).first
+        return DialQuotaResolver.freshGroups(
+            quotaGroups(for: provider), refreshedAt: state.1 ?? saved?.refreshedAt
+        )
+    }
+
     private func quotaDialHexColor(_ provider: LinuxQuotaProvider) -> String {
         let color: LinuxColor
         switch theme {
@@ -944,6 +969,9 @@ final class LinuxDetailsPanel: @unchecked Sendable {
             gtk_label_set_ellipsize(tc_gtk_label(name), PANGO_ELLIPSIZE_END)
             tc_gtk_add_class(name, "tokenclock-quota-source")
             gtk_box_pack_start(tc_gtk_box(row), name, 1, 1, 0)
+            if DialQuotaResolver.freshGroups(account.groups, refreshedAt: account.refreshedAt).isEmpty {
+                appendQuotaChip(tr("quota.snapshotStale"), to: row)
+            }
             if let plan = account.effectivePlan {
                 appendQuotaChip(tr("quota.plan", displayPlan(plan)), to: row)
             }
@@ -1403,8 +1431,11 @@ final class LinuxDetailsPanel: @unchecked Sendable {
         return localized(zh: "\(Int(seconds / 3_600)) 小时前", en: "\(Int(seconds / 3_600))h ago")
     }
 
-    private func refreshQuota(force: Bool = false) {
-        if !quotaFetchInFlight && (force || codexQuota.status != .available || codexQuota.isStale) {
+    private func refreshQuota(
+        force: Bool = false,
+        providers: Set<LinuxQuotaProvider> = Set(LinuxQuotaProvider.allCases)
+    ) {
+        if providers.contains(.codex), !quotaFetchInFlight && (force || codexQuota.status != .available || codexQuota.isStale) {
             quotaFetchInFlight = true
             codexQuota = .loading(previous: codexQuota)
             DispatchQueue.global(qos: .utility).async { [weak self] in
@@ -1414,7 +1445,7 @@ final class LinuxDetailsPanel: @unchecked Sendable {
                 _ = tc_gtk_idle_add(linuxDetailsQuotaReady, self.opaque)
             }
         }
-        if !claudeQuotaFetchInFlight && (force || claudeQuota.status != .available || claudeQuota.isStale) {
+        if providers.contains(.claude), !claudeQuotaFetchInFlight && (force || claudeQuota.status != .available || claudeQuota.isStale) {
             claudeQuotaFetchInFlight = true
             claudeQuota = .loading(previous: claudeQuota)
             DispatchQueue.global(qos: .utility).async { [weak self] in
@@ -1424,7 +1455,7 @@ final class LinuxDetailsPanel: @unchecked Sendable {
                 _ = tc_gtk_idle_add(linuxDetailsClaudeQuotaReady, self.opaque)
             }
         }
-        if !antigravityQuotaFetchInFlight && (force || antigravityQuota.status != .available || antigravityQuota.isStale) {
+        if providers.contains(.antigravity), !antigravityQuotaFetchInFlight && (force || antigravityQuota.status != .available || antigravityQuota.isStale) {
             antigravityQuotaFetchInFlight = true
             antigravityQuota = .loading(previous: antigravityQuota)
             DispatchQueue.global(qos: .utility).async { [weak self] in
@@ -1434,7 +1465,7 @@ final class LinuxDetailsPanel: @unchecked Sendable {
                 _ = tc_gtk_idle_add(linuxDetailsAntigravityQuotaReady, self.opaque)
             }
         }
-        if !cursorQuotaFetchInFlight && (force || cursorQuota.status != .available || cursorQuota.isStale) {
+        if providers.contains(.cursor), !cursorQuotaFetchInFlight && (force || cursorQuota.status != .available || cursorQuota.isStale) {
             cursorQuotaFetchInFlight = true
             cursorQuota = .loading(previous: cursorQuota)
             DispatchQueue.global(qos: .utility).async { [weak self] in
@@ -1444,7 +1475,7 @@ final class LinuxDetailsPanel: @unchecked Sendable {
                 _ = tc_gtk_idle_add(linuxDetailsCursorQuotaReady, self.opaque)
             }
         }
-        if !grokBotQuotaFetchInFlight && (force || grokBotQuota.status != .available || grokBotQuota.isStale) {
+        if providers.contains(.grokBot), !grokBotQuotaFetchInFlight && (force || grokBotQuota.status != .available || grokBotQuota.isStale) {
             grokBotQuotaFetchInFlight = true
             grokBotQuota = .loading(previous: grokBotQuota)
             DispatchQueue.global(qos: .utility).async { [weak self] in
@@ -1454,7 +1485,7 @@ final class LinuxDetailsPanel: @unchecked Sendable {
                 _ = tc_gtk_idle_add(linuxDetailsGrokBotQuotaReady, self.opaque)
             }
         }
-        if !zhipuQuotaFetchInFlight && (force || zhipuQuota.status != .available || zhipuQuota.isStale) {
+        if providers.contains(.zhipu), !zhipuQuotaFetchInFlight && (force || zhipuQuota.status != .available || zhipuQuota.isStale) {
             zhipuQuotaFetchInFlight = true
             zhipuQuota = .loading(previous: zhipuQuota)
             DispatchQueue.global(qos: .utility).async { [weak self] in
