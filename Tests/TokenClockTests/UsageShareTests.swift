@@ -5,6 +5,22 @@ import XCTest
 import AppKit
 
 final class UsageShareTests: XCTestCase {
+    func testRecentDaysAndNaturalMonthWeeksHaveExactBounds() {
+        let september = Calendar.current.date(from: DateComponents(year: 2026, month: 9, day: 11))!
+        let recent = UsageSharePeriod.recent(days: 7, ending: september).bounds
+        XCTAssertEqual(DateHelper.dateKey(from: recent.start), "2026-09-05")
+        XCTAssertEqual(DateHelper.dateKey(from: recent.end), "2026-09-11")
+
+        let week = UsageSharePeriod.weekOfMonth(containing: september, index: 2).bounds
+        XCTAssertEqual(DateHelper.dateKey(from: week.start), "2026-09-07")
+        XCTAssertEqual(DateHelper.dateKey(from: week.end), "2026-09-13")
+
+        let february = Calendar.current.date(from: DateComponents(year: 2024, month: 2, day: 12))!
+        let month = UsageSharePeriod.month(containing: february).bounds
+        XCTAssertEqual(DateHelper.dateKey(from: month.start), "2024-02-01")
+        XCTAssertEqual(DateHelper.dateKey(from: month.end), "2024-02-29")
+    }
+
     func testShareDataKeepsSixLargestToolsAndAggregatesTheRest() {
         let overview = makeOverview()
         let date = Calendar.current.date(from: DateComponents(year: 2026, month: 9, day: 11))!
@@ -24,15 +40,17 @@ final class UsageShareTests: XCTestCase {
     func testShareCardRendersToExpectedPNGSize() throws {
         let date = Calendar.current.date(from: DateComponents(year: 2026, month: 9, day: 11))!
         let data = UsageShareBuilder.make(date: date, overview: makeOverview())
-        let image = try XCTUnwrap(UsageShareImageRenderer.image(for: data))
-        let representation = try XCTUnwrap(image.representations.first)
-        XCTAssertEqual(representation.pixelsWide, 1_200)
-        XCTAssertEqual(representation.pixelsHigh, 1_500)
+        for style in UsageShareStyle.allCases {
+            let image = try XCTUnwrap(UsageShareImageRenderer.image(for: data, style: style))
+            let representation = try XCTUnwrap(image.representations.first)
+            XCTAssertEqual(representation.pixelsWide, 1_200)
+            XCTAssertEqual(representation.pixelsHigh, 1_500)
 
-        if let output = ProcessInfo.processInfo.environment["TOKENCLOCK_SHARE_PREVIEW_PATH"] {
-            let bitmap = try XCTUnwrap(NSBitmapImageRep(data: try XCTUnwrap(image.tiffRepresentation)))
-            let png = try XCTUnwrap(bitmap.representation(using: .png, properties: [:]))
-            try png.write(to: URL(fileURLWithPath: output), options: .atomic)
+            if let directory = ProcessInfo.processInfo.environment["TOKENCLOCK_SHARE_PREVIEW_DIR"] {
+                let bitmap = try XCTUnwrap(NSBitmapImageRep(data: try XCTUnwrap(image.tiffRepresentation)))
+                let png = try XCTUnwrap(bitmap.representation(using: .png, properties: [:]))
+                try png.write(to: URL(fileURLWithPath: directory).appendingPathComponent("share-\(style.rawValue).png"), options: .atomic)
+            }
         }
     }
 

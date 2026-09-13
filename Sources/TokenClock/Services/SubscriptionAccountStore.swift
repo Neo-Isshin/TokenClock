@@ -41,6 +41,22 @@ struct DialQuotaIndicator: Identifiable, Equatable, Sendable {
 }
 
 enum DialQuotaResolver {
+    /// A persisted percentage is only a snapshot. Never put an expired snapshot
+    /// on the live clock face while the next provider request is still pending.
+    static func freshGroups(
+        _ groups: [ProviderQuotaGroup], refreshedAt: Date?,
+        now: Date = Date(), maximumAge: TimeInterval = 15 * 60
+    ) -> [ProviderQuotaGroup] {
+        guard let refreshedAt,
+              now.timeIntervalSince(refreshedAt) >= 0,
+              now.timeIntervalSince(refreshedAt) <= maximumAge else { return [] }
+        return groups.compactMap { group in
+            let buckets = group.buckets.filter { $0.resetsAt.map { $0 > now } ?? true }
+            guard !buckets.isEmpty else { return nil }
+            return ProviderQuotaGroup(id: group.id, name: group.name, buckets: buckets)
+        }
+    }
+
     /// First-run default: surface the provider whose primary quota card has been consumed most.
     /// The caller supplies panel order so ties stay deterministic and match what the user sees.
     static func defaultProvider(

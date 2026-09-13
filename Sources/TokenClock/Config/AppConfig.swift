@@ -54,7 +54,7 @@ enum AppConfig {
         static let codexSessionLookbackDays = 2
         /// Gemini 面板同样只展示当日/最近用量；保留今天+昨天以覆盖跨日会话。
         static let geminiSessionLookbackDays = 2
-        /// Codex 额度仅在用户打开额度面板时请求；短缓存避免反复开 app-server。
+        /// Codex 额度在面板打开或选为表盘额度环时读取；短缓存避免反复开 app-server。
         static let codexQuotaCacheSeconds: TimeInterval = 60
         /// app-server 异常时必须及时回收子进程，不能让详情页点击产生常驻后台任务。
         static let codexQuotaTimeoutSeconds: TimeInterval = 8
