@@ -147,7 +147,7 @@ final class ViewModel: ObservableObject {
 
     var dialQuotaIndicators: [DialQuotaIndicator] {
         dialQuotaProviders.compactMap { provider in
-            DialQuotaResolver.resolve(provider: provider, groups: quotaGroups(for: provider))
+            DialQuotaResolver.resolve(provider: provider, groups: freshQuotaGroups(for: provider))
         }
     }
 
@@ -175,6 +175,7 @@ final class ViewModel: ObservableObject {
         } else {
             guard dialQuotaProviders.count < 2 else { return }
             dialQuotaProviders.append(provider)
+            refreshSubscriptionQuotas(providers: [provider])
         }
         UserDefaults.standard.setStringArray(
             dialQuotaProviders.map(\.rawValue), for: .dialQuotaProviders
@@ -358,6 +359,9 @@ final class ViewModel: ObservableObject {
         runInitialPathDetection()
         setupPricingObservers()
         startTimers()
+        if !dialQuotaProviders.isEmpty {
+            refreshSubscriptionQuotas(providers: Set(dialQuotaProviders))
+        }
         // 日结历史:启动时检查上次结算日(漏了不补打,SQLite 有啥返回啥)
         performStartupHistoryCatchup()
         scheduleNextDailySettlement()
@@ -420,8 +424,10 @@ final class ViewModel: ObservableObject {
         refreshSubscriptionQuotas()
     }
 
-    func refreshSubscriptionQuotas() {
-        if codexQuota.status != .loading {
+    func refreshSubscriptionQuotas(
+        providers: Set<SubscriptionProvider> = Set(SubscriptionProvider.allCases)
+    ) {
+        if providers.contains(.codex), codexQuota.status != .loading {
             codexQuotaTask?.cancel()
             codexQuota = .loading(previous: codexQuota)
             let service = codexQuotaService
@@ -435,7 +441,7 @@ final class ViewModel: ObservableObject {
                 self?.selectAutomaticDialQuotaProviderIfReady()
             }
         }
-        if claudeQuota.status != .loading {
+        if providers.contains(.claude), claudeQuota.status != .loading {
             claudeQuotaTask?.cancel()
             claudeQuota = .loading(previous: claudeQuota)
             let service = claudeQuotaService
@@ -449,7 +455,7 @@ final class ViewModel: ObservableObject {
                 self?.selectAutomaticDialQuotaProviderIfReady()
             }
         }
-        if antigravityQuota.status != .loading {
+        if providers.contains(.antigravity), antigravityQuota.status != .loading {
             antigravityQuotaTask?.cancel()
             antigravityQuota = .loading(previous: antigravityQuota)
             let service = antigravityQuotaService
@@ -461,7 +467,7 @@ final class ViewModel: ObservableObject {
                 self?.selectAutomaticDialQuotaProviderIfReady()
             }
         }
-        if cursorQuota.status != .loading {
+        if providers.contains(.cursor), cursorQuota.status != .loading {
             cursorQuotaTask?.cancel()
             cursorQuota = .loading(previous: cursorQuota)
             let service = cursorQuotaService
@@ -473,8 +479,8 @@ final class ViewModel: ObservableObject {
                 self?.selectAutomaticDialQuotaProviderIfReady()
             }
         }
-        refreshGrokBotQuota()
-        if zhipuQuota.status != .loading {
+        if providers.contains(.grokBot) { refreshGrokBotQuota() }
+        if providers.contains(.zhipu), zhipuQuota.status != .loading {
             zhipuQuotaTask?.cancel()
             zhipuQuota = .loading(previous: zhipuQuota)
             let service = zhipuQuotaService
@@ -588,6 +594,24 @@ final class ViewModel: ObservableObject {
         }
         if !live.isEmpty { return live }
         return subscriptionAccounts(for: provider).first?.groups ?? []
+    }
+
+    private func freshQuotaGroups(for provider: SubscriptionProvider, now: Date = Date()) -> [ProviderQuotaGroup] {
+        guard quotaStatus(for: provider) != .unavailable else { return [] }
+        let refreshedAt: Date?
+        switch provider {
+        case .codex: refreshedAt = codexQuota.refreshedAt
+        case .claude: refreshedAt = claudeQuota.refreshedAt
+        case .antigravity: refreshedAt = antigravityQuota.refreshedAt
+        case .cursor: refreshedAt = cursorQuota.refreshedAt
+        case .grokBot: refreshedAt = grokBotQuota.refreshedAt
+        case .zhipu: refreshedAt = zhipuQuota.refreshedAt
+        }
+        if let refreshedAt {
+            return DialQuotaResolver.freshGroups(quotaGroups(for: provider), refreshedAt: refreshedAt, now: now)
+        }
+        let saved = subscriptionAccounts(for: provider).first
+        return DialQuotaResolver.freshGroups(saved?.groups ?? [], refreshedAt: saved?.refreshedAt, now: now)
     }
 
     func updateSubscriptionAccount(id: String, note: String, manualPlan: String?) {
@@ -1051,6 +1075,9 @@ final class ViewModel: ObservableObject {
         weatherTimer = Timer.scheduledTimer(withTimeInterval: AppConfig.Timers.weather, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 self?.refreshWeather()
+                if let self, !self.dialQuotaProviders.isEmpty {
+                    self.refreshSubscriptionQuotas(providers: Set(self.dialQuotaProviders))
+                }
             }
         }
 

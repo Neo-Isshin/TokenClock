@@ -208,7 +208,7 @@ struct DetailDropdownView: View {
                         hovered: cacheHovered,
                         action: { onUsageIncludesCacheToggle?() }
                     )
-                    .frame(width: 52)
+                    .frame(width: 64)
                     .onHover { cacheHovered = $0 }
 
                     compactAction(
@@ -220,7 +220,7 @@ struct DetailDropdownView: View {
                         hovered: textColorHovered,
                         action: { onQuickContrast?() }
                     )
-                    .frame(width: 48)
+                    .frame(width: 58)
                     .onHover { textColorHovered = $0 }
 
                     compactAction(
@@ -231,19 +231,8 @@ struct DetailDropdownView: View {
                         hovered: historyHovered,
                         action: { onHistoryUsage?() }
                     )
-                    .frame(width: 62)
+                    .frame(width: 80)
                     .onHover { historyHovered = $0 }
-
-                    compactAction(
-                        icon: "square.and.arrow.up",
-                        title: "\(L10n.shared.tr("detail.shareImageLine1"))\n\(L10n.shared.tr("detail.shareImageLine2"))",
-                        subtitle: "",
-                        selected: false,
-                        hovered: shareHovered,
-                        action: { onShareUsage?() }
-                    )
-                    .frame(width: 52)
-                    .onHover { shareHovered = $0 }
 
                     compactAction(
                         icon: "dollarsign.circle",
@@ -253,7 +242,7 @@ struct DetailDropdownView: View {
                         hovered: percentHovered,
                         action: { onValueModeChange?(valueMode.next) }
                     )
-                    .frame(width: 70)
+                    .frame(width: 82)
                     .help(L10n.shared.tr("detail.valueModeHelp"))
                     .onHover { percentHovered = $0 }
                 }
@@ -648,7 +637,7 @@ struct DetailDropdownView: View {
         let hasForecast = !slots.isEmpty
 
         return VStack(spacing: 4) {
-            HStack(spacing: 0) {
+            HStack(alignment: .top, spacing: 0) {
                 Text("\(weather.emoji) \(localizedCityName.isEmpty ? weather.cityName : localizedCityName) \(weather.temperature)°C")
                     .font(.system(size: 12, weight: .medium))
                     .foregroundColor(textColor)
@@ -661,7 +650,10 @@ struct DetailDropdownView: View {
                         .foregroundColor(subtextColor)
                         .offset(x: 2)
                 }
-                forecastNotificationButton
+                VStack(spacing: 0) {
+                    forecastNotificationButton
+                    forecastShareButton
+                }
             }
             .padding(.horizontal, 12)
 
@@ -713,6 +705,21 @@ struct DetailDropdownView: View {
         .help(L10n.shared.tr("notification.open"))
         .accessibilityLabel(Text(L10n.shared.tr("notification.open")))
         .onHover { notificationHovered = $0 }
+        .offset(x: 6)
+    }
+
+    private var forecastShareButton: some View {
+        Button { onShareUsage?() } label: {
+            Image(systemName: "square.and.arrow.up")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundColor(textColor.opacity(shareHovered ? 0.78 : 0.42))
+                .frame(width: 16, height: 16)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(L10n.shared.tr("menu.shareUsage"))
+        .accessibilityLabel(Text(L10n.shared.tr("menu.shareUsage")))
+        .onHover { shareHovered = $0 }
         .offset(x: 6)
     }
 

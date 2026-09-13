@@ -98,6 +98,19 @@ final class SubscriptionAccountStoreTests: XCTestCase {
         XCTAssertEqual(account.groups.first?.buckets.first?.usedPercent, 75)
     }
 
+    func testDialRejectsOldAndAlreadyResetQuotaSnapshots() {
+        let now = Date(timeIntervalSince1970: 2_000_000_000)
+        let group = ProviderQuotaGroup(id: "g", name: "Subscription", buckets: [
+            CodexQuotaBucket(id: "live", name: "Codex", usedPercent: 34,
+                             windowMinutes: 10_080, resetsAt: now.addingTimeInterval(3_600)),
+            CodexQuotaBucket(id: "reset", name: "Codex", usedPercent: 37,
+                             windowMinutes: 300, resetsAt: now.addingTimeInterval(-1)),
+        ])
+        XCTAssertTrue(DialQuotaResolver.freshGroups([group], refreshedAt: now.addingTimeInterval(-16 * 60), now: now).isEmpty)
+        let fresh = DialQuotaResolver.freshGroups([group], refreshedAt: now.addingTimeInterval(-5 * 60), now: now)
+        XCTAssertEqual(fresh.first?.buckets.map(\.id), ["live"])
+    }
+
     private func record(id: String, email: String, used: Double) -> SubscriptionAccountRecord {
         SubscriptionAccountRecord(
             provider: .codex, accountID: id, email: email, note: "", detectedPlan: "pro",

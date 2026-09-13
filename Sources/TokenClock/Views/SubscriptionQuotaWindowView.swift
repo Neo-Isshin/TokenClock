@@ -266,12 +266,16 @@ struct SubscriptionQuotaWindowView: View {
 
     private func accountCard(_ account: SubscriptionAccountRecord) -> some View {
         let isCurrent = viewModel.activeSubscriptionAccountIDs[account.provider] == account.id
+        let isStale = DialQuotaResolver.freshGroups(
+            account.groups, refreshedAt: account.refreshedAt
+        ).isEmpty
         return VStack(alignment: .leading, spacing: 9) {
             HStack(spacing: 7) {
                 Text(account.displayName)
                     .font(.system(size: 11.5, weight: .semibold, design: .rounded))
                     .lineLimit(1)
                 Spacer(minLength: 4)
+                if isStale { metaChip(L10n.shared.tr("quota.snapshotStale")) }
                 if let plan = account.effectivePlan { metaChip(L10n.shared.tr("quota.plan", displayPlan(plan))) }
                 Button {
                     expandedEmails.remove(account.id)
