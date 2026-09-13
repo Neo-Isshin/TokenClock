@@ -3,6 +3,7 @@ import XCTest
 
 #if os(macOS)
 import AppKit
+import SwiftUI
 
 final class UsageShareTests: XCTestCase {
     func testRecentDaysAndNaturalMonthWeeksHaveExactBounds() {
@@ -51,6 +52,28 @@ final class UsageShareTests: XCTestCase {
                 let png = try XCTUnwrap(bitmap.representation(using: .png, properties: [:]))
                 try png.write(to: URL(fileURLWithPath: directory).appendingPathComponent("share-\(style.rawValue).png"), options: .atomic)
             }
+        }
+    }
+
+    @MainActor
+    func testShareChooserRendersAllControlsWithoutClipping() throws {
+        let date = Calendar.current.date(from: DateComponents(year: 2026, month: 9, day: 11))!
+        let size = NSSize(width: 470, height: 680)
+        let view = NSHostingView(rootView: UsageShareWindowView(initialDate: date, onDone: {}))
+        view.frame = NSRect(origin: .zero, size: size)
+        view.layoutSubtreeIfNeeded()
+        let bitmap = try XCTUnwrap(NSBitmapImageRep(
+            bitmapDataPlanes: nil, pixelsWide: 940, pixelsHigh: 1_360,
+            bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+            colorSpaceName: .deviceRGB, bitmapFormat: [], bytesPerRow: 0, bitsPerPixel: 0
+        ))
+        bitmap.size = size
+        view.cacheDisplay(in: view.bounds, to: bitmap)
+        XCTAssertEqual(bitmap.pixelsWide, 940)
+        XCTAssertEqual(bitmap.pixelsHigh, 1_360)
+        if let path = ProcessInfo.processInfo.environment["TOKENCLOCK_SHARE_CHOOSER_PREVIEW_PATH"] {
+            try XCTUnwrap(bitmap.representation(using: .png, properties: [:]))
+                .write(to: URL(fileURLWithPath: path), options: .atomic)
         }
     }
 
