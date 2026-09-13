@@ -14,11 +14,12 @@ struct WindowsShareRendererTests {
         defer { if previewPath == nil { try? FileManager.default.removeItem(at: path) } }
 
         let values = [
-            "September 11, 2026", "3.6M", "TOKENS", "144", "MESSAGES",
+            "2026-09-05 — 2026-09-11", "3.6M", "TOKENS", "144", "MESSAGES",
             "33.33%", "CACHE", "TOOL BREAKDOWN",
             "⚛️\tCodex\t1.8M\t0.5\n✳️\tClaude Code\t1.2M\t0.333333\n💎\tCursor Agent\t600K\t0.166667",
             "No usage", "Every call moves an idea one step closer to reality.",
             "Made with TokenClock",
+            "Last 7 days", "AI USAGE FIELD NOTES", "TOTAL USAGE", "TOOLS",
         ]
         let result = withCStrings(values) { pointers -> Int32 in
             var card = win_share_card()
@@ -27,6 +28,9 @@ struct WindowsShareRendererTests {
             card.cache = pointers[5]; card.cache_label = pointers[6]
             card.breakdown_label = pointers[7]; card.rows = pointers[8]
             card.empty_label = pointers[9]; card.quote = pointers[10]; card.generated_by = pointers[11]
+            card.period_label = pointers[12]; card.report_label = pointers[13]
+            card.total_label = pointers[14]; card.tools_label = pointers[15]
+            card.style = Int32(ProcessInfo.processInfo.environment["TOKENCLOCK_SHARE_STYLE"] ?? "0") ?? 0
             return path.path.withCString { output in
                 withUnsafePointer(to: &card) { win_share_card_save_png($0, output) }
             }

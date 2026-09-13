@@ -267,6 +267,11 @@ typedef struct {
     const char *empty_label;
     const char *quote;
     const char *generated_by;
+    const char *period_label;
+    const char *report_label;
+    const char *total_label;
+    const char *tools_label;
+    int style;  /* 0 Ink, 1 Paper, 2 Cobalt */
 } win_share_card;
 
 int win_share_card_save_png(const win_share_card *card, const char *path_utf8);

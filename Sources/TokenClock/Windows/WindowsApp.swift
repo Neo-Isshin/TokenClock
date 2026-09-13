@@ -166,6 +166,18 @@ final class WindowsApp: @unchecked Sendable {
     private var overviewCustomStart = Calendar.current.date(byAdding: .day, value: -6, to: Date()) ?? Date()
     private var overviewCustomEnd = Date()
     private var shareDate = Date()
+    private enum ShareMode { case recent, month, week }
+    private var shareMode: ShareMode = .recent
+    private var shareDays = 7
+    private var shareWeekIndex = 1
+    private var shareStyle: UsageShareStyle = .ink
+    private var sharePeriod: UsageSharePeriod {
+        switch shareMode {
+        case .recent: return .recent(days: shareDays, ending: shareDate)
+        case .month: return .month(containing: shareDate)
+        case .week: return .weekOfMonth(containing: shareDate, index: shareWeekIndex)
+        }
+    }
     private var pendingShareOutputPath = ProcessInfo.processInfo.environment["TC_SHARE_OUTPUT"]
     private var quotaOrderEditing = false
     private var dialQuotaProviders: [SubscriptionProvider] = {
@@ -253,6 +265,9 @@ final class WindowsApp: @unchecked Sendable {
             api?.start(port: apiPort)
         }
         scheduleScan(incremental: false)
+        if !dialQuotaProviders.isEmpty {
+            refreshSubscriptionQuotas(force: false, providers: Set(dialQuotaProviders))
+        }
 
         // 天气：监听 .weatherUpdated → 格式化暂存，render 时叠到盘面顶部；按选定城市抓取
         weatherObserver = NotificationCenter.default.addObserver(forName: .weatherUpdated, object: nil, queue: nil) { [weak self] note in
@@ -351,7 +366,7 @@ final class WindowsApp: @unchecked Sendable {
             "\(L.tr("detail.cacheDataLine1"))\n\(L.tr("detail.cacheDataLine2"))",
             "\(L.tr("detail.textColorLine1"))\n\(L.tr("detail.textColorLine2"))",
             "\(L.tr("detail.historyUsageLine1"))\n\(L.tr("detail.historyUsageLine2"))",
-            "\(L.tr("detail.shareImageLine1"))\n\(L.tr("detail.shareImageLine2"))", modeLabel,
+            modeLabel,
         ].joined(separator: "\t")
         let detailHeader = [L.tr(groupingMode == .model ? "detail.model" : "detail.instance"),
                             L.tr(valueMode == .tokens ? "detail.todayUsage" : "detail.cost"),
@@ -592,8 +607,11 @@ final class WindowsApp: @unchecked Sendable {
         theme.dd_subtext = secondary
     }
 
-    private func refreshSubscriptionQuotas(force: Bool) {
-        if codexQuotaState.begin(force: force) {
+    private func refreshSubscriptionQuotas(
+        force: Bool,
+        providers: Set<SubscriptionProvider> = Set(SubscriptionProvider.allCases)
+    ) {
+        if providers.contains(.codex), codexQuotaState.begin(force: force) {
             let service = codexQuotaService
             let state = codexQuotaState
             DispatchQueue.global(qos: .userInitiated).async {
@@ -601,7 +619,7 @@ final class WindowsApp: @unchecked Sendable {
                 if let dialog = WindowsApp.shared.quotaDlg { dlg_post_command(dialog, 980) }
             }
         }
-        if claudeQuotaState.begin(force: force) {
+        if providers.contains(.claude), claudeQuotaState.begin(force: force) {
             let service = claudeQuotaService
             let state = claudeQuotaState
             DispatchQueue.global(qos: .userInitiated).async {
@@ -609,28 +627,28 @@ final class WindowsApp: @unchecked Sendable {
                 if let dialog = WindowsApp.shared.quotaDlg { dlg_post_command(dialog, 980) }
             }
         }
-        if antigravityQuotaState.begin(force: force) {
+        if providers.contains(.antigravity), antigravityQuotaState.begin(force: force) {
             let service = antigravityQuotaService, state = antigravityQuotaState
             DispatchQueue.global(qos: .userInitiated).async {
                 state.finish(service.fetch())
                 if let dialog = WindowsApp.shared.quotaDlg { dlg_post_command(dialog, 980) }
             }
         }
-        if cursorQuotaState.begin(force: force) {
+        if providers.contains(.cursor), cursorQuotaState.begin(force: force) {
             let service = cursorQuotaService, state = cursorQuotaState
             DispatchQueue.global(qos: .userInitiated).async {
                 state.finish(service.fetch())
                 if let dialog = WindowsApp.shared.quotaDlg { dlg_post_command(dialog, 980) }
             }
         }
-        if grokBotQuotaState.begin(force: force) {
+        if providers.contains(.grokBot), grokBotQuotaState.begin(force: force) {
             let service = grokBotQuotaService, state = grokBotQuotaState
             DispatchQueue.global(qos: .userInitiated).async {
                 state.finish(service.fetch())
                 if let dialog = WindowsApp.shared.quotaDlg { dlg_post_command(dialog, 980) }
             }
         }
-        if zhipuQuotaState.begin(force: force) {
+        if providers.contains(.zhipu), zhipuQuotaState.begin(force: force) {
             let service = zhipuQuotaService, state = zhipuQuotaState
             DispatchQueue.global(qos: .userInitiated).async {
                 state.finish(service.fetch())
@@ -805,6 +823,9 @@ final class WindowsApp: @unchecked Sendable {
             self?.model.scan(incremental: incremental)
         }
         scanCount &+= 1
+        if scanCount % 10 == 0, !dialQuotaProviders.isEmpty {
+            refreshSubscriptionQuotas(force: false, providers: Set(dialQuotaProviders))
+        }
         if scanCount % 20 == 0 { WindowsWeather.refresh(forCity: selectedCity) }   // 每 ~10 分钟刷新一次天气
     }
 
@@ -846,8 +867,9 @@ final class WindowsApp: @unchecked Sendable {
         guard localX >= 0, localX < detailCardWidth else { return }
         let localY = Double(y - dialHeight) - 14.0
         let forecastHeight = weatherLock.withLock { weatherInfo?.cityName.isEmpty == false } ? 76.0 : 0.0
-        if forecastHeight > 0, localY >= 0, localY < 34, localX >= detailCardWidth - 36 {
-            openNotifications()
+        if forecastHeight > 0, localY >= 0, localY < 52, localX >= detailCardWidth - 36 {
+            if localY < 27 { openNotifications() }
+            else { openUsageShare() }
             return
         }
         let controlsY = localY - forecastHeight
@@ -863,16 +885,14 @@ final class WindowsApp: @unchecked Sendable {
         } else if controlsY >= 97, controlsY < 136 {
             let compactX = min(307, max(0, localX - 6.0))
             let item: Int
-            if compactX < 55 {
+            if compactX < 67 {
                 item = 0
-            } else if compactX < 105 {
+            } else if compactX < 128 {
                 item = 1
-            } else if compactX < 170 {
+            } else if compactX < 215 {
                 item = 2
-            } else if compactX < 225 {
-                item = 3
             } else {
-                item = 4
+                item = 3
             }
             if item == 0 {
                 UserDefaults.standard.setBool(!usageIncludesCache, for: .usageIncludesCacheRead)
@@ -880,8 +900,6 @@ final class WindowsApp: @unchecked Sendable {
                 cycleQuickContrast()
             } else if item == 2 {
                 openUsageOverview()
-            } else if item == 3 {
-                openUsageShare()
             } else {
                 setValueMode(valueMode.next)
             }
@@ -1324,7 +1342,9 @@ final class WindowsApp: @unchecked Sendable {
             let isCurrent = activeSubscriptionAccountIDs[provider] == account.id
             let source = isCurrent ? account.source : L10n.shared.tr("quota.savedSnapshot")
             let updated = account.refreshedAt.map { " · \(L10n.shared.tr("quota.updated", quotaUpdatedLabel($0)))" } ?? ""
-            dlg_add_subtitle(dialog, (isCurrent ? "●  " : "◐  ") + source + updated, x + 10, cursorY, width - 20, 18)
+            let stale = DialQuotaResolver.freshGroups(account.groups, refreshedAt: account.refreshedAt).isEmpty
+                ? " · \(L10n.shared.tr("quota.snapshotStale"))" : ""
+            dlg_add_subtitle(dialog, (isCurrent ? "●  " : "◐  ") + source + updated + stale, x + 10, cursorY, width - 20, 18)
             cursorY += 23
         }
         return cursorY + 4
@@ -1342,8 +1362,31 @@ final class WindowsApp: @unchecked Sendable {
 
     private func dialQuotaIndicators() -> [DialQuotaIndicator] {
         dialQuotaProviders.compactMap { provider in
-            DialQuotaResolver.resolve(provider: provider, groups: dialQuotaGroups(for: provider))
+            DialQuotaResolver.resolve(provider: provider, groups: freshDialQuotaGroups(for: provider))
         }
+    }
+
+    private func freshDialQuotaGroups(for provider: SubscriptionProvider) -> [ProviderQuotaGroup] {
+        let state: (CodexQuotaStatus, Date?)
+        switch provider {
+        case .codex:
+            let value = codexQuotaState.snapshot(); state = (value.status, value.refreshedAt)
+        case .claude:
+            let value = claudeQuotaState.snapshot(); state = (value.status, value.refreshedAt)
+        case .antigravity:
+            let value = antigravityQuotaState.snapshot(); state = (value.status, value.refreshedAt)
+        case .cursor:
+            let value = cursorQuotaState.snapshot(); state = (value.status, value.refreshedAt)
+        case .grokBot:
+            let value = grokBotQuotaState.snapshot(); state = (value.status, value.refreshedAt)
+        case .zhipu:
+            let value = zhipuQuotaState.snapshot(); state = (value.status, value.refreshedAt)
+        }
+        guard state.0 != .unavailable else { return [] }
+        let saved = subscriptionAccounts(for: provider).first
+        return DialQuotaResolver.freshGroups(
+            dialQuotaGroups(for: provider), refreshedAt: state.1 ?? saved?.refreshedAt
+        )
     }
 
     private func dialQuotaGroups(for provider: SubscriptionProvider) -> [ProviderQuotaGroup] {
@@ -1375,6 +1418,7 @@ final class WindowsApp: @unchecked Sendable {
         } else {
             guard dialQuotaProviders.count < 2 else { return }
             dialQuotaProviders.append(provider)
+            refreshSubscriptionQuotas(force: false, providers: [provider])
         }
         UserDefaults.standard.setStringArray(dialQuotaProviders.map(\.rawValue), for: .dialQuotaProviders)
         UserDefaults.standard.setString(dialQuotaProviders.first?.rawValue, for: .dialQuotaProvider)
@@ -1951,8 +1995,10 @@ final class WindowsApp: @unchecked Sendable {
     private func openUsageShare(initialDate: Date = Date()) {
         model.persistCurrentUsage()
         shareDate = min(initialDate, Date())
+        shareMode = .recent
+        shareDays = Calendar.current.isDateInToday(shareDate) ? 7 : 1
         guard shareDlg == nil,
-              let dialog = dlg_create(L10n.shared.tr("share.title"), 620, 700) else { return }
+              let dialog = dlg_create(L10n.shared.tr("share.title"), 620, 780) else { return }
         shareDlg = dialog
         renderShareDialog()
         _ = dlg_modal_cb(dialog, shareCmdCb, nil)
@@ -1961,85 +2007,134 @@ final class WindowsApp: @unchecked Sendable {
     }
 
     fileprivate func handleShareCmd(_ id: Int32) {
+        updateShareInputsFromEditor()
         switch id {
         case 1601:
-            shareDate = Calendar.current.date(byAdding: .day, value: -1, to: shareDate) ?? shareDate
+            moveShareDate(-1)
             renderShareDialog()
         case 1602:
-            shareDate = min(Date(), Calendar.current.date(byAdding: .day, value: 1, to: shareDate) ?? shareDate)
+            moveShareDate(1)
             renderShareDialog()
         case 1603:
-            updateShareDateFromEditor()
             renderShareDialog()
         case 1604:
-            updateShareDateFromEditor()
-            let data = UsageShareBuilder.load(date: shareDate)
-            let copied = withWindowsShareCard(data) { win_share_card_copy($0) != 0 }
+            let data = UsageShareBuilder.load(period: sharePeriod)
+            let copied = withWindowsShareCard(data, style: shareStyle) { win_share_card_copy($0) != 0 }
             if copied, let dialog = shareDlg { dlg_set_text(dialog, 1604, "✓  \(L10n.shared.tr("share.copyImage"))") }
         case 1605:
-            updateShareDateFromEditor()
             saveWindowsShareImage()
         case 1606:
             if let dialog = shareDlg { dlg_end(dialog, 0) }
+        case 1610: shareMode = .recent; renderShareDialog()
+        case 1611: shareMode = .month; renderShareDialog()
+        case 1612:
+            shareMode = .week
+            let day = Calendar.current.startOfDay(for: shareDate)
+            shareWeekIndex = (1...shareAvailableWeekCount).first {
+                let bounds = UsageSharePeriod.weekOfMonth(containing: shareDate, index: $0).bounds
+                return bounds.start <= day && day <= bounds.end
+            } ?? 1
+            renderShareDialog()
+        case 1615: shareStyle = .ink; renderShareDialog()
+        case 1616: shareStyle = .paper; renderShareDialog()
+        case 1617: shareStyle = .cobalt; renderShareDialog()
         default: break
         }
     }
 
+    private var shareAvailableWeekCount: Int {
+        let count = UsageSharePeriod.month(containing: shareDate).weekCount
+        guard Calendar.current.isDate(shareDate, equalTo: Date(), toGranularity: .month) else { return count }
+        let today = Calendar.current.startOfDay(for: Date())
+        return (1...count).last {
+            UsageSharePeriod.weekOfMonth(containing: shareDate, index: $0).bounds.start <= today
+        } ?? 1
+    }
+
+    private func moveShareDate(_ direction: Int) {
+        let component: Calendar.Component = shareMode == .recent ? .day : .month
+        guard let next = Calendar.current.date(byAdding: component, value: direction, to: shareDate) else { return }
+        shareDate = min(next, Date())
+        shareWeekIndex = min(shareWeekIndex, shareAvailableWeekCount)
+    }
+
     private func renderShareDialog() {
         guard let dialog = shareDlg else { return }
-        let data = UsageShareBuilder.load(date: shareDate)
-        dlg_reset_content(dialog, 680)
+        let data = UsageShareBuilder.load(period: sharePeriod)
+        dlg_reset_content(dialog, 760)
         dlg_add_title(dialog, L10n.shared.tr("share.title"), 24, 14, 300, 30)
-        dlg_add_subtitle(dialog, L10n.shared.tr("share.chooseDate"), 24, 48, 160, 22)
-        dlg_add_push(dialog, 1601, "‹", 188, 44, 34, 28)
-        dlg_add_edit(dialog, 1600, data.dateKey, 228, 44, 126, 28)
-        dlg_add_push(dialog, 1602, "›", 360, 44, 34, 28)
-        dlg_add_push(dialog, 1603, L10n.shared.tr("settings.done"), 402, 44, 82, 28)
+        dlg_add_subtitle(dialog, L10n.shared.tr("share.rangeHint"), 24, 44, 360, 22)
+        dlg_add_push(dialog, 1610, shareMode == .recent ? "✓  \(L10n.shared.tr("share.period.recent"))" : L10n.shared.tr("share.period.recent"), 22, 72, 182, 28)
+        dlg_add_push(dialog, 1611, shareMode == .month ? "✓  \(L10n.shared.tr("share.period.month"))" : L10n.shared.tr("share.period.month"), 210, 72, 182, 28)
+        dlg_add_push(dialog, 1612, shareMode == .week ? "✓  \(L10n.shared.tr("share.period.week"))" : L10n.shared.tr("share.period.week"), 398, 72, 190, 28)
+        dlg_add_push(dialog, 1601, "‹", 24, 111, 34, 28)
+        dlg_add_edit(dialog, 1600, DateHelper.dateKey(from: shareDate), 64, 111, 126, 28)
+        dlg_add_push(dialog, 1602, "›", 196, 111, 34, 28)
+        if shareMode == .recent {
+            dlg_add_static(dialog, L10n.shared.tr("share.period.recent"), 254, 113, 110, 22)
+            dlg_add_edit(dialog, 1613, "\(shareDays)", 369, 111, 52, 28)
+        } else if shareMode == .week {
+            dlg_add_static(dialog, L10n.shared.tr("share.period.week"), 254, 113, 110, 22)
+            dlg_add_edit(dialog, 1614, "\(shareWeekIndex)", 369, 111, 52, 28)
+            dlg_add_static(dialog, "/ \(shareAvailableWeekCount)", 426, 113, 50, 22)
+        }
+        dlg_add_push(dialog, 1603, L10n.shared.tr("settings.done"), 500, 111, 88, 28)
+        dlg_add_subtitle(dialog, "\(data.dateKey)  —  \(data.endDateKey)", 24, 146, 400, 20)
 
         appendShareMetricCard(dialog, x: 22, title: L10n.shared.tr("share.tokens"), value: TokenFormat.compact(data.totalTokens))
         appendShareMetricCard(dialog, x: 216, title: L10n.shared.tr("share.messages"), value: overviewNumber(data.messages))
         appendShareMetricCard(dialog, x: 410, title: L10n.shared.tr("share.cache"), value: String(format: "%.2f%%", data.averageCacheRate * 100))
 
-        dlg_add_section(dialog, L10n.shared.tr("share.toolBreakdown"), 24, 190, 300, 24)
-        dlg_add_card(dialog, 22, 218, 566, 278)
+        dlg_add_section(dialog, L10n.shared.tr("share.toolBreakdown"), 24, 268, 300, 24)
+        dlg_add_card(dialog, 22, 296, 566, 278)
         if data.rows.isEmpty {
-            dlg_add_subtitle(dialog, L10n.shared.tr("share.noUsage"), 42, 246, 526, 44)
+            dlg_add_subtitle(dialog, L10n.shared.tr("share.noUsage"), 42, 324, 526, 44)
         } else {
             for (index, row) in data.rows.enumerated() {
-                let y = 230 + Int32(index * 36)
+                let y = 308 + Int32(index * 36)
                 dlg_add_static(dialog, "\(row.emoji)  \(row.name)", 40, y, 368, 24)
                 dlg_add_static(dialog, TokenFormat.compact(row.tokens), 430, y, 132, 24)
                 if index + 1 < data.rows.count { dlg_add_sep(dialog, 40, y + 30, 522) }
             }
         }
 
-        dlg_add_card(dialog, 22, 508, 566, 82)
-        dlg_add_static(dialog, "“", 40, 520, 34, 38)
-        dlg_add_subtitle(dialog, L10n.shared.tr(data.quoteKey), 76, 518, 488, 54)
-        dlg_add_push(dialog, 1604, L10n.shared.tr("share.copyImage"), 22, 616, 132, 32)
-        dlg_add_push(dialog, 1605, L10n.shared.tr("share.savePNG"), 346, 616, 126, 32)
-        dlg_add_push(dialog, 1606, L10n.shared.tr("about.close"), 480, 616, 108, 32)
+        dlg_add_card(dialog, 22, 586, 566, 72)
+        dlg_add_static(dialog, "“", 40, 594, 34, 38)
+        dlg_add_subtitle(dialog, L10n.shared.tr(data.quoteKey), 76, 594, 488, 54)
+        dlg_add_push(dialog, 1615, shareStyle == .ink ? "✓ \(L10n.shared.tr("share.style.ink"))" : L10n.shared.tr("share.style.ink"), 22, 670, 100, 25)
+        dlg_add_push(dialog, 1616, shareStyle == .paper ? "✓ \(L10n.shared.tr("share.style.paper"))" : L10n.shared.tr("share.style.paper"), 128, 670, 100, 25)
+        dlg_add_push(dialog, 1617, shareStyle == .cobalt ? "✓ \(L10n.shared.tr("share.style.cobalt"))" : L10n.shared.tr("share.style.cobalt"), 234, 670, 100, 25)
+        dlg_add_push(dialog, 1604, L10n.shared.tr("share.copyImage"), 22, 706, 132, 32)
+        dlg_add_push(dialog, 1605, L10n.shared.tr("share.savePNG"), 346, 706, 126, 32)
+        dlg_add_push(dialog, 1606, L10n.shared.tr("about.close"), 480, 706, 108, 32)
     }
 
     private func appendShareMetricCard(
         _ dialog: UnsafeMutableRawPointer, x: Int32, title: String, value: String
     ) {
-        dlg_add_card(dialog, x, 92, 178, 78)
-        dlg_add_subtitle(dialog, title, x + 14, 102, 150, 20)
-        dlg_add_title(dialog, value, x + 14, 124, 150, 30)
+        dlg_add_card(dialog, x, 170, 178, 78)
+        dlg_add_subtitle(dialog, title, x + 14, 180, 150, 20)
+        dlg_add_title(dialog, value, x + 14, 202, 150, 30)
     }
 
-    private func updateShareDateFromEditor() {
-        guard let dialog = shareDlg,
-              let date = parseOverviewDate(settingsEditText(dialog, 1600)) else { return }
-        shareDate = min(date, Date())
+    private func updateShareInputsFromEditor() {
+        guard let dialog = shareDlg else { return }
+        if let date = parseOverviewDate(settingsEditText(dialog, 1600)) {
+            shareDate = min(date, Date())
+        }
+        if shareMode == .recent, let days = Int(settingsEditText(dialog, 1613)) {
+            shareDays = min(90, max(1, days))
+        }
+        if shareMode == .week, let week = Int(settingsEditText(dialog, 1614)) {
+            shareWeekIndex = min(shareAvailableWeekCount, max(1, week))
+        }
     }
 
     private func saveWindowsShareImage() {
         guard let dialog = shareDlg else { return }
-        let data = UsageShareBuilder.load(date: shareDate)
+        let data = UsageShareBuilder.load(period: sharePeriod)
         var buffer = [CChar](repeating: 0, count: 1_024)
-        let suggested = "TokenClock-\(data.dateKey).png"
+        let suggested = "TokenClock-\(data.dateKey)-\(data.endDateKey).png"
         let accepted = buffer.withUnsafeMutableBufferPointer { output in
             L10n.shared.tr("share.savePNG").withCString { title in
                 suggested.withCString { name in
@@ -2049,13 +2144,14 @@ final class WindowsApp: @unchecked Sendable {
         }
         guard accepted != 0 else { return }
         let path = buffer.withUnsafeBufferPointer { String(cString: $0.baseAddress!) }
-        _ = withWindowsShareCard(data) { pointer in
+        _ = withWindowsShareCard(data, style: shareStyle) { pointer in
             path.withCString { win_share_card_save_png(pointer, $0) }
         }
     }
 
     private func withWindowsShareCard<T>(
         _ data: UsageShareData,
+        style: UsageShareStyle = .ink,
         _ body: (UnsafePointer<win_share_card>) -> T
     ) -> T {
         let rows = data.rows.map { row in
@@ -2064,11 +2160,13 @@ final class WindowsApp: @unchecked Sendable {
             return "\(row.emoji)\t\(name)\t\(TokenFormat.compact(row.tokens))\t\(String(format: "%.6f", row.fraction))"
         }.joined(separator: "\n")
         let values = [
-            overviewDisplayDate(data.date), TokenFormat.compact(data.totalTokens), L10n.shared.tr("share.tokens"),
+            "\(data.dateKey) — \(data.endDateKey)", TokenFormat.compact(data.totalTokens), L10n.shared.tr("share.tokens"),
             overviewNumber(data.messages), L10n.shared.tr("share.messages"),
             String(format: "%.2f%%", data.averageCacheRate * 100), L10n.shared.tr("share.cache"),
             L10n.shared.tr("share.toolBreakdown"), rows, L10n.shared.tr("share.noUsage"),
             L10n.shared.tr(data.quoteKey), L10n.shared.tr("share.generatedBy"),
+            sharePeriodTitle(data.period), L10n.shared.tr("share.report"), L10n.shared.tr("share.totalUsage"),
+            L10n.shared.tr("share.tools"),
         ]
         return Self.withCStrings(values) { pointers in
             var card = win_share_card()
@@ -2077,7 +2175,19 @@ final class WindowsApp: @unchecked Sendable {
             card.cache = pointers[5]; card.cache_label = pointers[6]
             card.breakdown_label = pointers[7]; card.rows = pointers[8]
             card.empty_label = pointers[9]; card.quote = pointers[10]; card.generated_by = pointers[11]
+            card.period_label = pointers[12]; card.report_label = pointers[13]
+            card.total_label = pointers[14]; card.tools_label = pointers[15]
+            card.style = Int32(UsageShareStyle.allCases.firstIndex(of: style) ?? 0)
             return withUnsafePointer(to: &card, body)
+        }
+    }
+
+    private func sharePeriodTitle(_ period: UsageSharePeriod) -> String {
+        switch period {
+        case .recent(let days, _):
+            return days == 1 ? L10n.shared.tr("share.oneDay") : L10n.shared.tr("share.daysCount", days)
+        case .month: return L10n.shared.tr("share.period.month")
+        case .weekOfMonth(_, let index): return L10n.shared.tr("share.weekNumber", index)
         }
     }
 

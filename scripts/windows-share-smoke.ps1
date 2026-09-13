@@ -18,6 +18,7 @@ public static class TCShareSmoke {
   [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr h,out uint pid);
   [DllImport("user32.dll")] public static extern IntPtr GetDlgItem(IntPtr h,int id);
   [DllImport("user32.dll")] public static extern bool PostMessage(IntPtr h,uint m,IntPtr w,IntPtr l);
+  [DllImport("user32.dll",CharSet=CharSet.Unicode)] public static extern IntPtr SendMessage(IntPtr h,uint m,IntPtr w,StringBuilder text);
   [DllImport("user32.dll",CharSet=CharSet.Unicode)] public static extern bool SetWindowText(IntPtr h,string text);
   [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr h,out RECT rect);
   public static IntPtr Find(uint wantedPid,string wantedClass,int controlId) {
@@ -31,7 +32,6 @@ public static class TCShareSmoke {
 }
 "@
 
-Get-Process TokenClock -ErrorAction SilentlyContinue | Stop-Process -Force
 New-Item -ItemType Directory -Force -Path $Out | Out-Null
 $env:TC_SHARE='1'
 $env:TC_MOCK='model'
@@ -46,6 +46,29 @@ try {
     foreach($id in 1600,1604,1605,1606){
         if([TCShareSmoke]::GetDlgItem($dialog,$id)-eq[IntPtr]::Zero){throw "Share control $id is missing"}
     }
+
+    function Read-ShareDate {
+        $text=New-Object Text.StringBuilder 64
+        [void][TCShareSmoke]::SendMessage([TCShareSmoke]::GetDlgItem($dialog,1600),0x000D,[IntPtr]64,$text)
+        $text.ToString()
+    }
+    $initialDate=Read-ShareDate
+    [void][TCShareSmoke]::PostMessage($dialog,0x0111,[IntPtr]1601,[IntPtr]::Zero)
+    Start-Sleep -Milliseconds 250
+    $previousDate=Read-ShareDate
+    if($previousDate-eq$initialDate){throw 'Previous-date arrow did not change the selected date'}
+    [void][TCShareSmoke]::PostMessage($dialog,0x0111,[IntPtr]1602,[IntPtr]::Zero)
+    Start-Sleep -Milliseconds 250
+    $restoredDate=Read-ShareDate
+    if($restoredDate-ne$initialDate){throw 'Next-date arrow did not restore the selected date'}
+    [void][TCShareSmoke]::PostMessage($dialog,0x0111,[IntPtr]1611,[IntPtr]::Zero)
+    Start-Sleep -Milliseconds 200
+    [void][TCShareSmoke]::PostMessage($dialog,0x0111,[IntPtr]1612,[IntPtr]::Zero)
+    Start-Sleep -Milliseconds 200
+    if([TCShareSmoke]::GetDlgItem($dialog,1614)-eq[IntPtr]::Zero){throw 'Week-of-month control did not appear'}
+    [void][TCShareSmoke]::PostMessage($dialog,0x0111,[IntPtr]1610,[IntPtr]::Zero)
+    Start-Sleep -Milliseconds 200
+    if([TCShareSmoke]::GetDlgItem($dialog,1613)-eq[IntPtr]::Zero){throw 'Recent-days control did not appear'}
 
     $rect=New-Object TCShareSmoke+RECT
     [void][TCShareSmoke]::GetWindowRect($dialog,[ref]$rect)
@@ -83,6 +106,7 @@ try {
 
     [ordered]@{
         passed=$true; dialogCapture=$capturePath; clipboardImage=$clipboardImage;
+        previousDate=$previousDate; nextDateRestored=$restoredDate;
         interactiveDesktop=($null-ne$capturePath)
     } | ConvertTo-Json -Compress
 } finally {
