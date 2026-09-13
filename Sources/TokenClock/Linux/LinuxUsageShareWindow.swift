@@ -12,6 +12,7 @@ final class LinuxUsageShareWindow: @unchecked Sendable {
     private var recentDays = 7
     private var weekIndex = 1
     private var style: UsageShareStyle = .ink
+    private var includesCacheRead = false
     private var data = UsageShareBuilder.load(period: .recent(days: 7, ending: Date()))
     private var window: UnsafeMutablePointer<GtkWidget>?
     private var preview: UnsafeMutablePointer<GtkWidget>?
@@ -20,6 +21,7 @@ final class LinuxUsageShareWindow: @unchecked Sendable {
     private var copyButton: UnsafeMutablePointer<GtkWidget>?
     private var saveButton: UnsafeMutablePointer<GtkWidget>?
     private var rangeLabel: UnsafeMutablePointer<GtkWidget>?
+    private var cacheToggle: UnsafeMutablePointer<GtkWidget>?
     private var dayControl: UnsafeMutablePointer<GtkWidget>?
     private var weekControl: UnsafeMutablePointer<GtkWidget>?
     private var modeButtons: [Mode: UnsafeMutablePointer<GtkWidget>] = [:]
@@ -42,6 +44,7 @@ final class LinuxUsageShareWindow: @unchecked Sendable {
               let header = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8),
               let modes = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6),
               let navigation = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6),
+              let rangeRow = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6),
               let styles = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6),
               let drawing = gtk_drawing_area_new(),
               let actions = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8) else { return }
@@ -94,7 +97,15 @@ final class LinuxUsageShareWindow: @unchecked Sendable {
         let range = gtk_label_new("")
         rangeLabel = range
         gtk_label_set_xalign(tc_gtk_label(range), 0)
-        gtk_box_pack_start(tc_gtk_box(root), range, 0, 0, 0)
+        gtk_widget_set_hexpand(range, 1)
+        gtk_box_pack_start(tc_gtk_box(rangeRow), range, 1, 1, 0)
+        if let toggle = gtk_check_button_new_with_label(L10n.shared.tr("share.includeCache")) {
+            cacheToggle = toggle
+            gtk_widget_set_name(toggle, "share:include-cache")
+            _ = tc_gtk_on_clicked(toggle, linuxUsageShareAction, opaque)
+            gtk_box_pack_start(tc_gtk_box(rangeRow), toggle, 0, 0, 0)
+        }
+        gtk_box_pack_start(tc_gtk_box(root), rangeRow, 0, 0, 0)
 
         gtk_widget_set_size_request(drawing, 354, 443)
         _ = tc_gtk_on_draw(drawing, linuxUsageShareDraw, opaque)
@@ -139,6 +150,7 @@ final class LinuxUsageShareWindow: @unchecked Sendable {
         selectedDate = min(initialDate, Date())
         mode = .recent
         recentDays = Calendar.current.isDateInToday(selectedDate) ? 7 : 1
+        includesCacheRead = false
         refresh()
         if let output = ProcessInfo.processInfo.environment["TC_SHARE_OUTPUT"] {
             _ = renderer.writePNG(data: data, style: style, to: output)
@@ -161,6 +173,9 @@ final class LinuxUsageShareWindow: @unchecked Sendable {
         for (choice, button) in styleButtons {
             gtk_button_set_label(tc_gtk_button(button), L10n.shared.tr(choice.titleKey))
         }
+        if let cacheToggle {
+            gtk_button_set_label(tc_gtk_button(cacheToggle), L10n.shared.tr("share.includeCache"))
+        }
         refresh()
     }
 
@@ -177,6 +192,9 @@ final class LinuxUsageShareWindow: @unchecked Sendable {
     fileprivate func handleAction(_ widget: UnsafeMutablePointer<GtkWidget>) {
         switch String(cString: tc_gtk_widget_name(widget)) {
         case "share:date": chooseDate()
+        case "share:include-cache":
+            includesCacheRead = gtk_toggle_button_get_active(tc_gtk_toggle_button(widget)) != 0
+            refresh()
         case "share:prev": moveDate(-1)
         case "share:next": moveDate(1)
         case "share:recent": mode = .recent; refresh()
@@ -278,7 +296,10 @@ final class LinuxUsageShareWindow: @unchecked Sendable {
     }
 
     private func refresh() {
-        data = UsageShareBuilder.load(period: period)
+        data = UsageShareBuilder.load(period: period, includingCacheRead: includesCacheRead)
+        if let cacheToggle {
+            gtk_toggle_button_set_active(tc_gtk_toggle_button(cacheToggle), includesCacheRead ? 1 : 0)
+        }
         if let dateButton { gtk_button_set_label(tc_gtk_button(dateButton), shareDateLabel()) }
         if let rangeLabel {
             gtk_label_set_text(tc_gtk_label(rangeLabel), "\(data.dateKey) — \(data.endDateKey)")
@@ -367,7 +388,9 @@ private final class LinuxUsageShareRenderer {
 
         text(context, L10n.shared.tr("share.totalUsage"), 10, 700, 38, 129, color: accent)
         text(context, TokenFormat.compact(data.totalTokens), 62, 800, 38, 182, color: fg)
-        text(context, L10n.shared.tr("share.tokens"), 10, 600, 38, 223, color: fg, alpha: 0.48)
+        text(context,
+             L10n.shared.tr(data.includesCacheRead ? "share.tokensWithCache" : "share.tokens"),
+             10, 600, 38, 223, color: fg, alpha: 0.48)
 
         cairo_new_path(context)
         cairo_arc(context, 490, 174, 70, 0, .pi * 2)

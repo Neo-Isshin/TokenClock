@@ -80,6 +80,7 @@ struct UsageShareRow: Identifiable, Sendable {
 
 struct UsageShareData: Sendable {
     let period: UsageSharePeriod
+    let includesCacheRead: Bool
     let dateKey: String
     let endDateKey: String
     let totalTokens: Int
@@ -97,37 +98,56 @@ enum UsageShareBuilder {
         "share.quote1", "share.quote2", "share.quote3", "share.quote4", "share.quote5",
     ]
 
-    static func load(period: UsageSharePeriod, store: HistoryStore = .shared) -> UsageShareData {
+    static func load(
+        period: UsageSharePeriod, includingCacheRead: Bool = false,
+        store: HistoryStore = .shared
+    ) -> UsageShareData {
         let bounds = period.bounds
         return make(
             period: period,
             overview: UsageOverviewBuilder.load(
-                startDate: bounds.start, endDate: bounds.end, grouping: .tool, store: store
-            )
+                startDate: bounds.start, endDate: bounds.end, grouping: .tool,
+                includingCacheRead: includingCacheRead, store: store
+            ),
+            includingCacheRead: includingCacheRead
         )
     }
 
-    static func load(date: Date, store: HistoryStore = .shared) -> UsageShareData {
-        load(period: .recent(days: 1, ending: date), store: store)
+    static func load(
+        date: Date, includingCacheRead: Bool = false,
+        store: HistoryStore = .shared
+    ) -> UsageShareData {
+        load(period: .recent(days: 1, ending: date), includingCacheRead: includingCacheRead, store: store)
     }
 
-    static func make(date: Date, overview: UsageOverviewData) -> UsageShareData {
-        make(period: .recent(days: 1, ending: date), overview: overview)
+    static func make(
+        date: Date, overview: UsageOverviewData, includingCacheRead: Bool = false
+    ) -> UsageShareData {
+        make(period: .recent(days: 1, ending: date), overview: overview,
+             includingCacheRead: includingCacheRead)
     }
 
-    static func make(period: UsageSharePeriod, overview: UsageOverviewData) -> UsageShareData {
-        let total = max(0, overview.summary.tokens)
-        let ranked = overview.rows.filter { $0.metrics.tokens > 0 }
+    static func make(
+        period: UsageSharePeriod, overview: UsageOverviewData,
+        includingCacheRead: Bool = false
+    ) -> UsageShareData {
+        let total = max(0, overview.summary.displayedTokens(includingCacheRead: includingCacheRead))
+        let ranked = overview.rows.filter {
+            $0.metrics.displayedTokens(includingCacheRead: includingCacheRead) > 0
+        }
         var rows = ranked.prefix(6).map { row in
-            UsageShareRow(
+            let tokens = max(0, row.metrics.displayedTokens(includingCacheRead: includingCacheRead))
+            return UsageShareRow(
                 name: row.name,
                 emoji: row.emoji,
-                tokens: row.metrics.tokens,
-                fraction: total > 0 ? Double(row.metrics.tokens) / Double(total) : 0
+                tokens: tokens,
+                fraction: total > 0 ? Double(tokens) / Double(total) : 0
             )
         }
         if ranked.count > 6 {
-            let remaining = ranked.dropFirst(6).reduce(0) { $0 + $1.metrics.tokens }
+            let remaining = ranked.dropFirst(6).reduce(0) {
+                $0 + max(0, $1.metrics.displayedTokens(includingCacheRead: includingCacheRead))
+            }
             if remaining > 0 {
                 rows.append(UsageShareRow(
                     name: L10n.shared.tr("share.otherTools"), emoji: "✦", tokens: remaining,
@@ -140,6 +160,7 @@ enum UsageShareBuilder {
         let quoteIndex = (startKey + endKey).utf8.reduce(0) { ($0 + Int($1)) % quoteKeys.count }
         return UsageShareData(
             period: period,
+            includesCacheRead: includingCacheRead,
             dateKey: startKey,
             endDateKey: endKey,
             totalTokens: total,
