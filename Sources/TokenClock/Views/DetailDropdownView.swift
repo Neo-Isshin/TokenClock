@@ -650,10 +650,7 @@ struct DetailDropdownView: View {
                         .foregroundColor(subtextColor)
                         .offset(x: 2)
                 }
-                VStack(spacing: 0) {
-                    forecastNotificationButton
-                    forecastShareButton
-                }
+                forecastNotificationButton
             }
             .padding(.horizontal, 12)
 
@@ -678,6 +675,13 @@ struct DetailDropdownView: View {
             }
         }
         .padding(.top, 8)
+        .overlay(alignment: .topTrailing) {
+            // Keep the header's measured height unchanged. The small share action
+            // lives beneath the bell inside the existing forecast area.
+            forecastShareButton
+                .padding(.trailing, 12)
+                .padding(.top, 28)
+        }
     }
 
     private var forecastNotificationButton: some View {
