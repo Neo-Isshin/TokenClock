@@ -25,6 +25,10 @@ static inline GtkBox *tc_gtk_box(GtkWidget *widget) {
     return GTK_BOX(widget);
 }
 
+static inline GtkOverlay *tc_gtk_overlay(GtkWidget *widget) {
+    return GTK_OVERLAY(widget);
+}
+
 static inline GtkLabel *tc_gtk_label(GtkWidget *widget) {
     return GTK_LABEL(widget);
 }

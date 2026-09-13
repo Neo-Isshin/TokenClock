@@ -452,7 +452,6 @@ final class LinuxDetailsPanel: @unchecked Sendable {
             gtk_box_pack_start(tc_gtk_box(trailing), forecastLabel, 0, 0, 0)
         }
         if let notificationButton = gtk_button_new(),
-           let actions = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0),
            let notificationContent = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 1),
            let bell = gtk_image_new_from_icon_name("notifications-symbolic", GTK_ICON_SIZE_MENU) {
             let unread = notifications.contains { !$0.isRead }
@@ -468,16 +467,7 @@ final class LinuxDetailsPanel: @unchecked Sendable {
             }
             gtk_container_add(tc_gtk_container(notificationButton), notificationContent)
             _ = tc_gtk_on_clicked(notificationButton, linuxDetailsAction, opaque)
-            gtk_box_pack_start(tc_gtk_box(actions), notificationButton, 0, 0, 0)
-            if let shareButton = gtk_button_new_with_label("↗") {
-                gtk_widget_set_name(shareButton, "details:share")
-                gtk_button_set_relief(tc_gtk_button(shareButton), GTK_RELIEF_NONE)
-                gtk_widget_set_opacity(shareButton, 0.55)
-                gtk_widget_set_tooltip_text(shareButton, tr("menu.shareUsage"))
-                _ = tc_gtk_on_clicked(shareButton, linuxDetailsAction, opaque)
-                gtk_box_pack_start(tc_gtk_box(actions), shareButton, 0, 0, 0)
-            }
-            gtk_box_pack_start(tc_gtk_box(trailing), actions, 0, 0, 0)
+            gtk_box_pack_start(tc_gtk_box(trailing), notificationButton, 0, 0, 0)
         }
         gtk_box_pack_end(tc_gtk_box(header), trailing, 0, 0, 0)
         gtk_box_pack_start(tc_gtk_box(box), header, 0, 0, 0)
@@ -494,7 +484,25 @@ final class LinuxDetailsPanel: @unchecked Sendable {
             }
             gtk_box_pack_start(tc_gtk_box(box), row, 0, 0, 2)
         }
-        gtk_box_pack_start(tc_gtk_box(card), box, 0, 0, 0)
+        if let overlay = gtk_overlay_new() {
+            gtk_container_add(tc_gtk_container(overlay), box)
+            if let shareButton = gtk_button_new_with_label("↗") {
+                gtk_widget_set_name(shareButton, "details:share")
+                gtk_button_set_relief(tc_gtk_button(shareButton), GTK_RELIEF_NONE)
+                gtk_widget_set_opacity(shareButton, 0.55)
+                gtk_widget_set_tooltip_text(shareButton, tr("menu.shareUsage"))
+                gtk_widget_set_size_request(shareButton, 16, 16)
+                gtk_widget_set_halign(shareButton, GTK_ALIGN_END)
+                gtk_widget_set_valign(shareButton, GTK_ALIGN_START)
+                gtk_widget_set_margin_top(shareButton, 22)
+                gtk_widget_set_margin_end(shareButton, 10)
+                _ = tc_gtk_on_clicked(shareButton, linuxDetailsAction, opaque)
+                gtk_overlay_add_overlay(tc_gtk_overlay(overlay), shareButton)
+            }
+            gtk_box_pack_start(tc_gtk_box(card), overlay, 0, 0, 0)
+        } else {
+            gtk_box_pack_start(tc_gtk_box(card), box, 0, 0, 0)
+        }
     }
 
     private func selectedForecastSlots() -> [HourlyForecast] {
