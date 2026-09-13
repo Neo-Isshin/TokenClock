@@ -20,6 +20,11 @@ final class UsageShareTests: XCTestCase {
         let month = UsageSharePeriod.month(containing: february).bounds
         XCTAssertEqual(DateHelper.dateKey(from: month.start), "2024-02-01")
         XCTAssertEqual(DateHelper.dateKey(from: month.end), "2024-02-29")
+
+        let mondayFirst = Calendar.current.date(from: DateComponents(year: 2026, month: 6, day: 15))!
+        let firstWeek = UsageSharePeriod.weekOfMonth(containing: mondayFirst, index: 1).bounds
+        XCTAssertEqual(DateHelper.dateKey(from: firstWeek.start), "2026-06-01")
+        XCTAssertEqual(DateHelper.dateKey(from: firstWeek.end), "2026-06-07")
     }
 
     func testShareDataKeepsSixLargestToolsAndAggregatesTheRest() {

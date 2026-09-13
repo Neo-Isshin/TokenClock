@@ -630,7 +630,7 @@ final class ViewModel: ObservableObject {
         }
         let indicators: [DialQuotaIndicator] = order.compactMap { provider -> DialQuotaIndicator? in
             guard quotaStatus(for: provider) == .available else { return nil }
-            return DialQuotaResolver.resolve(provider: provider, groups: quotaGroups(for: provider))
+            return DialQuotaResolver.resolve(provider: provider, groups: freshQuotaGroups(for: provider))
         }
         guard let provider = DialQuotaResolver.defaultProvider(
             from: indicators, providerOrder: order
