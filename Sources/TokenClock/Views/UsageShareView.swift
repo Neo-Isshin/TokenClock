@@ -10,6 +10,7 @@ struct UsageShareWindowView: View {
     @State private var recentDays: Int
     @State private var weekIndex = 1
     @State private var style: UsageShareStyle = .ink
+    @State private var showsCalendar = false
     let onDone: () -> Void
 
     init(initialDate: Date, onDone: @escaping () -> Void) {
@@ -74,8 +75,14 @@ struct UsageShareWindowView: View {
                 Button { moveAnchor(1) } label: { Image(systemName: "chevron.right") }
                     .disabled(!canMoveForward)
                     .accessibilityLabel(Text(L10n.shared.tr("share.nextPeriod")))
-                DatePicker("", selection: $anchor, in: ...Date(), displayedComponents: .date)
-                    .labelsHidden().frame(width: 100)
+                Button { showsCalendar.toggle() } label: { Image(systemName: "calendar") }
+                    .help(L10n.shared.tr("share.chooseDate"))
+                    .popover(isPresented: $showsCalendar) {
+                        DatePicker("", selection: $anchor, in: ...Date(), displayedComponents: .date)
+                            .datePickerStyle(.graphical)
+                            .labelsHidden()
+                            .padding(12)
+                    }
                 if mode == .week {
                     Picker("", selection: $weekIndex) {
                         ForEach(1...weekCount, id: \.self) { index in
