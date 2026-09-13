@@ -10,6 +10,7 @@ struct UsageShareWindowView: View {
     @State private var recentDays: Int
     @State private var weekIndex = 1
     @State private var style: UsageShareStyle = .ink
+    @State private var includesCacheRead = false
     @State private var showsCalendar = false
     let onDone: () -> Void
 
@@ -27,7 +28,9 @@ struct UsageShareWindowView: View {
         case .week: return .weekOfMonth(containing: anchor, index: weekIndex)
         }
     }
-    private var data: UsageShareData { UsageShareBuilder.load(period: period) }
+    private var data: UsageShareData {
+        UsageShareBuilder.load(period: period, includingCacheRead: includesCacheRead)
+    }
     private var weekCount: Int {
         let count = UsageSharePeriod.month(containing: anchor).weekCount
         if Calendar.current.isDate(anchor, equalTo: Date(), toGranularity: .month) {
@@ -104,8 +107,17 @@ struct UsageShareWindowView: View {
                 } else { weekIndex = min(weekIndex, weekCount) }
             }
 
-            Text(rangeLabel).font(.system(size: 10, design: .monospaced))
-                .foregroundColor(.secondary).frame(maxWidth: .infinity, alignment: .leading)
+            HStack(spacing: 8) {
+                Text(rangeLabel)
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundColor(.secondary)
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+                Toggle(L10n.shared.tr("share.includeCache"), isOn: $includesCacheRead)
+                    .font(.system(size: 10, weight: .medium))
+                    .toggleStyle(.switch)
+                    .controlSize(.small)
+            }
 
             UsageShareCardView(data: data, style: style, scale: 0.60)
                 .frame(width: 360, height: 450)

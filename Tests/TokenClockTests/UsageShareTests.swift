@@ -42,6 +42,25 @@ final class UsageShareTests: XCTestCase {
         XCTAssertEqual(data.quoteKey, UsageShareBuilder.make(date: date, overview: overview).quoteKey)
     }
 
+    func testIncludeCacheChangesEverySharedTokenFigureConsistently() {
+        let overview = makeOverview()
+        let date = Calendar.current.date(from: DateComponents(year: 2026, month: 9, day: 11))!
+        let fresh = UsageShareBuilder.make(date: date, overview: overview)
+        let inclusive = UsageShareBuilder.make(
+            date: date, overview: overview, includingCacheRead: true
+        )
+        XCTAssertFalse(fresh.includesCacheRead)
+        XCTAssertTrue(inclusive.includesCacheRead)
+        XCTAssertEqual(fresh.totalTokens, 3_600)
+        XCTAssertEqual(inclusive.totalTokens, 5_400)
+        XCTAssertEqual(inclusive.rows.first?.tokens, 1_200)
+        XCTAssertEqual(inclusive.rows.last?.tokens, 450)
+        XCTAssertEqual(inclusive.rows.reduce(0) { $0 + $1.tokens }, inclusive.totalTokens)
+        XCTAssertEqual(inclusive.rows.reduce(0) { $0 + $1.fraction }, 1, accuracy: 0.000_001)
+        XCTAssertEqual(inclusive.messages, fresh.messages)
+        XCTAssertEqual(inclusive.averageCacheRate, fresh.averageCacheRate)
+    }
+
     @MainActor
     func testShareCardRendersToExpectedPNGSize() throws {
         let date = Calendar.current.date(from: DateComponents(year: 2026, month: 9, day: 11))!

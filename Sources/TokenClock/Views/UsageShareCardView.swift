@@ -130,7 +130,7 @@ struct UsageShareCardView: View {
                     .font(.system(size: 61 * scale, weight: .heavy, design: .rounded))
                     .minimumScaleFactor(0.7).lineLimit(1)
                     .foregroundColor(foreground)
-                Text(L10n.shared.tr("share.tokens"))
+                Text(L10n.shared.tr(data.includesCacheRead ? "share.tokensWithCache" : "share.tokens"))
                     .font(.system(size: 10 * scale, weight: .semibold, design: .monospaced))
                     .foregroundColor(foreground.opacity(0.47))
             }

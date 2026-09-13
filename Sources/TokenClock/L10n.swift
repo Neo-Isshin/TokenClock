@@ -227,6 +227,8 @@ final class L10n: @unchecked Sendable {
         "share.share":           [.zhHans: "分享", .zhHant: "分享", .en: "Share"],
         "share.dailyUsage":      [.zhHans: "每日 AI 用量", .zhHant: "每日 AI 用量", .en: "DAILY AI USAGE"],
         "share.tokens":          [.zhHans: "TOKENS", .zhHant: "TOKENS", .en: "TOKENS"],
+        "share.tokensWithCache": [.zhHans: "TOKENS（含缓存）", .zhHant: "TOKENS（含快取）", .en: "TOKENS + CACHE"],
+        "share.includeCache":    [.zhHans: "包含缓存读", .zhHant: "包含快取讀取", .en: "Include Cache"],
         "share.messages":        [.zhHans: "消息", .zhHant: "訊息", .en: "MESSAGES"],
         "share.cache":           [.zhHans: "缓存率", .zhHant: "快取率", .en: "CACHE"],
         "share.toolBreakdown":   [.zhHans: "工具用量", .zhHant: "工具用量", .en: "TOOL BREAKDOWN"],
