@@ -230,7 +230,7 @@ final class L10n: @unchecked Sendable {
         "share.messages":        [.zhHans: "消息", .zhHant: "訊息", .en: "MESSAGES"],
         "share.cache":           [.zhHans: "缓存率", .zhHant: "快取率", .en: "CACHE"],
         "share.toolBreakdown":   [.zhHans: "工具用量", .zhHant: "工具用量", .en: "TOOL BREAKDOWN"],
-        "share.noUsage":         [.zhHans: "当天暂无可分享的用量记录", .zhHant: "當天暫無可分享的用量記錄", .en: "No usage recorded for this day"],
+        "share.noUsage":         [.zhHans: "所选期间暂无用量记录", .zhHant: "所選期間暫無用量記錄", .en: "No usage recorded for this range"],
         "share.otherTools":      [.zhHans: "其他工具", .zhHant: "其他工具", .en: "Other tools"],
         "share.generatedBy":     [.zhHans: "由 TokenClock 生成", .zhHant: "由 TokenClock 產生", .en: "Made with TokenClock"],
         "quota.snapshotStale":   [.zhHans: "旧快照 · 正在刷新", .zhHant: "舊快照 · 正在更新", .en: "Old snapshot · refreshing"],
