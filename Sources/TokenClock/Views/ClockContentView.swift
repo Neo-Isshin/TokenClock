@@ -110,6 +110,7 @@ struct ClockContentView: View {
                     Spacer()
                     if quotaIndicators.count == 1, let indicator = quotaIndicators.first {
                         quotaRing(
+                            provider: indicator.provider,
                             outerRemaining: indicator.outerRemainingPercent,
                             innerRemaining: indicator.innerRemainingPercent,
                             size: 35 * s,
@@ -121,6 +122,7 @@ struct ClockContentView: View {
                         VStack(alignment: .trailing, spacing: 5 * s) {
                             ForEach(quotaIndicators) { indicator in
                                 quotaRing(
+                                    provider: indicator.provider,
                                     outerRemaining: indicator.outerRemainingPercent,
                                     innerRemaining: indicator.innerRemainingPercent,
                                     size: 29 * s,
@@ -232,6 +234,7 @@ struct ClockContentView: View {
     }
 
     private func quotaRing(
+        provider: SubscriptionProvider,
         outerRemaining: Double,
         innerRemaining: Double?,
         size: CGFloat,
@@ -243,54 +246,25 @@ struct ClockContentView: View {
         let scale = size / 30
         let innerInset = 5.25 * scale
         let innerLineWidth = 1.7 * scale
-        let accent = viewModel.effectiveDialPrimary
+        let accent = provider.glassDialQuotaColor(contrastColor: viewModel.effectiveDialPrimary)
         let outerGradient = AngularGradient(
-            colors: [accent.opacity(0.46), accent.opacity(0.76), accent.opacity(0.58)],
+            colors: [accent.opacity(0.72), accent.opacity(0.90), accent.opacity(0.78)],
             center: .center,
             startAngle: .degrees(-90),
             endAngle: .degrees(270)
         )
         let innerGradient = AngularGradient(
-            colors: [accent.opacity(0.28), accent.opacity(0.52), accent.opacity(0.36)],
+            colors: [accent.opacity(0.36), accent.opacity(0.56), accent.opacity(0.42)],
             center: .center,
             startAngle: .degrees(-90),
             endAngle: .degrees(270)
         )
         return ZStack {
+            // 让玻璃盘本身透过环心，避免两只深灰色的“按钮”压在表盘上。
             Circle()
-                .fill(
-                    LinearGradient(
-                        colors: [
-                            Color.white.opacity(0.13),
-                            viewModel.effectiveDialPrimary.opacity(0.025),
-                            Color.black.opacity(0.045),
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
-                .overlay {
-                    Circle()
-                        .strokeBorder(
-                            LinearGradient(
-                                colors: [
-                                    Color.white.opacity(0.24),
-                                    viewModel.effectiveDialPrimary.opacity(0.07),
-                                ],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            ),
-                            lineWidth: 0.65 * scale
-                        )
-                }
-                .shadow(
-                    color: Color.black.opacity(0.10),
-                    radius: 2 * scale,
-                    x: 0,
-                    y: 1.1 * scale
-                )
+                .fill(viewModel.effectiveDialPrimary.opacity(0.025))
             Circle()
-                .strokeBorder(viewModel.effectiveDialSecondary.opacity(0.11), lineWidth: lineWidth)
+                .strokeBorder(viewModel.effectiveDialPrimary.opacity(0.12), lineWidth: lineWidth)
             Circle()
                 .trim(from: 0, to: outer / 100)
                 .stroke(
@@ -299,11 +273,11 @@ struct ClockContentView: View {
                 )
                 .rotationEffect(.degrees(-90))
                 .padding(lineWidth / 2)
-                .shadow(color: accent.opacity(0.16), radius: 1.3 * scale, y: 0.5 * scale)
+                .shadow(color: accent.opacity(0.07), radius: 0.8 * scale, y: 0.3 * scale)
             if let inner {
                 Circle()
                     .inset(by: innerInset)
-                    .stroke(viewModel.effectiveDialSecondary.opacity(0.08), lineWidth: innerLineWidth)
+                    .stroke(viewModel.effectiveDialPrimary.opacity(0.08), lineWidth: innerLineWidth)
                 Circle()
                     .inset(by: innerInset)
                     .trim(from: 0, to: inner / 100)
@@ -312,7 +286,7 @@ struct ClockContentView: View {
                         style: StrokeStyle(lineWidth: innerLineWidth, lineCap: .round)
                     )
                     .rotationEffect(.degrees(-90))
-                    .shadow(color: accent.opacity(0.10), radius: 0.8 * scale)
+                    .shadow(color: accent.opacity(0.04), radius: 0.6 * scale)
             }
             HStack(spacing: 0) {
                 Text(String(format: "%.0f", outer))
@@ -323,7 +297,6 @@ struct ClockContentView: View {
             .foregroundColor(quotaPercentColor(outer))
             .lineLimit(1)
             .minimumScaleFactor(0.75)
-            .shadow(color: Color.white.opacity(0.15), radius: 0.45 * scale, y: -0.25 * scale)
         }
         .frame(width: size, height: size)
     }
@@ -388,7 +361,7 @@ struct ClockContentView: View {
     private func quotaPercentColor(_ remaining: Double) -> Color {
         if remaining <= 15 { return .red }
         if remaining <= 35 { return .orange }
-        return viewModel.effectiveDialSecondary
+        return viewModel.effectiveDialPrimary.opacity(0.88)
     }
 
     /// VoiceOver 朗读摘要：时间 + 今日 token + 消息数（已随语言本地化）。
@@ -447,6 +420,21 @@ extension SubscriptionProvider {
         case .grokBot: return Color(red: 0.39, green: 0.40, blue: 0.95)
         case .zhipu: return .black
         }
+    }
+
+    /// 玻璃盘仍以当前文字色为对比基准，只混入少量工具色相以区分并排的环。
+    func glassDialQuotaColor(contrastColor: Color) -> Color {
+        if self == .zhipu { return contrastColor }
+        guard let ink = NSColor(contrastColor).usingColorSpace(.deviceRGB),
+              let tint = NSColor(dialQuotaColor).usingColorSpace(.deviceRGB) else {
+            return contrastColor
+        }
+        let weight: CGFloat = 0.38
+        return Color(
+            red: Double(ink.redComponent * (1 - weight) + tint.redComponent * weight),
+            green: Double(ink.greenComponent * (1 - weight) + tint.greenComponent * weight),
+            blue: Double(ink.blueComponent * (1 - weight) + tint.blueComponent * weight)
+        )
     }
 }
 
