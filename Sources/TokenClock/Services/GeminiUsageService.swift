@@ -367,14 +367,14 @@ final class GeminiUsageService: @unchecked Sendable {
                 let usage = fileDailyContrib[fullPath]?[today]
                 let tokens = usage?.tokens ?? 0
                 let messages = usage?.messages ?? 0
-                let sessionId = fileSessionId[fullPath] ?? ""
+                let fileId = String(URL(fileURLWithPath: file).deletingPathExtension().lastPathComponent.dropFirst("session-".count))
+                let sessionId = fileSessionId[fullPath].flatMap { $0.isEmpty ? nil : $0 } ?? fileId
                 let model = fileLastModel[fullPath]?[today]
                 guard tokens > 0 else { continue }
 
-                let displayId = sessionId.isEmpty ? SessionIdDisplay.format(String(file.dropFirst("session-".count))) : SessionIdDisplay.format(sessionId)
                 results.append(SessionInfo(
                     rawId: sessionId,
-                    displayName: displayId,
+                    displayName: SessionIdDisplay.format(sessionId),
                     detail: project,
                     todayTokens: tokens,
                     todayMessages: messages,

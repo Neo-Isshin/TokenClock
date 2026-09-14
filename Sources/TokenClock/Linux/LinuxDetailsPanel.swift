@@ -709,6 +709,7 @@ final class LinuxDetailsPanel: @unchecked Sendable {
         guard let label = gtk_label_new(text) else { return }
         gtk_label_set_xalign(tc_gtk_label(label), alignment)
         gtk_label_set_ellipsize(tc_gtk_label(label), PANGO_ELLIPSIZE_END)
+        if text.count > 24 { gtk_widget_set_tooltip_text(label, text) }
         gtk_widget_set_size_request(label, gint(width), -1)
         tc_gtk_add_class(label, style)
         gtk_box_pack_start(tc_gtk_box(box), label, expands ? 1 : 0, expands ? 1 : 0, 0)
