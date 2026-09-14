@@ -194,9 +194,18 @@ struct ClockContentView: View {
         return ZStack {
             Circle()
                 .fill(quotaRingSurfaceColor)
-                .shadow(color: Color.black.opacity(0.14), radius: 1.6 * scale, y: 0.8 * scale)
+                .shadow(
+                    color: Color.black.opacity(viewModel.selectedTheme == .glass ? 0.02 : 0.14),
+                    radius: 1.6 * scale,
+                    y: 0.8 * scale
+                )
             Circle()
-                .strokeBorder(viewModel.effectiveDialSecondary.opacity(0.16), lineWidth: lineWidth)
+                .strokeBorder(
+                    viewModel.selectedTheme == .glass
+                        ? viewModel.effectiveDialPrimary.opacity(0.12)
+                        : viewModel.effectiveDialSecondary.opacity(0.16),
+                    lineWidth: lineWidth
+                )
             Circle()
                 .trim(from: 0, to: outer / 100)
                 .stroke(
@@ -233,7 +242,7 @@ struct ClockContentView: View {
 
     private var quotaRingSurfaceColor: Color {
         switch viewModel.selectedTheme {
-        case .glass: return Color.black.opacity(0.20)
+        case .glass: return viewModel.effectiveDialPrimary.opacity(0.025)
         case .midnight, .luxe: return Color.black.opacity(0.12)
         case .sky: return Color.white.opacity(0.16)
         case .custom: return viewModel.effectiveDialPrimary.opacity(0.035)
@@ -358,6 +367,21 @@ extension SubscriptionProvider {
         case .zhipu: return .black
         }
     }
+
+    /// 在玻璃盘上用文字色保持可读性，少量工具色相区分相邻的额度环。
+    func glassDialQuotaColor(contrastColor: Color) -> Color {
+        if self == .zhipu { return contrastColor }
+        guard let ink = NSColor(contrastColor).usingColorSpace(.deviceRGB),
+              let tint = NSColor(defaultDialQuotaColor).usingColorSpace(.deviceRGB) else {
+            return contrastColor
+        }
+        let weight: CGFloat = 0.38
+        return Color(
+            red: Double(ink.redComponent * (1 - weight) + tint.redComponent * weight),
+            green: Double(ink.greenComponent * (1 - weight) + tint.greenComponent * weight),
+            blue: Double(ink.blueComponent * (1 - weight) + tint.blueComponent * weight)
+        )
+    }
 }
 
 extension ClockFaceTheme {
@@ -365,7 +389,9 @@ extension ClockFaceTheme {
         switch self {
         case .classic, .glacier, .gufeng, .railgun:
             return provider.defaultDialQuotaColor
-        case .glass, .midnight, .luxe, .sky, .custom:
+        case .glass:
+            return provider.glassDialQuotaColor(contrastColor: contrastColor)
+        case .midnight, .luxe, .sky, .custom:
             return contrastColor
         }
     }
