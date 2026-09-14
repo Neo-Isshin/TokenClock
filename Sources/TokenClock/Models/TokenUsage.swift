@@ -86,7 +86,7 @@ struct SessionInfo: Identifiable, Hashable {
     var id: String { rawId }
     /// 原始 session ID 或 agent 名
     let rawId: String
-    /// 展示名称（session 前7位 或 agent 名）
+    /// 原生会话名称；不可用时为完整 session ID（或聚合名称）
     let displayName: String
     /// 额外详情（如项目路径、agent 描述）
     let detail: String?
@@ -172,15 +172,19 @@ enum DetailValueMode: Int {
     var next: DetailValueMode { self == .tokens ? .costPercent : .tokens }
 }
 
-/// Session ID 统一格式化：取前 6 位 + "…" + 末 4 位
-/// 用于解决 UUIDv7 / session-UUID 前缀碰撞导致的视觉混淆
+/// 优先展示工具提供的会话名称；没有名称时保留完整 ID，以免截短后无法辨认。
 enum SessionIdDisplay {
     static func format(_ id: String) -> String {
         let trimmed = id.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.count <= 10 { return trimmed }
-        let head = trimmed.prefix(6)
-        let tail = trimmed.suffix(4)
-        return "\(head)…\(tail)"
+        return trimmed.isEmpty ? "unknown" : trimmed
+    }
+
+    static func preferred(title: String?, id: String) -> String {
+        let firstLine = title?.trimmingCharacters(in: .whitespacesAndNewlines)
+            .components(separatedBy: .newlines).first?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let firstLine, !firstLine.isEmpty else { return format(id) }
+        return firstLine
     }
 }
 

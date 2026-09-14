@@ -802,8 +802,13 @@ final class CodexUsageService: @unchecked Sendable {
         defer { sqlite3_close(db) }
 
         let todayStart = Date().addingTimeInterval(-AppConfig.Scan.oneDaySeconds)
+        let titleColumns = [
+            Self.threadsHasColumn(db, "name") ? "NULLIF(TRIM(name), '')" : nil,
+            Self.threadsHasColumn(db, "title") ? "NULLIF(TRIM(title), '')" : nil,
+        ].compactMap { $0 }
+        let displayTitle = titleColumns.isEmpty ? "''" : "COALESCE(\(titleColumns.joined(separator: ", ")), '')"
         let query = """
-        SELECT id, updated_at_ms, cwd
+        SELECT id, updated_at_ms, cwd, \(displayTitle)
         FROM threads
         WHERE updated_at_ms >= ?
         ORDER BY updated_at_ms DESC
@@ -827,12 +832,13 @@ final class CodexUsageService: @unchecked Sendable {
             let sessionId = idPtr != nil ? String(cString: idPtr!) : ""
             let updatedAtMs = sqlite3_column_int64(stmt, 1)
             let cwdPtr = sqlite3_column_text(stmt, 2)
+            let titlePtr = sqlite3_column_text(stmt, 3)
 
             let updatedDate = Date(timeIntervalSince1970: Double(updatedAtMs) / 1000.0)
             let dateKey = DateHelper.dateKey(from: updatedDate)
             guard dateKey == today else { continue }
 
-            let displayId = sessionId.isEmpty ? "unknown" : SessionIdDisplay.format(sessionId)
+            let title = titlePtr != nil ? String(cString: titlePtr!) : nil
             let cwd = cwdPtr != nil ? String(cString: cwdPtr!) : ""
             let detail = cwd.isEmpty ? nil : cwd
             let messages = sessionMessageCount(
@@ -851,7 +857,7 @@ final class CodexUsageService: @unchecked Sendable {
             let sessionCacheRead = matchedBuckets.values.reduce(0) { $0 + $1.cacheRead }
             results.append(SessionInfo(
                 rawId: sessionId,
-                displayName: displayId,
+                displayName: SessionIdDisplay.preferred(title: title, id: sessionId),
                 detail: detail,
                 todayTokens: tokens,
                 todayMessages: messages,
@@ -863,6 +869,16 @@ final class CodexUsageService: @unchecked Sendable {
         }
 
         return results
+    }
+
+    private static func threadsHasColumn(_ db: OpaquePointer?, _ column: String) -> Bool {
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, "PRAGMA table_info(threads)", -1, &stmt, nil) == SQLITE_OK else { return false }
+        defer { sqlite3_finalize(stmt) }
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            if let ptr = sqlite3_column_text(stmt, 1), String(cString: ptr) == column { return true }
+        }
+        return false
     }
 
     private func sessionMessageCount(
