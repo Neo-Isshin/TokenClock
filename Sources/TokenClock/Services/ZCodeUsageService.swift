@@ -110,7 +110,7 @@ final class ZCodeUsageService: @unchecked Sendable {
             let model = value.modelTokens.max(by: { $0.value < $1.value })?.key
             return SessionInfo(
                 rawId: id,
-                displayName: value.title.isEmpty ? Self.shortID(id) : value.title,
+                displayName: SessionIdDisplay.preferred(title: value.title, id: id),
                 detail: value.directory,
                 todayTokens: value.tokens,
                 todayMessages: value.messages,
@@ -249,10 +249,5 @@ final class ZCodeUsageService: @unchecked Sendable {
 
     private static func normalizedModel(_ raw: String) -> String? {
         ModelNormalizer.normalize(raw.lowercased())
-    }
-
-    private static func shortID(_ id: String) -> String {
-        guard id.count > 14 else { return id }
-        return String(id.prefix(7)) + "…" + String(id.suffix(4))
     }
 }

@@ -897,10 +897,11 @@ private struct SessionRow: View {
                         .foregroundColor(textColor)
                         .lineLimit(1)
                         .truncationMode(.tail)
+                        .help(session.displayName)
                 } else {
                     // 其他工具：session 标签（+ 来源，仅 Antigravity）+ ID
                     HStack(spacing: 3) {
-                        Text("session")
+                        Text(session.rawId.hasPrefix("cursor:") ? "model" : "session")
                             .font(.system(size: 8, weight: .medium))
                             .foregroundColor(subtextColor)
                         if let source = session.source, !source.isEmpty {
@@ -915,6 +916,9 @@ private struct SessionRow: View {
                     Text(session.displayName)
                         .font(.system(size: 10, weight: .semibold, design: .monospaced))
                         .foregroundColor(textColor)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .help(session.displayName)
                 }
 
                 if let detail = session.detail, !detail.isEmpty {

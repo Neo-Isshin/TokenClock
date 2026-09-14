@@ -205,7 +205,7 @@ final class OpenCodeUsageService: @unchecked Sendable {
             let sessionIdPtr = sqlite3_column_text(stmt, 0)
             let sessionId = sessionIdPtr != nil ? String(cString: sessionIdPtr!) : ""
             let titlePtr = sqlite3_column_text(stmt, 1)
-            _ = titlePtr != nil ? String(cString: titlePtr!) : ""   // 保留列;当前 UI 不展示 session 标题
+            let title = titlePtr != nil ? String(cString: titlePtr!) : ""
             let dirPtr = sqlite3_column_text(stmt, 2)
             let directory = dirPtr != nil ? String(cString: dirPtr!) : ""
 
@@ -233,12 +233,11 @@ final class OpenCodeUsageService: @unchecked Sendable {
             let dateKey = DateHelper.dateKey(from: date)
             guard dateKey == DateHelper.todayKey() else { continue }
 
-            let displayId = SessionIdDisplay.format(sessionId)
             let dirName = (directory as NSString).lastPathComponent
 
             results.append(SessionInfo(
                 rawId: sessionId,
-                displayName: displayId,
+                displayName: SessionIdDisplay.preferred(title: title, id: sessionId),
                 detail: dirName.isEmpty ? nil : dirName,
                 todayTokens: tokens,
                 todayMessages: 1,
