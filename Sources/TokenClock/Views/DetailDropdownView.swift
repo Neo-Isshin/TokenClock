@@ -845,6 +845,7 @@ private struct ToolExpandableRow: View {
                             session: session,
                             isOpenClaw: tool.name == "OpenClaw",
                             theme: theme,
+                            textColorOverride: textColorOverride,
                             valueMode: valueMode,
                             grandTotal: grandTotal,
                             usageIncludesCache: usageIncludesCache
