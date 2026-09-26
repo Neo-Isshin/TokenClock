@@ -386,6 +386,10 @@ static inline void tc_gtk_show_about(
         "https://github.com/Neo-Isshin/TokenClock/issues"
     );
     gtk_about_dialog_set_website_label(GTK_ABOUT_DIALOG(dialog), "GitHub Issues");
+    GtkWidget *homepage = gtk_link_button_new_with_label("https://www.ailyre.com", "www.ailyre.com");
+    gtk_widget_set_halign(homepage, GTK_ALIGN_CENTER);
+    gtk_box_pack_end(GTK_BOX(gtk_dialog_get_content_area(GTK_DIALOG(dialog))), homepage, FALSE, FALSE, 6);
+    gtk_widget_show(homepage);
     if (logo_path != NULL && logo_path[0] != '\0') {
         GError *error = NULL;
         GdkPixbuf *logo = gdk_pixbuf_new_from_file_at_scale(logo_path, 96, 96, TRUE, &error);
