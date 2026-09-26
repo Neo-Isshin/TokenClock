@@ -280,6 +280,7 @@ struct ClockContentView: View {
 
     private func quotaTooltipText(for indicator: DialQuotaIndicator) -> String {
         var lines = ["\(indicator.provider.emoji) \(indicator.provider.displayName)"]
+        if let name = indicator.accountName { lines.append(name) }
         for detail in indicator.details {
             lines.append(
                 "\(L10n.shared.tr(detail.labelKey)) \(String(format: "%.0f%%", detail.remainingPercent))"
