@@ -192,6 +192,8 @@ final class CodexQuotaService: @unchecked Sendable {
             // Prefer the native binary bundled with ChatGPT. GUI apps commonly do
             // not inherit Homebrew's PATH, while npm wrappers depend on finding node.
             candidates += [
+                "/Applications/ChatGPT.app/Contents/Resources/codex-cli/bin/codex",
+                "/Applications/ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex",
                 "/Applications/ChatGPT.app/Contents/Resources/codex",
                 "/opt/homebrew/bin/codex",
                 "/usr/local/bin/codex",
@@ -246,6 +248,9 @@ final class CodexQuotaService: @unchecked Sendable {
 
         process.executableURL = executable
         process.arguments = ["app-server"]
+        var environment = ProcessInfo.processInfo.environment
+        environment["CODEX_HOME"] = codexHome
+        process.environment = environment
         process.standardInput = input
         process.standardOutput = output
         process.standardError = errors
@@ -376,8 +381,9 @@ final class CodexQuotaService: @unchecked Sendable {
               (account["type"] as? String) == "chatgpt" else { return nil }
         let email = (account["email"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
         let plan = account["planType"] as? String
-        let fallback = email?.lowercased() ?? "codex-active"
-        return (fallback, email?.isEmpty == false ? email : nil, plan)
+        let candidate = (account["id"] as? String) ?? (account["accountId"] as? String) ?? email?.lowercased()
+        guard let id = candidate?.trimmingCharacters(in: .whitespacesAndNewlines), !id.isEmpty else { return nil }
+        return (id, email?.isEmpty == false ? email : nil, plan)
     }
 
     private func fetchFromRecentSessionLogs() -> CodexQuotaSnapshot? {

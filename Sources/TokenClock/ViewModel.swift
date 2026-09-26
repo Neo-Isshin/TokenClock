@@ -148,7 +148,27 @@ final class ViewModel: ObservableObject {
     /// model groups instead, so Other Models is outside and Cursor Models is inside.
     var dialQuotaIndicators: [DialQuotaIndicator] {
         dialQuotaProviders.compactMap { provider in
-            DialQuotaResolver.resolve(provider: provider, groups: freshQuotaGroups(for: provider))
+            DialQuotaAccountSelection.indicator(
+                provider: provider, selectedID: DialQuotaAccountSelection.selectedID(for: provider),
+                activeID: activeSubscriptionAccountIDs[provider], records: subscriptionAccounts,
+                liveGroups: freshQuotaGroups(for: provider)
+            )
+        }
+    }
+
+    func isDialAccountSelected(_ account: SubscriptionAccountRecord) -> Bool {
+        dialQuotaProviders.contains(account.provider)
+            && (DialQuotaAccountSelection.selectedID(for: account.provider) ?? activeSubscriptionAccountIDs[account.provider]) == account.id
+    }
+
+    func toggleDialAccount(_ account: SubscriptionAccountRecord) {
+        if isDialAccountSelected(account) {
+            toggleDialQuotaProvider(account.provider)
+        } else {
+            guard dialQuotaProviders.contains(account.provider) || dialQuotaProviders.count < 2 else { return }
+            objectWillChange.send()
+            DialQuotaAccountSelection.select(account.id, for: account.provider)
+            if !dialQuotaProviders.contains(account.provider) { toggleDialQuotaProvider(account.provider) }
         }
     }
 
@@ -781,7 +801,7 @@ final class ViewModel: ObservableObject {
             resetCreditCount: resetCreditCount
         )
         subscriptionAccounts = subscriptionAccountStore.merge(record)
-        activeSubscriptionAccountIDs[provider] = record.id
+        activeSubscriptionAccountIDs[provider] = record.hasVerifiedIdentity ? record.id : nil
     }
 
     // MARK: - 首次启动路径探测

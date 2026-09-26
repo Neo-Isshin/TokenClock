@@ -258,7 +258,8 @@ struct SubscriptionQuotaWindowView: View {
                 if accounts.count > 1 { metaChip(L10n.shared.tr("quota.accounts", accounts.count)) }
             }
             if accounts.isEmpty {
-                unavailableRow(L10n.shared.tr("quota.loadingProvider", title))
+                unavailableRow(provider == .codex && !viewModel.codexQuota.buckets.isEmpty
+                    ? QuotaAccountLabels.unverified : L10n.shared.tr("quota.loadingProvider", title))
             } else {
                 ForEach(accounts) { accountCard($0) }
             }
@@ -307,6 +308,16 @@ struct SubscriptionQuotaWindowView: View {
                     .buttonStyle(.plain)
                     .help(L10n.shared.tr("quota.showEmail"))
                 }
+            }
+            Toggle(QuotaAccountLabels.showOnDial, isOn: Binding(
+                get: { viewModel.isDialAccountSelected(account) },
+                set: { _ in viewModel.toggleDialAccount(account) }
+            ))
+            .toggleStyle(.checkbox)
+            .font(.system(size: 10.5))
+            .disabled(!viewModel.dialQuotaProviders.contains(account.provider) && viewModel.dialQuotaProviders.count >= 2)
+            if viewModel.isDialAccountSelected(account) && (isStale || !isCurrent) {
+                Text(QuotaAccountLabels.unavailable).font(.system(size: 9)).foregroundStyle(.secondary)
             }
             if account.revealsEmailOnDemand,
                expandedEmails.contains(account.id),
