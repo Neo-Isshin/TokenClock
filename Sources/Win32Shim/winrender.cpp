@@ -76,11 +76,52 @@ int win_quota_tooltip_at(int x, int y, char *out_utf8, int out_size) {
 }
 }
 
-// GDI+ renders Segoe UI Emoji through its monochrome outline fallback.  That made the
-// Windows widget look markedly flatter than the macOS normal build, even on systems that
-// have the color font installed.  Keep the strings as the shared semantic source, but map
-// their leading glyph to small, resolution-independent color artwork.  Unknown glyphs still
-// use the normal font fallback, so new providers remain readable without a renderer update.
+// Bundled product artwork is decoded once and rendered without text-color tinting.
+static const wchar_t *g_brand_keys[] = {
+    L"aider", L"amazon", L"antigravity", L"claude", L"cline", L"codebuddy", L"codex", L"cohere", L"continue", L"copilot", L"cursor", L"deepseek", L"doubao", L"gemini", L"grok-bot", L"grok", L"hermes", L"kimi", L"kiro", L"meta", L"microsoft", L"minimax", L"mistral", L"openai", L"openclaw", L"opencode", L"qwen-code", L"qwen", L"yi", L"zai", L"zcode"
+};
+static constexpr int g_brand_count = sizeof(g_brand_keys) / sizeof(g_brand_keys[0]);
+static wchar_t g_brand_root[2048] = {};
+static Gdiplus::Bitmap *g_brand_images[g_brand_count] = {};
+
+static int brand_index(const wchar_t *text) {
+    if (!text || wcsncmp(text, L"[[brand:", 8) != 0) return -1;
+    const wchar_t *end = wcsstr(text + 8, L"]]");
+    if (!end) return -1;
+    for (int i = 0; i < g_brand_count; ++i) {
+        size_t length = wcslen(g_brand_keys[i]);
+        if ((size_t)(end - text - 8) == length && wcsncmp(text + 8, g_brand_keys[i], length) == 0) return i;
+    }
+    return -1;
+}
+extern "C" void win_set_brand_icon_directory(const char *path_utf8) {
+    wchar_t path[2048];
+    if (to_wide(path_utf8, path, 2048) == 0 || wcscmp(path, g_brand_root) == 0) return;
+    for (auto &image : g_brand_images) { delete image; image = NULL; }
+    wcsncpy_s(g_brand_root, path, _TRUNCATE);
+}
+static bool draw_brand_image(Gdiplus::Graphics &gfx, int index, float x, float y, float size) {
+    if (index < 0 || index >= g_brand_count || !g_brand_root[0]) return false;
+    auto &image = g_brand_images[index];
+    if (!image) {
+        wchar_t path[2304];
+        swprintf_s(path, L"%s/%s.png", g_brand_root, g_brand_keys[index]);
+        image = Gdiplus::Bitmap::FromFile(path);
+    }
+    if (!image || image->GetLastStatus() != Gdiplus::Ok) return false;
+    gfx.SetInterpolationMode(Gdiplus::InterpolationModeHighQualityBicubic);
+    gfx.DrawImage(image, Gdiplus::RectF(x, y, size, size));
+    return true;
+}
+extern "C" int win_draw_brand_icon(void *hdc, const char *token_utf8, float x, float y, float size) {
+    wchar_t text[128];
+    if (to_wide(token_utf8, text, 128) == 0) return 0;
+    Gdiplus::Graphics gfx((HDC)hdc);
+    return draw_brand_image(gfx, brand_index(text), x, y, size) ? 1 : 0;
+}
+
+// Weather/activity symbols keep their existing renderer; product marks use PNGs.
+// Unknown glyphs still use the normal font fallback.
 enum tc_color_icon {
     TC_ICON_NONE, TC_ICON_SUN, TC_ICON_PARTLY, TC_ICON_CLOUD, TC_ICON_RAIN,
     TC_ICON_STORM, TC_ICON_SNOW, TC_ICON_FOG, TC_ICON_LOBSTER, TC_ICON_STAR,
@@ -94,11 +135,14 @@ enum tc_color_icon {
     TC_ICON_KEYBOARD, TC_ICON_RAINBOW, TC_ICON_SWIRL, TC_ICON_GALAXY,
     TC_ICON_SATELLITE, TC_ICON_TOOLBOX, TC_ICON_CHAT, TC_ICON_WAVEMARK,
     TC_ICON_NOTE, TC_ICON_LEAF, TC_ICON_BOOK, TC_ICON_ABACUS, TC_ICON_COMPASS,
-    TC_ICON_ATOM, TC_ICON_PLANET, TC_ICON_ROTATE, TC_ICON_FACELESS
+    TC_ICON_ATOM, TC_ICON_PLANET, TC_ICON_ROTATE, TC_ICON_FACELESS,
+    TC_ICON_BRAND_BASE = 1000, TC_ICON_BRAND_END = 1100
 };
 
 static tc_color_icon color_icon_for(const wchar_t *text) {
     if (!text || !*text) return TC_ICON_NONE;
+    int brand = brand_index(text);
+    if (brand >= 0) return static_cast<tc_color_icon>(1000 + brand);
     if (wcsstr(text, L"⛈") || wcsstr(text, L"🌩")) return TC_ICON_STORM;
     if (wcsstr(text, L"🌨") || wcsstr(text, L"❄")) return TC_ICON_SNOW;
     if (wcsstr(text, L"🌧") || wcsstr(text, L"🌦")) return TC_ICON_RAIN;
@@ -168,6 +212,11 @@ extern "C" int win_color_icon_supported_utf8(const char *text_utf8) {
 
 static const wchar_t *text_after_icon(const wchar_t *text) {
     if (color_icon_for(text) == TC_ICON_NONE) return text;
+    if (brand_index(text) >= 0) {
+        const wchar_t *tail = wcsstr(text, L"]]") + 2;
+        while (*tail == L' ') ++tail;
+        return tail;
+    }
     const wchar_t *space = wcschr(text, L' ');
     if (!space) return text + wcslen(text);
     while (*space == L' ') ++space;
@@ -178,6 +227,10 @@ static void draw_color_icon(Gdiplus::Graphics &gfx, tc_color_icon icon,
                             float cx, float cy, float size) {
     using namespace Gdiplus;
     if (icon == TC_ICON_NONE || size <= 0) return;
+    if ((int)icon >= 1000) {
+        if (draw_brand_image(gfx, (int)icon - 1000, cx - size / 2, cy - size / 2, size)) return;
+        icon = TC_ICON_BRAIN;
+    }
     const float s = size / 24.0f;
     auto ellipse = [&](float x, float y, float w, float h, BYTE r, BYTE g, BYTE b) {
         SolidBrush fill(Color(255, r, g, b));
@@ -845,6 +898,7 @@ void gdip_init(void) {
     Gdiplus::GdiplusStartup(&g_gdip_token, &si, NULL);
 }
 void gdip_shutdown(void) {
+    for (auto &image : g_brand_images) { delete image; image = NULL; }
     if (g_dial_image) { delete g_dial_image; g_dial_image = NULL; g_dial_image_path[0] = 0; }
     if (g_material_face_cache) { delete g_material_face_cache; g_material_face_cache = NULL; }
     g_material_face_cache_style = 0; g_material_face_cache_size = 0;

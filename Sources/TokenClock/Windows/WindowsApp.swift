@@ -231,6 +231,9 @@ final class WindowsApp: @unchecked Sendable {
 
     func run() {
         win_set_dpi_aware()
+        if let directory = BrandIconCatalog.directory {
+            win_set_brand_icon_directory(directory.path)
+        }
 
         currentSize = windowSize(for: clockSizeRaw)
         currentHostWidth = currentSize
@@ -333,8 +336,8 @@ final class WindowsApp: @unchecked Sendable {
         let todayLabel = L10n.shared.tr("clock.todayTokens")
         let messages = L10n.shared.tr("clock.messagesCount", UsageAggregator.totalMessages(tools))
         let top = UsageAggregator.topToolsByTokens(tools, limit: 2)
-        let tool1 = top.first.map { "\($0.emoji) \($0.abbreviation)" } ?? ""
-        let tool2 = top.count > 1 ? "\(top[1].emoji) \(top[1].abbreviation)" : ""
+        let tool1 = top.first.map { "\(BrandIconCatalog.token(for: $0.name, fallback: $0.emoji)) \($0.abbreviation)" } ?? ""
+        let tool2 = top.count > 1 ? "\(BrandIconCatalog.token(for: top[1].name, fallback: top[1].emoji)) \(top[1].abbreviation)" : ""
         let rate = UsageAggregator.rateEmoji(tools)
         let dialImagePath = selectedTheme == .glass
             ? (Bundle.module.url(forResource: "glass_disc", withExtension: "png")?.path ?? "")
@@ -671,7 +674,7 @@ final class WindowsApp: @unchecked Sendable {
 
         var encoded: String {
             let kind = isChild ? "C" : (expanded ? "V" : "P")
-            return "\(kind)|\(label)\t\(value)\t\(messages)\t\(cache)"
+            return "\(kind)|\(BrandIconCatalog.nativeLabel(label))\t\(value)\t\(messages)\t\(cache)"
         }
     }
 
@@ -1127,13 +1130,13 @@ final class WindowsApp: @unchecked Sendable {
         aboutDlg = dlg
         defer { aboutDlg = nil; dlg_destroy(dlg) }
         dlg_add_brand_logo(dlg, 136, 22, 88, 88)
-        dlg_add_title(dlg, "TokenClock", 112, 120, 180, 30)
-        dlg_add_static(dlg, "v1.5.9", 154, 154, 90, 22)
+        brand_add_title(dlg, "TokenClock", 112, 120, 180, 30)
+        brand_add_static(dlg, "v1.5.9", 154, 154, 90, 22)
         dlg_add_sep(dlg, 28, 188, 304)
-        dlg_add_static(dlg, "Copyright © 2026 Neo-Isshin", 78, 210, 250, 22)
-        dlg_add_static(dlg, L10n.shared.tr("about.license"), 128, 238, 180, 22)
+        brand_add_static(dlg, "Copyright © 2026 Neo-Isshin", 78, 210, 250, 22)
+        brand_add_static(dlg, L10n.shared.tr("about.license"), 128, 238, 180, 22)
         dlg_add_sep(dlg, 28, 274, 304)
-        dlg_add_static(dlg, L10n.shared.tr("about.contact"), 138, 292, 150, 22)
+        brand_add_static(dlg, L10n.shared.tr("about.contact"), 138, 292, 150, 22)
         dlg_add_push(dlg, 800, "GitHub Issues", 105, 320, 150, 30)
         dlg_add_push(dlg, 801, "www.ailyre.com", 105, 356, 150, 30)
         dlg_add_push(dlg, 1, L10n.shared.tr("about.close"), 130, 404, 100, 30)
@@ -1249,17 +1252,17 @@ final class WindowsApp: @unchecked Sendable {
         }
         let contentHeight = max(720, 262 + (twoColumns ? (estimatedRows + 1) / 2 : estimatedRows) * 82)
         dlg_reset_content(dialog, Int32(contentHeight))
-        dlg_add_title(dialog, L10n.shared.tr("quota.windowTitle"), 24, 16, 270, 30)
-        dlg_add_subtitle(dialog, L10n.shared.tr("quota.windowSubtitle"), 24, 47, dialogWidth - 80, 22)
+        brand_add_title(dialog, L10n.shared.tr("quota.windowTitle"), 24, 16, 270, 30)
+        brand_add_subtitle(dialog, L10n.shared.tr("quota.windowSubtitle"), 24, 47, dialogWidth - 80, 22)
         dlg_add_push(dialog, 983, L10n.shared.tr(quotaOrderEditing ? "quota.finishOrder" : "quota.editOrder"), dialogWidth - 216, 16, 76, 30)
         dlg_add_push(dialog, 981, L10n.shared.tr("quota.retry"), dialogWidth - 132, 16, 98, 30)
         guard !cards.isEmpty else {
             dlg_add_card(dialog, 22, 92, dialogWidth - 56, 92)
-            dlg_add_subtitle(dialog, L10n.shared.tr(anyLoading ? "quota.loadingAll" : "quota.noActiveProviders"), 40, 122, dialogWidth - 92, 32)
+            brand_add_subtitle(dialog, L10n.shared.tr(anyLoading ? "quota.loadingAll" : "quota.noActiveProviders"), 40, 122, dialogWidth - 92, 32)
             dlg_add_push(dialog, 982, L10n.shared.language == .en ? "Close" : "关闭", dialogWidth - 134, 204, 100, 30)
             return
         }
-        dlg_add_section(dialog, L10n.shared.tr("quota.dialDisplay"), 24, 82, 54, 22)
+        brand_add_section(dialog, L10n.shared.tr("quota.dialDisplay"), 24, 82, 54, 22)
         let selectorColumns = twoColumns ? 6 : 3
         let selectorTheme = selectedTheme.winTheme
         for (index, provider) in SubscriptionProvider.allCases.enumerated() {
@@ -1269,7 +1272,7 @@ final class WindowsApp: @unchecked Sendable {
             let y = Int32(78 + row * 30)
             let color = dialQuotaColor(provider, themeTextColor: selectorTheme.text_primary)
             dlg_add_swatch(dialog, x, y + 8, 8, color)
-            dlg_add_check(
+            brand_add_check(
                 dialog, 1300 + Int32(index), provider.displayName,
                 x + 12, y, 112, 24, dialQuotaProviders.contains(provider) ? 1 : 0
             )
@@ -1304,9 +1307,9 @@ final class WindowsApp: @unchecked Sendable {
         if quotaOrderEditing, let defaultIndex = SubscriptionProvider.allCases.firstIndex(of: provider) {
             dlg_add_push(dialog, 990 + Int32(defaultIndex), visibleIndex == 0 ? "·" : "↑", x, cursorY - 2, 24, 22)
             dlg_add_push(dialog, 1000 + Int32(defaultIndex), visibleIndex == visibleCount - 1 ? "·" : "↓", x + 28, cursorY - 2, 24, 22)
-            dlg_add_section(dialog, title + accountCount, x + 60, cursorY, width - 64, 22)
+            brand_add_section(dialog, title + accountCount, x + 60, cursorY, width - 64, 22)
         } else {
-            dlg_add_section(dialog, title + accountCount, x + 6, cursorY, width - 12, 22)
+            brand_add_section(dialog, title + accountCount, x + 6, cursorY, width - 12, 22)
         }
         cursorY += 28
         for (accountIndex, account) in accounts.enumerated() {
@@ -1315,7 +1318,7 @@ final class WindowsApp: @unchecked Sendable {
             let editID = Int32(1100 + accountControlIndex)
             let emailID = Int32(1200 + accountControlIndex)
             quotaEditControls[editID] = account.id
-            dlg_add_static(dialog, account.displayName + planText, x + 8, cursorY, width - 74, 21)
+            brand_add_static(dialog, account.displayName + planText, x + 8, cursorY, width - 74, 21)
             dlg_add_push(dialog, editID, "✎", x + width - 58, cursorY - 2, 26, 23)
             if account.revealsEmailOnDemand {
                 quotaEmailControls[emailID] = account.id
@@ -1324,24 +1327,24 @@ final class WindowsApp: @unchecked Sendable {
             accountControlIndex += 1
             cursorY += 25
             if account.revealsEmailOnDemand, expandedQuotaEmails.contains(account.id), let email = account.email {
-                dlg_add_subtitle(dialog, "✉  \(email)", x + 12, cursorY, width - 24, 18)
+                brand_add_subtitle(dialog, "✉  \(email)", x + 12, cursorY, width - 24, 18)
                 cursorY += 21
             }
             for group in account.groups {
                 if account.groups.count > 1 || group.name != "Subscription" {
-                    dlg_add_subtitle(dialog, group.name, x + 10, cursorY, width - 20, 18)
+                    brand_add_subtitle(dialog, group.name, x + 10, cursorY, width - 20, 18)
                     cursorY += 20
                 }
                 for bucket in group.buckets {
                     dlg_add_card(dialog, x, cursorY, width, 72)
                     let label = bucket.name.isEmpty ? quotaWindowLabel(minutes: bucket.windowMinutes) : bucket.name
                     let percent = String(format: "%.0f%% %@", bucket.remainingPercent, L10n.shared.tr("quota.remainingLabel"))
-                    dlg_add_static(dialog, label, x + 14, cursorY + 8, width - 160, 20)
-                    dlg_add_static(dialog, percent, x + width - 128, cursorY + 8, 114, 20)
+                    brand_add_static(dialog, label, x + 14, cursorY + 8, width - 160, 20)
+                    brand_add_static(dialog, percent, x + width - 128, cursorY + 8, 114, 20)
                     dlg_add_progress(dialog, x + 14, cursorY + 32, width - 34, 8, Int32(bucket.remainingPercent.rounded()))
                     if let reset = bucket.resetsAt {
                         let labels = quotaResetLabels(reset)
-                        dlg_add_subtitle(dialog, "\(labels.relative) · \(labels.absolute)", x + 14, cursorY + 49, width - 28, 17)
+                        brand_add_subtitle(dialog, "\(labels.relative) · \(labels.absolute)", x + 14, cursorY + 49, width - 28, 17)
                     }
                     cursorY += 80
                 }
@@ -1351,7 +1354,7 @@ final class WindowsApp: @unchecked Sendable {
             let updated = account.refreshedAt.map { " · \(L10n.shared.tr("quota.updated", quotaUpdatedLabel($0)))" } ?? ""
             let stale = DialQuotaResolver.freshGroups(account.groups, refreshedAt: account.refreshedAt).isEmpty
                 ? " · \(L10n.shared.tr("quota.snapshotStale"))" : ""
-            dlg_add_subtitle(dialog, (isCurrent ? "●  " : "◐  ") + source + updated + stale, x + 10, cursorY, width - 20, 18)
+            brand_add_subtitle(dialog, (isCurrent ? "●  " : "◐  ") + source + updated + stale, x + 10, cursorY, width - 20, 18)
             cursorY += 23
         }
         return cursorY + 4
@@ -1459,7 +1462,7 @@ final class WindowsApp: @unchecked Sendable {
     }
 
     private func dialQuotaTooltip(_ indicator: DialQuotaIndicator) -> String {
-        var lines = ["\(indicator.provider.emoji) \(indicator.provider.displayName)"]
+        var lines = [indicator.provider.displayName]
         for detail in indicator.details {
             lines.append("\(L10n.shared.tr(detail.labelKey)) \(String(format: "%.0f%%", detail.remainingPercent))")
         }
@@ -1604,11 +1607,11 @@ final class WindowsApp: @unchecked Sendable {
     private func editSubscriptionAccount(_ account: SubscriptionAccountRecord) {
         let L = L10n.shared
         guard let dialog = dlg_create(L.tr("quota.editAccount"), 430, 310) else { return }
-        dlg_add_title(dialog, L.tr("quota.editAccount"), 24, 16, 300, 30)
-        if let email = account.email { dlg_add_subtitle(dialog, "✉  \(email)", 24, 50, 370, 20) }
-        dlg_add_section(dialog, L.tr("quota.accountNote"), 24, 84, 180, 20)
+        brand_add_title(dialog, L.tr("quota.editAccount"), 24, 16, 300, 30)
+        if let email = account.email { brand_add_subtitle(dialog, "✉  \(email)", 24, 50, 370, 20) }
+        brand_add_section(dialog, L.tr("quota.accountNote"), 24, 84, 180, 20)
         dlg_add_edit(dialog, 1400, account.note, 24, 106, 376, 30)
-        dlg_add_section(dialog, L.tr("quota.planLabel"), 24, 150, 180, 20)
+        brand_add_section(dialog, L.tr("quota.planLabel"), 24, 150, 180, 20)
         let detected = account.detectedPlan.map(displayPlan) ?? L.tr("quota.unknownPlan")
         let automatic = L.tr("quota.detectedPlan", detected)
         let choices = [automatic] + planOptions(for: account.provider).filter { $0 != detected }
@@ -1682,14 +1685,14 @@ final class WindowsApp: @unchecked Sendable {
         let reports = model.notifications.filter { $0.route != nil }
         let height = max(180, 90 + Int32(reports.count) * 68)
         dlg_reset_content(dialog, height)
-        dlg_add_title(dialog, L10n.shared.tr("notification.title"), 24, 16, 300, 30)
+        brand_add_title(dialog, L10n.shared.tr("notification.title"), 24, 16, 300, 30)
         if reports.isEmpty {
-            dlg_add_subtitle(dialog, L10n.shared.tr("notification.empty"), 24, 64, 460, 28)
+            brand_add_subtitle(dialog, L10n.shared.tr("notification.empty"), 24, 64, 460, 28)
         } else {
             for (index, report) in reports.enumerated() {
                 let y = Int32(58 + index * 68)
                 dlg_add_push(dialog, 1300 + Int32(index), notificationTitle(report), 24, y, 460, 28)
-                dlg_add_subtitle(dialog, report.message, 30, y + 31, 450, 28)
+                brand_add_subtitle(dialog, report.message, 30, y + 31, 450, 28)
             }
         }
         dlg_add_push(dialog, 2, L10n.shared.tr("about.close"), 394, height - 42, 90, 30)
@@ -1775,8 +1778,8 @@ final class WindowsApp: @unchecked Sendable {
         let contentHeight = Int32(330 + rowCount * 30) + chartHeight + customHeight
         dlg_reset_content(dlg, contentHeight)
 
-        dlg_add_title(dlg, L10n.shared.tr("overview.title"), 24, 14, 260, 30)
-        dlg_add_subtitle(dlg, "\(overviewDisplayDate(dates.0)) – \(overviewDisplayDate(dates.1))", 24, 46, 280, 20)
+        brand_add_title(dlg, L10n.shared.tr("overview.title"), 24, 14, 260, 30)
+        brand_add_subtitle(dlg, "\(overviewDisplayDate(dates.0)) – \(overviewDisplayDate(dates.1))", 24, 46, 280, 20)
         dlg_add_push(dlg, 900, overviewPeriod == .week ? "✓  \(L10n.shared.tr("overview.last7Days"))" : L10n.shared.tr("overview.last7Days"), 390, 18, 116, 30)
         dlg_add_push(dlg, 901, overviewPeriod == .month ? "✓  \(L10n.shared.tr("overview.last30Days"))" : L10n.shared.tr("overview.last30Days"), 512, 18, 126, 30)
         dlg_add_push(dlg, 902, overviewPeriod == .custom ? "✓  \(L10n.shared.tr("overview.custom"))" : L10n.shared.tr("overview.custom"), 644, 18, 118, 30)
@@ -1790,9 +1793,9 @@ final class WindowsApp: @unchecked Sendable {
 
         var y: Int32 = 122
         if overviewPeriod == .custom {
-            dlg_add_static(dlg, L10n.shared.tr("overview.from"), 380, y + 3, 28, 22)
+            brand_add_static(dlg, L10n.shared.tr("overview.from"), 380, y + 3, 28, 22)
             dlg_add_edit(dlg, 912, DateHelper.dateKey(from: overviewCustomStart), 410, y, 112, 26)
-            dlg_add_static(dlg, L10n.shared.tr("overview.to"), 530, y + 3, 24, 22)
+            brand_add_static(dlg, L10n.shared.tr("overview.to"), 530, y + 3, 24, 22)
             dlg_add_edit(dlg, 913, DateHelper.dateKey(from: overviewCustomEnd), 556, y, 112, 26)
             dlg_add_push(dlg, 914, L10n.shared.tr("settings.done"), 678, y, 84, 27)
             y += 42
@@ -1806,15 +1809,15 @@ final class WindowsApp: @unchecked Sendable {
 
         y = appendWindowsOverviewChart(dlg, data: data, modelData: modelData, y: y)
 
-        dlg_add_section(dlg, L10n.shared.tr("overview.breakdown"), 24, y, 200, 24)
+        brand_add_section(dlg, L10n.shared.tr("overview.breakdown"), 24, y, 200, 24)
         dlg_add_push(dlg, 909, overviewSelectedDayKey == nil ? "✓ \(L10n.shared.tr("overview.overview"))" : L10n.shared.tr("overview.overview"), 222, y - 2, 96, 26)
         y += 28
         let listHeight = Int32(56 + rowCount * 30)
         dlg_add_card(dlg, 22, y, 760, listHeight)
-        dlg_add_static(dlg, activeDay?.dateKey ?? L10n.shared.tr("overview.overview"), 36, y + 7, 220, 22)
+        brand_add_static(dlg, activeDay?.dateKey ?? L10n.shared.tr("overview.overview"), 36, y + 7, 220, 22)
         appendOverviewColumns(dlg, y: y + 29, name: L10n.shared.tr("overview.name"), tokens: tokenHeader, messages: L10n.shared.tr("overview.messages"), cost: L10n.shared.tr("overview.cost"), cache: L10n.shared.tr("overview.averageCache"))
         if displayRows.isEmpty {
-            dlg_add_subtitle(dlg, L10n.shared.tr("overview.noData"), 42, y + 38, 700, 24)
+            brand_add_subtitle(dlg, L10n.shared.tr("overview.noData"), 42, y + 38, 700, 24)
         }
         for (index, row) in displayRows.enumerated() {
             let rowY = y + 56 + Int32(index * 30)
@@ -1834,7 +1837,7 @@ final class WindowsApp: @unchecked Sendable {
         if data.containsLegacyCacheEstimate { notes.append(L10n.shared.tr("overview.estimatedCache")) }
         if data.containsUnavailableCost { notes.append(L10n.shared.tr("overview.partialCost")) }
         if data.containsUnknownModel { notes.append(L10n.shared.tr("overview.unknownModel")) }
-        if !notes.isEmpty { dlg_add_subtitle(dlg, "ⓘ  " + notes.joined(separator: "   ·   "), 24, y, 650, 32) }
+        if !notes.isEmpty { brand_add_subtitle(dlg, "ⓘ  " + notes.joined(separator: "   ·   "), 24, y, 650, 32) }
         dlg_add_push(dlg, 2, L10n.shared.tr("about.close"), 694, y, 88, 30)
         if scrollToTop { dlg_scroll_to(dlg, 0) }
     }
@@ -1844,8 +1847,8 @@ final class WindowsApp: @unchecked Sendable {
         title: String, value: String
     ) {
         dlg_add_card(dlg, x, y, width, 72)
-        dlg_add_subtitle(dlg, title, x + 14, y + 10, width - 28, 20)
-        dlg_add_title(dlg, value, x + 14, y + 32, width - 28, 26)
+        brand_add_subtitle(dlg, title, x + 14, y + 10, width - 28, 20)
+        brand_add_title(dlg, value, x + 14, y + 32, width - 28, 26)
     }
 
     private func appendWindowsOverviewChart(
@@ -1854,7 +1857,7 @@ final class WindowsApp: @unchecked Sendable {
         modelData: UsageOverviewData,
         y: Int32
     ) -> Int32 {
-        dlg_add_section(dlg, L10n.shared.tr("overview.daily"), 24, y, 200, 24)
+        brand_add_section(dlg, L10n.shared.tr("overview.daily"), 24, y, 200, 24)
         let cardY = y + 28
         let days = Array(data.days.suffix(30))
         let maxTokens = max(1, days.map { $0.metrics.displayedTokens(includingCacheRead: overviewIncludesCacheRead) }.max() ?? 1)
@@ -1866,8 +1869,8 @@ final class WindowsApp: @unchecked Sendable {
                 let tokens = day.metrics.displayedTokens(includingCacheRead: overviewIncludesCacheRead)
                 dlg_add_push(dlg, 1000 + Int32(index), String(day.dateKey.suffix(5)), 30, rowY - 2, 58, 23)
                 dlg_add_tooltip(dlg, 1000 + Int32(index), overviewDayTooltip(day))
-                dlg_add_static(dlg, overviewBar(tokens, maximum: maxTokens), 96, rowY, 558, 20)
-                dlg_add_static(dlg, TokenFormat.compact(tokens), 676, rowY, 88, 20)
+                brand_add_static(dlg, overviewBar(tokens, maximum: maxTokens), 96, rowY, 558, 20)
+                brand_add_static(dlg, TokenFormat.compact(tokens), 676, rowY, 88, 20)
             }
             return cardY + Int32(days.count * 26 + 32)
         }
@@ -1889,14 +1892,14 @@ final class WindowsApp: @unchecked Sendable {
                 dlg_add_push(dlg, 1000 + Int32(index), glyph, 42 + Int32(column * 36), cardY + 18 + Int32(row * 20), 30, 19)
                 dlg_add_tooltip(dlg, 1000 + Int32(index), overviewDayTooltip(day))
             }
-            dlg_add_subtitle(dlg, L10n.shared.tr("overview.hoverDay"), 270, cardY + 18, 470, 22)
+            brand_add_subtitle(dlg, L10n.shared.tr("overview.hoverDay"), 270, cardY + 18, 470, 22)
         case .line:
             let glyphs = Array("▁▂▃▄▅▆▇█")
             let sparkline = days.map { day -> Character in
                 let ratio = Double(day.metrics.displayedTokens(includingCacheRead: overviewIncludesCacheRead)) / Double(maxTokens)
                 return glyphs[min(glyphs.count - 1, Int((ratio * Double(glyphs.count - 1)).rounded()))]
             }
-            dlg_add_title(dlg, String(sparkline), 36, cardY + 18, 728, 48)
+            brand_add_title(dlg, String(sparkline), 36, cardY + 18, 728, 48)
             appendWindowsDayButtons(dlg, days: days, y: cardY + 86)
         case .stacked:
             let modelDays = Array(modelData.days.suffix(30))
@@ -1963,11 +1966,11 @@ final class WindowsApp: @unchecked Sendable {
         _ dlg: UnsafeMutableRawPointer, y: Int32,
         name: String, tokens: String, messages: String, cost: String, cache: String
     ) {
-        dlg_add_static(dlg, name, 36, y, 294, 22)
-        dlg_add_static(dlg, tokens, 340, y, 102, 22)
-        dlg_add_static(dlg, messages, 452, y, 84, 22)
-        dlg_add_static(dlg, cost, 548, y, 94, 22)
-        dlg_add_static(dlg, cache, 654, y, 106, 22)
+        brand_add_static(dlg, name, 36, y, 294, 22)
+        brand_add_static(dlg, tokens, 340, y, 102, 22)
+        brand_add_static(dlg, messages, 452, y, 84, 22)
+        brand_add_static(dlg, cost, 548, y, 94, 22)
+        brand_add_static(dlg, cache, 654, y, 106, 22)
     }
 
     private var overviewDates: (Date, Date) {
@@ -2079,8 +2082,8 @@ final class WindowsApp: @unchecked Sendable {
             period: sharePeriod, includingCacheRead: shareIncludesCacheRead
         )
         dlg_reset_content(dialog, 760)
-        dlg_add_title(dialog, L10n.shared.tr("share.title"), 24, 14, 300, 30)
-        dlg_add_subtitle(dialog, L10n.shared.tr("share.rangeHint"), 24, 44, 360, 22)
+        brand_add_title(dialog, L10n.shared.tr("share.title"), 24, 14, 300, 30)
+        brand_add_subtitle(dialog, L10n.shared.tr("share.rangeHint"), 24, 44, 360, 22)
         dlg_add_push(dialog, 1610, shareMode == .recent ? "✓  \(L10n.shared.tr("share.period.recent"))" : L10n.shared.tr("share.period.recent"), 22, 72, 182, 28)
         dlg_add_push(dialog, 1611, shareMode == .month ? "✓  \(L10n.shared.tr("share.period.month"))" : L10n.shared.tr("share.period.month"), 210, 72, 182, 28)
         dlg_add_push(dialog, 1612, shareMode == .week ? "✓  \(L10n.shared.tr("share.period.week"))" : L10n.shared.tr("share.period.week"), 398, 72, 190, 28)
@@ -2088,16 +2091,16 @@ final class WindowsApp: @unchecked Sendable {
         dlg_add_edit(dialog, 1600, DateHelper.dateKey(from: shareDate), 64, 111, 126, 28)
         dlg_add_push(dialog, 1602, "›", 196, 111, 34, 28)
         if shareMode == .recent {
-            dlg_add_static(dialog, L10n.shared.tr("share.period.recent"), 254, 113, 110, 22)
+            brand_add_static(dialog, L10n.shared.tr("share.period.recent"), 254, 113, 110, 22)
             dlg_add_edit(dialog, 1613, "\(shareDays)", 369, 111, 52, 28)
         } else if shareMode == .week {
-            dlg_add_static(dialog, L10n.shared.tr("share.period.week"), 254, 113, 110, 22)
+            brand_add_static(dialog, L10n.shared.tr("share.period.week"), 254, 113, 110, 22)
             dlg_add_edit(dialog, 1614, "\(shareWeekIndex)", 369, 111, 52, 28)
-            dlg_add_static(dialog, "/ \(shareAvailableWeekCount)", 426, 113, 50, 22)
+            brand_add_static(dialog, "/ \(shareAvailableWeekCount)", 426, 113, 50, 22)
         }
         dlg_add_push(dialog, 1603, L10n.shared.tr("settings.done"), 500, 111, 88, 28)
-        dlg_add_subtitle(dialog, "\(data.dateKey)  —  \(data.endDateKey)", 24, 146, 400, 20)
-        dlg_add_check(dialog, 1620, L10n.shared.tr("share.includeCache"),
+        brand_add_subtitle(dialog, "\(data.dateKey)  —  \(data.endDateKey)", 24, 146, 400, 20)
+        brand_add_check(dialog, 1620, L10n.shared.tr("share.includeCache"),
                       438, 143, 150, 26, shareIncludesCacheRead ? 1 : 0)
 
         appendShareMetricCard(
@@ -2108,22 +2111,22 @@ final class WindowsApp: @unchecked Sendable {
         appendShareMetricCard(dialog, x: 216, title: L10n.shared.tr("share.messages"), value: overviewNumber(data.messages))
         appendShareMetricCard(dialog, x: 410, title: L10n.shared.tr("share.cache"), value: String(format: "%.2f%%", data.averageCacheRate * 100))
 
-        dlg_add_section(dialog, L10n.shared.tr("share.toolBreakdown"), 24, 268, 300, 24)
+        brand_add_section(dialog, L10n.shared.tr("share.toolBreakdown"), 24, 268, 300, 24)
         dlg_add_card(dialog, 22, 296, 566, 278)
         if data.rows.isEmpty {
-            dlg_add_subtitle(dialog, L10n.shared.tr("share.noUsage"), 42, 324, 526, 44)
+            brand_add_subtitle(dialog, L10n.shared.tr("share.noUsage"), 42, 324, 526, 44)
         } else {
             for (index, row) in data.rows.enumerated() {
                 let y = 308 + Int32(index * 36)
-                dlg_add_static(dialog, "\(row.emoji)  \(row.name)", 40, y, 368, 24)
-                dlg_add_static(dialog, TokenFormat.compact(row.tokens), 430, y, 132, 24)
+                brand_add_static(dialog, "\(row.emoji)  \(row.name)", 40, y, 368, 24)
+                brand_add_static(dialog, TokenFormat.compact(row.tokens), 430, y, 132, 24)
                 if index + 1 < data.rows.count { dlg_add_sep(dialog, 40, y + 30, 522) }
             }
         }
 
         dlg_add_card(dialog, 22, 586, 566, 72)
-        dlg_add_static(dialog, "“", 40, 594, 34, 38)
-        dlg_add_subtitle(dialog, L10n.shared.tr(data.quoteKey), 76, 594, 488, 54)
+        brand_add_static(dialog, "“", 40, 594, 34, 38)
+        brand_add_subtitle(dialog, L10n.shared.tr(data.quoteKey), 76, 594, 488, 54)
         dlg_add_push(dialog, 1615, shareStyle == .ink ? "✓ \(L10n.shared.tr("share.style.ink"))" : L10n.shared.tr("share.style.ink"), 22, 670, 100, 25)
         dlg_add_push(dialog, 1616, shareStyle == .paper ? "✓ \(L10n.shared.tr("share.style.paper"))" : L10n.shared.tr("share.style.paper"), 128, 670, 100, 25)
         dlg_add_push(dialog, 1617, shareStyle == .cobalt ? "✓ \(L10n.shared.tr("share.style.cobalt"))" : L10n.shared.tr("share.style.cobalt"), 234, 670, 100, 25)
@@ -2136,8 +2139,8 @@ final class WindowsApp: @unchecked Sendable {
         _ dialog: UnsafeMutableRawPointer, x: Int32, title: String, value: String
     ) {
         dlg_add_card(dialog, x, 170, 178, 78)
-        dlg_add_subtitle(dialog, title, x + 14, 180, 150, 20)
-        dlg_add_title(dialog, value, x + 14, 202, 150, 30)
+        brand_add_subtitle(dialog, title, x + 14, 180, 150, 20)
+        brand_add_title(dialog, value, x + 14, 202, 150, 30)
     }
 
     private func updateShareInputsFromEditor() {
@@ -2182,7 +2185,7 @@ final class WindowsApp: @unchecked Sendable {
         let rows = data.rows.map { row in
             let name = row.name.replacingOccurrences(of: "\t", with: " ")
                 .replacingOccurrences(of: "\n", with: " ")
-            return "\(row.emoji)\t\(name)\t\(TokenFormat.compact(row.tokens))\t\(String(format: "%.6f", row.fraction))"
+            return "\(BrandIconCatalog.token(for: row.name, fallback: row.emoji))\t\(name)\t\(TokenFormat.compact(row.tokens))\t\(String(format: "%.6f", row.fraction))"
         }.joined(separator: "\n")
         let values = [
             "\(data.dateKey) — \(data.endDateKey)", TokenFormat.compact(data.totalTokens),
@@ -2306,8 +2309,8 @@ final class WindowsApp: @unchecked Sendable {
         let expandedHeight = expandedSettingsSection.map(settingsSectionHeight) ?? 0
         let contentHeight: Int32 = 76 + Int32(rows.count * 56) + expandedHeight + 72
         dlg_reset_content(dlg, contentHeight)
-        dlg_add_title(dlg, en ? "TokenClock Settings" : "TokenClock 设置", 24, 14, 330, 30)
-        dlg_add_subtitle(dlg, en ? "Expand a section to review and edit it." : "展开一个分组进行查看与编辑。", 24, 48, 450, 20)
+        brand_add_title(dlg, en ? "TokenClock Settings" : "TokenClock 设置", 24, 14, 330, 30)
+        brand_add_subtitle(dlg, en ? "Expand a section to review and edit it." : "展开一个分组进行查看与编辑。", 24, 48, 450, 20)
 
         var y: Int32 = 76
         var expandedHeaderY: Int32 = 0
@@ -2340,10 +2343,10 @@ final class WindowsApp: @unchecked Sendable {
         switch section {
         case .autoDetect:
             dlg_add_card(dlg, 34, y, 440, 78)
-            _ = dlg_add_static_id(dlg, 702,
+            _ = brand_add_static_id(dlg, 702,
                                   settingsDetectionStatus ?? (en ? "Ready to scan" : "可以开始探测"),
                                   48, y + 12, 270, 22)
-            dlg_add_subtitle(dlg,
+            brand_add_subtitle(dlg,
                              en ? "Checks only documented Windows locations and readable local endpoints."
                                 : "仅检查 Windows 已知路径与可读的本机接口。",
                              48, y + 36, 284, 34)
@@ -2357,12 +2360,12 @@ final class WindowsApp: @unchecked Sendable {
                 let label = entry.statisticsSupport == .contractOnly
                     ? "\(name) · \(en ? "No stats" : "仅发现")"
                     : name
-                dlg_add_check(dlg, 300 + Int32(i), label,
+                brand_add_check(dlg, 300 + Int32(i), label,
                               42 + Int32(col * 142), y + 10 + Int32(row * 36),
                               134, 28, draft.enabled.contains(name) ? 1 : 0)
             }
             dlg_add_card(dlg, 34, y + 248, 440, 48)
-            dlg_add_check(dlg, 410,
+            brand_add_check(dlg, 410,
                           en ? "Cursor cloud usage (contacts cursor.com)" : "Cursor 云端用量（会访问 cursor.com）",
                           46, y + 258, 410, 28, draft.cursorCloud ? 1 : 0)
 
@@ -2374,7 +2377,7 @@ final class WindowsApp: @unchecked Sendable {
                 let label = entry.statisticsSupport == .contractOnly
                     ? "\(entry.displayName) · \(en ? "discovery only" : "仅发现")"
                     : entry.displayName
-                dlg_add_static(dlg, label, x, rowY, 214, 19)
+                brand_add_static(dlg, label, x, rowY, 214, 19)
                 dlg_add_edit(dlg, 200 + Int32(i), draft.paths[entry.displayName] ?? "",
                              x, rowY + 18, entry.supportsFolderPicker ? 150 : 216, 23)
                 if entry.supportsFolderPicker {
@@ -2384,12 +2387,12 @@ final class WindowsApp: @unchecked Sendable {
 
         case .thresholds:
             dlg_add_card(dlg, 34, y, 440, 170)
-            dlg_add_static(dlg, en ? "Rate window (minutes)" : "速率窗口（分钟）", 50, y + 16, 174, 22)
+            brand_add_static(dlg, en ? "Rate window (minutes)" : "速率窗口（分钟）", 50, y + 16, 174, 22)
             dlg_add_edit(dlg, 400, "\(draft.rateWindow)", 232, y + 12, 92, 28)
             let labels = en ? ["Burst", "Hot", "Active", "Calm"] : ["爆发", "高热", "活跃", "平静"]
             for i in 0..<4 {
                 let rowY = y + 48 + Int32(i * 27)
-                dlg_add_static(dlg, labels[i], 50, rowY + 3, 112, 22)
+                brand_add_static(dlg, labels[i], 50, rowY + 3, 112, 22)
                 dlg_add_edit(dlg, 401 + Int32(i), "\(draft.thresholds[i])", 174, rowY, 150, 24)
             }
 
@@ -2398,8 +2401,8 @@ final class WindowsApp: @unchecked Sendable {
 
         case .customFace:
             dlg_add_card(dlg, 34, y, 440, 116)
-            dlg_add_section(dlg, en ? "Design and manage clock faces" : "设计与管理表盘", 50, y + 14, 270, 22)
-            dlg_add_subtitle(dlg,
+            brand_add_section(dlg, en ? "Design and manage clock faces" : "设计与管理表盘", 50, y + 14, 270, 22)
+            brand_add_subtitle(dlg,
                              en ? "Colors, hand geometry, markings, saved faces, apply and delete."
                                 : "编辑颜色、指针几何、刻度，并管理表盘的保存、应用与删除。",
                              50, y + 42, 280, 48)
@@ -2407,11 +2410,11 @@ final class WindowsApp: @unchecked Sendable {
 
         case .localAPI:
             dlg_add_card(dlg, 34, y, 440, 94)
-            dlg_add_check(dlg, 411, en ? "Enable Local API server" : "启用本地 API 服务",
+            brand_add_check(dlg, 411, en ? "Enable Local API server" : "启用本地 API 服务",
                           50, y + 18, 246, 28, draft.apiEnabled ? 1 : 0)
-            dlg_add_static(dlg, en ? "Port" : "端口", 302, y + 22, 48, 22)
+            brand_add_static(dlg, en ? "Port" : "端口", 302, y + 22, 48, 22)
             dlg_add_edit(dlg, 412, "\(draft.apiPort)", 350, y + 18, 106, 28)
-            dlg_add_subtitle(dlg,
+            brand_add_subtitle(dlg,
                              en ? "Loopback-only usage and history endpoints" : "仅本机可访问的 usage/history 接口",
                              50, y + 56, 390, 22)
         }
@@ -2422,11 +2425,11 @@ final class WindowsApp: @unchecked Sendable {
         let L = L10n.shared, en = L.language == .en
         let summary = PricingService.shared.catalogSummary
         dlg_add_card(dlg, 34, y, 440, 82)
-        _ = dlg_add_static_id(dlg, 760, pricingCatalogText(summary), 48, y + 10, 308, 20)
+        _ = brand_add_static_id(dlg, 760, pricingCatalogText(summary), 48, y + 10, 308, 20)
         dlg_add_push(dlg, 750, en ? "Refresh" : L.tr("pricing.refresh"), 370, y + 8, 90, 28)
-        dlg_add_subtitle(dlg, L.tr("pricing.unit"), 48, y + 34, 180, 18)
+        brand_add_subtitle(dlg, L.tr("pricing.unit"), 48, y + 34, 180, 18)
         let unpriced = PricingService.shared.unpricedModels
-        dlg_add_subtitle(dlg,
+        brand_add_subtitle(dlg,
                          unpriced.isEmpty ? (en ? "Unpriced models: none" : "未能计价的模型：无")
                                           : (en ? "Unpriced: \(unpriced.joined(separator: ", "))"
                                                 : "未能计价：\(unpriced.joined(separator: "、"))"),
@@ -2434,7 +2437,7 @@ final class WindowsApp: @unchecked Sendable {
 
         let tableY = y + 92
         dlg_add_card(dlg, 34, tableY, 440, 242)
-        dlg_add_section(dlg, L.tr("pricing.customTitle"), 48, tableY + 10, 220, 20)
+        brand_add_section(dlg, L.tr("pricing.customTitle"), 48, tableY + 10, 220, 20)
         dlg_add_push(dlg, 751, L.tr("pricing.addCustom"), 328, tableY + 6, 132, 28)
         let colX: [Int32] = [48, 194, 252, 310, 372]
         let colW: [Int32] = [142, 54, 54, 58, 58]
@@ -2442,7 +2445,7 @@ final class WindowsApp: @unchecked Sendable {
                        en ? "C.Read" : L.tr("pricing.cacheRead"),
                        en ? "C.Write" : L.tr("pricing.cacheWrite")]
         for i in 0..<headers.count {
-            dlg_add_subtitle(dlg, headers[i], colX[i], tableY + 34, colW[i], 16)
+            brand_add_subtitle(dlg, headers[i], colX[i], tableY + 34, colW[i], 16)
         }
         for i in 0..<5 {
             let row = i < settingsPricingRows.count ? settingsPricingRows[i]
@@ -2538,8 +2541,8 @@ final class WindowsApp: @unchecked Sendable {
     private func editToolSelection(_ draft: inout SettingsDraft) {
         let en = L10n.shared.language == .en
         guard let dlg = dlg_create(en ? "Tool Selection" : "工具选择", 520, 548) else { return }
-        dlg_add_title(dlg, en ? "Tool Selection" : "工具选择", 24, 14, 360, 30)
-        dlg_add_subtitle(dlg, en ? "Only enabled providers participate in scans." : "仅扫描已启用的 provider。", 24, 49, 460, 20)
+        brand_add_title(dlg, en ? "Tool Selection" : "工具选择", 24, 14, 360, 30)
+        brand_add_subtitle(dlg, en ? "Only enabled providers participate in scans." : "仅扫描已启用的 provider。", 24, 49, 460, 20)
         dlg_add_card(dlg, 20, 76, 468, 264)
         for (i, name) in Self.providerNames.enumerated() {
             let col = i / 6, row = i % 6
@@ -2547,10 +2550,10 @@ final class WindowsApp: @unchecked Sendable {
             let label = entry.statisticsSupport == .contractOnly
                 ? "\(name) · \(en ? "No stats" : "仅发现")"
                 : name
-            dlg_add_check(dlg, 300 + Int32(i), label, 24 + Int32(col * 160), 86 + Int32(row * 42), 144, 28, draft.enabled.contains(name) ? 1 : 0)
+            brand_add_check(dlg, 300 + Int32(i), label, 24 + Int32(col * 160), 86 + Int32(row * 42), 144, 28, draft.enabled.contains(name) ? 1 : 0)
         }
         dlg_add_card(dlg, 20, 352, 468, 62)
-        dlg_add_check(dlg, 410, en ? "Cursor cloud usage (contacts cursor.com)" : "Cursor 云端用量（会访问 cursor.com）", 36, 370, 430, 26, draft.cursorCloud ? 1 : 0)
+        brand_add_check(dlg, 410, en ? "Cursor cloud usage (contacts cursor.com)" : "Cursor 云端用量（会访问 cursor.com）", 36, 370, 430, 26, draft.cursorCloud ? 1 : 0)
         dlg_add_sep(dlg, 20, 444, 470)
         dlg_add_push(dlg, 1, en ? "Apply" : "应用", 288, 458, 92, 30)
         dlg_add_push(dlg, 2, en ? "Cancel" : "取消", 392, 458, 92, 30)
@@ -2566,8 +2569,8 @@ final class WindowsApp: @unchecked Sendable {
         guard let dlg = dlg_create(en ? "Data Source Paths" : "数据源路径", 520, 548) else { return }
         settingsDlg = dlg; settingsDraft = draft
         defer { settingsDlg = nil; dlg_destroy(dlg) }
-        dlg_add_title(dlg, en ? "Data Source Paths" : "数据源路径", 24, 12, 350, 30)
-        dlg_add_subtitle(dlg, en ? "Windows paths remain provider-specific." : "Windows 路径按 provider 独立维护。", 24, 46, 470, 20)
+        brand_add_title(dlg, en ? "Data Source Paths" : "数据源路径", 24, 12, 350, 30)
+        brand_add_subtitle(dlg, en ? "Windows paths remain provider-specific." : "Windows 路径按 provider 独立维护。", 24, 46, 470, 20)
         dlg_add_card(dlg, 8, 70, 498, 386)
         let top: Int32 = 78
         for (i, entry) in Self.providerEntries.enumerated() {
@@ -2576,7 +2579,7 @@ final class WindowsApp: @unchecked Sendable {
             let sourceLabel = entry.statisticsSupport == .contractOnly
                 ? "\(entry.displayName) · \(en ? "discovery only" : "仅发现")"
                 : entry.displayName
-            dlg_add_static(dlg, sourceLabel, x, y, 225, 20)
+            brand_add_static(dlg, sourceLabel, x, y, 225, 20)
             dlg_add_edit(dlg, 200 + Int32(i), draft.paths[entry.displayName] ?? "", x, y + 20, entry.supportsFolderPicker ? 170 : 224, 24)
             if entry.supportsFolderPicker {
                 dlg_add_push(dlg, 600 + Int32(i), en ? "Browse" : "浏览", x + 174, y + 20, 66, 24)
@@ -2598,14 +2601,14 @@ final class WindowsApp: @unchecked Sendable {
     private func editHeatThresholds(_ draft: inout SettingsDraft) {
         let en = L10n.shared.language == .en
         guard let dlg = dlg_create(en ? "Heat Thresholds" : "热力阈值", 520, 330) else { return }
-        dlg_add_title(dlg, en ? "Heat Thresholds" : "热力阈值", 24, 14, 360, 30)
-        dlg_add_subtitle(dlg, en ? "Tune activity levels for the dial status indicator." : "调整表盘状态指示器的活跃度分级。", 24, 49, 460, 20)
+        brand_add_title(dlg, en ? "Heat Thresholds" : "热力阈值", 24, 14, 360, 30)
+        brand_add_subtitle(dlg, en ? "Tune activity levels for the dial status indicator." : "调整表盘状态指示器的活跃度分级。", 24, 49, 460, 20)
         dlg_add_card(dlg, 20, 78, 468, 158)
-        dlg_add_static(dlg, en ? "Rate window (minutes)" : "速率窗口（分钟）", 36, 92, 180, 22); dlg_add_edit(dlg, 400, "\(draft.rateWindow)", 220, 88, 90, 28)
+        brand_add_static(dlg, en ? "Rate window (minutes)" : "速率窗口（分钟）", 36, 92, 180, 22); dlg_add_edit(dlg, 400, "\(draft.rateWindow)", 220, 88, 90, 28)
         let labels = en ? ["Burst", "Hot", "Active", "Calm"] : ["爆发", "高热", "活跃", "平静"]
         for i in 0..<4 {
             let y = 124 + Int32(i * 26)
-            dlg_add_static(dlg, labels[i], 36, y + 4, 112, 22); dlg_add_edit(dlg, 401 + Int32(i), "\(draft.thresholds[i])", 160, y, 150, 24)
+            brand_add_static(dlg, labels[i], 36, y + 4, 112, 22); dlg_add_edit(dlg, 401 + Int32(i), "\(draft.thresholds[i])", 160, y, 150, 24)
         }
         dlg_add_sep(dlg, 20, 250, 470)
         dlg_add_push(dlg, 1, en ? "Apply" : "应用", 288, 264, 92, 30); dlg_add_push(dlg, 2, en ? "Cancel" : "取消", 392, 264, 92, 30)
@@ -2625,16 +2628,16 @@ final class WindowsApp: @unchecked Sendable {
         guard let dlg = dlg_create(en ? "Cost Estimation" : "费用估算", 520, 548) else { return }
         pricingDlg = dlg
         defer { pricingDlg = nil; dlg_destroy(dlg) }
-        dlg_add_title(dlg, en ? "Cost Estimation" : "费用估算", 24, 14, 360, 30)
+        brand_add_title(dlg, en ? "Cost Estimation" : "费用估算", 24, 14, 360, 30)
         // The English note wraps to two lines at the native Windows font size.
         // Reserve the full line height so the separator never cuts through it.
-        dlg_add_subtitle(dlg, L.tr("pricing.note"), 24, 48, 464, 44)
+        brand_add_subtitle(dlg, L.tr("pricing.note"), 24, 48, 464, 44)
         dlg_add_card(dlg, 20, 102, 468, 82)
 
         // 目录状态 + 手动刷新
         let summary = PricingService.shared.catalogSummary
-        _ = dlg_add_static_id(dlg, 760, pricingCatalogText(summary), 34, 114, 276, 20)
-        dlg_add_subtitle(dlg, L.tr("pricing.unit"), 34, 138, 200, 18)
+        _ = brand_add_static_id(dlg, 760, pricingCatalogText(summary), 34, 114, 276, 20)
+        brand_add_subtitle(dlg, L.tr("pricing.unit"), 34, 138, 200, 18)
         dlg_add_push(dlg, 750, L.tr("pricing.refresh"), 316, 114, 158, 28)
 
         // 未计价模型
@@ -2642,11 +2645,11 @@ final class WindowsApp: @unchecked Sendable {
         let unpricedText = unpriced.isEmpty
             ? (en ? "Unpriced models: none" : "未能计价的模型：无")
             : (en ? "Unpriced: \(unpriced.joined(separator: ", "))" : "未能计价：\(unpriced.joined(separator: "、"))")
-        dlg_add_subtitle(dlg, unpricedText, 34, 158, 438, 20)
+        brand_add_subtitle(dlg, unpricedText, 34, 158, 438, 20)
 
         // 自定义价格表：5 个可编辑槽位 [模型名 | 输入 | 输出 | 缓存读 | 缓存写]
         dlg_add_card(dlg, 20, 194, 468, 228)
-        dlg_add_section(dlg, L.tr("pricing.customTitle"), 34, 206, 240, 20)
+        brand_add_section(dlg, L.tr("pricing.customTitle"), 34, 206, 240, 20)
         dlg_add_push(dlg, 751, L.tr("pricing.addCustom"), 342, 202, 134, 28)
         let colX: [Int32] = [34, 190, 250, 310, 372]
         let colW: [Int32] = [152, 56, 56, 58, 58]
@@ -2656,7 +2659,7 @@ final class WindowsApp: @unchecked Sendable {
             en ? "C.Write" : L.tr("pricing.cacheWrite"),
         ]
         for (c, text) in headers.enumerated() {
-            dlg_add_subtitle(dlg, text, colX[c], 230, colW[c], 16)
+            brand_add_subtitle(dlg, text, colX[c], 230, colW[c], 16)
         }
         let custom = PricingService.shared.customModels
         pricingVisibleRows = min(5, max(1, custom.count + 1))
@@ -2739,11 +2742,11 @@ final class WindowsApp: @unchecked Sendable {
     private func editLocalAPI(_ draft: inout SettingsDraft) {
         let en = L10n.shared.language == .en
         guard let dlg = dlg_create(en ? "Local API" : "本地 API", 520, 245) else { return }
-        dlg_add_title(dlg, en ? "Local API" : "本地 API", 24, 14, 360, 30)
-        dlg_add_subtitle(dlg, en ? "Loopback-only usage and history endpoints" : "仅本机可访问的 usage/history 接口", 24, 49, 460, 20)
+        brand_add_title(dlg, en ? "Local API" : "本地 API", 24, 14, 360, 30)
+        brand_add_subtitle(dlg, en ? "Loopback-only usage and history endpoints" : "仅本机可访问的 usage/history 接口", 24, 49, 460, 20)
         dlg_add_card(dlg, 20, 76, 468, 82)
-        dlg_add_check(dlg, 411, en ? "Enable Local API server" : "启用本地 API 服务", 36, 88, 250, 28, draft.apiEnabled ? 1 : 0)
-        dlg_add_static(dlg, en ? "Port" : "端口", 306, 92, 50, 22); dlg_add_edit(dlg, 412, "\(draft.apiPort)", 358, 88, 108, 28)
+        brand_add_check(dlg, 411, en ? "Enable Local API server" : "启用本地 API 服务", 36, 88, 250, 28, draft.apiEnabled ? 1 : 0)
+        brand_add_static(dlg, en ? "Port" : "端口", 306, 92, 50, 22); dlg_add_edit(dlg, 412, "\(draft.apiPort)", 358, 88, 108, 28)
         dlg_add_sep(dlg, 20, 164, 470)
         dlg_add_push(dlg, 1, en ? "Apply" : "应用", 288, 178, 92, 30); dlg_add_push(dlg, 2, en ? "Cancel" : "取消", 392, 178, 92, 30)
         if dlg_modal(dlg) == 1 {
@@ -2922,10 +2925,10 @@ final class WindowsApp: @unchecked Sendable {
         guard let dlg = dlg_create(en ? "Custom Clock Face" : "自定义表盘", 520, 548) else { return (0, name) }
         editorDlg = dlg
         defer { editorDlg = nil; dlg_destroy(dlg) }
-        dlg_add_title(dlg, en ? "Custom Clock Face" : "自定义表盘", 24, 14, 360, 30)
-        dlg_add_subtitle(dlg, en ? "Create a face that remains native to every dial size." : "创建适用于所有表盘尺寸的自定义样式。", 24, 49, 460, 20)
+        brand_add_title(dlg, en ? "Custom Clock Face" : "自定义表盘", 24, 14, 360, 30)
+        brand_add_subtitle(dlg, en ? "Create a face that remains native to every dial size." : "创建适用于所有表盘尺寸的自定义样式。", 24, 49, 460, 20)
         dlg_add_card(dlg, 20, 78, 468, 52)
-        dlg_add_static(dlg, en ? "Name" : "名称", 32, 94, 48, 22)
+        brand_add_static(dlg, en ? "Name" : "名称", 32, 94, 48, 22)
         dlg_add_edit(dlg, 540, name, 82, 90, 286, 28)
         dlg_add_push(dlg, 560, en ? "New" : "新建", 380, 90, 96, 28)
 
@@ -2938,11 +2941,11 @@ final class WindowsApp: @unchecked Sendable {
         dlg_add_nav(dlg, 571, en ? "Geometry and Markings" : "几何与刻度", marks,
                     20, 206, 468, 52)
         dlg_add_card(dlg, 20, 274, 468, 160)
-        dlg_add_section(dlg, en ? "Saved faces" : "已保存表盘", 34, 290, 180, 20)
-        dlg_add_subtitle(dlg,
+        brand_add_section(dlg, en ? "Saved faces" : "已保存表盘", 34, 290, 180, 20)
+        brand_add_subtitle(dlg,
                        en ? "\(savedCount) saved · manage apply/delete from My Clock Faces" : "已保存 \(savedCount) 个 · 在“我的表盘”中应用/删除",
                        34, 320, 430, 36)
-        dlg_add_subtitle(dlg,
+        brand_add_subtitle(dlg,
                        en ? "Changes remain a draft until Save and Apply." : "所有修改仅在“保存并应用”后写入。",
                        34, 382, 430, 28)
         dlg_add_sep(dlg, 20, 458, 470)
@@ -2960,12 +2963,12 @@ final class WindowsApp: @unchecked Sendable {
         guard let dlg = dlg_create(en ? "Custom Colors" : "自定义颜色", 520, 548) else { return }
         editorDlg = dlg
         defer { editorDlg = nil; dlg_destroy(dlg) }
-        dlg_add_title(dlg, en ? "Custom Colors" : "自定义颜色", 24, 14, 360, 30)
-        dlg_add_subtitle(dlg, en ? "Tune dial and detail colors independently." : "分别调整表盘与详情面板的颜色。", 24, 49, 460, 20)
+        brand_add_title(dlg, en ? "Custom Colors" : "自定义颜色", 24, 14, 360, 30)
+        brand_add_subtitle(dlg, en ? "Tune dial and detail colors independently." : "分别调整表盘与详情面板的颜色。", 24, 49, 460, 20)
         dlg_add_card(dlg, 14, 76, 238, 358)
         dlg_add_card(dlg, 258, 76, 248, 358)
-        dlg_add_section(dlg, en ? "Face colors" : "表盘颜色", 26, 88, 180, 20)
-        dlg_add_section(dlg, en ? "Overlay and detail" : "叠加层与详情", 270, 88, 220, 20)
+        brand_add_section(dlg, en ? "Face colors" : "表盘颜色", 26, 88, 180, 20)
+        brand_add_section(dlg, en ? "Overlay and detail" : "叠加层与详情", 270, 88, 220, 20)
         let labels = en
             ? ["Dial", "Rim", "Hour", "Minute", "Second", "Cap outer", "Cap inner", "Numbers",
                "Ticks", "Major ticks", "Text", "Subtext", "Panel bg", "Panel text", "Panel subtext", "Panel border"]
@@ -2975,7 +2978,7 @@ final class WindowsApp: @unchecked Sendable {
             let column = i / 8, row = i % 8
             let x: Int32 = column == 0 ? 26 : 270
             let y = Int32(116 + row * 38)
-            dlg_add_static(dlg, labels[i], x, y + 5, 92, 22)
+            brand_add_static(dlg, labels[i], x, y + 5, 92, 22)
             dlg_add_push(dlg, 500 + Int32(i), WindowsCustomTheme.hex(customCfg.colorField(i)), x + 96, y, 132, 28)
         }
         dlg_add_sep(dlg, 20, 442, 470)
@@ -2990,21 +2993,21 @@ final class WindowsApp: @unchecked Sendable {
         guard let dlg = dlg_create(en ? "Geometry and Markings" : "几何与刻度", 520, 430) else { return }
         editorDlg = dlg
         defer { editorDlg = nil; dlg_destroy(dlg) }
-        dlg_add_title(dlg, en ? "Geometry and Markings" : "几何与刻度", 24, 14, 390, 30)
-        dlg_add_subtitle(dlg, en ? "Match hand proportions and dial markings." : "调整指针比例与表盘标记。", 24, 49, 460, 20)
+        brand_add_title(dlg, en ? "Geometry and Markings" : "几何与刻度", 24, 14, 390, 30)
+        brand_add_subtitle(dlg, en ? "Match hand proportions and dial markings." : "调整指针比例与表盘标记。", 24, 49, 460, 20)
         dlg_add_card(dlg, 20, 78, 468, 178)
-        dlg_add_section(dlg, en ? "Hands and dial" : "指针与表盘", 34, 90, 160, 20)
-        dlg_add_static(dlg, en ? "Hand style" : "指针样式", 34, 122, 100, 22); dlg_add_push(dlg, 520, handStyleLabel(customCfg.handStyle), 142, 116, 138, 28)
-        dlg_add_static(dlg, en ? "Numerals" : "数字样式", 294, 122, 92, 22); dlg_add_push(dlg, 553, numberStyleLabel(), 392, 116, 92, 28)
-        dlg_add_static(dlg, en ? "Rim width" : "外环宽度", 34, 158, 100, 22); dlg_add_edit(dlg, 530, formatNumber(customCfg.rimWidth), 142, 152, 82, 28)
-        dlg_add_static(dlg, en ? "Hand widths · H / M / S" : "指针宽度 · 时 / 分 / 秒", 34, 194, 190, 22)
+        brand_add_section(dlg, en ? "Hands and dial" : "指针与表盘", 34, 90, 160, 20)
+        brand_add_static(dlg, en ? "Hand style" : "指针样式", 34, 122, 100, 22); dlg_add_push(dlg, 520, handStyleLabel(customCfg.handStyle), 142, 116, 138, 28)
+        brand_add_static(dlg, en ? "Numerals" : "数字样式", 294, 122, 92, 22); dlg_add_push(dlg, 553, numberStyleLabel(), 392, 116, 92, 28)
+        brand_add_static(dlg, en ? "Rim width" : "外环宽度", 34, 158, 100, 22); dlg_add_edit(dlg, 530, formatNumber(customCfg.rimWidth), 142, 152, 82, 28)
+        brand_add_static(dlg, en ? "Hand widths · H / M / S" : "指针宽度 · 时 / 分 / 秒", 34, 194, 190, 22)
         dlg_add_edit(dlg, 531, formatNumber(customCfg.hourWidth), 230, 188, 66, 26); dlg_add_edit(dlg, 532, formatNumber(customCfg.minuteWidth), 306, 188, 66, 26); dlg_add_edit(dlg, 533, formatNumber(customCfg.secondWidth), 382, 188, 66, 26)
-        dlg_add_static(dlg, en ? "Hand lengths · H / M / S" : "指针长度 · 时 / 分 / 秒", 34, 226, 190, 22)
+        brand_add_static(dlg, en ? "Hand lengths · H / M / S" : "指针长度 · 时 / 分 / 秒", 34, 226, 190, 22)
         dlg_add_edit(dlg, 534, formatNumber(customCfg.hourLength), 230, 220, 66, 26); dlg_add_edit(dlg, 535, formatNumber(customCfg.minuteLength), 306, 220, 66, 26); dlg_add_edit(dlg, 536, formatNumber(customCfg.secondLength), 382, 220, 66, 26)
         dlg_add_card(dlg, 20, 266, 468, 46)
-        dlg_add_check(dlg, 550, en ? "Show numbers" : "显示数字", 34, 276, 138, 26, customCfg.showNumbers ? 1 : 0)
-        dlg_add_check(dlg, 551, en ? "Tick marks" : "显示刻度", 178, 276, 128, 26, customCfg.showTicks ? 1 : 0)
-        dlg_add_check(dlg, 552, en ? "Sky decoration" : "天空装饰", 316, 276, 160, 26, customCfg.hasDecoration ? 1 : 0)
+        brand_add_check(dlg, 550, en ? "Show numbers" : "显示数字", 34, 276, 138, 26, customCfg.showNumbers ? 1 : 0)
+        brand_add_check(dlg, 551, en ? "Tick marks" : "显示刻度", 178, 276, 128, 26, customCfg.showTicks ? 1 : 0)
+        brand_add_check(dlg, 552, en ? "Sky decoration" : "天空装饰", 316, 276, 160, 26, customCfg.hasDecoration ? 1 : 0)
         dlg_add_sep(dlg, 20, 318, 470)
         dlg_add_push(dlg, 1, en ? "Apply" : "应用", 288, 334, 92, 30); dlg_add_push(dlg, 2, en ? "Cancel" : "取消", 392, 334, 92, 30)
         guard dlg_modal_cb(dlg, customCmdCb, nil) == 1 else { customCfg = original; return }

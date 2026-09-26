@@ -7,6 +7,9 @@
 extern "C" {
 #endif
 
+void win_set_brand_icon_directory(const char *path_utf8);
+int win_draw_brand_icon(void *hdc, const char *token_utf8, float x, float y, float size);
+
 /* Win32Shim: a thin C wrapper that owns the Win32 boilerplate (window, tray,
  * message loop, timers, popup menu, GDI) and dispatches to Swift via callbacks.
  * Win32 handles (HWND/HDC/HMENU) are passed to Swift as opaque void*.

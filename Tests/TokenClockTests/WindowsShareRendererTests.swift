@@ -2,12 +2,17 @@
 import Foundation
 import Testing
 import Win32Shim
+@testable import TokenClock
 
 @Suite(.serialized)
 struct WindowsShareRendererTests {
     @Test func rendersA1200By1500PNG() throws {
         gdip_init()
         defer { gdip_shutdown() }
+        let directory = try #require(BrandIconCatalog.directory)
+        win_set_brand_icon_directory(directory.path)
+        #expect(win_color_icon_supported_utf8("[[brand:codex]]") == 1)
+        #expect(win_color_icon_supported_utf8("[[brand:missing]]") == 0)
         let previewPath = ProcessInfo.processInfo.environment["TOKENCLOCK_SHARE_PREVIEW_PATH"]
         let path = previewPath.map(URL.init(fileURLWithPath:)) ?? FileManager.default.temporaryDirectory
             .appendingPathComponent("tokenclock-share-renderer-test.png")
@@ -16,7 +21,7 @@ struct WindowsShareRendererTests {
         let values = [
             "2026-09-05 — 2026-09-11", "3.6M", "TOKENS", "144", "MESSAGES",
             "33.33%", "CACHE", "TOOL BREAKDOWN",
-            "⚛️\tCodex\t1.8M\t0.5\n✳️\tClaude Code\t1.2M\t0.333333\n💎\tCursor Agent\t600K\t0.166667",
+            "[[brand:codex]]\tCodex\t1.8M\t0.5\n[[brand:claude]]\tClaude Code\t1.2M\t0.333333\n[[brand:cursor]]\tCursor Agent\t600K\t0.166667",
             "No usage", "Every call moves an idea one step closer to reality.",
             "Made with TokenClock",
             "Last 7 days", "AI USAGE FIELD NOTES", "TOTAL USAGE", "TOOLS",

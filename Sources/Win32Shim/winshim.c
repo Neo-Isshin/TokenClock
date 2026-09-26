@@ -830,6 +830,37 @@ typedef struct {
     int pressed;
 } dlg_check_state;
 
+static const wchar_t *TC_BRAND_TOKEN_PROP = L"TokenClock.BrandToken";
+static const wchar_t *brand_label_tail(const wchar_t *text) {
+    if (!text || wcsncmp(text, L"[[brand:", 8) != 0) return text;
+    const wchar_t *end = wcsstr(text + 8, L"]]");
+    if (!end) return text;
+    end += 2; while (*end == L' ') ++end;
+    return end;
+}
+static int draw_brand_token(HDC dc, const wchar_t *token, float x, float y, float size) {
+    char text[512];
+    if (!token || !WideCharToMultiByte(CP_UTF8, 0, token, -1, text, sizeof(text), NULL, NULL)) return 0;
+    return win_draw_brand_icon(dc, text, x, y, size);
+}
+static LRESULT CALLBACK product_icon_proc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
+    if (msg == WM_NCHITTEST) return HTTRANSPARENT;
+    if (msg == WM_ERASEBKGND) return 1;
+    if (msg == WM_PAINT) {
+        PAINTSTRUCT paint; HDC dc = BeginPaint(h, &paint);
+        RECT rect; GetClientRect(h, &rect);
+        HWND parent = GetParent(h);
+        HBRUSH brush = CreateSolidBrush(to_cr(win_fluent_color(parent,
+            dlg_child_on_card(parent, h) ? WIN_FLUENT_COLOR_SURFACE : WIN_FLUENT_COLOR_BACKGROUND)));
+        FillRect(dc, &rect, brush); DeleteObject(brush);
+        const wchar_t *token = (const wchar_t *)GetPropW(h, TC_BRAND_TOKEN_PROP);
+        draw_brand_token(dc, token, 0, 0, (float)min(rect.right, rect.bottom));
+        EndPaint(h, &paint); return 0;
+    }
+    if (msg == WM_NCDESTROY) free(RemovePropW(h, TC_BRAND_TOKEN_PROP));
+    return DefWindowProcW(h, msg, wp, lp);
+}
+
 static LRESULT CALLBACK dlg_check_proc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
     dlg_check_state *state = (dlg_check_state *)GetWindowLongPtrW(h, GWLP_USERDATA);
     switch (msg) {
@@ -842,6 +873,7 @@ static LRESULT CALLBACK dlg_check_proc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
         return DefWindowProcW(h, msg, wp, lp);
     }
     case WM_NCDESTROY:
+        free(RemovePropW(h, TC_BRAND_TOKEN_PROP));
         free(state); SetWindowLongPtrW(h, GWLP_USERDATA, 0); break;
     case BM_GETCHECK: return state && state->checked ? BST_CHECKED : BST_UNCHECKED;
     case BM_SETCHECK:
@@ -909,6 +941,8 @@ static LRESULT CALLBACK dlg_check_proc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
                                                    : win_fluent_color(dialog, WIN_FLUENT_COLOR_SUBTEXT)));
         HGDIOBJ old_font = SelectObject(dc, dlg_font());
         RECT text_rect = { 26, 0, rect.right, rect.bottom };
+        const wchar_t *brand = (const wchar_t *)GetPropW(h, TC_BRAND_TOKEN_PROP);
+        if (brand && draw_brand_token(dc, brand, 26, (float)(rect.bottom - 16) / 2, 16)) text_rect.left += 21;
         DrawTextW(dc, label, -1, &text_rect, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX);
         SelectObject(dc, old_font);
         if (GetFocus() == h) { RECT focus = rect; InflateRect(&focus, -1, -2); DrawFocusRect(dc, &focus); }
@@ -1032,6 +1066,7 @@ static void dlg_register_fluent_controls(void) {
     wc.lpfnWndProc = dlg_nav_proc; wc.lpszClassName = L"TCDialogNav"; RegisterClassExW(&wc);
     wc.lpfnWndProc = dlg_edit_frame_proc; wc.lpszClassName = L"TCEditFrame"; RegisterClassExW(&wc);
     wc.lpfnWndProc = dlg_check_proc; wc.lpszClassName = L"TCDialogCheck"; RegisterClassExW(&wc);
+    wc.lpfnWndProc = product_icon_proc; wc.lpszClassName = L"TCProductIcon"; RegisterClassExW(&wc);
     wc.lpfnWndProc = dlg_separator_proc; wc.lpszClassName = L"TCDialogSeparator"; RegisterClassExW(&wc);
     wc.lpfnWndProc = dlg_progress_proc; wc.lpszClassName = L"TCDialogProgress"; RegisterClassExW(&wc);
     registered = 1;
@@ -1298,6 +1333,14 @@ static HFONT dlg_caption_font(void) {
 
 static HWND dlg_child_ex(HWND dlg, DWORD ex_style, const wchar_t *cls, DWORD style, int id,
                          const wchar_t *text, int x, int y, int w, int h) {
+    const wchar_t *tail = brand_label_tail(text);
+    if (wcscmp(cls, L"STATIC") == 0 && tail != text) {
+        int size = min(18, h);
+        HWND icon = CreateWindowExW(0, L"TCProductIcon", L"", WS_CHILD | WS_VISIBLE,
+            x, y + (h - size) / 2, size, size, dlg, NULL, GetModuleHandleW(NULL), NULL);
+        if (icon) SetPropW(icon, TC_BRAND_TOKEN_PROP, _wcsdup(text));
+        text = tail; x += size + 5; w = max(1, w - size - 5);
+    }
     HWND c = CreateWindowExW(ex_style, cls, text, WS_CHILD | WS_VISIBLE | style, x, y, w, h,
                              (HWND)dlg, (HMENU)(LONG_PTR)id, GetModuleHandleW(NULL), NULL);
     SendMessageW(c, WM_SETFONT, (WPARAM)dlg_font(), TRUE);
@@ -1339,9 +1382,11 @@ void *dlg_create(const char *title_utf8, int w, int h) {
 
 void dlg_add_check(void *dlg, int id, const char *text_utf8, int x, int y, int w, int h, int checked) {
     wchar_t t[256]; if (to_wide(text_utf8, t, 256) == 0) t[0] = 0;
-    CreateWindowExW(0, L"TCDialogCheck", t, WS_CHILD | WS_VISIBLE | WS_TABSTOP,
+    const wchar_t *tail = brand_label_tail(t);
+    HWND checkbox = CreateWindowExW(0, L"TCDialogCheck", tail, WS_CHILD | WS_VISIBLE | WS_TABSTOP,
                     x, y, w, h, (HWND)dlg, (HMENU)(LONG_PTR)id,
                     GetModuleHandleW(NULL), (void *)(INT_PTR)(checked ? 1 : 0));
+    if (checkbox && tail != t) SetPropW(checkbox, TC_BRAND_TOKEN_PROP, _wcsdup(t));
 }
 
 void dlg_add_edit(void *dlg, int id, const char *text_utf8, int x, int y, int w, int h) {

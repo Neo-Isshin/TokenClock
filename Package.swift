@@ -25,6 +25,7 @@ let linuxSources = [
     "Services/HistoryStore.swift",
     "Services/MockUsageService.swift",
     "Services/ModelEmoji.swift",
+    "Services/BrandIconCatalog.swift",
     "Services/ModelNormalizer.swift",
     "Services/IPGeolocation.swift",
     "Services/OpenClawUsageService.swift",
@@ -91,6 +92,7 @@ let package = Package(
             resources: [
                 .copy("Resources/glass_disc.png"),
                 .copy("Resources/pricing-snapshot.json"),
+                .copy("Resources/BrandIcons"),
             ],
             swiftSettings: [.unsafeFlags(["-parse-as-library"])]
         ),
@@ -146,6 +148,7 @@ let package = Package(
             resources: [
                 .copy("Resources/glass_disc.png"),
                 .copy("Resources/pricing-snapshot.json"),
+                .copy("Resources/BrandIcons"),
             ],
             swiftSettings: [.unsafeFlags(["-parse-as-library"])],
             // SwiftPM otherwise emits a console-subsystem PE and Windows opens a black terminal
@@ -174,6 +177,7 @@ let package = Package(
             resources: [
                 .copy("Resources/glass_disc.png"),
                 .copy("Resources/pricing-snapshot.json"),
+                .copy("Resources/BrandIcons"),
             ],
             swiftSettings: [.unsafeFlags(["-parse-as-library"])]
         ),
