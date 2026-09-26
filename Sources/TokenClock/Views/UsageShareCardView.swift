@@ -200,7 +200,7 @@ struct UsageShareCardView: View {
                         RoundedRectangle(cornerRadius: 2 * scale)
                             .fill(toolPalette[index % toolPalette.count])
                             .frame(width: 3 * scale, height: 27 * scale)
-                        Text(row.emoji).font(.system(size: 13 * scale))
+                        BrandIconView(name: row.name, fallback: row.emoji, size: 16 * scale)
                         Text(row.name)
                             .font(.system(size: 12 * scale, weight: .medium, design: .rounded))
                             .lineLimit(1).foregroundColor(foreground)

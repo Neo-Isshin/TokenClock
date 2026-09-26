@@ -695,8 +695,8 @@ struct SettingsView: View {
 
     private func hermesPathRow() -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("⚕️ Hermes")
-                .font(.system(size: 12, weight: .medium))
+            EmojiNameLabel(emoji: "⚕️", name: "Hermes", iconSize: 12,
+                           nameFont: .system(size: 12, weight: .medium), truncationMode: .tail)
 
             HStack(spacing: 8) {
                 TextField(L10n.shared.tr("settings.defaultPath"), text: $hermesPath)

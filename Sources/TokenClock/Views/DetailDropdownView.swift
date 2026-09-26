@@ -1074,9 +1074,8 @@ private struct ModelContributionRow: View {
     }
 }
 
-/// Keeps provider/model symbols in one optical column. Enclosed-alphanumeric
-/// glyphs use a text baseline that sits visibly lower than Apple Color Emoji,
-/// so they receive a tiny optical lift without moving the adjacent label.
+/// Keeps original-color provider/model artwork in one optical column.
+/// The stored emoji remains a fallback for unknown brands or missing resources.
 struct EmojiNameLabel: View {
     let emoji: String
     let name: String
@@ -1086,9 +1085,7 @@ struct EmojiNameLabel: View {
 
     var body: some View {
         HStack(alignment: .center, spacing: 3) {
-            Text(emoji)
-                .font(.system(size: iconSize))
-                .offset(y: enclosedLetterSymbols.contains(emoji) ? -1.25 : 0)
+            BrandIconView(name: name, fallback: emoji, size: max(14, iconSize + 2))
                 .frame(width: 15, height: 15, alignment: .center)
                 .accessibilityHidden(true)
             Text(name)
@@ -1099,5 +1096,4 @@ struct EmojiNameLabel: View {
         .accessibilityElement(children: .combine)
     }
 
-    private var enclosedLetterSymbols: Set<String> { ["🅉", "🄺", "ℤ"] }
 }
