@@ -251,7 +251,8 @@ struct SubscriptionQuotaWindowView: View {
         return VStack(alignment: .leading, spacing: 11) {
             HStack(spacing: 7) {
                 if providerIsLoading(provider) { ProgressView().controlSize(.small) }
-                Text(title).font(.system(size: 13, weight: .bold, design: .rounded))
+                BrandIconView(name: provider.displayName, fallback: provider.emoji, size: 18)
+                Text(provider.displayName).font(.system(size: 13, weight: .bold, design: .rounded))
                 Spacer()
                 if accounts.count > 1 { metaChip(L10n.shared.tr("quota.accounts", accounts.count)) }
             }

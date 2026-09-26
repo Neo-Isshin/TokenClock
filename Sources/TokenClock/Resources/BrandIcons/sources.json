@@ -1,0 +1,167 @@
+{
+  "format": "PNG, 128 × 128 RGBA; original colors and aspect ratio preserved",
+  "assets": {
+    "qwen-code": {
+      "source": "https://raw.githubusercontent.com/QwenLM/qwen-code/main/packages/desktop/src-tauri/icons/128x128.png",
+      "page": "https://raw.githubusercontent.com/QwenLM/qwen-code/main/packages/desktop/src-tauri/icons/128x128.png",
+      "sourceSHA256": "ae2194d9e57bafc1df953172dd5bf41567ec8f5a63ddb41b39ea8e9a3ecffaec"
+    },
+    "codebuddy": {
+      "source": "https://download.codebuddy.cn/web/website/2323ea5befd8bcf62c88b96b44fc8f6c83815612/assets/logo.svg",
+      "page": "https://www.codebuddy.ai",
+      "sourceSHA256": "149baa45b9f9370c15f20d599afe381aa138e4fc13acf503f435c571ac93ecf5"
+    },
+    "claude": {
+      "source": "https://assets.claude.com/95a868946ac8a31e5ff832e2899f294aa368b836.png",
+      "page": "https://claude.com",
+      "sourceSHA256": "4004381309500f25e49a1ae639912ce307ea81da74cc383954a1ac8b9d343fe6"
+    },
+    "gemini": {
+      "source": "https://www.gstatic.com/lamda/images/gemini_sparkle_4g_512_lt_f94943af3be039176192d.png",
+      "page": "https://gemini.google.com",
+      "sourceSHA256": "5e7cfecaa53f4f65a313fe89b0f389548126544a78fad8489510c70ae641a4a1"
+    },
+    "qwen": {
+      "source": "https://img.alicdn.com/imgextra/i4/O1CN01OXv3EM1FN8t9W4P79_!!6000000000474-2-tps-80-80.png",
+      "page": "https://qwen.ai",
+      "sourceSHA256": "cd9390bc4209c319121d111f3a1f535b3c7dd909b8f860d41acc9744138d58df"
+    },
+    "minimax": {
+      "source": "https://www.minimax.io/favicon.ico",
+      "page": "https://www.minimax.io",
+      "sourceSHA256": "43ce4c9b9e627b391a116cd5da09e4c062d9c4e3d585509c65a4a3d16f386256"
+    },
+    "zai": {
+      "source": "https://z-cdn.chatglm.cn/z-ai/static/logo.svg",
+      "page": "https://z.ai",
+      "sourceSHA256": "07a45e8e35b0b631ed2c68cd1cb041f9721b1ceeb0bd0e34f1459b0304a741c7"
+    },
+    "deepseek": {
+      "source": "https://www.deepseek.com/favicon.ico",
+      "page": "https://www.deepseek.com",
+      "sourceSHA256": "30a4420e6e4dcb17fd7de560c5004346c2bc8cd971d2d5f5ee15326603e51321"
+    },
+    "kimi": {
+      "source": "https://www.kimi.com/pwa-192.png",
+      "page": "https://www.kimi.com",
+      "sourceSHA256": "6c14f9c3062e953b3ed57ae3e19db931c1c1bba38d4d8d55550544f31d55e469"
+    },
+    "grok": {
+      "source": "https://grok.com/images/android-chrome-192x192.png",
+      "page": "https://grok.com",
+      "sourceSHA256": "768cbbf7a7528d6e7b3af8112d7cde43eb6c9c8989ad9b06be8047dae1227463"
+    },
+    "openclaw": {
+      "source": "https://openclaw.ai/favicon.svg",
+      "page": "https://openclaw.ai",
+      "sourceSHA256": "fa7e2ec07ebfa696bcc8c27d7e36425cbb7b1772f6f7f04ce390cf5f1c35cf0e"
+    },
+    "hermes": {
+      "source": "https://raw.githubusercontent.com/NousResearch/hermes-agent/main/assets/icon-master.svg",
+      "page": "https://hermes-agent.nousresearch.com",
+      "sourceSHA256": "c5bf1ba37b6e402140ea74898cfe36dcd085708661924bb9a526d3a5df100412"
+    },
+    "opencode": {
+      "source": "https://opencode.ai/apple-touch-icon-v3.png",
+      "page": "https://opencode.ai",
+      "sourceSHA256": "2f2d5687a641f7fc1c3931072249a5984660375c091064fe8b374e4e43a8656c"
+    },
+    "aider": {
+      "source": "https://raw.githubusercontent.com/Aider-AI/aider/main/aider/website/assets/icons/android-chrome-192x192.png",
+      "page": "https://aider.chat",
+      "sourceSHA256": "9242d14983bd63790790581471f6e33ba09a143feb841598107635d58ea96018"
+    },
+    "cline": {
+      "source": "https://cline.bot/assets/branding/favicons/favicon-256x256.png",
+      "page": "https://cline.bot",
+      "sourceSHA256": "64087a72486aa5cfefe028e88dfdb9510b0cedaa4d946099a5cbabc4a2ec714a"
+    },
+    "continue": {
+      "source": "https://www.continue.dev/favicon.png",
+      "page": "https://www.continue.dev",
+      "sourceSHA256": "0476a2b1781547d4937a39036a67098cb0d7837d7750ae28443b79f8d38a17c5"
+    },
+    "kiro": {
+      "source": "https://kiro.dev/icon.svg?fe599162bb293ea0",
+      "page": "https://kiro.dev",
+      "sourceSHA256": "774cbc1c7ecec8c935a6091595583d7a92fc8289d6f1db3f071c0f50c61c369f"
+    },
+    "doubao": {
+      "source": "https://lf-flow-web-cdn.doubao.com/obj/flow-doubao/favicon/new-doubao/128x128.png",
+      "page": "https://www.doubao.com",
+      "sourceSHA256": "bf8e41bcc864c00099a98080825ea42aba7cf481303dad3312f44a5da68c3f3b"
+    },
+    "meta": {
+      "source": "https://about.meta.com/favicon.ico",
+      "page": "https://www.llama.com",
+      "sourceSHA256": "b96d739c3a8ac4ef0b34212c8a2b7f23dcb7b039e0dd14ef170d8e9232972bf7"
+    },
+    "cohere": {
+      "source": "https://cohere.com/apple-touch-icon.png",
+      "page": "https://cohere.com",
+      "sourceSHA256": "3403a04361a061b7e765e85e746b961a601a73015d4569baef9e781ec89a0286"
+    },
+    "amazon": {
+      "source": "https://m.media-amazon.com/images/I/31mpUpLsu9L._SL512_FMpng_.png",
+      "page": "https://nova.amazon.com",
+      "sourceSHA256": "355c01a0d2dbfa30c662a1e68a604f3b6e92d38b1b6938017b415a31e1e9f24f"
+    },
+    "yi": {
+      "source": "https://www.lingyiwanwu.com/branding/favicon.svg",
+      "page": "https://www.lingyiwanwu.com",
+      "sourceSHA256": "0fef830a02e6f471a076a8f765d26964f6de639fb5dd05c81db32211d5fd7c9c"
+    },
+    "openai": {
+      "source": "https://developers.openai.com/favicon.svg",
+      "page": "https://chatgpt.com",
+      "sourceSHA256": "8e1b976ba47e927ac2928303fd5362fcadfefd68743506510596f107df676e58"
+    },
+    "mistral": {
+      "source": "https://mistral.ai/favicon.ico",
+      "page": "https://mistral.ai",
+      "sourceSHA256": "320ccbbf53158067d4c84637dbfe52de7616d3c181c91198fae75eb1bc5f0c71"
+    },
+    "microsoft": {
+      "source": "https://learn.microsoft.com/favicon.ico",
+      "page": "https://www.microsoft.com",
+      "sourceSHA256": "90cdaf487716184e4034000935c605d1633926d348116d198f355a98b8c6cd21"
+    },
+    "codex": {
+      "source": "installed-app://ChatGPT.app/Contents/Resources/electron.icns",
+      "page": "https://openai.com/codex/",
+      "appVersion": "26.917.71314",
+      "sourceSHA256": "8ee5a24e1e32e33f976bc56943c2e8ad0a700449e6857741e543dc738648a2fb",
+      "bundleIdentifier": "com.openai.codex"
+    },
+    "cursor": {
+      "source": "installed-app://Cursor.app/Contents/Resources/Cursor.icns",
+      "page": "https://cursor.com/brand",
+      "appVersion": "3.21.18",
+      "sourceSHA256": "69257574472105aaae5f369dc141e85e54ea4a06da906133606a2080936cf83a",
+      "bundleIdentifier": "com.todesktop.230313mzl4w4u92"
+    },
+    "antigravity": {
+      "source": "https://antigravity.google/assets/image/brand/antigravity-icon__full-color.png",
+      "page": "https://antigravity.google/assets/image/brand/antigravity-icon__full-color.png",
+      "sourceSHA256": "e0cd08ccd10cd8d08ccf0ba449823ee88495825c0841619618100d3ab089f51e"
+    },
+    "zcode": {
+      "source": "installed-app://ZCode.app/Contents/Resources/icon.icns",
+      "appVersion": "3.14.3",
+      "sourceSHA256": "9c286aeaf42ea1026877869dfade0f44ebce4c335c7b7ae347ba007ba0e16aa1",
+      "bundleIdentifier": "dev.zcode.app"
+    },
+    "grok-bot": {
+      "source": "installed-app://Grok Bot.app/Contents/Resources/icon.icns",
+      "appVersion": "0.59.1",
+      "sourceSHA256": "0174e1ce966156a20c07f5715bbf6577b39cec60bd539267395e5f5fa15bbf80",
+      "bundleIdentifier": "com.anysphere.sand"
+    },
+    "copilot": {
+      "source": "https://raw.githubusercontent.com/primer/octicons/main/icons/copilot-24.svg",
+      "page": "https://raw.githubusercontent.com/primer/octicons/main/icons/copilot-24.svg",
+      "sourceSHA256": "eeafb3c2f333e04ccf7d031ae215f7adafaed4c6352556b0bf79496e048bcdd7",
+      "presentationBackground": "White rounded tile; original black mark unchanged."
+    }
+  }
+}

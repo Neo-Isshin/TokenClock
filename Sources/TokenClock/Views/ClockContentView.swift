@@ -77,10 +77,8 @@ struct ClockContentView: View {
             HStack {
                 VStack(alignment: .leading, spacing: 4) {
                     ForEach(viewModel.activeToolsList) { tool in
-                        HStack(alignment: .firstTextBaseline, spacing: 0.5 * s) {
-                            Text(tool.emoji)
-                                .font(.system(size: 13 * s))
-                                .baselineOffset(0.5 * s)
+                        HStack(alignment: .center, spacing: 0.5 * s) {
+                            BrandIconView(name: tool.name, fallback: tool.emoji, size: 16 * s)
                                 .frame(width: 16 * s, alignment: .trailing)
                             Text(tool.abbreviation)
                                 .font(.system(size: 13 * s, weight: .semibold, design: .rounded))
@@ -126,7 +124,7 @@ struct ClockContentView: View {
             .accessibilityHidden(true)
 
             if let hoveredQuotaLabel, !quotaIndicators.isEmpty {
-                Text(hoveredQuotaLabel)
+                BrandTooltipText(label: hoveredQuotaLabel, iconSize: 11 * s)
                     .font(.system(size: 8.5 * s, weight: .semibold, design: .rounded))
                     .foregroundColor(Color(nsColor: .labelColor))
                     .multilineTextAlignment(.leading)
