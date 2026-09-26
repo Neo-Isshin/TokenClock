@@ -61,6 +61,7 @@ APPDIR="$ROOT/AppDir"
 rm -rf "$APPDIR"
 mkdir -p "$APPDIR/usr/bin" "$APPDIR/usr/share/applications" "$APPDIR/usr/share/icons/hicolor/256x256/apps"
 mkdir -p "$APPDIR/usr/share/fonts/truetype/noto"
+mkdir -p "$APPDIR/usr/lib/tokenclock-empty-modules"
 
 cp "$BIN" "$APPDIR/usr/bin/$APP"
 chmod +x "$APPDIR/usr/bin/$APP"
