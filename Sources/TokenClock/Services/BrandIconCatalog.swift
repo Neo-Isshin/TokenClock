@@ -1,8 +1,36 @@
 import Foundation
 
+/// A presentation-only preference: persisted usage and API responses keep their emoji.
+enum BrandIconStyle: String, CaseIterable {
+    case official, emoji
+    static let defaultsKey = "TC_brandIconStyle"
+    static var current: Self {
+        get { resolved(UserDefaults.standard.string(forKey: defaultsKey)) }
+        set { UserDefaults.standard.set(newValue.rawValue, forKey: defaultsKey) }
+    }
+    static func resolved(_ value: String?) -> Self { value.flatMap(Self.init(rawValue:)) ?? .official }
+    static var menuTitle: String {
+        switch L10n.shared.language {
+        case .en: return "Tool & Model Icons"
+        case .zhHans: return "工具与模型图标"
+        case .zhHant: return "工具與模型圖示"
+        }
+    }
+    var title: String {
+        if self == .emoji { return "Emoji" }
+        switch L10n.shared.language {
+        case .en: return "Official Icons"
+        case .zhHans: return "官方图标"
+        case .zhHant: return "官方圖示"
+        }
+    }
+}
+
 /// Bundled vendor artwork. Usage records retain their text/emoji fallback;
 /// branding is resolved only at presentation time, including historical rows.
 enum BrandIconCatalog {
+    /// Unplated monochrome marks follow foreground contrast; colored brands stay original.
+    static let monochromeKeys: Set<String> = ["codex", "copilot", "grok", "zcode"]
     static let tools: [String: String] = [
         "codex": "codex", "claude code": "claude", "claude": "claude",
         "cursor": "cursor", "cursor agent": "cursor", "gemini cli": "gemini",
@@ -48,7 +76,8 @@ enum BrandIconCatalog {
 
     static func url(forKey key: String) -> URL? { urls[key] }
 
-    static func token(for name: String, fallback: String) -> String {
+    static func token(for name: String, fallback: String, style: BrandIconStyle = .current) -> String {
+        guard style == .official else { return fallback }
         guard let key = key(for: name), url(forKey: key) != nil else { return fallback }
         return "[[brand:\(key)]]"
     }
@@ -66,7 +95,8 @@ enum BrandIconCatalog {
         return (String(label[prefixRange]), key, text)
     }
 
-    static func nativeLabel(_ label: String) -> String {
+    static func nativeLabel(_ label: String, style: BrandIconStyle = .current) -> String {
+        guard style == .official else { return label }
         guard let parts = labelParts(label) else { return label }
         return "\(parts.prefix)[[brand:\(parts.key)]] \(parts.text)"
     }
