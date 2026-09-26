@@ -457,6 +457,7 @@ final class LinuxClockRenderer: @unchecked Sendable {
         scale: Double
     ) {
         var lines = [indicator.provider.displayName]
+        if let name = indicator.accountName { lines.append(name) }
         lines += indicator.details.map {
             "\(L10n.shared.tr($0.labelKey)) \(String(format: "%.0f%%", $0.remainingPercent))"
         }

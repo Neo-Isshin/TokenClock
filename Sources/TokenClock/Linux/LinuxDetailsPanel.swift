@@ -135,7 +135,10 @@ final class LinuxDetailsPanel: @unchecked Sendable {
     var dialQuotaIndicators: [DialQuotaIndicator] {
         dialQuotaProviders.compactMap { provider in
             let subscription = subscriptionProvider(provider)
-            return DialQuotaResolver.resolve(provider: subscription, groups: freshQuotaGroups(for: provider))
+            return DialQuotaAccountSelection.indicator(
+                provider: subscription, selectedID: DialQuotaAccountSelection.selectedID(for: subscription),
+                activeID: activeSubscriptionAccountIDs[subscription], records: subscriptionAccountStore.records(),
+                liveGroups: freshQuotaGroups(for: provider))
         }
     }
 
@@ -208,6 +211,24 @@ final class LinuxDetailsPanel: @unchecked Sendable {
 
     fileprivate func handleAction(widget: UnsafeMutablePointer<GtkWidget>) {
         let name = String(cString: tc_gtk_widget_name(widget))
+        if name.hasPrefix("details:quota-account-dial:"),
+           let account = subscriptionAccountStore.records().first(where: {
+               $0.id == String(name.dropFirst("details:quota-account-dial:".count))
+           }), let provider = LinuxQuotaProvider(rawValue: account.provider.rawValue) {
+            shouldAutomaticallySelectDialQuotaProvider = false
+            if isDialAccountSelected(account) {
+                dialQuotaProviders.removeAll { $0 == provider }
+            } else {
+                guard dialQuotaProviders.contains(provider) || dialQuotaProviders.count < 2 else { return }
+                DialQuotaAccountSelection.select(account.id, for: account.provider)
+                if !dialQuotaProviders.contains(provider) { dialQuotaProviders.append(provider) }
+            }
+            UserDefaults.standard.set(dialQuotaProviders.map(\.rawValue), forKey: SettingsKey.dialQuotaProviders.rawValue)
+            UserDefaults.standard.synchronize()
+            quotaDidChange()
+            refreshSelectedDialQuotas()
+            return
+        }
         switch name {
         case "details:session":
             grouping = .session
@@ -966,6 +987,11 @@ final class LinuxDetailsPanel: @unchecked Sendable {
         }
     }
 
+    private func isDialAccountSelected(_ account: SubscriptionAccountRecord) -> Bool {
+        dialQuotaProviders.contains { subscriptionProvider($0) == account.provider }
+            && (DialQuotaAccountSelection.selectedID(for: account.provider) ?? activeSubscriptionAccountIDs[account.provider]) == account.id
+    }
+
     private func appendQuotaAccount(
         _ account: SubscriptionAccountRecord,
         isCurrent: Bool,
@@ -993,6 +1019,18 @@ final class LinuxDetailsPanel: @unchecked Sendable {
                 )
             }
             gtk_box_pack_start(tc_gtk_box(content), row, 0, 0, 0)
+        }
+        if let toggle = gtk_check_button_new_with_label(QuotaAccountLabels.showOnDial) {
+            gtk_toggle_button_set_active(tc_gtk_toggle_button(toggle), isDialAccountSelected(account) ? 1 : 0)
+            gtk_widget_set_name(toggle, "details:quota-account-dial:\(account.id)")
+            let permitted = dialQuotaProviders.contains { subscriptionProvider($0) == account.provider } || dialQuotaProviders.count < 2
+            gtk_widget_set_sensitive(toggle, permitted ? 1 : 0)
+            _ = tc_gtk_on_clicked(toggle, linuxDetailsAction, opaque)
+            gtk_box_pack_start(tc_gtk_box(content), toggle, 0, 0, 0)
+        }
+        if isDialAccountSelected(account) && (!isCurrent ||
+            DialQuotaResolver.freshGroups(account.groups, refreshedAt: account.refreshedAt).isEmpty) {
+            appendQuotaSource(QuotaAccountLabels.unavailable, to: content)
         }
         if account.revealsEmailOnDemand,
            expandedQuotaEmails.contains(account.id),
@@ -1364,7 +1402,7 @@ final class LinuxDetailsPanel: @unchecked Sendable {
             hasUnlimitedCredits: hasUnlimitedCredits, resetCreditCount: resetCreditCount
         )
         _ = subscriptionAccountStore.merge(record)
-        activeSubscriptionAccountIDs[provider] = record.id
+        activeSubscriptionAccountIDs[provider] = record.hasVerifiedIdentity ? record.id : nil
     }
 
     private func editSubscriptionAccount(_ account: SubscriptionAccountRecord) {
