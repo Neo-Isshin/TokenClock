@@ -233,6 +233,15 @@ final class LinuxApp: @unchecked Sendable {
         gtk_menu_shell_append(tc_gtk_menu_shell(root), generalRoot)
 
         appendMenuItem(L10n.shared.tr("menu.clockFace"), name: "theme-picker", to: appearanceMenu)
+        if let iconsRoot = gtk_menu_item_new_with_label(BrandIconStyle.menuTitle),
+           let iconsMenu = gtk_menu_new() {
+            gtk_menu_item_set_submenu(tc_gtk_menu_item(iconsRoot), iconsMenu)
+            gtk_menu_shell_append(tc_gtk_menu_shell(appearanceMenu), iconsRoot)
+            for style in BrandIconStyle.allCases {
+                appendMenuItem(menuSelectionLabel(BrandIconStyle.current == style, title: style.title),
+                               name: "icon-style:\(style.rawValue)", to: iconsMenu)
+            }
+        }
 
         let savedThemes = LinuxCustomThemeStore.shared.themes
         if !savedThemes.isEmpty {
@@ -514,6 +523,16 @@ final class LinuxApp: @unchecked Sendable {
     fileprivate func handleMenuAction(widget: UnsafeMutablePointer<GtkWidget>) {
         defer { UserDefaults.standard.synchronize() }
         let name = String(cString: tc_gtk_widget_name(widget))
+        if name.hasPrefix("icon-style:"),
+           let style = BrandIconStyle(rawValue: String(name.dropFirst("icon-style:".count))) {
+            BrandIconStyle.current = style
+            updateDetailsPanel()
+            refreshUI()
+            overviewWindow?.refreshLanguage()
+            shareWindow?.refreshLanguage()
+            rebuildContextMenu()
+            return
+        }
         if name.hasPrefix("theme:"),
            let theme = LinuxClockTheme(rawValue: String(name.dropFirst("theme:".count))) {
             selectTheme(theme)

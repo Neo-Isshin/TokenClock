@@ -595,14 +595,40 @@ static inline GdkPixbuf *tc_brand_icon_pixbuf(const char *path) {
     return image;
 }
 
-static inline GtkWidget *tc_gtk_brand_label(const char *path, const char *prefix, const char *text, int size) {
+static inline void tc_brand_mask(cairo_t *context, double r, double g, double b, double a) {
+    cairo_pattern_t *mask = cairo_pattern_reference(cairo_get_source(context));
+    cairo_set_source_rgba(context, r, g, b, a);
+    cairo_mask(context, mask);
+    cairo_pattern_destroy(mask);
+}
+static gboolean tc_brand_symbol_draw(GtkWidget *widget, cairo_t *context, gpointer data) {
+    GdkPixbuf *source = data;
+    GdkRGBA color;
+    gtk_style_context_get_color(gtk_widget_get_style_context(widget), gtk_widget_get_state_flags(widget), &color);
+    cairo_save(context);
+    cairo_scale(context, (double)gtk_widget_get_allocated_width(widget) / gdk_pixbuf_get_width(source),
+                (double)gtk_widget_get_allocated_height(widget) / gdk_pixbuf_get_height(source));
+    gdk_cairo_set_source_pixbuf(context, source, 0, 0);
+    tc_brand_mask(context, color.red, color.green, color.blue, color.alpha);
+    cairo_restore(context);
+    return TRUE;
+}
+static inline GtkWidget *tc_gtk_brand_label(const char *path, const char *prefix, const char *text, int size, int monochrome) {
     GtkWidget *box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
     if (prefix && prefix[0]) gtk_box_pack_start(GTK_BOX(box), gtk_label_new(prefix), FALSE, FALSE, 0);
     GdkPixbuf *source = tc_brand_icon_pixbuf(path);
     if (source) {
-        GdkPixbuf *scaled = gdk_pixbuf_scale_simple(source, size, size, GDK_INTERP_BILINEAR);
-        GtkWidget *image = gtk_image_new_from_pixbuf(scaled);
-        g_object_unref(scaled);
+        GtkWidget *image;
+        if (monochrome) {
+            image = gtk_drawing_area_new();
+            gtk_widget_set_size_request(image, size, size);
+            gtk_widget_set_valign(image, GTK_ALIGN_CENTER);
+            g_signal_connect(image, "draw", G_CALLBACK(tc_brand_symbol_draw), source);
+        } else {
+            GdkPixbuf *scaled = gdk_pixbuf_scale_simple(source, size, size, GDK_INTERP_BILINEAR);
+            image = gtk_image_new_from_pixbuf(scaled);
+            g_object_unref(scaled);
+        }
         gtk_box_pack_start(GTK_BOX(box), image, FALSE, FALSE, 0);
     }
     GtkWidget *label = gtk_label_new(text);
@@ -612,14 +638,15 @@ static inline GtkWidget *tc_gtk_brand_label(const char *path, const char *prefix
     return box;
 }
 
-static inline void tc_cairo_draw_brand_icon(cairo_t *context, const char *path, double x, double y, double size) {
+static inline void tc_cairo_draw_brand_icon(cairo_t *context, const char *path, double x, double y, double size, int monochrome, double r, double g, double b, double a) {
     GdkPixbuf *image = tc_brand_icon_pixbuf(path);
     if (!image) return;
     cairo_save(context);
     cairo_translate(context, x, y);
     cairo_scale(context, size / gdk_pixbuf_get_width(image), size / gdk_pixbuf_get_height(image));
     gdk_cairo_set_source_pixbuf(context, image, 0, 0);
-    cairo_paint(context);
+    if (monochrome) tc_brand_mask(context, r, g, b, a);
+    else cairo_paint(context);
     cairo_restore(context);
 }
 

@@ -3,8 +3,8 @@ import CGtk
 
 enum LinuxBrandIcons {
     static func label(_ value: String, size: Int32 = 16) -> UnsafeMutablePointer<GtkWidget>? {
-        if let parts = BrandIconCatalog.labelParts(value), let url = BrandIconCatalog.url(forKey: parts.key) {
-            return tc_gtk_brand_label(url.path, parts.prefix, parts.text, size)
+        if BrandIconStyle.current == .official, let parts = BrandIconCatalog.labelParts(value), let url = BrandIconCatalog.url(forKey: parts.key) {
+            return tc_gtk_brand_label(url.path, parts.prefix, parts.text, size, BrandIconCatalog.monochromeKeys.contains(parts.key) ? 1 : 0)
         }
         let label = gtk_label_new(value)
         gtk_label_set_xalign(tc_gtk_label(label), 0)
@@ -13,9 +13,11 @@ enum LinuxBrandIcons {
     }
 
     @discardableResult
-    static func draw(_ context: OpaquePointer, name: String, x: Double, y: Double, size: Double) -> Bool {
-        guard let key = BrandIconCatalog.key(for: name), let url = BrandIconCatalog.url(forKey: key) else { return false }
-        tc_cairo_draw_brand_icon(context, url.path, x, y, size)
+    static func draw(_ context: OpaquePointer, name: String, x: Double, y: Double, size: Double, color: LinuxColor = LinuxColor(0.1, 0.1, 0.1)) -> Bool {
+        guard BrandIconStyle.current == .official,
+              let key = BrandIconCatalog.key(for: name), let url = BrandIconCatalog.url(forKey: key) else { return false }
+        tc_cairo_draw_brand_icon(context, url.path, x, y, size, BrandIconCatalog.monochromeKeys.contains(key) ? 1 : 0,
+                                 color.red, color.green, color.blue, color.alpha)
         return true
     }
 }

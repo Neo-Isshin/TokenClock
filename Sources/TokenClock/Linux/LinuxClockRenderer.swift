@@ -325,7 +325,7 @@ final class LinuxClockRenderer: @unchecked Sendable {
         let firstY = height / 2 - Double(max(0, activeTools.count - 1)) * rowSpacing / 2
         for (index, tool) in activeTools.enumerated() {
             let rowY = firstY + Double(index) * rowSpacing
-            let hasIcon = LinuxBrandIcons.draw(context, name: tool.name, x: 22 * scale, y: rowY - 8 * scale, size: 16 * scale)
+            let hasIcon = LinuxBrandIcons.draw(context, name: tool.name, x: 22 * scale, y: rowY - 8 * scale, size: 16 * scale, color: primary)
             drawText(context, hasIcon ? tool.abbreviation : "\(tool.emoji) \(tool.abbreviation)", family: "Sans", size: 13 * scale, weight: 600,
                      x: (hasIcon ? 40 : 22) * scale, y: rowY, alignment: 0,
                      color: withAlpha(primary, primary.alpha * 0.75))

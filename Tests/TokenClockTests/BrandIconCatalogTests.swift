@@ -12,6 +12,15 @@ final class BrandIconCatalogTests: XCTestCase {
         XCTAssertNil(BrandIconCatalog.url(forKey: "../outside"))
     }
 
+    func testEmojiModePreservesLegacyLabelsAndUnknownPreferencesUseOfficial() {
+        XCTAssertEqual(BrandIconStyle.resolved(nil), .official)
+        XCTAssertEqual(BrandIconStyle.resolved("future-mode"), .official)
+        XCTAssertEqual(BrandIconStyle.resolved("emoji"), .emoji)
+        XCTAssertEqual(BrandIconCatalog.token(for: "Codex", fallback: "⚛️", style: .emoji), "⚛️")
+        XCTAssertEqual(BrandIconCatalog.token(for: "Codex", fallback: "⚛️", style: .official), "[[brand:codex]]")
+        XCTAssertEqual(BrandIconCatalog.nativeLabel("▾ 😶 Grok Bot", style: .emoji), "▾ 😶 Grok Bot")
+    }
+
     func testToolAndModelIdentitiesRemainDistinct() {
         XCTAssertEqual(BrandIconCatalog.key(for: "Codex"), "codex")
         XCTAssertEqual(BrandIconCatalog.key(for: "openai/gpt-6-astra"), "openai")
@@ -28,7 +37,7 @@ final class BrandIconCatalogTests: XCTestCase {
         XCTAssertEqual(parts?.key, "codex")
         XCTAssertEqual(parts?.prefix, "▾ ")
         XCTAssertEqual(parts?.text, "Codex")
-        XCTAssertEqual(BrandIconCatalog.nativeLabel("😶 Grok Bot"), "[[brand:grok-bot]] Grok Bot")
+        XCTAssertEqual(BrandIconCatalog.nativeLabel("😶 Grok Bot", style: .official), "[[brand:grok-bot]] Grok Bot")
         XCTAssertNil(BrandIconCatalog.labelParts("☀️ Los Angeles"))
     }
 }
