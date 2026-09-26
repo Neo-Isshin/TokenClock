@@ -47,9 +47,10 @@
       "sourceSHA256": "6c14f9c3062e953b3ed57ae3e19db931c1c1bba38d4d8d55550544f31d55e469"
     },
     "grok": {
-      "source": "https://grok.com/images/android-chrome-192x192.png",
+      "source": "https://grok.com",
       "page": "https://grok.com",
-      "sourceSHA256": "768cbbf7a7528d6e7b3af8112d7cde43eb6c9c8989ad9b06be8047dae1227463"
+      "presentation": "Official SVG paths identified as mark, without wordmark; monochrome foreground",
+      "sourceSHA256": "c122487f1ac0a9c64a55aea3eacc4003911f7bbe1e704eced3088e2b46ce6698"
     },
     "openclaw": {
       "source": "https://openclaw.ai/favicon.svg",
@@ -131,14 +132,15 @@
       "page": "https://openai.com/codex/",
       "appVersion": "26.917.71314",
       "sourceSHA256": "8ee5a24e1e32e33f976bc56943c2e8ad0a700449e6857741e543dc738648a2fb",
-      "bundleIdentifier": "com.openai.codex"
+      "bundleIdentifier": "com.openai.codex",
+      "presentation": "Central knot extracted from app tile; monochrome foreground"
     },
     "cursor": {
-      "source": "installed-app://Cursor.app/Contents/Resources/Cursor.icns",
+      "source": "https://ptht05hbb1ssoooe.public.blob.vercel-storage.com/assets/brand/cursor-brand-assets.zip",
       "page": "https://cursor.com/brand",
-      "appVersion": "3.21.18",
-      "sourceSHA256": "69257574472105aaae5f369dc141e85e54ea4a06da906133606a2080936cf83a",
-      "bundleIdentifier": "com.todesktop.230313mzl4w4u92"
+      "archivePath": "General Logos/Cube/SVG/CUBE_25D.svg",
+      "sourceSHA256": "97488a7751914e60f9ff532bc33810cdeaebdddc017548abe6ca2bc29bbc3928",
+      "presentation": "Official standalone cube, transparent background"
     },
     "antigravity": {
       "source": "https://antigravity.google/assets/image/brand/antigravity-icon__full-color.png",
@@ -149,7 +151,8 @@
       "source": "installed-app://ZCode.app/Contents/Resources/icon.icns",
       "appVersion": "3.14.3",
       "sourceSHA256": "9c286aeaf42ea1026877869dfade0f44ebce4c335c7b7ae347ba007ba0e16aa1",
-      "bundleIdentifier": "dev.zcode.app"
+      "bundleIdentifier": "dev.zcode.app",
+      "presentation": "Central Z extracted from app tile; monochrome foreground"
     },
     "grok-bot": {
       "source": "installed-app://Grok Bot.app/Contents/Resources/icon.icns",
@@ -161,7 +164,7 @@
       "source": "https://raw.githubusercontent.com/primer/octicons/main/icons/copilot-24.svg",
       "page": "https://raw.githubusercontent.com/primer/octicons/main/icons/copilot-24.svg",
       "sourceSHA256": "eeafb3c2f333e04ccf7d031ae215f7adafaed4c6352556b0bf79496e048bcdd7",
-      "presentationBackground": "White rounded tile; original black mark unchanged."
+      "presentation": "Official standalone mark, monochrome foreground"
     }
   }
 }

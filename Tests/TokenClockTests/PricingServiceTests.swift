@@ -56,6 +56,32 @@ final class PricingServiceTests: XCTestCase {
         XCTAssertEqual(astra.priorityMultiplier, 2)
     }
 
+    func testSeptemberModelsAndLongContextBoundary() throws {
+        let sol = try XCTUnwrap(PricingService.shared.price(forModel: "gpt-6-sol"))
+        XCTAssertEqual(sol.input, 2)
+        XCTAssertEqual(sol.output, 10)
+        XCTAssertEqual(sol.cacheRead, 0.2)
+        XCTAssertEqual(sol.cacheWrite, 2.5)
+        XCTAssertEqual(sol.longContextThreshold, 272_000)
+        XCTAssertEqual(sol.priorityMultiplier, 2)
+        let luna = try XCTUnwrap(PricingService.shared.price(forModel: "gpt-6-luna"))
+        XCTAssertEqual(luna.input, 0.1)
+        XCTAssertEqual(luna.output, 0.5)
+        XCTAssertEqual(luna.cacheRead, 0.01)
+        XCTAssertEqual(luna.cacheWrite, 0.125)
+        XCTAssertEqual(PricingService.shared.price(forModel: "claude-opus-5-5"),
+                       ModelPrice(input: 4, output: 20, cacheRead: 0.2, cacheWrite: 5))
+        let buckets = ModelBuckets(input: 100, output: 100, cacheRead: 100, cacheWrite: 0)
+        for (model, shortCost, longCost) in [("gpt-6-sol", 0.00122, 0.00194),
+                                            ("gpt-6-luna", 0.000061, 0.000097)] {
+            for (context, expected) in [(272_000, shortCost), (272_001, longCost)] {
+                let cost = PricingService.shared.cost(of: [ModelUsageRequest(
+                    model: model, buckets: buckets, contextInputTokens: context)])
+                XCTAssertEqual(cost.value, expected, accuracy: 0.000000001, model)
+            }
+        }
+    }
+
     func testAutomaticCatalogRefreshPolicyChecksDaily() {
         let now = Date(timeIntervalSince1970: 2_000_000_000)
         XCTAssertTrue(PricingService.shouldRefresh(lastRefresh: nil, now: now))

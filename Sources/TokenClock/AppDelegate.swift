@@ -298,6 +298,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let themeItem = NSMenuItem(title: tr("menu.clockFace"),
                                   action: #selector(openThemePicker(_:)), keyEquivalent: "")
         appearanceMenu.addItem(themeItem)
+        let iconMenu = NSMenu()
+        for style in BrandIconStyle.allCases {
+            let item = NSMenuItem(title: style.title, action: #selector(selectBrandIconStyle(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = style.rawValue
+            item.state = BrandIconStyle.current == style ? .on : .off
+            iconMenu.addItem(item)
+        }
+        let iconItem = NSMenuItem(title: BrandIconStyle.menuTitle, action: nil, keyEquivalent: "")
+        iconItem.submenu = iconMenu
+        appearanceMenu.addItem(iconItem)
 
         if !viewModel.savedCustomThemes.isEmpty {
             let savedMenu = NSMenu()
@@ -556,6 +567,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         case .dropdownText:
             viewModel.dropdownTextColorHex = hex
         }
+    }
+
+    @objc private func selectBrandIconStyle(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String, let style = BrandIconStyle(rawValue: raw) else { return }
+        BrandIconStyle.current = style
+        setupRightClickMenu()
     }
 
     @objc private func openThemePicker(_ sender: NSMenuItem) {
