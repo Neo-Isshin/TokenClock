@@ -96,6 +96,7 @@ final class WindowsApp: @unchecked Sendable {
     private let cmdOpacityBase: Int32 = 150 // + 0...3 -> 25/50/75/100%
     private let cmdRefresh: Int32 = 160
     private let cmdResetAppearance: Int32 = 170
+    private let cmdOfficialIcons: Int32 = 171, cmdEmojiIcons: Int32 = 172
     private let cmdShare: Int32 = 180
     private let cmdSavedThemeBase: Int32 = 200
     private let cmdDeleteThemeBase: Int32 = 240
@@ -946,6 +947,11 @@ final class WindowsApp: @unchecked Sendable {
 
         // macOS normal 使用独立 3x3 visual picker；菜单项直接打开同构的缩略图面板。
         addMenuItem(appearanceMenu, cmdThemePicker, L.tr("menu.clockFace"), false)
+        if let icons = menu_create() {
+            addMenuItem(icons, cmdOfficialIcons, BrandIconStyle.official.title, BrandIconStyle.current == .official)
+            addMenuItem(icons, cmdEmojiIcons, BrandIconStyle.emoji.title, BrandIconStyle.current == .emoji)
+            addSubmenu(appearanceMenu, BrandIconStyle.menuTitle, icons)
+        }
         let savedThemes = WindowsSavedCustomTheme.loadAll()
         if !savedThemes.isEmpty, let savedMenu = menu_create() {
             let activeId = UserDefaults.standard.string(for: .activeCustomThemeId)
@@ -1059,6 +1065,9 @@ final class WindowsApp: @unchecked Sendable {
         case cmdRefresh:
             scheduleScan(incremental: false)
             WindowsWeather.refresh(forCity: selectedCity)
+        case cmdOfficialIcons, cmdEmojiIcons:
+            BrandIconStyle.current = cmd == cmdOfficialIcons ? .official : .emoji
+            render()
         case cmdResetAppearance:
             UserDefaults.standard.remove(.quickContrastPreset)
             render()

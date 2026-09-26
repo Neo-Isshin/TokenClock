@@ -854,6 +854,7 @@ static LRESULT CALLBACK product_icon_proc(HWND h, UINT msg, WPARAM wp, LPARAM lp
             dlg_child_on_card(parent, h) ? WIN_FLUENT_COLOR_SURFACE : WIN_FLUENT_COLOR_BACKGROUND)));
         FillRect(dc, &rect, brush); DeleteObject(brush);
         const wchar_t *token = (const wchar_t *)GetPropW(h, TC_BRAND_TOKEN_PROP);
+        SetTextColor(dc, to_cr(win_fluent_color(parent, WIN_FLUENT_COLOR_TEXT)));
         draw_brand_token(dc, token, 0, 0, (float)min(rect.right, rect.bottom));
         EndPaint(h, &paint); return 0;
     }

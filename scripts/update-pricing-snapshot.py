@@ -18,11 +18,12 @@
     python3 scripts/update-pricing-snapshot.py            # 拉上游 → 写快照
     python3 scripts/update-pricing-snapshot.py --check     # 仅检查上游是否有变化（CI 用）
 
-由 .github/workflows/update-pricing.yml 每日自动运行并对快照发起或更新 PR。
+由 .github/workflows/update-pricing.yml 每日校验后直接发布快照，不需要人工合并 PR。
 """
 
 import argparse
 import json
+import math
 import ssl
 import sys
 import urllib.request
@@ -75,6 +76,11 @@ ALLOWED_MODES = {"chat", "responses", "completion"}
 # rows in aggregation feeds. Values are USD / MTok. `lt` selects a full-request
 # long-context tier; `pm` is the API Priority multiplier.
 OFFICIAL_OVERRIDES = {
+    "gpt-6-sol": {"in": 2.0, "out": 10.0, "cr": 0.2, "cw": 2.5, "lt": 272_000,
+                  "lin": 4.0, "lout": 15.0, "lcr": 0.4, "lcw": 5.0, "pm": 2.0, "p": "openai"},
+    "gpt-6-luna": {"in": 0.1, "out": 0.5, "cr": 0.01, "cw": 0.125, "lt": 272_000,
+                   "lin": 0.2, "lout": 0.75, "lcr": 0.02, "lcw": 0.25, "pm": 2.0, "p": "openai"},
+    "claude-opus-5-5": {"in": 4.0, "out": 20.0, "cr": 0.2, "cw": 5.0, "p": "anthropic"},
     # OpenAI Docs: developers.openai.com/api/docs/models and learn.chatgpt.com/docs/pricing
     "gpt-5.6": {"in": 4.0, "out": 20.0, "cr": 0.4, "cw": 5.0, "lt": 272_000,
                 "lin": 8.0, "lout": 30.0, "lcr": 0.8, "lcw": 10.0, "pm": 2.0, "p": "openai"},
@@ -194,6 +200,39 @@ def build_models(upstream: dict) -> dict:
     return dict(sorted(models.items()))
 
 
+def validated_models(upstream: dict, current: dict) -> dict:
+    """Reject malformed/incomplete feeds before applying overrides or touching disk."""
+    if not isinstance(upstream, dict):
+        raise ValueError("upstream must be a model dictionary")
+    relevant = {key: value for key, value in upstream.items()
+                if isinstance(value, dict) and is_relevant(key, value)}
+    if len(relevant) < 100:
+        raise ValueError("upstream contains fewer than 100 supported models")
+    fresh = build_models(relevant)
+    # Retain discontinued rows for historical usage; absence is not a zero price.
+    previous = current.get("models", {})
+    if len(fresh) < max(100, len(previous) * 0.5):
+        raise ValueError("upstream model coverage dropped unexpectedly")
+    for key, price in fresh.items():
+        for field, value in price.items():
+            if field == "p":
+                continue
+            if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value < 0:
+                raise ValueError(f"{key}: invalid {field} price")
+            if field == "lt" and (value <= 0 or int(value) != value):
+                raise ValueError(f"{key}: invalid long-context threshold")
+            if field != "lt" and value > 10_000:
+                raise ValueError(f"{key}: implausible price/unit")
+    return dict(sorted({**previous, **fresh}.items()))
+
+
+def snapshot_changed(current: dict, models: dict) -> bool:
+    meta = current.get("_meta", {})
+    return (current.get("models") != models
+            or meta.get("officialOverrides") != len(OFFICIAL_OVERRIDES)
+            or meta.get("officialReviewAfter") != OFFICIAL_REVIEW_AFTER.isoformat())
+
+
 def render_snapshot(models: dict) -> str:
     """逐模型一行的 JSON 文本：价格变化在 diff 里一行可见。"""
     meta = {
@@ -230,13 +269,19 @@ def main() -> int:
         return 1
 
     upstream = fetch_upstream()
-    models = build_models(upstream)
+    current = json.loads(SNAPSHOT_PATH.read_text()) if SNAPSHOT_PATH.exists() else {}
+    try:
+        models = validated_models(upstream, current)
+    except (ValueError, TypeError, OverflowError) as error:
+        print(f"error: refusing catalog update: {error}", file=sys.stderr)
+        return 1
     if not models:
         print("error: 裁剪后模型数为 0，上游格式可能已变化，拒绝生成", file=sys.stderr)
         return 1
     # 保底：一方核心模型必须在，否则上游改名/结构变化应人工介入
     for must in (
         "claude-sonnet-5", "claude-fable-5-1", "gpt-5.6-sol", "gpt-6-astra",
+        "gpt-6-sol", "gpt-6-luna", "claude-opus-5-5",
         "gemini-3.5-flash", "xai/grok-4.6",
         "deepseek-v4-pro", "moonshot/kimi-k3", "minimax/MiniMax-M2.7",
         "zai/glm-5.1", "dashscope/qwen3.8-max",
@@ -245,16 +290,13 @@ def main() -> int:
             print(f"error: 核心模型 {must} 缺失，请检查上游变化", file=sys.stderr)
             return 1
 
-    text = render_snapshot(models)
+    if not snapshot_changed(current, models):
+        print("快照无变化")
+        return 0
     if args.check:
-        current = SNAPSHOT_PATH.read_text() if SNAPSHOT_PATH.exists() else ""
-        # _meta.generatedAt 每次都变，比较时剔除
-        strip_meta = lambda s: "\n".join(l for l in s.splitlines() if '"_meta"' not in l and '"generatedAt"' not in l)
-        if strip_meta(current) == strip_meta(text):
-            print("快照无变化")
-            return 0
         print("快照需要更新")
         return 2
+    text = render_snapshot(models)
 
     SNAPSHOT_PATH.parent.mkdir(parents=True, exist_ok=True)
     SNAPSHOT_PATH.write_text(text)

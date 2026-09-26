@@ -100,7 +100,7 @@ extern "C" void win_set_brand_icon_directory(const char *path_utf8) {
     for (auto &image : g_brand_images) { delete image; image = NULL; }
     wcsncpy_s(g_brand_root, path, _TRUNCATE);
 }
-static bool draw_brand_image(Gdiplus::Graphics &gfx, int index, float x, float y, float size) {
+static bool draw_brand_image(Gdiplus::Graphics &gfx, int index, float x, float y, float size, unsigned int ink = 0xFF202020) {
     if (index < 0 || index >= g_brand_count || !g_brand_root[0]) return false;
     auto &image = g_brand_images[index];
     if (!image) {
@@ -110,14 +110,32 @@ static bool draw_brand_image(Gdiplus::Graphics &gfx, int index, float x, float y
     }
     if (!image || image->GetLastStatus() != Gdiplus::Ok) return false;
     gfx.SetInterpolationMode(Gdiplus::InterpolationModeHighQualityBicubic);
-    gfx.DrawImage(image, Gdiplus::RectF(x, y, size, size));
+    const wchar_t *key = g_brand_keys[index];
+    const bool mono = wcscmp(key, L"codex") == 0 || wcscmp(key, L"copilot") == 0
+                   || wcscmp(key, L"grok") == 0 || wcscmp(key, L"zcode") == 0;
+    if (mono) {
+        Gdiplus::Color color(ink);
+        Gdiplus::ColorMatrix matrix = {{
+            {0,0,0,0,0}, {0,0,0,0,0}, {0,0,0,0,0},
+            {0,0,0,color.GetA()/255.0f,0},
+            {color.GetR()/255.0f,color.GetG()/255.0f,color.GetB()/255.0f,0,1}
+        }};
+        Gdiplus::ImageAttributes attributes;
+        attributes.SetColorMatrix(&matrix);
+        gfx.DrawImage(image, Gdiplus::RectF(x,y,size,size), 0,0,
+                      (float)image->GetWidth(), (float)image->GetHeight(), Gdiplus::UnitPixel, &attributes);
+    } else {
+        gfx.DrawImage(image, Gdiplus::RectF(x, y, size, size));
+    }
     return true;
 }
 extern "C" int win_draw_brand_icon(void *hdc, const char *token_utf8, float x, float y, float size) {
     wchar_t text[128];
     if (to_wide(token_utf8, text, 128) == 0) return 0;
     Gdiplus::Graphics gfx((HDC)hdc);
-    return draw_brand_image(gfx, brand_index(text), x, y, size) ? 1 : 0;
+    COLORREF ink = GetTextColor((HDC)hdc);
+    return draw_brand_image(gfx, brand_index(text), x, y, size,
+        Gdiplus::Color(255, GetRValue(ink), GetGValue(ink), GetBValue(ink)).GetValue()) ? 1 : 0;
 }
 
 // Weather/activity symbols keep their existing renderer; product marks use PNGs.
@@ -224,11 +242,11 @@ static const wchar_t *text_after_icon(const wchar_t *text) {
 }
 
 static void draw_color_icon(Gdiplus::Graphics &gfx, tc_color_icon icon,
-                            float cx, float cy, float size) {
+                            float cx, float cy, float size, unsigned int ink = 0xFF202020) {
     using namespace Gdiplus;
     if (icon == TC_ICON_NONE || size <= 0) return;
     if ((int)icon >= 1000) {
-        if (draw_brand_image(gfx, (int)icon - 1000, cx - size / 2, cy - size / 2, size)) return;
+        if (draw_brand_image(gfx, (int)icon - 1000, cx - size / 2, cy - size / 2, size, ink)) return;
         icon = TC_ICON_BRAIN;
     }
     const float s = size / 24.0f;
@@ -1303,7 +1321,7 @@ void win_render_clock(int w, int h, int hh, int mm, int ss, const win_theme *t, 
         if (to_wide(u8, wb, 32) == 0 || (argb >> 24) == 0) return;
         tc_color_icon icon = color_icon_for(wb);
         if (icon != TC_ICON_NONE) {
-            draw_color_icon(gfx, icon, (float)px, (float)py, size * 1.15f);
+            draw_color_icon(gfx, icon, (float)px, (float)py, size * 1.15f, argb);
             return;
         }
         Gdiplus::FontFamily emojiFam(L"Segoe UI Emoji");
@@ -1326,7 +1344,7 @@ void win_render_clock(int w, int h, int hh, int mm, int ss, const win_theme *t, 
             const float iconSize = size * 1.2f, gap = label[0] ? 4.0f : 0.0f;
             const float total = iconSize + gap + (label[0] ? measured.Width : 0.0f);
             const float left = (float)px - total / 2.0f;
-            draw_color_icon(gfx, icon, left + iconSize / 2.0f, (float)py, iconSize);
+            draw_color_icon(gfx, icon, left + iconSize / 2.0f, (float)py, iconSize, argb);
             if (label[0]) {
                 Gdiplus::StringFormat sf; sf.SetAlignment(Gdiplus::StringAlignmentNear); sf.SetLineAlignment(Gdiplus::StringAlignmentCenter);
                 Gdiplus::RectF rect(left + iconSize + gap, (Gdiplus::REAL)(py - size), measured.Width + 6.0f, size * 2.0f);
@@ -1351,7 +1369,7 @@ void win_render_clock(int w, int h, int hh, int mm, int ss, const win_theme *t, 
             const float labelLeft = iconRight + 0.5f * (float)S;
             const float labelRight = (float)px + 41.0f * (float)S;
             draw_color_icon(gfx, icon, iconRight - iconSize / 2.0f,
-                            (float)py - 0.5f * (float)S, iconSize);
+                            (float)py - 0.5f * (float)S, iconSize, argb);
             if (label[0]) {
                 Gdiplus::Font f(&fam, size, Gdiplus::FontStyleRegular, Gdiplus::UnitPixel);
                 Gdiplus::SolidBrush b(cr(argb));
@@ -1937,7 +1955,7 @@ void win_render_clock(int w, int h, int hh, int mm, int ss, const win_theme *t, 
                 if (rowIcon != TC_ICON_NONE) {
                     const float iconSize = (float)((child ? 14.0 : 16.0) * S);
                     draw_color_icon(gfx, rowIcon, lr.X + iconSize / 2.0f,
-                                    lr.Y + lr.Height / 2.0f, iconSize);
+                                    lr.Y + lr.Height / 2.0f, iconSize, rowColor);
                     Gdiplus::RectF labelRect(lr.X + iconSize + (float)(4.0 * S), lr.Y,
                                              lr.Width - iconSize - (float)(4.0 * S), lr.Height);
                     gfx.DrawString(text_after_icon(parts[0]), -1, labelFont, labelRect, &sfL, &rowBrush);
