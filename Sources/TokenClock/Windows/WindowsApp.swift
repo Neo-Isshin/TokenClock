@@ -1123,7 +1123,7 @@ final class WindowsApp: @unchecked Sendable {
 
     private func showAbout() {
         let en = L10n.shared.language == .en
-        guard let dlg = dlg_create(en ? "About TokenClock" : "关于 TokenClock", 360, 430) else { return }
+        guard let dlg = dlg_create(en ? "About TokenClock" : "关于 TokenClock", 360, 468) else { return }
         aboutDlg = dlg
         defer { aboutDlg = nil; dlg_destroy(dlg) }
         dlg_add_brand_logo(dlg, 136, 22, 88, 88)
@@ -1135,13 +1135,19 @@ final class WindowsApp: @unchecked Sendable {
         dlg_add_sep(dlg, 28, 274, 304)
         dlg_add_static(dlg, L10n.shared.tr("about.contact"), 138, 292, 150, 22)
         dlg_add_push(dlg, 800, "GitHub Issues", 105, 320, 150, 30)
-        dlg_add_push(dlg, 1, L10n.shared.tr("about.close"), 130, 366, 100, 30)
+        dlg_add_push(dlg, 801, "www.ailyre.com", 105, 356, 150, 30)
+        dlg_add_push(dlg, 1, L10n.shared.tr("about.close"), 130, 404, 100, 30)
         _ = dlg_modal_cb(dlg, aboutCmdCb, nil)
     }
 
     fileprivate func handleAboutCmd(_ id: Int32) {
-        guard id == 800 else { return }
-        "https://github.com/Neo-Isshin/TokenClock/issues".withCString { win_open_url($0) }
+        let url: String
+        switch id {
+        case 800: url = "https://github.com/Neo-Isshin/TokenClock/issues"
+        case 801: url = "https://www.ailyre.com"
+        default: return
+        }
+        url.withCString { win_open_url($0) }
     }
 
     // MARK: - 用量总览
