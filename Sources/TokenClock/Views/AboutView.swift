@@ -7,6 +7,7 @@ struct AboutView: View {
     // ⚠️ 发版时同步版本号（与 cli/install.sh 的 RELEASE_TAG、cli/tokenclock 的 CLI_VERSION 一致）
     private let version = "v1.5.9"
     private let issuesURL = URL(string: "https://github.com/Neo-Isshin/TokenClock/issues")!
+    private let homepageURL = URL(string: "https://www.ailyre.com")!
     // 作者 GitHub 头像（置顶居中展示）。github.com/<user>.png 会 302 跳转到 avatars.githubusercontent.com 的真实头像。
     private let avatarURL = URL(string: "https://github.com/Neo-Isshin.png")!
 
@@ -36,6 +37,7 @@ struct AboutView: View {
 
             VStack(spacing: 6) {
                 Text("Copyright © 2026 Neo-Isshin")
+                Link("www.ailyre.com", destination: homepageURL)
                 Text(L10n.shared.tr("about.license"))
             }
             .font(.system(size: 13))
