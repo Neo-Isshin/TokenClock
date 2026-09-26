@@ -1,70 +1,47 @@
-# 每日自动检查价格快照（LiteLLM 上游日更），有变化时创建或更新 PR 供人工 review。
-# 价格快照的 diff 逐模型一行，review 时可直接核对单价变化。
+# Publish validated catalog-only updates directly; no PR approval is required.
 name: update-pricing
-
 on:
   schedule:
-    # UTC 每日 03:17（避开整点，降低 GitHub 定时任务高峰拥堵）
     - cron: '17 3 * * *'
   workflow_dispatch:
 
 permissions:
   contents: write
-  pull-requests: write
 
 concurrency:
   group: update-pricing
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   update-snapshot:
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-
+        with:
+          ref: main
+          fetch-depth: 0
       - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
-
-      - name: Generate snapshot
+      - name: Test catalog safeguards
+        run: python3 -m unittest discover -s scripts -p 'test_pricing_snapshot.py'
+      - name: Generate validated snapshot
         run: python3 scripts/update-pricing-snapshot.py
-
-      - name: Check for changes
-        id: diff
+      - name: Publish catalog only
+        shell: bash
         run: |
-          if git diff --quiet Sources/TokenClock/Resources/pricing-snapshot.json; then
-            echo "changed=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "changed=true" >> "$GITHUB_OUTPUT"
+          set -euo pipefail
+          snapshot=Sources/TokenClock/Resources/pricing-snapshot.json
+          if git diff --quiet -- "$snapshot"; then
+            echo "Catalog unchanged; no commit needed."
+            exit 0
           fi
-
-      - name: Create pull request
-        if: steps.diff.outputs.changed == 'true'
-        run: |
-          BRANCH="chore/pricing-snapshot"
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git checkout -B "$BRANCH"
-          git add Sources/TokenClock/Resources/pricing-snapshot.json
-          git commit -m "chore(pricing): refresh snapshot from LiteLLM ($(date -u +%Y-%m-%d))"
-          # This branch is owned by the workflow. Reusing it keeps reruns and
-          # later daily refreshes idempotent while an earlier PR is still open.
-          git push --force origin "$BRANCH"
-
-          PR_NUMBER=$(gh pr list \
-            --base main \
-            --head "$BRANCH" \
-            --state open \
-            --json number \
-            --jq '.[0].number')
-          if [ -n "$PR_NUMBER" ]; then
-            echo "Updated existing pricing PR #$PR_NUMBER"
-          else
-            gh pr create \
-              --base main \
-              --head "$BRANCH" \
-              --title "chore(pricing): refresh snapshot $(date -u +%Y-%m-%d)" \
-              --body "由 .github/workflows/update-pricing.yml 自动生成。逐模型核对 diff 中的单价变化后合并。"
-          fi
-        env:
-          GH_TOKEN: ${{ github.token }}
+          git add -- "$snapshot"
+          git commit -m "chore(pricing): refresh validated catalog"
+          # Never force-push or bypass branch protection. A concurrent unrelated
+          # commit can be rebased safely; conflicts fail without changing main.
+          git pull --rebase origin main
+          git push origin HEAD:main
