@@ -427,7 +427,9 @@ private final class LinuxUsageShareRenderer {
                 let y = 405.0 + Double(index) * 36
                 text(context, String(format: "%02d", index + 1), 9, 500, 38, y, color: fg, alpha: 0.46)
                 rectangle(context, 67, y - 13, 3, 27, color: palette[index % palette.count])
-                text(context, row.emoji, 13, 500, 88, y, align: 1, color: fg)
+                if !LinuxBrandIcons.draw(context, name: row.name, x: 80, y: y - 8, size: 16) {
+                    text(context, row.emoji, 13, 500, 88, y, align: 1, color: fg)
+                }
                 text(context, row.name, 12, 600, 101, y, color: fg)
                 text(context, TokenFormat.compact(row.tokens), 12, 700, 518, y, align: 2, color: fg)
                 text(context, String(format: "%.0f%%", row.fraction * 100), 9, 500, 562, y, align: 2, color: fg, alpha: 0.53)

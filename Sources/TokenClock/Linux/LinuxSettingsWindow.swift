@@ -300,7 +300,8 @@ final class LinuxSettingsWindow: @unchecked Sendable {
         gtk_box_pack_start(tc_gtk_box(columns), left, 1, 1, 0)
         gtk_box_pack_start(tc_gtk_box(columns), right, 1, 1, 0)
         for (index, option) in Self.toolOptions.enumerated() {
-            let button = gtk_check_button_new_with_label("\(option.emoji)  \(option.name)")
+            let button = gtk_check_button_new()
+            gtk_container_add(tc_gtk_container(button), LinuxBrandIcons.label("\(option.emoji)  \(option.name)"))
             gtk_box_pack_start(tc_gtk_box(index < 7 ? left : right), button, 0, 0, 0)
             toolButtons[option.name] = button
         }
@@ -323,8 +324,7 @@ final class LinuxSettingsWindow: @unchecked Sendable {
         for option in Self.toolOptions {
             let row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8)
             tc_gtk_add_class(row, "tokenclock-settings-row")
-            let label = gtk_label_new("\(option.emoji) \(option.name)")
-            gtk_label_set_xalign(tc_gtk_label(label), 0)
+            let label = LinuxBrandIcons.label("\(option.emoji) \(option.name)")
             gtk_widget_set_size_request(label, 130, -1)
             let entry = gtk_entry_new()
             gtk_entry_set_placeholder_text(tc_gtk_entry(entry), L10n.shared.tr("settings.defaultPath"))

@@ -458,8 +458,8 @@ final class LinuxUsageOverviewWindow: @unchecked Sendable {
         tc_gtk_add_class(row, header ? "tc-overview-header" : "tc-overview-row")
         let labels = [name, tokens, messages, cost, cache]
         for (index, value) in labels.enumerated() {
-            let label = gtk_label_new(value)
-            gtk_label_set_xalign(tc_gtk_label(label), index == 0 ? 0 : 1)
+            let label = index == 0 ? LinuxBrandIcons.label(value) : gtk_label_new(value)
+            if index != 0 { gtk_label_set_xalign(tc_gtk_label(label), 1) }
             if index == 0 { gtk_widget_set_hexpand(label, 1) }
             else { gtk_widget_set_size_request(label, 92, -1) }
             gtk_box_pack_start(tc_gtk_box(row), label, index == 0 ? 1 : 0, index == 0 ? 1 : 0, 0)

@@ -324,8 +324,10 @@ final class LinuxClockRenderer: @unchecked Sendable {
         let rowSpacing = 17 * scale
         let firstY = height / 2 - Double(max(0, activeTools.count - 1)) * rowSpacing / 2
         for (index, tool) in activeTools.enumerated() {
-            drawText(context, "\(tool.emoji) \(tool.abbreviation)", family: "Sans", size: 13 * scale, weight: 600,
-                     x: 22 * scale, y: firstY + Double(index) * rowSpacing, alignment: 0,
+            let rowY = firstY + Double(index) * rowSpacing
+            let hasIcon = LinuxBrandIcons.draw(context, name: tool.name, x: 22 * scale, y: rowY - 8 * scale, size: 16 * scale)
+            drawText(context, hasIcon ? tool.abbreviation : "\(tool.emoji) \(tool.abbreviation)", family: "Sans", size: 13 * scale, weight: 600,
+                     x: (hasIcon ? 40 : 22) * scale, y: rowY, alignment: 0,
                      color: withAlpha(primary, primary.alpha * 0.75))
         }
 
@@ -454,7 +456,7 @@ final class LinuxClockRenderer: @unchecked Sendable {
         height: Double,
         scale: Double
     ) {
-        var lines = ["\(indicator.provider.emoji) \(indicator.provider.displayName)"]
+        var lines = [indicator.provider.displayName]
         lines += indicator.details.map {
             "\(L10n.shared.tr($0.labelKey)) \(String(format: "%.0f%%", $0.remainingPercent))"
         }

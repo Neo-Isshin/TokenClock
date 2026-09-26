@@ -706,9 +706,8 @@ final class LinuxDetailsPanel: @unchecked Sendable {
         style: String,
         to box: UnsafeMutablePointer<GtkWidget>?
     ) {
-        guard let label = gtk_label_new(text) else { return }
-        gtk_label_set_xalign(tc_gtk_label(label), alignment)
-        gtk_label_set_ellipsize(tc_gtk_label(label), PANGO_ELLIPSIZE_END)
+        guard let label = LinuxBrandIcons.label(text) else { return }
+        if BrandIconCatalog.labelParts(text) == nil { gtk_label_set_xalign(tc_gtk_label(label), alignment) }
         if text.count > 24 { gtk_widget_set_tooltip_text(label, text) }
         gtk_widget_set_size_request(label, gint(width), -1)
         tc_gtk_add_class(label, style)
@@ -1138,8 +1137,8 @@ final class LinuxDetailsPanel: @unchecked Sendable {
         to content: UnsafeMutablePointer<GtkWidget>
     ) {
         let row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6)
-        let label = gtk_label_new(loading ? "◌  \(title)" : title)
-        gtk_label_set_xalign(tc_gtk_label(label), 0)
+        if loading { gtk_box_pack_start(tc_gtk_box(row), gtk_label_new("◌"), 0, 0, 0) }
+        let label = LinuxBrandIcons.label(title, size: 18)
         tc_gtk_add_class(label, "tokenclock-quota-provider")
         gtk_box_pack_start(tc_gtk_box(row), label, 1, 1, 0)
         if let plan, !plan.isEmpty {

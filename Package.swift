@@ -26,6 +26,7 @@ let linuxSources = [
     "Services/HistoryStore.swift",
     "Services/MockUsageService.swift",
     "Services/ModelEmoji.swift",
+    "Services/BrandIconCatalog.swift",
     "Services/ModelNormalizer.swift",
     "Services/IPGeolocation.swift",
     "Services/OpenClawUsageService.swift",
@@ -46,6 +47,7 @@ let linuxSources = [
     "Linux/LinuxClockTheme.swift",
     "Linux/LinuxCustomTheme.swift",
     "Linux/LinuxClockRenderer.swift",
+    "Linux/LinuxBrandIcons.swift",
     "Linux/LinuxDetailsPanel.swift",
     "Linux/LinuxSettingsWindow.swift",
     "Linux/LinuxUsageOverviewWindow.swift",
@@ -96,6 +98,7 @@ let package = Package(
             resources: [
                 .copy("Resources/glass_disc.png"),
                 .copy("Resources/pricing-snapshot.json"),
+                .copy("Resources/BrandIcons"),
             ],
             swiftSettings: [.unsafeFlags(["-parse-as-library"])]
         ),
@@ -118,6 +121,7 @@ let package = Package(
             resources: [
                 .copy("Resources/glass_disc.png"),
                 .copy("Resources/pricing-snapshot.json"),
+                .copy("Resources/BrandIcons"),
             ],
             swiftSettings: [.unsafeFlags(["-parse-as-library"])]
         )

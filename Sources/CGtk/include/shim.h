@@ -582,6 +582,47 @@ static inline void tc_cairo_set_source_rgba(
 
 // Pango provides UTF-8 fallback and correct metrics for CJK/emoji overlay text.
 // align: 0 = left, 1 = centered, 2 = right; x/y identify that anchor point.
+/* Decoded originals are shared by GTK rows and the Cairo dial/share renderer. */
+static inline GdkPixbuf *tc_brand_icon_pixbuf(const char *path) {
+    static GHashTable *cache = NULL;
+    if (!path || !path[0]) return NULL;
+    if (!cache) cache = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, g_object_unref);
+    GdkPixbuf *image = g_hash_table_lookup(cache, path);
+    if (!image) {
+        image = gdk_pixbuf_new_from_file(path, NULL);
+        if (image) g_hash_table_insert(cache, g_strdup(path), image);
+    }
+    return image;
+}
+
+static inline GtkWidget *tc_gtk_brand_label(const char *path, const char *prefix, const char *text, int size) {
+    GtkWidget *box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
+    if (prefix && prefix[0]) gtk_box_pack_start(GTK_BOX(box), gtk_label_new(prefix), FALSE, FALSE, 0);
+    GdkPixbuf *source = tc_brand_icon_pixbuf(path);
+    if (source) {
+        GdkPixbuf *scaled = gdk_pixbuf_scale_simple(source, size, size, GDK_INTERP_BILINEAR);
+        GtkWidget *image = gtk_image_new_from_pixbuf(scaled);
+        g_object_unref(scaled);
+        gtk_box_pack_start(GTK_BOX(box), image, FALSE, FALSE, 0);
+    }
+    GtkWidget *label = gtk_label_new(text);
+    gtk_label_set_xalign(GTK_LABEL(label), 0);
+    gtk_label_set_ellipsize(GTK_LABEL(label), PANGO_ELLIPSIZE_END);
+    gtk_box_pack_start(GTK_BOX(box), label, TRUE, TRUE, 0);
+    return box;
+}
+
+static inline void tc_cairo_draw_brand_icon(cairo_t *context, const char *path, double x, double y, double size) {
+    GdkPixbuf *image = tc_brand_icon_pixbuf(path);
+    if (!image) return;
+    cairo_save(context);
+    cairo_translate(context, x, y);
+    cairo_scale(context, size / gdk_pixbuf_get_width(image), size / gdk_pixbuf_get_height(image));
+    gdk_cairo_set_source_pixbuf(context, image, 0, 0);
+    cairo_paint(context);
+    cairo_restore(context);
+}
+
 static inline void tc_cairo_draw_text(
     cairo_t *context,
     const char *text,
