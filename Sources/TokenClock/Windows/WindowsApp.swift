@@ -1176,6 +1176,13 @@ final class WindowsApp: @unchecked Sendable {
     }
 
     fileprivate func handleQuotaCmd(_ id: Int32) {
+        if let accountID = quotaDialAccountControls[id],
+           let account = subscriptionAccountStore.records().first(where: { $0.id == accountID }) {
+            toggleDialAccount(account)
+            rebuildSubscriptionQuotaDialog()
+            render()
+            return
+        }
         switch id {
         case 980:
             selectAutomaticDialQuotaProviderIfReady()
@@ -1257,7 +1264,7 @@ final class WindowsApp: @unchecked Sendable {
         let dialogWidth: Int32 = twoColumns ? 900 : 470
         win_resize(dialog, dialogWidth, 700)
         let estimatedRows = cards.reduce(0) { total, card in
-            total + card.accounts.reduce(0) { $0 + max(1, $1.groups.flatMap(\.buckets).count) + 1 }
+            total + card.accounts.reduce(0) { $0 + max(1, $1.groups.flatMap(\.buckets).count) + 2 }
         }
         let contentHeight = max(720, 262 + (twoColumns ? (estimatedRows + 1) / 2 : estimatedRows) * 82)
         dlg_reset_content(dialog, Int32(contentHeight))
@@ -1289,6 +1296,7 @@ final class WindowsApp: @unchecked Sendable {
         let providerStartY: Int32 = twoColumns ? 116 : 146
         var columnY: [Int32] = [providerStartY, providerStartY]
         let cardWidth: Int32 = twoColumns ? 414 : dialogWidth - 56
+        quotaDialAccountControls.removeAll()
         quotaEditControls.removeAll()
         quotaEmailControls.removeAll()
         var accountControlIndex = 0
@@ -1333,8 +1341,19 @@ final class WindowsApp: @unchecked Sendable {
                 quotaEmailControls[emailID] = account.id
                 dlg_add_push(dialog, emailID, expandedQuotaEmails.contains(account.id) ? "⌄" : ">", x + width - 29, cursorY - 2, 25, 23)
             }
+            let dialID = Int32(1500 + accountControlIndex)
+            quotaDialAccountControls[dialID] = account.id
             accountControlIndex += 1
             cursorY += 25
+            brand_add_check(dialog, dialID, QuotaAccountLabels.showOnDial,
+                            x + 8, cursorY, width - 16, 24, isDialAccountSelected(account) ? 1 : 0)
+            cursorY += 28
+            if isDialAccountSelected(account) &&
+                (activeSubscriptionAccountIDs[provider] != account.id ||
+                 DialQuotaResolver.freshGroups(account.groups, refreshedAt: account.refreshedAt).isEmpty) {
+                brand_add_subtitle(dialog, QuotaAccountLabels.unavailable, x + 8, cursorY, width - 16, 22)
+                cursorY += 25
+            }
             if account.revealsEmailOnDemand, expandedQuotaEmails.contains(account.id), let email = account.email {
                 brand_add_subtitle(dialog, "✉  \(email)", x + 12, cursorY, width - 24, 18)
                 cursorY += 21
@@ -1381,7 +1400,10 @@ final class WindowsApp: @unchecked Sendable {
 
     private func dialQuotaIndicators() -> [DialQuotaIndicator] {
         dialQuotaProviders.compactMap { provider in
-            DialQuotaResolver.resolve(provider: provider, groups: freshDialQuotaGroups(for: provider))
+            DialQuotaAccountSelection.indicator(
+                provider: provider, selectedID: DialQuotaAccountSelection.selectedID(for: provider),
+                activeID: activeSubscriptionAccountIDs[provider], records: subscriptionAccountStore.records(),
+                liveGroups: freshDialQuotaGroups(for: provider))
         }
     }
 
@@ -1430,6 +1452,21 @@ final class WindowsApp: @unchecked Sendable {
         return subscriptionAccounts(for: provider).first?.groups ?? []
     }
 
+    private var quotaDialAccountControls: [Int32: String] = [:]
+    private func isDialAccountSelected(_ account: SubscriptionAccountRecord) -> Bool {
+        dialQuotaProviders.contains(account.provider)
+            && (DialQuotaAccountSelection.selectedID(for: account.provider) ?? activeSubscriptionAccountIDs[account.provider]) == account.id
+    }
+    private func toggleDialAccount(_ account: SubscriptionAccountRecord) {
+        if isDialAccountSelected(account) {
+            toggleDialQuotaProvider(account.provider)
+        } else {
+            guard dialQuotaProviders.contains(account.provider) || dialQuotaProviders.count < 2 else { return }
+            DialQuotaAccountSelection.select(account.id, for: account.provider)
+            if !dialQuotaProviders.contains(account.provider) { toggleDialQuotaProvider(account.provider) }
+        }
+    }
+
     private func toggleDialQuotaProvider(_ provider: SubscriptionProvider) {
         shouldAutomaticallySelectDialQuotaProvider = false
         if let index = dialQuotaProviders.firstIndex(of: provider) {
@@ -1472,6 +1509,7 @@ final class WindowsApp: @unchecked Sendable {
 
     private func dialQuotaTooltip(_ indicator: DialQuotaIndicator) -> String {
         var lines = [indicator.provider.displayName]
+        if let name = indicator.accountName { lines.append(name) }
         for detail in indicator.details {
             lines.append("\(L10n.shared.tr(detail.labelKey)) \(String(format: "%.0f%%", detail.remainingPercent))")
         }
@@ -1586,7 +1624,7 @@ final class WindowsApp: @unchecked Sendable {
             resetCreditCount: resetCreditCount
         )
         _ = subscriptionAccountStore.merge(record)
-        activeSubscriptionAccountIDs[provider] = record.id
+        activeSubscriptionAccountIDs[provider] = record.hasVerifiedIdentity ? record.id : nil
     }
 
     private func subscriptionAccounts(for provider: SubscriptionProvider) -> [SubscriptionAccountRecord] {

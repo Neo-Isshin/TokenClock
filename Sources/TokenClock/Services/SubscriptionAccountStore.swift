@@ -37,11 +37,13 @@ struct DialQuotaIndicator: Identifiable, Equatable, Sendable {
     let outerRemainingPercent: Double
     let innerRemainingPercent: Double?
     let details: [DialQuotaDetail]
+    var accountName: String? = nil
     var id: SubscriptionProvider { provider }
 }
 
 enum DialQuotaResolver {
-    /// Persisted percentages are snapshots, not current quota state.
+    /// A persisted percentage is only a snapshot. Never put an expired snapshot
+    /// on the live clock face while the next provider request is still pending.
     static func freshGroups(
         _ groups: [ProviderQuotaGroup], refreshedAt: Date?,
         now: Date = Date(), maximumAge: TimeInterval = 15 * 60
@@ -56,6 +58,8 @@ enum DialQuotaResolver {
         }
     }
 
+    /// First-run default: surface the provider whose primary quota card has been consumed most.
+    /// The caller supplies panel order so ties stay deterministic and match what the user sees.
     static func defaultProvider(
         from indicators: [DialQuotaIndicator],
         providerOrder: [SubscriptionProvider]
@@ -181,7 +185,6 @@ enum DialQuotaResolver {
     }
 }
 
-
 struct SubscriptionAccountIdentity: Equatable, Sendable {
     let id: String
     let email: String?
@@ -209,35 +212,74 @@ struct SubscriptionAccountRecord: Identifiable, Equatable, Codable, Sendable {
     var creditBalance: String?
     var hasUnlimitedCredits: Bool
     var resetCreditCount: Int
+
     var id: String { "\(provider.rawValue)::\(accountID)" }
-    var trimmedNote: String? { let value = note.trimmingCharacters(in: .whitespacesAndNewlines); return value.isEmpty ? nil : value }
-    var displayName: String { trimmedNote ?? email?.nonEmpty ?? "Account" }
-    var revealsEmailOnDemand: Bool { trimmedNote != nil && email?.nonEmpty != nil }
-    var effectivePlan: String? { manualPlan?.nonEmpty ?? detectedPlan?.nonEmpty }
+
+    /// Legacy anonymous Codex log snapshots are not authenticated accounts.
+    var hasVerifiedIdentity: Bool {
+        provider != .codex || (!["", "active", "codex-active"].contains(accountID.trimmingCharacters(in: .whitespacesAndNewlines)))
+    }
+
+    var trimmedNote: String? {
+        let value = note.trimmingCharacters(in: .whitespacesAndNewlines)
+        return value.isEmpty ? nil : value
+    }
+
+    var displayName: String {
+        trimmedNote ?? email?.nonEmpty ?? "Account"
+    }
+
+    var revealsEmailOnDemand: Bool {
+        trimmedNote != nil && email?.nonEmpty != nil
+    }
+
+    var effectivePlan: String? {
+        manualPlan?.nonEmpty ?? detectedPlan?.nonEmpty
+    }
 }
 
+/// Persists only display metadata and quota snapshots. Authentication material is
+/// deliberately never accepted by this type, so switching accounts cannot leak tokens.
 final class SubscriptionAccountStore: @unchecked Sendable {
     static let shared = SubscriptionAccountStore()
+
     private let lock = NSLock()
     private let defaults: UserDefaults
     private let persistenceEnabled: Bool
     private var recordsByID: [String: SubscriptionAccountRecord]
+
     init(defaults: UserDefaults = .standard, persistenceEnabled: Bool = true) {
-        self.defaults = defaults; self.persistenceEnabled = persistenceEnabled
-        if persistenceEnabled, let raw = defaults.string(for: .subscriptionQuotaAccounts),
+        self.defaults = defaults
+        self.persistenceEnabled = persistenceEnabled
+        if persistenceEnabled,
+           let raw = defaults.string(for: .subscriptionQuotaAccounts),
            let data = raw.data(using: .utf8),
            let records = try? JSONDecoder().decode([SubscriptionAccountRecord].self, from: data) {
             recordsByID = Self.restore(records)
-        } else { recordsByID = [:] }
+        } else {
+            recordsByID = [:]
+        }
     }
+
     init(restoring records: [SubscriptionAccountRecord]) {
-        defaults = .standard; persistenceEnabled = false; recordsByID = Self.restore(records)
+        defaults = .standard
+        persistenceEnabled = false
+        recordsByID = Self.restore(records)
     }
-    private static func restore(_ records: [SubscriptionAccountRecord]) -> [String: SubscriptionAccountRecord] {
+
+    private static func restore(
+        _ records: [SubscriptionAccountRecord]
+    ) -> [String: SubscriptionAccountRecord] {
+        // Persisted data can contain duplicate IDs after a crash or migration. Prefer
+        // the freshest quota snapshot while preserving user-entered display metadata.
         var restored: [String: SubscriptionAccountRecord] = [:]
         for record in records {
-            guard let existing = restored[record.id] else { restored[record.id] = record; continue }
-            var preferred = (record.refreshedAt ?? .distantPast) >= (existing.refreshedAt ?? .distantPast) ? record : existing
+            guard let existing = restored[record.id] else {
+                restored[record.id] = record
+                continue
+            }
+            var preferred = (record.refreshedAt ?? .distantPast) >=
+                (existing.refreshedAt ?? .distantPast) ? record : existing
             let fallback = preferred == record ? existing : record
             if preferred.trimmedNote == nil { preferred.note = fallback.note }
             if preferred.manualPlan?.nonEmpty == nil { preferred.manualPlan = fallback.manualPlan }
@@ -246,46 +288,113 @@ final class SubscriptionAccountStore: @unchecked Sendable {
         }
         return restored
     }
-    @discardableResult func merge(_ incoming: SubscriptionAccountRecord) -> [SubscriptionAccountRecord] {
+
+    @discardableResult
+    func merge(_ incoming: SubscriptionAccountRecord) -> [SubscriptionAccountRecord] {
         lock.withLock {
+            guard incoming.hasVerifiedIdentity else { return visibleLocked() }
             var value = incoming
             let sameEmail = incoming.email.flatMap { email in
                 recordsByID.values.first {
-                    $0.provider == incoming.provider && $0.email?.caseInsensitiveCompare(email) == .orderedSame
+                    $0.provider == incoming.provider
+                        && $0.email?.caseInsensitiveCompare(email) == .orderedSame
                 }
             }
             if let existing = recordsByID[incoming.id] ?? sameEmail {
-                value.note = existing.note; value.manualPlan = existing.manualPlan
+                value.note = existing.note
+                value.manualPlan = existing.manualPlan
                 if value.email?.nonEmpty == nil { value.email = existing.email }
-                if existing.id != incoming.id { recordsByID.removeValue(forKey: existing.id) }
+                if existing.id != incoming.id {
+                    if persistenceEnabled, DialQuotaAccountSelection.selectedID(for: incoming.provider, defaults: defaults) == existing.id {
+                        DialQuotaAccountSelection.select(incoming.id, for: incoming.provider, defaults: defaults)
+                    }
+                    recordsByID.removeValue(forKey: existing.id)
+                }
             }
-            recordsByID[value.id] = value; trimProviderLocked(value.provider); persistLocked(); return sortedLocked()
+            recordsByID[value.id] = value
+            trimProviderLocked(value.provider)
+            persistLocked()
+            return visibleLocked()
         }
     }
-    func records() -> [SubscriptionAccountRecord] { lock.withLock { sortedLocked() } }
+
+    func records() -> [SubscriptionAccountRecord] {
+        lock.withLock { visibleLocked() }
+    }
+
     func update(id: String, note: String, manualPlan: String?) -> [SubscriptionAccountRecord] {
         lock.withLock {
-            guard var value = recordsByID[id] else { return sortedLocked() }
+            guard var value = recordsByID[id] else { return visibleLocked() }
             value.note = note.trimmingCharacters(in: .whitespacesAndNewlines)
             value.manualPlan = manualPlan?.trimmingCharacters(in: .whitespacesAndNewlines).nonEmpty
-            recordsByID[id] = value; persistLocked(); return sortedLocked()
+            recordsByID[id] = value
+            persistLocked()
+            return visibleLocked()
         }
     }
+
     private func trimProviderLocked(_ provider: SubscriptionProvider) {
-        let matching = recordsByID.values.filter { $0.provider == provider }.sorted { ($0.refreshedAt ?? .distantPast) > ($1.refreshedAt ?? .distantPast) }
+        let matching = recordsByID.values.filter { $0.provider == provider }
+            .sorted { ($0.refreshedAt ?? .distantPast) > ($1.refreshedAt ?? .distantPast) }
         for stale in matching.dropFirst(8) { recordsByID.removeValue(forKey: stale.id) }
     }
+
+    private func visibleLocked() -> [SubscriptionAccountRecord] {
+        sortedLocked().filter(\.hasVerifiedIdentity)
+    }
+
     private func sortedLocked() -> [SubscriptionAccountRecord] {
         recordsByID.values.sorted {
             if $0.provider != $1.provider { return $0.provider.rawValue < $1.provider.rawValue }
             return ($0.refreshedAt ?? .distantPast) > ($1.refreshedAt ?? .distantPast)
         }
     }
+
     private func persistLocked() {
-        guard persistenceEnabled, let data = try? JSONEncoder().encode(sortedLocked()), let raw = String(data: data, encoding: .utf8) else { return }
+        guard persistenceEnabled,
+              let data = try? JSONEncoder().encode(sortedLocked()),
+              let raw = String(data: data, encoding: .utf8) else { return }
         defaults.setString(raw, for: .subscriptionQuotaAccounts)
         defaults.synchronize()
     }
 }
 
-private extension String { var nonEmpty: String? { isEmpty ? nil : self } }
+
+enum QuotaAccountLabels {
+    static var showOnDial: String { L10n.shared.language == .en ? "Show this account on dial" : "在表盘显示此账户" }
+    static var unavailable: String { L10n.shared.language == .en ? "No fresh quota for this account; ring hidden" : "此账户暂无实时额度，圆环暂不显示" }
+    static var unverified: String { L10n.shared.language == .en ? "Account identity unavailable (session log only)" : "无法确认账户身份（仅有会话日志）" }
+}
+
+enum DialQuotaAccountSelection {
+    static let defaultsKey = "TC_dialQuotaAccountIDs"
+    static func selectedID(for provider: SubscriptionProvider, defaults: UserDefaults = .standard) -> String? {
+        (defaults.dictionary(forKey: defaultsKey) as? [String: String])?[provider.rawValue]
+    }
+    static func select(_ id: String?, for provider: SubscriptionProvider, defaults: UserDefaults = .standard) {
+        var values = defaults.dictionary(forKey: defaultsKey) as? [String: String] ?? [:]
+        values[provider.rawValue] = id
+        defaults.set(values, forKey: defaultsKey)
+        defaults.synchronize()
+    }
+    /// A pinned account must never silently borrow the currently logged-in account's quota.
+    static func indicator(provider: SubscriptionProvider, selectedID: String?, activeID: String?,
+                          records: [SubscriptionAccountRecord], liveGroups: [ProviderQuotaGroup],
+                          now: Date = Date()) -> DialQuotaIndicator? {
+        guard provider != .codex || activeID != nil else { return nil }
+        let targetID = selectedID ?? activeID
+        if let selectedID, selectedID != activeID { return nil }
+        let record = records.first { $0.provider == provider && $0.id == targetID && $0.hasVerifiedIdentity }
+        if selectedID != nil && record == nil { return nil }
+        // Live callers already check snapshot freshness. Also validate pinned record age.
+        if let selectedID, record?.id == selectedID,
+           DialQuotaResolver.freshGroups(record?.groups ?? [], refreshedAt: record?.refreshedAt, now: now).isEmpty { return nil }
+        guard var indicator = DialQuotaResolver.resolve(provider: provider, groups: liveGroups) else { return nil }
+        indicator.accountName = record?.displayName
+        return indicator
+    }
+}
+
+private extension String {
+    var nonEmpty: String? { isEmpty ? nil : self }
+}
