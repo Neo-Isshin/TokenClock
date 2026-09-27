@@ -309,6 +309,8 @@ struct SubscriptionQuotaWindowView: View {
                     .help(L10n.shared.tr("quota.showEmail"))
                 }
             }
+            Text(BillingText.summary(account.effectiveBilling))
+                .font(.system(size: 9.5)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             Toggle(QuotaAccountLabels.showOnDial, isOn: Binding(
                 get: { viewModel.isDialAccountSelected(account) },
                 set: { _ in viewModel.toggleDialAccount(account) }
@@ -476,14 +478,20 @@ struct SubscriptionQuotaWindowView: View {
 
 struct SubscriptionAccountEditorView: View {
     let account: SubscriptionAccountRecord
-    let onSave: (String, String?) -> Void
+    let onSave: (String, String?, SubscriptionBillingEdit) -> Void
     let onCancel: () -> Void
     @State private var note: String
     @State private var selectedPlan: String
+    @State private var manualDateEnabled: Bool
+    @State private var billingDate: Date
+    @State private var billingCycle: SubscriptionBillingCycle
+    @State private var autoRenews: Bool
+    @State private var reminderEnabled: Bool
+    @State private var reminderDays: Int
 
     init(
         account: SubscriptionAccountRecord,
-        onSave: @escaping (String, String?) -> Void,
+        onSave: @escaping (String, String?, SubscriptionBillingEdit) -> Void,
         onCancel: @escaping () -> Void
     ) {
         self.account = account
@@ -491,6 +499,14 @@ struct SubscriptionAccountEditorView: View {
         self.onCancel = onCancel
         _note = State(initialValue: account.note)
         _selectedPlan = State(initialValue: account.manualPlan ?? "")
+        let info = account.effectiveBilling
+        let reminders = account.billingReminders ?? BillingReminderSettings()
+        _manualDateEnabled = State(initialValue: account.manualBilling != nil)
+        _billingDate = State(initialValue: info?.date ?? Date())
+        _billingCycle = State(initialValue: info?.cycle ?? .monthly)
+        _autoRenews = State(initialValue: info?.autoRenews ?? true)
+        _reminderEnabled = State(initialValue: reminders.enabled)
+        _reminderDays = State(initialValue: reminders.safeDays)
     }
 
     var body: some View {
@@ -523,11 +539,36 @@ struct SubscriptionAccountEditorView: View {
                 .pickerStyle(.menu)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
+            VStack(alignment: .leading, spacing: 9) {
+                Text(BillingText.title).font(.system(size: 12, weight: .semibold))
+                Text(BillingText.summary(account.detectedBilling))
+                    .font(.system(size: 10)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                Toggle(BillingText.manual, isOn: $manualDateEnabled)
+                if manualDateEnabled {
+                    DatePicker("", selection: $billingDate, displayedComponents: .date).labelsHidden()
+                    Picker("", selection: $billingCycle) {
+                        ForEach(SubscriptionBillingCycle.allCases, id: \.self) { cycle in Text(cycle.title).tag(cycle) }
+                    }.labelsHidden()
+                    Toggle(BillingText.autoRenew, isOn: $autoRenews)
+                }
+                Toggle(BillingText.enabled, isOn: $reminderEnabled)
+                Picker(BillingText.reminder, selection: $reminderDays) {
+                    ForEach(BillingReminderSettings.dayOptions, id: \.self) { day in Text(String(day)).tag(day) }
+                }
+                .pickerStyle(.segmented)
+                .disabled(!reminderEnabled)
+                Text(BillingText.localOnly).font(.system(size: 9.5)).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }.font(.system(size: 11))
             HStack {
                 Spacer()
                 Button(L10n.shared.tr("quota.cancel")) { onCancel() }
                 Button(L10n.shared.tr("quota.save")) {
-                    onSave(note, selectedPlan.isEmpty ? nil : selectedPlan)
+                    let manual = manualDateEnabled ? SubscriptionBillingInfo(
+                        date: billingDate, cycle: billingCycle, autoRenews: autoRenews, source: "manual", observedAt: Date()
+                    ) : nil
+                    onSave(note, selectedPlan.isEmpty ? nil : selectedPlan, SubscriptionBillingEdit(
+                        manual: manual, reminders: BillingReminderSettings(enabled: reminderEnabled, days: reminderDays)))
                 }
                 .keyboardShortcut(.defaultAction)
             }

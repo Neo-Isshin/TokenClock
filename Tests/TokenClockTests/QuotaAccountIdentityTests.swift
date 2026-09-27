@@ -59,7 +59,7 @@ final class QuotaAccountIdentityTests: XCTestCase {
         let name = "TokenClock.QuotaAccountIdentityTests." + UUID().uuidString
         let defaults = try XCTUnwrap(UserDefaults(suiteName: name))
         defer { defaults.removePersistentDomain(forName: name) }
-        let old = account("email-id", email: "person@example.com")
+        let old = account("person@example.com", email: "person@example.com")
         let store = SubscriptionAccountStore(defaults: defaults)
         _ = store.merge(old)
         DialQuotaAccountSelection.select(old.id, for: .codex, defaults: defaults)
