@@ -42,6 +42,10 @@ final class SubscriptionBillingTests: XCTestCase {
         let team = Data(#"{"subscriptionStatus":"active","isYearlyPlan":false,"isTeamMember":true,"pendingCancellationDate":null}"#.utf8)
         XCTAssertNil(BillingParser.cursor(subscription: team, usage: usage)?.date)
         XCTAssertNil(BillingParser.cursor(subscription: Data("{}".utf8), usage: usage))
+        let student = Data(#"{"subscriptionStatus":"active","isYearlyPlan":false,"isTeamMember":false,"isOnStudentPlan":true,"pendingCancellationDate":null}"#.utf8)
+        XCTAssertNil(BillingParser.cursor(subscription: student, usage: usage)?.date)
+        let malformed = Data(#"{"subscriptionStatus":"active","isYearlyPlan":false,"isTeamMember":false,"pendingCancellationDate":"invalid"}"#.utf8)
+        XCTAssertNil(BillingParser.cursor(subscription: malformed, usage: usage)?.date)
     }
     func testReminderOptionsAndThresholds() throws {
         XCTAssertEqual(BillingReminderSettings.dayOptions, [1,2,3,7])
