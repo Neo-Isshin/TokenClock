@@ -22,6 +22,7 @@ struct ProviderQuotaSnapshot: Equatable, Sendable {
     var source: String
     var message: String?
     var account: SubscriptionAccountIdentity? = nil
+    var billing: SubscriptionBillingInfo? = nil
 
     static func idle(source: String) -> Self {
         Self(status: .idle, groups: [], planType: nil, refreshedAt: nil, source: source, message: nil)
@@ -200,6 +201,10 @@ final class CursorQuotaService: @unchecked Sendable {
         }
         snapshot.account = SubscriptionAccountIdentity(id: credential.userID, email: credential.email)
         if snapshot.planType?.isEmpty != false { snapshot.planType = credential.membershipType }
+        if let account = snapshot.account, BillingFetchPolicy.shouldFetch(provider: .cursor, account: account),
+           let stripe = request(credential: credential, path: "/api/auth/stripe") {
+            snapshot.billing = BillingParser.cursor(subscription: stripe, usage: data)
+        }
         return snapshot
     }
 
@@ -287,14 +292,14 @@ final class CursorQuotaService: @unchecked Sendable {
         return subject.split(separator: "|").last.map(String.init)
     }
 
-    private func request(credential: Credential) -> Data? {
+    private func request(credential: Credential, path: String = "/api/usage-summary") -> Data? {
         let cookieToken = credential.token.contains("::")
             ? credential.token.replacingOccurrences(of: "::", with: "%3A%3A")
             : "\(credential.userID)%3A%3A\(credential.token)"
         let headers = ["Accept": "application/json", "Cookie": "WorkosCursorSessionToken=\(cookieToken)",
             "Origin": AppConfig.API.cursorOrigin, "Referer": AppConfig.API.cursorDashboard,
             "User-Agent": AppConfig.HTTP.userAgent]
-        let url = AppConfig.API.cursorOrigin + "/api/usage-summary"
+        let url = AppConfig.API.cursorOrigin + path
         #if os(Windows)
         guard let response = try? WindowsNativeHTTP.request(url: url, headers: headers,
             connectTimeout: 8, sendTimeout: 8, receiveTimeout: 15), response.statusCode == 200 else { return nil }

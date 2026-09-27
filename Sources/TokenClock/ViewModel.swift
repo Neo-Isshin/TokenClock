@@ -379,6 +379,7 @@ final class ViewModel: ObservableObject {
         runInitialPathDetection()
         setupPricingObservers()
         startTimers()
+        refreshBillingIfNeeded()
         if !dialQuotaProviders.isEmpty {
             refreshSubscriptionQuotas(providers: Set(dialQuotaProviders))
         }
@@ -407,11 +408,26 @@ final class ViewModel: ObservableObject {
     }
 
     func markNotificationsRead() {
+        BillingReminderStore.markRead()
         guard unreadNotificationCount > 0 else { return }
         notifications = notifications.map {
             var notification = $0
             notification.isRead = true
             return notification
+        }
+    }
+
+    private var lastBillingFetch = Date.distantPast
+    private func refreshBillingNotices() {
+        let billing = BillingReminderStore.notifications(accounts: subscriptionAccounts)
+        notifications = (notifications.filter { $0.subscriptionAccountID == nil } + billing)
+            .sorted { $0.createdAt > $1.createdAt }
+    }
+    private func refreshBillingIfNeeded() {
+        refreshBillingNotices()
+        if Date().timeIntervalSince(lastBillingFetch) > 6 * 3600 {
+            lastBillingFetch = Date()
+            refreshSubscriptionQuotas(providers: [.codex, .cursor])
         }
     }
 
@@ -634,8 +650,10 @@ final class ViewModel: ObservableObject {
         return DialQuotaResolver.freshGroups(saved?.groups ?? [], refreshedAt: saved?.refreshedAt, now: now)
     }
 
-    func updateSubscriptionAccount(id: String, note: String, manualPlan: String?) {
+    func updateSubscriptionAccount(id: String, note: String, manualPlan: String?, billing: SubscriptionBillingEdit) {
         subscriptionAccounts = subscriptionAccountStore.update(id: id, note: note, manualPlan: manualPlan)
+        subscriptionAccounts = subscriptionAccountStore.updateBilling(id: id, edit: billing)
+        refreshBillingNotices()
     }
 
     private func rememberCodexQuota(_ snapshot: CodexQuotaSnapshot) {
@@ -651,6 +669,8 @@ final class ViewModel: ObservableObject {
             hasUnlimitedCredits: snapshot.hasUnlimitedCredits,
             resetCreditCount: snapshot.resetCreditCount
         )
+        subscriptionAccounts = subscriptionAccountStore.updateDetectedBilling(provider: .codex, identity: snapshot.account, info: snapshot.billing)
+        refreshBillingNotices()
     }
 
     private func rememberClaudeQuota(_ snapshot: ClaudeQuotaSnapshot) {
@@ -672,6 +692,8 @@ final class ViewModel: ObservableObject {
             provider: provider, identity: snapshot.account, plan: snapshot.planType,
             groups: snapshot.groups, refreshedAt: snapshot.refreshedAt, source: snapshot.source
         )
+        subscriptionAccounts = subscriptionAccountStore.updateDetectedBilling(provider: provider, identity: snapshot.account, info: snapshot.billing)
+        refreshBillingNotices()
     }
 
     private func rememberSubscriptionAccount(
@@ -1079,6 +1101,7 @@ final class ViewModel: ObservableObject {
         dataTimer = Timer.scheduledTimer(withTimeInterval: AppConfig.Timers.dataScan, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 self?.updateMockData()
+                self?.refreshBillingIfNeeded()
             }
         }
 

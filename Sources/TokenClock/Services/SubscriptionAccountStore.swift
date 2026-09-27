@@ -213,6 +213,11 @@ struct SubscriptionAccountRecord: Identifiable, Equatable, Codable, Sendable {
     var hasUnlimitedCredits: Bool
     var resetCreditCount: Int
 
+    var detectedBilling: SubscriptionBillingInfo? = nil
+    var manualBilling: SubscriptionBillingInfo? = nil
+    var billingReminders: BillingReminderSettings? = nil
+    var effectiveBilling: SubscriptionBillingInfo? { manualBilling ?? detectedBilling }
+
     var id: String { "\(provider.rawValue)::\(accountID)" }
 
     /// Legacy anonymous Codex log snapshots are not authenticated accounts.
@@ -281,6 +286,9 @@ final class SubscriptionAccountStore: @unchecked Sendable {
             var preferred = (record.refreshedAt ?? .distantPast) >=
                 (existing.refreshedAt ?? .distantPast) ? record : existing
             let fallback = preferred == record ? existing : record
+            if preferred.manualBilling == nil { preferred.manualBilling = fallback.manualBilling }
+            if preferred.detectedBilling == nil { preferred.detectedBilling = fallback.detectedBilling }
+            if preferred.billingReminders == nil { preferred.billingReminders = fallback.billingReminders }
             if preferred.trimmedNote == nil { preferred.note = fallback.note }
             if preferred.manualPlan?.nonEmpty == nil { preferred.manualPlan = fallback.manualPlan }
             if preferred.email?.nonEmpty == nil { preferred.email = fallback.email }
@@ -298,9 +306,14 @@ final class SubscriptionAccountStore: @unchecked Sendable {
                 recordsByID.values.first {
                     $0.provider == incoming.provider
                         && $0.email?.caseInsensitiveCompare(email) == .orderedSame
+                        && ($0.accountID.caseInsensitiveCompare(email) == .orderedSame
+                            || incoming.accountID.caseInsensitiveCompare(email) == .orderedSame)
                 }
             }
             if let existing = recordsByID[incoming.id] ?? sameEmail {
+                value.detectedBilling = incoming.detectedBilling ?? existing.detectedBilling
+                value.manualBilling = existing.manualBilling
+                value.billingReminders = existing.billingReminders
                 value.note = existing.note
                 value.manualPlan = existing.manualPlan
                 if value.email?.nonEmpty == nil { value.email = existing.email }
@@ -308,6 +321,7 @@ final class SubscriptionAccountStore: @unchecked Sendable {
                     if persistenceEnabled, DialQuotaAccountSelection.selectedID(for: incoming.provider, defaults: defaults) == existing.id {
                         DialQuotaAccountSelection.select(incoming.id, for: incoming.provider, defaults: defaults)
                     }
+                    if persistenceEnabled { BillingReminderStore.migrate(from: existing.id, to: incoming.id, defaults: defaults) }
                     recordsByID.removeValue(forKey: existing.id)
                 }
             }
@@ -329,6 +343,34 @@ final class SubscriptionAccountStore: @unchecked Sendable {
             value.manualPlan = manualPlan?.trimmingCharacters(in: .whitespacesAndNewlines).nonEmpty
             recordsByID[id] = value
             persistLocked()
+            return visibleLocked()
+        }
+    }
+
+    @discardableResult
+    func updateBilling(id: String, edit: SubscriptionBillingEdit) -> [SubscriptionAccountRecord] {
+        lock.withLock {
+            guard var value = recordsByID[id] else { return visibleLocked() }
+            value.manualBilling = edit.manual
+            value.billingReminders = BillingReminderSettings(enabled: edit.reminders.enabled, days: edit.reminders.safeDays)
+            recordsByID[id] = value
+            persistLocked()
+            return visibleLocked()
+        }
+    }
+
+    @discardableResult
+    func updateDetectedBilling(provider: SubscriptionProvider, identity: SubscriptionAccountIdentity?,
+                               info: SubscriptionBillingInfo?) -> [SubscriptionAccountRecord] {
+        lock.withLock {
+            guard let identity, let info,
+                  var value = recordsByID[provider.rawValue + "::" + identity.id],
+                  value.hasVerifiedIdentity else { return visibleLocked() }
+            if value.detectedBilling != info {
+                value.detectedBilling = info
+                recordsByID[value.id] = value
+                persistLocked()
+            }
             return visibleLocked()
         }
     }

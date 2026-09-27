@@ -92,6 +92,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             viewModel: viewModel,
             onClose: { [weak self] in self?.notificationPanel.hide() },
             onOpen: { [weak self] notification in
+                if let accountID = notification.subscriptionAccountID {
+                    self?.notificationPanel.hide()
+                    self?.showSubscriptionQuotaWindow()
+                    if let account = self?.viewModel.subscriptionAccounts.first(where: { $0.id == accountID }) {
+                        self?.showSubscriptionAccountEditor(account)
+                    }
+                    return
+                }
                 guard let route = notification.route else { return }
                 self?.notificationPanel.hide()
                 self?.showUsageOverviewWindow(route: route)
@@ -953,7 +961,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         _ = NSRunningApplication.current.activate(options: [.activateAllWindows])
 
         let editor = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 400, height: 245),
+            contentRect: NSRect(x: 0, y: 0, width: 400, height: 620),
             styleMask: [.titled, .closable],
             backing: .buffered,
             defer: false
@@ -964,11 +972,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         editor.delegate = self
         editor.contentView = NSHostingView(rootView: SubscriptionAccountEditorView(
             account: account,
-            onSave: { [weak self] note, manualPlan in
+            onSave: { [weak self] note, manualPlan, billing in
                 self?.viewModel.updateSubscriptionAccount(
                     id: account.id,
                     note: note,
-                    manualPlan: manualPlan
+                    manualPlan: manualPlan,
+                    billing: billing
                 )
                 self?.closeSubscriptionAccountEditor()
             },
@@ -1214,7 +1223,7 @@ private struct NotificationCenterView: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 10) {
                         ForEach(viewModel.notifications) { notification in
-                            if notification.route != nil {
+                            if notification.route != nil || notification.subscriptionAccountID != nil {
                                 Button { onOpen(notification) } label: {
                                     notificationRow(notification, showsDisclosure: true)
                                 }
