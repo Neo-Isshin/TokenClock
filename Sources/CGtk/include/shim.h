@@ -2,6 +2,7 @@
 #define TOKENCLOCK_GTK_SHIM_H
 
 #include <gtk/gtk.h>
+#include <stdio.h>
 #include <math.h>
 
 typedef void (*TCGtkVoidCallback)(GtkWidget *, gpointer);
@@ -425,6 +426,9 @@ static inline void tc_gtk_show_message(
     gtk_widget_destroy(dialog);
 }
 
+static void tc_billing_toggle_sensitive(GtkToggleButton *toggle, gpointer widget) {
+    gtk_widget_set_sensitive(GTK_WIDGET(widget), gtk_toggle_button_get_active(toggle));
+}
 static inline int tc_gtk_edit_subscription_account(
     GtkWidget *parent_widget,
     const char *title,
@@ -437,7 +441,10 @@ static inline int tc_gtk_edit_subscription_account(
     const char *cancel_label,
     const char *save_label,
     char **out_note,
-    char **out_plan
+    char **out_plan,
+    const char *billing_summary, const char *manual_label, const char *renew_label,
+    const char *remind_label, const char *cycles, const char *date_value,
+    int *billing_flags, char **out_date
 ) {
     GtkWidget *dialog = gtk_dialog_new_with_buttons(
         title, GTK_WINDOW(parent_widget), GTK_DIALOG_MODAL | GTK_DIALOG_DESTROY_WITH_PARENT,
@@ -471,6 +478,44 @@ static inline int tc_gtk_edit_subscription_account(
     g_strfreev(choices);
     gtk_combo_box_set_active(GTK_COMBO_BOX(combo), selected);
     gtk_box_pack_start(GTK_BOX(box), combo, FALSE, FALSE, 0);
+    GtkWidget *summary = gtk_label_new(billing_summary);
+    gtk_label_set_line_wrap(GTK_LABEL(summary), TRUE);
+    gtk_label_set_max_width_chars(GTK_LABEL(summary), 48);
+    gtk_box_pack_start(GTK_BOX(box), summary, FALSE, FALSE, 4);
+    GtkWidget *manual = gtk_check_button_new_with_label(manual_label);
+    gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(manual), billing_flags[0]);
+    gtk_box_pack_start(GTK_BOX(box), manual, FALSE, FALSE, 0);
+    GtkWidget *calendar = gtk_calendar_new();
+    unsigned int year,month,day;
+    if (date_value && sscanf(date_value,"%u-%u-%u",&year,&month,&day) == 3) {
+        gtk_calendar_select_month(GTK_CALENDAR(calendar), month-1, year);
+        gtk_calendar_select_day(GTK_CALENDAR(calendar), day);
+    }
+    gtk_box_pack_start(GTK_BOX(box), calendar, FALSE, FALSE, 0);
+    GtkWidget *cycle = gtk_combo_box_text_new();
+    gchar **cycle_values = g_strsplit(cycles, "\t", -1);
+    for (int i=0; cycle_values[i]; i++) gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(cycle), cycle_values[i]);
+    g_strfreev(cycle_values);
+    gtk_combo_box_set_active(GTK_COMBO_BOX(cycle), billing_flags[4]);
+    gtk_box_pack_start(GTK_BOX(box), cycle, FALSE, FALSE, 0);
+    GtkWidget *renew = gtk_check_button_new_with_label(renew_label);
+    gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(renew), billing_flags[1]);
+    gtk_box_pack_start(GTK_BOX(box), renew, FALSE, FALSE, 0);
+    GtkWidget *remind = gtk_check_button_new_with_label(remind_label);
+    gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(remind), billing_flags[2]);
+    gtk_box_pack_start(GTK_BOX(box), remind, FALSE, FALSE, 0);
+    GtkWidget *days = gtk_combo_box_text_new();
+    const char *day_choices[] = {"1", "2", "3", "7"};
+    for (int i=0; i<4; i++) gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(days), day_choices[i]);
+    gtk_combo_box_set_active(GTK_COMBO_BOX(days), billing_flags[3] == 7 ? 3 : MAX(0,MIN(2,billing_flags[3]-1)));
+    gtk_box_pack_start(GTK_BOX(box), days, FALSE, FALSE, 0);
+    GtkWidget *manual_controls[] = {calendar, cycle, renew};
+    for (int i=0; i<3; i++) {
+        gtk_widget_set_sensitive(manual_controls[i], billing_flags[0]);
+        g_signal_connect(manual, "toggled", G_CALLBACK(tc_billing_toggle_sensitive), manual_controls[i]);
+    }
+    gtk_widget_set_sensitive(days, billing_flags[2]);
+    g_signal_connect(remind, "toggled", G_CALLBACK(tc_billing_toggle_sensitive), days);
     gtk_widget_show_all(dialog);
     gtk_widget_grab_focus(note);
     gtk_entry_set_activates_default(GTK_ENTRY(note), TRUE);
@@ -479,6 +524,14 @@ static inline int tc_gtk_edit_subscription_account(
     if (accepted) {
         if (out_note != NULL) *out_note = g_strdup(gtk_entry_get_text(GTK_ENTRY(note)));
         if (out_plan != NULL) *out_plan = gtk_combo_box_text_get_active_text(GTK_COMBO_BOX_TEXT(combo));
+        gtk_calendar_get_date(GTK_CALENDAR(calendar), &year,&month,&day);
+        if (out_date) *out_date = g_strdup_printf("%04u-%02u-%02u", year,month+1,day);
+        billing_flags[0] = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(manual));
+        billing_flags[1] = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(renew));
+        billing_flags[2] = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(remind));
+        int chosen = gtk_combo_box_get_active(GTK_COMBO_BOX(days));
+        billing_flags[3] = chosen == 3 ? 7 : chosen + 1;
+        billing_flags[4] = gtk_combo_box_get_active(GTK_COMBO_BOX(cycle));
     }
     gtk_widget_destroy(dialog);
     return accepted;

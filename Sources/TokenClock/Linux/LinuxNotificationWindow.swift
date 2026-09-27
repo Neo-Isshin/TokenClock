@@ -9,19 +9,23 @@ final class LinuxNotificationWindow: @unchecked Sendable {
     private var root: UnsafeMutablePointer<GtkWidget>?
     private var routes: [String: UsageOverviewRoute] = [:]
     private let onOpen: (UsageOverviewRoute) -> Void
+    private let onBilling: (String) -> Void
+    private var billingRoutes: [String: String] = [:]
     private lazy var opaque = Unmanaged.passUnretained(self).toOpaque()
 
-    init(parent: UnsafeMutablePointer<GtkWidget>, onOpen: @escaping (UsageOverviewRoute) -> Void) {
+    init(parent: UnsafeMutablePointer<GtkWidget>, onBilling: @escaping (String) -> Void = { _ in }, onOpen: @escaping (UsageOverviewRoute) -> Void) {
         self.parent = parent
         self.onOpen = onOpen
+        self.onBilling = onBilling
         buildWindow()
     }
 
     func show(_ notifications: [TokenClockNotification]) {
         guard let window, let root else { return }
         routes.removeAll()
+        billingRoutes.removeAll()
         tc_gtk_remove_all_children(root)
-        let actionable = notifications.filter { $0.route != nil }
+        let actionable = notifications.filter { $0.route != nil || $0.subscriptionAccountID != nil }
         if actionable.isEmpty {
             let empty = gtk_label_new(L10n.shared.tr("notification.empty"))
             gtk_widget_set_margin_top(empty, 20)
@@ -29,10 +33,10 @@ final class LinuxNotificationWindow: @unchecked Sendable {
             gtk_box_pack_start(tc_gtk_box(root), empty, 0, 0, 0)
         } else {
             for notification in actionable {
-                guard let route = notification.route,
-                      let button = gtk_button_new_with_label(rowText(notification)) else { continue }
+                guard let button = gtk_button_new_with_label(rowText(notification)) else { continue }
                 let id = notification.id.uuidString
-                routes[id] = route
+                routes[id] = notification.route
+                billingRoutes[id] = notification.subscriptionAccountID
                 gtk_widget_set_name(button, "notification:\(id)")
                 gtk_button_set_relief(tc_gtk_button(button), GTK_RELIEF_NONE)
                 gtk_widget_set_tooltip_text(button, notification.message)
@@ -50,6 +54,11 @@ final class LinuxNotificationWindow: @unchecked Sendable {
 
     fileprivate func handleAction(widget: UnsafeMutablePointer<GtkWidget>) {
         let name = String(cString: tc_gtk_widget_name(widget))
+        if name.hasPrefix("notification:"), let account = billingRoutes[String(name.dropFirst("notification:".count))] {
+            hide()
+            onBilling(account)
+            return
+        }
         guard name.hasPrefix("notification:"),
               let route = routes[String(name.dropFirst("notification:".count))] else { return }
         onOpen(route)

@@ -35,6 +35,7 @@ struct CodexQuotaSnapshot: Equatable, Sendable {
     var source: CodexQuotaSource?
     var message: String?
     var account: SubscriptionAccountIdentity? = nil
+    var billing: SubscriptionBillingInfo? = nil
 
     static let idle = CodexQuotaSnapshot(
         status: .idle,
@@ -147,6 +148,9 @@ final class CodexQuotaService: @unchecked Sendable {
                     id: snapshot.account?.id ?? account.id, email: account.email
                 )
                 if snapshot.planType?.isEmpty != false { snapshot.planType = account.planType }
+            }
+            if let account = snapshot.account {
+                snapshot.billing = OpenAISubscriptionBilling.fetch(codexHome: codexHome, account: account)
             }
             return snapshot
         }

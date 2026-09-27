@@ -185,7 +185,9 @@ final class LinuxApp: @unchecked Sendable {
             model: model,
             onShare: { [weak self] date in self?.shareWindow?.show(initialDate: date) }
         )
-        notificationWindow = LinuxNotificationWindow(parent: createdWindow) { [weak self] route in
+        notificationWindow = LinuxNotificationWindow(parent: createdWindow, onBilling: { [weak self] id in
+            self?.detailsPanel?.openBillingAccount(id)
+        }) { [weak self] route in
             self?.notificationWindow?.hide()
             self?.overviewWindow?.show(route: route)
         }

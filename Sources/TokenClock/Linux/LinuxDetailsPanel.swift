@@ -142,7 +142,12 @@ final class LinuxDetailsPanel: @unchecked Sendable {
         }
     }
 
+    private var lastBillingFetch = Date.distantPast
     func refreshSelectedDialQuotas() {
+        if Date().timeIntervalSince(lastBillingFetch) > 6 * 3600 {
+            lastBillingFetch = Date()
+            refreshQuota(providers: [.codex, .cursor])
+        }
         guard !dialQuotaProviders.isEmpty else { return }
         refreshQuota(providers: Set(dialQuotaProviders))
     }
@@ -1065,6 +1070,7 @@ final class LinuxDetailsPanel: @unchecked Sendable {
             gtk_box_pack_start(tc_gtk_box(content), metadata, 0, 0, 0)
         }
         var source = isCurrent ? account.source : tr("quota.savedSnapshot")
+        appendQuotaSource(BillingText.summary(account.effectiveBilling), to: content)
         if let refreshedAt = account.refreshedAt {
             source += "  ·  " + tr("quota.updated", quotaUpdatedLabel(refreshedAt))
         }
@@ -1296,6 +1302,7 @@ final class LinuxDetailsPanel: @unchecked Sendable {
                 hasUnlimitedCredits: snapshot.hasUnlimitedCredits,
                 resetCreditCount: snapshot.resetCreditCount
             )
+            _ = subscriptionAccountStore.updateDetectedBilling(provider: .codex, identity: snapshot.account, info: snapshot.billing)
         } else if snapshot.status == .unavailable {
             activeSubscriptionAccountIDs[.codex] = nil
         }
@@ -1377,6 +1384,7 @@ final class LinuxDetailsPanel: @unchecked Sendable {
                 provider: provider, identity: snapshot.account, plan: snapshot.planType,
                 groups: snapshot.groups, refreshedAt: snapshot.refreshedAt, source: snapshot.source
             )
+            _ = subscriptionAccountStore.updateDetectedBilling(provider: provider, identity: snapshot.account, info: snapshot.billing)
         } else if snapshot.status == .unavailable {
             activeSubscriptionAccountIDs[provider] = nil
         }
@@ -1405,6 +1413,14 @@ final class LinuxDetailsPanel: @unchecked Sendable {
         activeSubscriptionAccountIDs[provider] = record.hasVerifiedIdentity ? record.id : nil
     }
 
+    func openBillingAccount(_ id: String) {
+        showQuotaWindow()
+        if let account = subscriptionAccountStore.records().first(where: { $0.id == id }) {
+            editSubscriptionAccount(account)
+            rebuildQuotaWindow()
+        }
+    }
+
     private func editSubscriptionAccount(_ account: SubscriptionAccountRecord) {
         guard let parent = quotaWindow ?? window else { return }
         let detected = account.detectedPlan.map(displayPlan) ?? tr("quota.unknownPlan")
@@ -1414,18 +1430,28 @@ final class LinuxDetailsPanel: @unchecked Sendable {
             tr("quota.editAccount"), account.email ?? "", tr("quota.accountNote"), account.note,
             tr("quota.planLabel"), options.joined(separator: "\t"), account.manualPlan ?? automatic,
             tr("quota.cancel"), tr("quota.save"),
+            BillingText.summary(account.detectedBilling) + "\n" + BillingText.localOnly, BillingText.manual, BillingText.autoRenew,
+            BillingText.reminder, SubscriptionBillingCycle.allCases.map(\.title).joined(separator: "\t"),
+            BillingText.dateKey(account.effectiveBilling?.date ?? Date()),
         ]
         var notePointer: UnsafeMutablePointer<CChar>?
         var planPointer: UnsafeMutablePointer<CChar>?
+        var datePointer: UnsafeMutablePointer<CChar>?
+        let preferences = account.billingReminders ?? BillingReminderSettings()
+        var flags: [Int32] = [account.manualBilling != nil ? 1 : 0,
+            account.effectiveBilling?.autoRenews == false ? 0 : 1, preferences.enabled ? 1 : 0,
+            Int32(preferences.safeDays), Int32(SubscriptionBillingCycle.allCases.firstIndex(of: account.effectiveBilling?.cycle ?? .monthly) ?? 0)]
         let accepted = withLinuxCStrings(values) { values in
             tc_gtk_edit_subscription_account(
                 parent, values[0], values[1], values[2], values[3], values[4], values[5],
-                values[6], values[7], values[8], &notePointer, &planPointer
+                values[6], values[7], values[8], &notePointer, &planPointer,
+                values[9], values[10], values[11], values[12], values[13], values[14], &flags, &datePointer
             )
         }
         defer {
             if let notePointer { tc_g_free(notePointer) }
             if let planPointer { tc_g_free(planPointer) }
+            if let datePointer { tc_g_free(datePointer) }
         }
         guard accepted != 0 else { return }
         let note = notePointer.map { String(cString: $0) } ?? ""
@@ -1433,7 +1459,14 @@ final class LinuxDetailsPanel: @unchecked Sendable {
         _ = subscriptionAccountStore.update(
             id: account.id, note: note, manualPlan: selected == automatic ? nil : selected
         )
+        let cycle = SubscriptionBillingCycle.allCases.indices.contains(Int(flags[4])) ? SubscriptionBillingCycle.allCases[Int(flags[4])] : .unknown
+        let date = datePointer.flatMap { BillingText.parseDate(String(cString: $0)) }
+        let manual = flags[0] != 0 ? SubscriptionBillingInfo(date: date, cycle: cycle,
+            autoRenews: flags[1] != 0, source: "manual", observedAt: Date()) : nil
+        _ = subscriptionAccountStore.updateBilling(id: account.id, edit: SubscriptionBillingEdit(manual: manual,
+            reminders: BillingReminderSettings(enabled: flags[2] != 0, days: Int(flags[3]))))
         expandedQuotaEmails.remove(account.id)
+        onDialQuotaChange()
     }
 
     private func planOptions(for provider: SubscriptionProvider) -> [String] {
