@@ -286,15 +286,14 @@ final class WindowsUsageModel: @unchecked Sendable {
 
     var notifications: [TokenClockNotification] {
         lock.lock(); defer { lock.unlock() }
-        return storedNotifications
+        return (storedNotifications + BillingReminderStore.notifications(accounts: SubscriptionAccountStore.shared.records()))
+            .sorted { $0.createdAt > $1.createdAt }
     }
 
-    var unreadNotificationCount: Int {
-        lock.lock(); defer { lock.unlock() }
-        return storedNotifications.filter { !$0.isRead }.count
-    }
+    var unreadNotificationCount: Int { notifications.filter { !$0.isRead }.count }
 
     func markNotificationsRead() {
+        BillingReminderStore.markRead()
         lock.lock(); defer { lock.unlock() }
         storedNotifications = storedNotifications.map { notification in
             var copy = notification

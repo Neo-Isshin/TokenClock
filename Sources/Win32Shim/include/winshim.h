@@ -123,6 +123,8 @@ void         win_fluent_paint_parent(void *child_hwnd, void *hdc, const void *re
 void *dlg_create(const char *title_utf8, int w, int h);
 void  dlg_add_check(void *dlg, int id, const char *text_utf8, int x, int y, int w, int h, int checked);
 void  dlg_add_edit(void *dlg, int id, const char *text_utf8, int x, int y, int w, int h);
+void  dlg_add_date(void *dlg, int id, const char *ymd, int x, int y, int w, int h);
+void  dlg_date_get(void *dlg, int id, char *out, int count);
 void  dlg_add_combo(void *dlg, int id, const char *items_utf8, const char *selected_utf8,
                     int x, int y, int w, int h); /* tab-separated choices */
 void  dlg_add_static(void *dlg, const char *text_utf8, int x, int y, int w, int h);
@@ -143,6 +145,7 @@ void  dlg_add_tooltip(void *dlg, int control_id, const char *text_utf8);
 void  dlg_add_brand_logo(void *dlg, int x, int y, int w, int h); /* TokenClock clock mark */
 int   dlg_check_get(void *dlg, int id);                 /* 1 if checked */
 void  dlg_set_check(void *dlg, int id, int checked);
+void  dlg_set_enabled(void *dlg, int id, int enabled);
 void  dlg_edit_get(void *dlg, int id, char *buf_utf8, int n);   /* read edit text → UTF-8 */
 void  dlg_set_text(void *dlg, int id, const char *text_utf8);   /* set a control's label/text */
 void  dlg_show_control(void *dlg, int id, int show);             /* reveal/hide a pre-created row */

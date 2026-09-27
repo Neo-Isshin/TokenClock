@@ -57,7 +57,7 @@ final class SubscriptionAccountStoreTests: XCTestCase {
 
     func testSameEmailMigratesToNewStableIDWithoutDuplicatingTheAccount() {
         let store = SubscriptionAccountStore(persistenceEnabled: false)
-        let old = record(id: "email-fallback", email: "person@example.com", used: 10)
+        let old = record(id: "person@example.com", email: "person@example.com", used: 10)
         _ = store.merge(old)
         _ = store.update(id: old.id, note: "Primary", manualPlan: "Pro 5x")
         _ = store.merge(record(id: "server-account-id", email: "PERSON@example.com", used: 20))

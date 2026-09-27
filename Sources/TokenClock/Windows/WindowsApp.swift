@@ -148,6 +148,7 @@ final class WindowsApp: @unchecked Sendable {
     fileprivate var quotaDlg: UnsafeMutableRawPointer?
     fileprivate var aboutDlg: UnsafeMutableRawPointer?
     private var pendingNotificationRoute: UsageOverviewRoute?
+    private var pendingBillingAccountID: String?
     fileprivate var editingSavedThemeId: String?
     private var settingsDraft: SettingsDraft?
     private var expandedSettingsSection: SettingsSection?
@@ -314,7 +315,12 @@ final class WindowsApp: @unchecked Sendable {
 
     /// 渲染一帧：忠实 classic 表盘 + 叠加真实用量（日期 / 天气 / token 计数 / 消息数 / 活跃工具）。
     /// 展开态额外在盘面下方列工具明细，并把窗口高度撑开。表盘配色/几何由 winrender.cpp 内置并按尺寸缩放。
+    private var lastBillingFetch = Date.distantPast
     func render() {
+        if didStartup, Date().timeIntervalSince(lastBillingFetch) > 6 * 3600 {
+            lastBillingFetch = Date()
+            refreshSubscriptionQuotas(force: false, providers: [.codex, .cursor])
+        }
         if !didStartup {
             didStartup = true
             applyStartupAppearance()
@@ -1264,7 +1270,7 @@ final class WindowsApp: @unchecked Sendable {
         let dialogWidth: Int32 = twoColumns ? 900 : 470
         win_resize(dialog, dialogWidth, 700)
         let estimatedRows = cards.reduce(0) { total, card in
-            total + card.accounts.reduce(0) { $0 + max(1, $1.groups.flatMap(\.buckets).count) + 2 }
+            total + card.accounts.reduce(0) { $0 + max(1, $1.groups.flatMap(\.buckets).count) + 3 }
         }
         let contentHeight = max(720, 262 + (twoColumns ? (estimatedRows + 1) / 2 : estimatedRows) * 82)
         dlg_reset_content(dialog, Int32(contentHeight))
@@ -1377,6 +1383,8 @@ final class WindowsApp: @unchecked Sendable {
                     cursorY += 80
                 }
             }
+            brand_add_subtitle(dialog, BillingText.summary(account.effectiveBilling), x + 10, cursorY, width - 20, 40)
+            cursorY += 43
             let isCurrent = activeSubscriptionAccountIDs[provider] == account.id
             let source = isCurrent ? account.source : L10n.shared.tr("quota.savedSnapshot")
             let updated = account.refreshedAt.map { " · \(L10n.shared.tr("quota.updated", quotaUpdatedLabel($0)))" } ?? ""
@@ -1549,6 +1557,7 @@ final class WindowsApp: @unchecked Sendable {
                 creditBalance: codex.creditBalance, hasUnlimitedCredits: codex.hasUnlimitedCredits,
                 resetCreditCount: codex.resetCreditCount
             )
+            _ = subscriptionAccountStore.updateDetectedBilling(provider: .codex, identity: codex.account, info: codex.billing)
         } else if codex.status == .unavailable { activeSubscriptionAccountIDs[.codex] = nil }
         if claude.status == .available, !claude.buckets.isEmpty {
             rememberSubscriptionAccount(
@@ -1607,6 +1616,7 @@ final class WindowsApp: @unchecked Sendable {
                 provider: provider, identity: snapshot.account, plan: snapshot.planType,
                 groups: snapshot.groups, refreshedAt: snapshot.refreshedAt, source: snapshot.source
             )
+            _ = subscriptionAccountStore.updateDetectedBilling(provider: provider, identity: snapshot.account, info: snapshot.billing)
         } else if snapshot.status == .unavailable { activeSubscriptionAccountIDs[provider] = nil }
     }
 
@@ -1653,7 +1663,7 @@ final class WindowsApp: @unchecked Sendable {
 
     private func editSubscriptionAccount(_ account: SubscriptionAccountRecord) {
         let L = L10n.shared
-        guard let dialog = dlg_create(L.tr("quota.editAccount"), 430, 310) else { return }
+        guard let dialog = dlg_create(L.tr("quota.editAccount"), 430, 625) else { return }
         brand_add_title(dialog, L.tr("quota.editAccount"), 24, 16, 300, 30)
         if let email = account.email { brand_add_subtitle(dialog, "✉  \(email)", 24, 50, 370, 20) }
         brand_add_section(dialog, L.tr("quota.accountNote"), 24, 84, 180, 20)
@@ -1663,16 +1673,47 @@ final class WindowsApp: @unchecked Sendable {
         let automatic = L.tr("quota.detectedPlan", detected)
         let choices = [automatic] + planOptions(for: account.provider).filter { $0 != detected }
         dlg_add_combo(dialog, 1401, choices.joined(separator: "\t"), account.manualPlan ?? automatic, 24, 174, 250, 30)
-        dlg_add_sep(dialog, 20, 232, 390)
-        dlg_add_push(dialog, 1, L.tr("quota.save"), 220, 248, 84, 30)
-        dlg_add_push(dialog, 2, L.tr("quota.cancel"), 316, 248, 84, 30)
-        if dlg_modal(dialog) == 1 {
+        let info = account.effectiveBilling
+        let reminders = account.billingReminders ?? BillingReminderSettings()
+        brand_add_section(dialog, BillingText.title, 24, 220, 376, 22)
+        brand_add_subtitle(dialog, BillingText.summary(account.detectedBilling), 24, 247, 376, 44)
+        dlg_add_check(dialog, 1420, BillingText.manual, 24, 294, 376, 24, account.manualBilling != nil ? 1 : 0)
+        dlg_add_date(dialog, 1421, BillingText.dateKey(info?.date ?? Date()), 24, 323, 190, 28)
+        let cycles = SubscriptionBillingCycle.allCases
+        dlg_add_combo(dialog, 1422, cycles.map(\.title).joined(separator: "\t"),
+                      (info?.cycle ?? .monthly).title, 230, 323, 170, 28)
+        dlg_add_check(dialog, 1423, BillingText.autoRenew, 24, 366, 376, 24, info?.autoRenews == false ? 0 : 1)
+        dlg_add_check(dialog, 1424, BillingText.enabled, 24, 402, 376, 24, reminders.enabled ? 1 : 0)
+        brand_add_static(dialog, BillingText.reminder, 24, 442, 220, 24)
+        dlg_add_combo(dialog, 1425, "1\t2\t3\t7", String(reminders.safeDays), 270, 438, 130, 28)
+        brand_add_subtitle(dialog, BillingText.localOnly, 24, 476, 376, 32)
+        dlg_add_sep(dialog, 20, 510, 390)
+        dlg_add_push(dialog, 1, L.tr("quota.save"), 220, 534, 84, 30)
+        dlg_add_push(dialog, 2, L.tr("quota.cancel"), 316, 534, 84, 30)
+        for id: Int32 in [1421, 1422, 1423] { dlg_set_enabled(dialog, id, account.manualBilling != nil ? 1 : 0) }
+        dlg_set_enabled(dialog, 1425, reminders.enabled ? 1 : 0)
+        let billingChanged: @convention(c) (UnsafeMutableRawPointer?, Int32) -> Void = { context, id in
+            guard let context else { return }
+            if id == 1420 {
+                for child: Int32 in [1421,1422,1423] { dlg_set_enabled(context, child, dlg_check_get(context,1420)) }
+            } else if id == 1424 { dlg_set_enabled(context,1425,dlg_check_get(context,1424)) }
+        }
+        if dlg_modal_cb(dialog, billingChanged, dialog) == 1 {
             let note = settingsEditText(dialog, 1400)
             let selected = settingsEditText(dialog, 1401)
             _ = subscriptionAccountStore.update(
                 id: account.id, note: note,
                 manualPlan: selected == automatic ? nil : selected
             )
+            var dateText = [CChar](repeating: 0, count: 32)
+            dlg_date_get(dialog, 1421, &dateText, 32)
+            let date = BillingText.parseDate(String(cString: dateText))
+            let cycle = SubscriptionBillingCycle.allCases.first { $0.title == settingsEditText(dialog, 1422) } ?? .unknown
+            let manual = dlg_check_get(dialog, 1420) != 0 ? SubscriptionBillingInfo(
+                date: date, cycle: cycle, autoRenews: dlg_check_get(dialog, 1423) != 0, source: "manual", observedAt: Date()) : nil
+            _ = subscriptionAccountStore.updateBilling(id: account.id, edit: SubscriptionBillingEdit(manual: manual,
+                reminders: BillingReminderSettings(enabled: dlg_check_get(dialog, 1424) != 0,
+                    days: Int(settingsEditText(dialog, 1425)) ?? 3)))
             expandedQuotaEmails.remove(account.id)
         }
         dlg_destroy(dialog)
@@ -1716,11 +1757,16 @@ final class WindowsApp: @unchecked Sendable {
               let dialog = dlg_create(L10n.shared.tr("notification.title"), 520, 460) else { return }
         notificationsDlg = dialog
         pendingNotificationRoute = nil
+        pendingBillingAccountID = nil
         renderNotifications(dialog)
         model.markNotificationsRead()
         _ = dlg_modal_cb(dialog, notificationsCmdCb, nil)
         notificationsDlg = nil
         dlg_destroy(dialog)
+        if let accountID = pendingBillingAccountID {
+            pendingBillingAccountID = nil
+            if let account = subscriptionAccountStore.records().first(where: { $0.id == accountID }) { editSubscriptionAccount(account) }
+        }
         if let route = pendingNotificationRoute {
             pendingNotificationRoute = nil
             openUsageOverview(route: route)
@@ -1729,7 +1775,7 @@ final class WindowsApp: @unchecked Sendable {
     }
 
     private func renderNotifications(_ dialog: UnsafeMutableRawPointer) {
-        let reports = model.notifications.filter { $0.route != nil }
+        let reports = model.notifications.filter { $0.route != nil || $0.subscriptionAccountID != nil }
         let height = max(180, 90 + Int32(reports.count) * 68)
         dlg_reset_content(dialog, height)
         brand_add_title(dialog, L10n.shared.tr("notification.title"), 24, 16, 300, 30)
@@ -1747,10 +1793,11 @@ final class WindowsApp: @unchecked Sendable {
 
     fileprivate func handleNotificationsCmd(_ id: Int32) {
         guard id >= 1300, id < 1400 else { return }
-        let reports = model.notifications.filter { $0.route != nil }
+        let reports = model.notifications.filter { $0.route != nil || $0.subscriptionAccountID != nil }
         let index = Int(id - 1300)
-        guard reports.indices.contains(index), let route = reports[index].route else { return }
-        pendingNotificationRoute = route
+        guard reports.indices.contains(index) else { return }
+        pendingNotificationRoute = reports[index].route
+        pendingBillingAccountID = reports[index].subscriptionAccountID
         if let dialog = notificationsDlg { dlg_end(dialog, 0) }
     }
 

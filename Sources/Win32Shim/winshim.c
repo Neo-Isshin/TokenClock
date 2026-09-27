@@ -1390,6 +1390,29 @@ void dlg_add_check(void *dlg, int id, const char *text_utf8, int x, int y, int w
     if (checkbox && tail != t) SetPropW(checkbox, TC_BRAND_TOKEN_PROP, _wcsdup(t));
 }
 
+void dlg_set_enabled(void *dlg, int id, int enabled) { EnableWindow(GetDlgItem((HWND)dlg,id), enabled ? TRUE : FALSE); }
+
+void dlg_add_date(void *dlg, int id, const char *ymd, int x, int y, int w, int h) {
+    INITCOMMONCONTROLSEX controls = { sizeof(INITCOMMONCONTROLSEX), ICC_DATE_CLASSES };
+    InitCommonControlsEx(&controls);
+    HWND picker = dlg_child((HWND)dlg, DATETIMEPICK_CLASSW, DTS_SHORTDATEFORMAT | WS_TABSTOP, id, L"", x,y,w,h);
+    if (!picker) return;
+    SYSTEMTIME date; GetLocalTime(&date);
+    unsigned int year, month, day;
+    if (ymd && sscanf_s(ymd, "%u-%u-%u", &year,&month,&day) == 3) {
+        date.wYear = (WORD)year; date.wMonth = (WORD)month; date.wDay = (WORD)day;
+    }
+    SendMessageW(picker, DTM_SETSYSTEMTIME, GDT_VALID, (LPARAM)&date);
+}
+void dlg_date_get(void *dlg, int id, char *out, int count) {
+    if (!out || count <= 0) return;
+    out[0] = 0;
+    SYSTEMTIME date;
+    if (SendMessageW(GetDlgItem((HWND)dlg,id), DTM_GETSYSTEMTIME, 0, (LPARAM)&date) == GDT_VALID) {
+        _snprintf_s(out, count, _TRUNCATE, "%04u-%02u-%02u", date.wYear,date.wMonth,date.wDay);
+    }
+}
+
 void dlg_add_edit(void *dlg, int id, const char *text_utf8, int x, int y, int w, int h) {
     wchar_t t[1024]; if (to_wide(text_utf8, t, 1024) == 0) t[0] = 0;
     HWND frame = CreateWindowExW(0, L"TCEditFrame", L"", WS_CHILD | WS_VISIBLE | WS_TABSTOP,

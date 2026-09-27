@@ -145,6 +145,7 @@ struct TokenClockNotification: Identifiable, Hashable {
     let message: String
     let createdAt: Date
     let route: UsageOverviewRoute?
+    var subscriptionAccountID: String? = nil
     var isRead: Bool
 
     init(
