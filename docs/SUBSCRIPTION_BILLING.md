@@ -13,7 +13,7 @@ Implemented on macOS Glass, macOS Normal, Windows, and Linux.
 | Provider | Current support | Boundaries |
 | --- | --- | --- |
 | Codex / ChatGPT | Existing native OAuth credential + GET /backend-api/subscriptions?account_id=…; active_until, will_renew, billing_period | Undocumented web endpoint, not an app-server billing API. Exact account ID or verified email fallback must match. No browser cookie import; errors fail closed. |
-| Cursor | Existing IDE login; GET /api/auth/stripe combined with /api/usage-summary | A confirmed individual monthly subscription can use its billing boundary. Annual plans' monthly usage reset is **not** their renewal date. Team/free/unknown states do not create a guessed renewal. pendingCancellationDate is expiry metadata. |
+| Cursor | Existing IDE login; GET /api/auth/stripe combined with /api/usage-summary | A confirmed individual monthly subscription can use its billing boundary. Annual plans' monthly usage reset is **not** their renewal date. Team/student/free/unknown states and invalid cancellation dates do not create a guessed renewal. pendingCancellationDate is expiry metadata. |
 | Claude Code | Manual fallback | Existing OAuth usage/profile support does not establish the next payment date. Web billing would need a separate authenticated web session; no silent browser-cookie import added. |
 | Antigravity / Gemini | Manual fallback | Local model quotas and Google One billing are separate. Google One may be monthly, yearly, or third-party-billed. |
 | Grok Bot | Manual fallback | Sand weekly allowance does not prove a subscription renewal. Do not inherit Cursor billing or confuse it with X Premium/SuperGrok. |

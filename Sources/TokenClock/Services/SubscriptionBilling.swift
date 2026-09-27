@@ -119,6 +119,9 @@ enum BillingParser {
         let cycle: SubscriptionBillingCycle = yearly ? .yearly : .monthly
         if team { return SubscriptionBillingInfo(date: nil, cycle: cycle, autoRenews: nil, source: "Cursor team billing", observedAt: now) }
         if let canceled { return SubscriptionBillingInfo(date: canceled, cycle: cycle, autoRenews: false, source: "Cursor billing", observedAt: now) }
+        if stripe["isOnStudentPlan"] as? Bool == true || (stripe.keys.contains("pendingCancellationDate") && !(stripe["pendingCancellationDate"] is NSNull)) {
+            return SubscriptionBillingInfo(date: nil, cycle: .unknown, autoRenews: nil, source: "Cursor billing", observedAt: now)
+        }
         if status != "active" { return SubscriptionBillingInfo(date: nil, cycle: cycle, autoRenews: false, source: "Cursor billing", observedAt: now) }
         guard status == "active", stripe.keys.contains("pendingCancellationDate") else { return nil }
         // Annual subscriptions can still have MONTHLY usage periods. Never use those for renewal.
