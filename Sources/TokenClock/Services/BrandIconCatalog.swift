@@ -44,8 +44,8 @@ enum BrandIconCatalog {
         "codebuddy": "codebuddy", "codebuddy cli": "codebuddy",
     ]
     static let modelFamilies: [(String, String)] = [
-        ("grok", "grok"), ("chatgpt", "openai"), ("gpt", "openai"),
-        ("o1", "openai"), ("o3", "openai"), ("o4", "openai"),
+        ("grok", "grok"), ("chatgpt", "codex"), ("gpt", "codex"),
+        ("o1", "codex"), ("o3", "codex"), ("o4", "codex"),
         ("claude", "claude"), ("gemini", "gemini"), ("composer", "cursor"),
         ("minimax", "minimax"), ("glm", "zai"), ("kimi", "kimi"),
         ("moonshot", "kimi"), ("qwen", "qwen"), ("doubao", "doubao"),

@@ -94,6 +94,8 @@ done
   || die "Linux AppImage is not executable"
 
 plain="${VERSION#v}"
+grep -q "static let version = \"$plain\"" "$ROOT/Sources/TokenClock/Config/AppConfig.swift" \
+  || die "Release notification version is not $plain"
 grep -q "CLI_VERSION=\"$plain\"" "$ROOT/cli/tokenclock" || die "CLI version is not $plain"
 grep -q "glass)  echo \"$VERSION\"" "$ROOT/cli/install.sh" || die "Glass installer tag is not $VERSION"
 grep -q "normal) echo \"$VERSION\"" "$ROOT/cli/install.sh" || die "Normal installer tag is not $VERSION"

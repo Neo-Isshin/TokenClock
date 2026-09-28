@@ -302,7 +302,8 @@ final class WindowsUsageModel: @unchecked Sendable {
 
     var notifications: [TokenClockNotification] {
         lock.lock(); defer { lock.unlock() }
-        return (storedNotifications + BillingReminderStore.notifications(accounts: SubscriptionAccountStore.shared.records()))
+        return (storedNotifications + BillingReminderStore.notifications(accounts: SubscriptionAccountStore.shared.records())
+                + ReleaseUpdateService.shared.notifications())
             .sorted { $0.createdAt > $1.createdAt }
     }
 
@@ -310,6 +311,7 @@ final class WindowsUsageModel: @unchecked Sendable {
 
     func markNotificationsRead() {
         BillingReminderStore.markRead()
+        ReleaseUpdateService.shared.markRead()
         lock.lock(); defer { lock.unlock() }
         storedNotifications = storedNotifications.map { notification in
             var copy = notification
@@ -319,6 +321,7 @@ final class WindowsUsageModel: @unchecked Sendable {
     }
 
     private func appendPendingReports() {
+        ReleaseUpdateService.shared.checkDaily()
         let reports = UsageReportScheduler.generatePendingReports()
         guard !reports.isEmpty else { return }
         lock.lock()

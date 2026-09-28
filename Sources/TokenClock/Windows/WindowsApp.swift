@@ -149,6 +149,8 @@ final class WindowsApp: @unchecked Sendable {
     fileprivate var aboutDlg: UnsafeMutableRawPointer?
     private var pendingNotificationRoute: UsageOverviewRoute?
     private var pendingBillingAccountID: String?
+    private var pendingReleaseURL: URL?
+    private var displayedNotifications: [TokenClockNotification] = []
     fileprivate var editingSavedThemeId: String?
     private var settingsDraft: SettingsDraft?
     private var expandedSettingsSection: SettingsSection?
@@ -1758,11 +1760,16 @@ final class WindowsApp: @unchecked Sendable {
         notificationsDlg = dialog
         pendingNotificationRoute = nil
         pendingBillingAccountID = nil
+        pendingReleaseURL = nil
         renderNotifications(dialog)
         model.markNotificationsRead()
         _ = dlg_modal_cb(dialog, notificationsCmdCb, nil)
         notificationsDlg = nil
         dlg_destroy(dialog)
+        if let url = pendingReleaseURL {
+            pendingReleaseURL = nil
+            url.absoluteString.withCString { win_open_url($0) }
+        }
         if let accountID = pendingBillingAccountID {
             pendingBillingAccountID = nil
             if let account = subscriptionAccountStore.records().first(where: { $0.id == accountID }) { editSubscriptionAccount(account) }
@@ -1775,7 +1782,8 @@ final class WindowsApp: @unchecked Sendable {
     }
 
     private func renderNotifications(_ dialog: UnsafeMutableRawPointer) {
-        let reports = model.notifications.filter { $0.route != nil || $0.subscriptionAccountID != nil }
+        let reports = Array(model.notifications.filter { $0.route != nil || $0.subscriptionAccountID != nil || $0.releaseURL != nil }.prefix(100))
+        displayedNotifications = reports
         let height = max(180, 90 + Int32(reports.count) * 68)
         dlg_reset_content(dialog, height)
         brand_add_title(dialog, L10n.shared.tr("notification.title"), 24, 16, 300, 30)
@@ -1793,11 +1801,13 @@ final class WindowsApp: @unchecked Sendable {
 
     fileprivate func handleNotificationsCmd(_ id: Int32) {
         guard id >= 1300, id < 1400 else { return }
-        let reports = model.notifications.filter { $0.route != nil || $0.subscriptionAccountID != nil }
+        // A background release check must not shift the index of an already visible row.
+        let reports = displayedNotifications
         let index = Int(id - 1300)
         guard reports.indices.contains(index) else { return }
         pendingNotificationRoute = reports[index].route
         pendingBillingAccountID = reports[index].subscriptionAccountID
+        pendingReleaseURL = reports[index].releaseURL
         if let dialog = notificationsDlg { dlg_end(dialog, 0) }
     }
 
