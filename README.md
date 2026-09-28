@@ -4,17 +4,17 @@
 
 # 🕰️ TokenClock
 
-**A beautiful desktop clock for seeing your AI coding usage at a glance.**
+**A beautiful, always-on-top desktop clock for tracking all your AI coding agents at a glance.**
 
+[![Latest Release](https://img.shields.io/github/v/release/Neo-Isshin/TokenClock?label=Release&color=10B981&style=for-the-badge)](https://github.com/Neo-Isshin/TokenClock/releases/latest)
 [![macOS 12+](https://img.shields.io/badge/macOS-12%2B-000000?style=for-the-badge&logo=apple&logoColor=white)](#macos-and-linux)
-[![macOS 26+](https://img.shields.io/badge/macOS%2026-Liquid%20Glass-00B0F0?style=for-the-badge)](#macos-and-linux)
-[![macOS 27 Beta 5](https://img.shields.io/badge/macOS%2027-Beta%205%20Supported-8A2BE2?style=for-the-badge&logo=apple&logoColor=white)](#macos-and-linux)
-[![Windows normal](https://img.shields.io/badge/Windows-normal-0078D4?style=for-the-badge&logo=windows&logoColor=white)](#windows)
-[![Linux normal](https://img.shields.io/badge/Linux-normal-FCC624?style=for-the-badge&logo=linux&logoColor=black)](#macos-and-linux)
+[![macOS 26+ Liquid Glass](https://img.shields.io/badge/macOS%2026%2B-Liquid%20Glass-00B0F0?style=for-the-badge&logo=apple&logoColor=white)](#macos-and-linux)
+[![Windows 11 Native](https://img.shields.io/badge/Windows%2011-Fluent%20Win32-0078D4?style=for-the-badge&logo=windows&logoColor=white)](#windows)
+[![Linux GTK3](https://img.shields.io/badge/Linux-GTK3%20AppImage-FCC624?style=for-the-badge&logo=linux&logoColor=black)](#macos-and-linux)
 
 [![Swift 6](https://img.shields.io/static/v1?label=Swift&message=6&color=F05138&logo=swift&logoColor=white)](https://www.swift.org/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Releases](https://img.shields.io/badge/releases-GitHub-181717?logo=github&logoColor=white)](https://github.com/Neo-Isshin/TokenClock/releases)
+[![License: MIT](https://img.shields.io/badge/License-MIT-3B82F6.svg)](LICENSE)
+[![GitHub Stars](https://img.shields.io/github/stars/Neo-Isshin/TokenClock?style=social)](https://github.com/Neo-Isshin/TokenClock)
 
 </div>
 
@@ -22,163 +22,211 @@
 
 <table>
   <tr>
-    <td align="center"><img src="docs/screenshots/glass_en.png" alt="TokenClock Liquid Glass" width="300"><br><sub><b>Liquid Glass</b> · macOS 26+</sub></td>
-    <td align="center"><img src="docs/screenshots/normal_en.png" alt="TokenClock normal" width="300"><br><sub><b>Normal</b> · macOS, Windows, Linux</sub></td>
+    <td align="center" valign="bottom"><img src="docs/screenshots/glass.png" alt="TokenClock Liquid Glass" width="220"><br><sub><b>Liquid Glass</b><br>macOS 26+ / 27 Native Fluid Glass</sub></td>
+    <td align="center" valign="bottom"><img src="docs/screenshots/dropdown.png" alt="TokenClock Dropdown" width="230"><br><sub><b>Usage Dropdown</b><br>Live session and model breakdown</sub></td>
+    <td align="center" valign="bottom"><img src="docs/screenshots/normal_en.png" alt="TokenClock normal" width="220"><br><sub><b>Normal Edition</b><br>macOS / Windows 11 / Linux Native</sub></td>
   </tr>
 </table>
 
 </div>
 
-TokenClock is a small, always-on-top clock for your desktop. It combines the time with today's token usage, message count, active AI tools, weather, and usage pace—without making you open several dashboards.
+---
 
-Click the clock for session and model details. Right-click it to change the face, size, city, timezone, language, transparency, and other preferences.
+**TokenClock** is a lightweight, always-on-top clock widget designed for engineers building with AI coding agents. While keeping precise time, it aggregates today's **token consumption, message volume, active AI tools, token velocity, and local weather** directly onto your desktop—eliminating the need to juggle between disjointed web dashboards.
 
-## What you get
+- **Left-click the face:** instantly slide down granular session and model token breakdowns.
+- **Right-click the face:** seamlessly switch between 8 bespoke clock themes, resize, set cities, timezones, transparency, and personal preferences.
 
-- **15+ AI coding tools in one place.** TokenClock finds their local usage data automatically and lets you correct a path in Settings when needed.
-- **A clearer usage total.** Reused prompt-cache reads stay out of the main number, while new input, cache creation, output, and reasoning still count.
-- **8 carefully designed clock faces.** Glass, Classic, Glacier, Midnight, Luxe, Antique, Railgun, and Sky, plus saved custom faces.
-- **Useful details without leaving the desktop.** Group usage by session or model, expand individual rows, and sort by percentage.
-- **API-equivalent cost.** Today's token usage converted to USD at current public API rates (LiteLLM catalog with official-provider overrides, refreshed weekly). This is not a subscription bill; custom proxy models can be priced manually in Settings.
-- **Subscription quotas in one panel.** View Codex, Claude Code, Antigravity, Cursor, and Zhipu GLM limits and reset times when those local accounts are available. Cursor Models and Other Models are shown separately; signed-out services stay hidden.
-- **Weather without a location permission popup.** Automatic weather uses an approximate city from your public IP, or you can choose a city yourself.
-- **A native experience on each platform.** macOS uses SwiftUI/AppKit, Windows uses Win32, and Linux uses GTK3. The workflow is shared while controls keep their native appearance.
-- **Hide the widget in one click.** On macOS, use the menu-bar gauge to hide or restore TokenClock. On Windows, choose **Hide TokenClock** from the clock's right-click menu and click the tray icon to bring it back.
+---
 
-## Platform support
+## ✨ Features
 
-| Platform | Edition | Notes |
+- 🤖 **Unified Overview for 15+ AI Coding Tools**  
+  Native support for OpenClaw, Claude Code, Gemini CLI, Codex, Hermes, OpenCode, Qwen Code, Copilot CLI, Grok CLI, Aider, Antigravity, Cline, Continue, Cursor Agent, and ZCode. Automatically detects local data stores without manual setup.
+- 🔔 **Subscription Quota & Renewal Reminders (New in v1.5.11)**  
+  Centralized quota gauges and reset timers for Codex, Cursor, Claude Code, Antigravity, Grok Bot, and Zhipu GLM. Features **automatic billing cycle discovery** for Codex/ChatGPT and Cursor, delivering alerts 1, 2, 3, or 7 days prior to renewal so you never get hit by unexpected subscription fees.
+- 📈 **30-Day Historical Heatmap (Usage Overview)**  
+  A GitHub-style calendar contribution heatmap and cumulative activity breakdown, allowing you to trace past consumption patterns, message frequencies, and API-equivalent expenses across all tools.
+- 📊 **Honest, Accurate Token Accounting**  
+  Accurately separates input, output, reasoning, and cache creation tokens. Prompt cache hits (read-only reuse) are excluded from the primary dial figure to avoid misleading spikes.
+- 💳 **API-Equivalent Cost Translation**  
+  Converts daily token consumption into an equivalent USD value according to LiteLLM's public pricing catalog with official provider overrides. Supports custom proxy pricing in Settings.
+- 🎴 **Aesthetic Usage Share Cards**  
+  Export beautiful, high-res usage summary cards with a single click to share your daily AI milestones on social media or team channels.
+- 🎨 **8 Handcrafted Themes + Aurora Dynamic Glow**  
+  Features Glass, Classic, Glacier, Midnight, Luxe, Antique, Railgun, and Sky themes, accompanied by smooth Aurora gradient animations and high-resolution brand iconography.
+- ⚡ **True Native Engineering for Every Platform**  
+  - **macOS:** SwiftUI + AppKit with full support for macOS 26+ Liquid Glass and menu-bar toggle.
+  - **Windows:** Pure Win32 + Fluent UI with near-zero memory footprint, system tray support, and per-user non-admin installation.
+  - **Linux:** GTK3 + Cairo prebuilt AppImage with automated FUSE2-free extraction fallback.
+- 🔌 **Local Loopback API**  
+  Exposes read-only JSON endpoints at `127.0.0.1:9988` for seamless integration into Raycast, GeekTool, Sketchybar, or shell scripts.
+- 🔒 **100% Local-First & Zero Permission Friction**  
+  Exclusively reads local files already created on your machine. **No code, sessions, or tokens are ever uploaded.** Weather uses approximate IP lookup—**never prompting for macOS/system location permissions**.
+
+---
+
+## 💻 Cross-Platform Support
+
+| Platform | Edition | Requirements & Highlights |
 |---|---|---|
-| macOS 26+ | Liquid Glass + Normal | Universal Apple Silicon/Intel build; supports macOS 27 Beta 5 |
-| macOS 12–25 | Normal | Classic opaque desktop widget |
-| Windows 11 x86_64 | Normal | Per-user install; no administrator rights required |
-| Linux x86_64 | Normal | Prebuilt GTK3 AppImage; glibc 2.35+ |
+| **macOS 26+** | Liquid Glass + Normal | Universal Apple Silicon / Intel binary, macOS 27 Beta 5 validated, fluid glass aesthetics |
+| **macOS 12–25** | Normal | Classic floating desktop widget |
+| **Windows 11 / 10** | Normal (Win32 Fluent) | x86_64, per-user non-admin install, system tray integration |
+| **Linux** | Normal (GTK3 AppImage) | x86_64, glibc 2.35+, automatic fallback for environments without FUSE |
 
-## Install
+---
 
-### macOS and Linux
+## ⚡ Quick Install
 
-Paste this into Terminal:
+### macOS & Linux
+
+Paste into Terminal:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Neo-Isshin/TokenClock/main/cli/install.sh | bash
 ```
 
-The installer chooses the right edition, verifies downloaded builds, starts TokenClock, and installs the small `tokenclock` helper command.
+The installer detects your architecture, verifies cryptographic hashes, launches TokenClock, and configures the `tokenclock` CLI helper.
 
-Useful commands after installation:
+Common CLI commands:
 
 ```bash
-tokenclock doctor
-tokenclock restart
-tokenclock update
-tokenclock uninstall
+tokenclock doctor     # Inspect runtime health and data sources
+tokenclock restart    # Restart the desktop widget process
+tokenclock update     # Check and upgrade to the latest stable release
+tokenclock uninstall  # Remove application while optionally retaining settings
 ```
-
-On Linux, the installer automatically uses extraction mode when FUSE 2 is unavailable; no `sudo` dependency install is required.
 
 ### Windows
 
-Paste this into PowerShell:
+Run this in PowerShell (no Administrator rights needed):
 
 ```powershell
-& ([scriptblock]::Create((irm https://raw.githubusercontent.com/Neo-Isshin/TokenClock/windows-port/cli/install.ps1)))
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/Neo-Isshin/TokenClock/main/cli/install.ps1)))
 ```
 
-TokenClock installs for the current user under `%LOCALAPPDATA%\Programs\TokenClock`. It verifies the release checksum and does not enable autostart or create shortcuts unless you ask it to.
-
-Windows may show a reputation warning for an unsigned first release. Check that the publisher source is this repository before continuing.
+Installs into `%LOCALAPPDATA%\Programs\TokenClock` with automatic SHA256 integrity verification.
 
 <details>
-<summary>Optional Windows installer choices</summary>
+<summary><strong>🛠️ Optional Windows Install Flags</strong></summary>
 
 ```powershell
-# Install without starting, and add a Start Menu shortcut
-& ([scriptblock]::Create((irm https://raw.githubusercontent.com/Neo-Isshin/TokenClock/windows-port/cli/install.ps1))) -NoStart -StartMenuShortcut
+# Install without immediate launch, and pin to Start Menu
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/Neo-Isshin/TokenClock/main/cli/install.ps1))) -NoStart -StartMenuShortcut
 
-# Check the current installation
-& ([scriptblock]::Create((irm https://raw.githubusercontent.com/Neo-Isshin/TokenClock/windows-port/cli/install.ps1))) -Action Check
+# Verify current installation state
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/Neo-Isshin/TokenClock/main/cli/install.ps1))) -Action Check
 
-# Uninstall while keeping your settings
-& ([scriptblock]::Create((irm https://raw.githubusercontent.com/Neo-Isshin/TokenClock/windows-port/cli/install.ps1))) -Action Uninstall
+# Uninstall while preserving your user preferences
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/Neo-Isshin/TokenClock/main/cli/install.ps1))) -Action Uninstall
 ```
 
 </details>
 
-## Everyday use
+---
 
-- **Left-click the clock:** show or hide usage details.
-- **Hide or restore the widget:** use the menu-bar gauge on macOS; on Windows, choose **Hide TokenClock** and restore it from the system tray.
-- **Subscription Quota:** show Codex, Claude Code, Antigravity, Cursor, and Zhipu GLM limits and reset times.
-- **API-equivalent column:** estimated USD value at public API rates, not the amount charged by a subscription (customize proxy prices in Settings).
-- **By Session / By Model:** change how details are grouped.
-- **By Percent:** compare which tools consumed the most.
-- **Click a detail row:** expand its sessions or models.
-- **Right-click the clock:** open faces, sizes, display preferences, refresh, Settings, About, and Quit.
-- **Drag the clock:** place it anywhere on your desktop; its position is remembered.
-
-Settings includes automatic detection, tool switches, custom data paths, rate thresholds, the local API, and custom clock faces. Available rows may differ slightly by platform.
-
-## Supported tools
-
-| | | |
-|---|---|---|
-| OpenClaw | Claude Code | Gemini CLI |
-| Codex | Hermes | OpenCode |
-| Qwen Code | GitHub Copilot CLI | Grok CLI |
-| Aider | Antigravity | Cline |
-| Continue | Cursor Agent | ZCode |
-
-Most tools need no setup. If a tool stores data somewhere unusual, open **Settings → Data Source Paths** and choose its folder or file.
-
-Windows also offers optional Kiro session-contract detection and experimental CodeBuddy current-session statistics.
-
-## Screenshots
+## 📸 Screenshots
 
 <div align="center">
 
+<h3>📊 30-Day Historical Heatmap & Analytics (Usage Overview)</h3>
+<p><img src="docs/screenshots/usage_overview.png" alt="Usage Overview 30-Day Heatmap" width="780"></p>
+
+<br>
+
 <table>
   <tr>
-    <td align="center"><img src="docs/screenshots/dropdown_en.png" alt="Usage details" width="300"><br><sub>Usage details</sub></td>
-    <td align="center"><img src="docs/screenshots/themes_en.png" alt="Clock face picker" width="300"><br><sub>Clock face picker</sub></td>
-    <td align="center"><img src="docs/screenshots/normal_full_en.png" alt="TokenClock normal edition" width="300"><br><sub>Normal edition</sub></td>
+    <td align="center" width="56%"><img src="docs/screenshots/subscription_quota.png" alt="Subscription Quotas & Reminders" width="460"><br><sub><b>🔔 Subscription Quotas & Renewal Reminders</b><br>Codex, Cursor, Grok Bot, Z.ai, Claude & more</sub></td>
+    <td align="center" width="44%"><img src="docs/screenshots/themes.png" alt="Theme & Face Selector" width="280"><br><sub><b>🎨 8 Handcrafted Clock Faces (Theme Selector)</b><br>Classic, Glacier, Midnight, Luxe, Antique, Sky, etc.</sub></td>
   </tr>
 </table>
 
 </div>
 
-## Privacy
+---
 
-- Token and session totals are read from files already stored by your AI tools. TokenClock does not upload those logs or totals.
-- The optional local API listens only on `127.0.0.1`.
-- Automatic weather contacts the configured weather/IP services to estimate a city. It does not request macOS Location Services permission.
-- Subscription Quota runs only when you open its panel. It uses each installed tool's local signed-in service or saved credentials when available; TokenClock does not ask you to paste account secrets.
-- Cursor cloud usage is optional. When enabled, it contacts Cursor's service using the credentials already stored by Cursor; leave it off if you only want local data.
+## 🕹️ Everyday Interaction
 
-## Local API (optional)
+- **Inspect Usage:** Left-click the dial to expand the dropdown detailing session and model metrics.
+- **Change Perspectives:** Switch between **By Session** and **By Model**; click **By Percent** to sort consumption by ratio.
+- **Quota & Renewal Dashboard:** Click **Subscription Quota** to review reset countdowns. Click the pencil icon next to any account to set custom renewal reminder days (1, 2, 3, or 7 days).
+- **Inspect History:** Click **History Usage** to open the Usage Overview window with 30-day activity heatmaps and cumulative stats.
+- **Settings & Customization:** Right-click the dial to open **Settings**:
+  - Toggle data sources or customize paths under Data Source Paths;
+  - Adjust update polling and high-velocity alert thresholds;
+  - Enter custom prices for local/proxy model endpoints;
+  - Create and save custom theme palettes.
+- **Positioning & Quick Hide:**
+  - Drag the clock anywhere on your desktop; position persists across reboots.
+  - **macOS:** Click the menu bar gauge to instantly toggle visibility.
+  - **Windows:** Select **Hide TokenClock** from the context menu to minimize to tray; click tray icon to restore.
 
-TokenClock can expose read-only JSON for personal scripts and dashboards:
+---
 
-```text
-http://127.0.0.1:9988/api/usage
-http://127.0.0.1:9988/api/history?days=30
+## 🧩 Ecosystem Support
+
+TokenClock automatically discovers and parses sessions from 15+ AI coding environments:
+
+| Official / CLI Agents | Standalone IDEs & Agents | IDE Extensions & Frameworks |
+|---|---|---|
+| **Claude Code** | **Cursor Agent** | **Continue** |
+| **OpenClaw** | **Antigravity** | **Cline** |
+| **Codex** | **ZCode** | **Aider** |
+| **Gemini CLI** | **Qwen Code** | **OpenCode** |
+| **GitHub Copilot CLI** | **Grok CLI** | **Hermes** |
+
+> Note: If an agent stores data in an unconventional path, simply map it under **Settings → Data Source Paths**. Windows builds also provide support for Kiro session probing and experimental CodeBuddy status.
+
+---
+
+## 🔌 Local REST API
+
+TokenClock includes a read-only HTTP server binding strictly to `127.0.0.1` (external network connections are refused):
+
+```bash
+# Current usage, messages, and model breakdowns
+curl http://127.0.0.1:9988/api/usage
+
+# Historical 30-day usage trajectory
+curl http://127.0.0.1:9988/api/history?days=30
 ```
 
-The server is loopback-only, so other computers cannot connect to it directly.
-Cost-bearing responses include `"costBasis": "api_equivalent_public_list"` so clients do not mistake estimates for subscription billing.
+Cost responses include the explicit `"costBasis": "api_equivalent_public_list"` indicator for reliable parsing by Raycast, GeekTool, or custom scripts.
 
-## Troubleshooting
+---
 
-- **A tool shows zero:** use Re-detect in Settings, then check its Data Source Path. The tool must have created at least one local session first.
-- **A subscription quota is unavailable:** make sure the corresponding tool is installed and signed in, then retry from the quota panel. Some providers may not expose quota data on every plan or platform.
-- **Weather is unavailable:** choose a city manually or check whether `wttr.in` is reachable from your network.
-- **Linux AppImage does not start:** run `tokenclock doctor`, then reinstall. On systems without FUSE 2, the launcher automatically uses extraction mode and does not require `sudo`.
-- **Something is using too much CPU:** update and restart TokenClock. Recent builds avoid repeatedly scanning old Codex and Gemini histories.
-- **Still stuck:** run `tokenclock doctor` on macOS/Linux, or open a [GitHub issue](https://github.com/Neo-Isshin/TokenClock/issues) with your platform and TokenClock version.
+## ❓ Troubleshooting (FAQ)
 
-## Build from source
+<details>
+<summary><strong>Q: A tool shows zero token usage despite active work?</strong></summary>
 
-Most people should use the installers above. For contributors:
+1. Right-click the clock, open **Settings**, and click **Re-detect**.
+2. Verify the tool has created at least one valid local session file on disk.
+3. Check **Data Source Paths** to ensure the path corresponds to your actual installation directory.
+</details>
+
+<details>
+<summary><strong>Q: Subscription Quota shows "Unavailable"?</strong></summary>
+
+The quota monitor reuses local authenticated session credentials (e.g. Codex OAuth, Cursor local state). Ensure the relevant CLI/IDE is logged in on your machine. Certain enterprise SSO tenants or unpublished APIs may not return quota payloads.
+</details>
+
+<details>
+<summary><strong>Q: Linux AppImage fails to launch?</strong></summary>
+
+Run `tokenclock doctor` to inspect startup diagnostics. If your distribution lacks `libfuse2`, our latest installer automatically runs in unpack-and-run mode without requiring `sudo`.
+</details>
+
+<details>
+<summary><strong>Q: Weather display is missing or incorrect?</strong></summary>
+
+TokenClock looks up weather via IP approximation with `wttr.in`. If offline or firewalled, configure a specific city in **Settings → City**.
+</details>
+
+---
+
+## 🛠️ Build from Source
 
 ```bash
 git clone https://github.com/Neo-Isshin/TokenClock.git
@@ -186,15 +234,15 @@ cd TokenClock
 swift build -c release
 ```
 
-The Normal edition shares its features across macOS, Windows, and Linux while keeping native controls and platform-specific data paths. Liquid Glass remains a separate macOS presentation built on the same usage core.
+- **macOS:** Produces universal binaries supporting both Liquid Glass and Normal UI engines.
+- **Windows:** Compiles using Swift 6 for Windows toolchain paired with Win32Shim.
+- **Linux:** Built using Swift Package Manager with GTK3 dependencies.
 
-## License
+---
 
-TokenClock is open-sourced under the **[MIT License](LICENSE)** — © 2026 Neo-Isshin.
+## ⚖️ License & Acknowledgments
 
-## Acknowledgments
-
-- [Swift](https://www.swift.org/) and SwiftUI/AppKit
-- GTK and Cairo for the Linux normal edition
-- The AI coding tools whose local data formats make this overview possible
-- Everyone who reports issues, tests new platforms, and improves TokenClock
+- Licensed under the **[MIT License](LICENSE)** — Copyright © 2026 Neo-Isshin.
+- Thanks to the [Swift](https://www.swift.org/) team for cross-platform Swift advancements.
+- Thanks to GTK and Cairo powering the Linux experience.
+- Appreciation to all AI coding agent creators maintaining transparent local telemetry!

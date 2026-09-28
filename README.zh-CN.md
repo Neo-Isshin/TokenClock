@@ -4,17 +4,17 @@
 
 # 🕰️ TokenClock
 
-**一眼看清所有 AI 编程工具消耗的桌面时钟。**
+**一眼看清所有 AI 编程工具消耗的极简桌面时钟。**
 
+[![Latest Release](https://img.shields.io/github/v/release/Neo-Isshin/TokenClock?label=Release&color=10B981&style=for-the-badge)](https://github.com/Neo-Isshin/TokenClock/releases/latest)
 [![macOS 12+](https://img.shields.io/badge/macOS-12%2B-000000?style=for-the-badge&logo=apple&logoColor=white)](#macos-与-linux)
-[![macOS 26+](https://img.shields.io/badge/macOS%2026-Liquid%20Glass-00B0F0?style=for-the-badge)](#macos-与-linux)
-[![macOS 27 Beta 5](https://img.shields.io/badge/macOS%2027-Beta%205%20%E5%B7%B2%E6%94%AF%E6%8C%81-8A2BE2?style=for-the-badge&logo=apple&logoColor=white)](#macos-与-linux)
-[![Windows normal](https://img.shields.io/badge/Windows-normal-0078D4?style=for-the-badge&logo=windows&logoColor=white)](#windows)
-[![Linux normal](https://img.shields.io/badge/Linux-normal-FCC624?style=for-the-badge&logo=linux&logoColor=black)](#macos-与-linux)
+[![macOS 26+ Liquid Glass](https://img.shields.io/badge/macOS%2026%2B-Liquid%20Glass-00B0F0?style=for-the-badge&logo=apple&logoColor=white)](#macos-与-linux)
+[![Windows 11 Native](https://img.shields.io/badge/Windows%2011-Fluent%20Win32-0078D4?style=for-the-badge&logo=windows&logoColor=white)](#windows)
+[![Linux GTK3](https://img.shields.io/badge/Linux-GTK3%20AppImage-FCC624?style=for-the-badge&logo=linux&logoColor=black)](#macos-与-linux)
 
 [![Swift 6](https://img.shields.io/static/v1?label=Swift&message=6&color=F05138&logo=swift&logoColor=white)](https://www.swift.org/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Releases](https://img.shields.io/badge/releases-GitHub-181717?logo=github&logoColor=white)](https://github.com/Neo-Isshin/TokenClock/releases)
+[![License: MIT](https://img.shields.io/badge/License-MIT-3B82F6.svg)](LICENSE)
+[![GitHub Stars](https://img.shields.io/github/stars/Neo-Isshin/TokenClock?style=social)](https://github.com/Neo-Isshin/TokenClock)
 
 </div>
 
@@ -22,163 +22,211 @@
 
 <table>
   <tr>
-    <td align="center"><img src="docs/screenshots/glass_zh.png" alt="TokenClock Liquid Glass" width="300"><br><sub><b>Liquid Glass</b> · macOS 26+</sub></td>
-    <td align="center"><img src="docs/screenshots/normal_zh.png" alt="TokenClock normal" width="300"><br><sub><b>Normal</b> · macOS、Windows、Linux</sub></td>
+    <td align="center" valign="bottom"><img src="docs/screenshots/glass.png" alt="TokenClock Liquid Glass" width="220"><br><sub><b>Liquid Glass</b><br>macOS 26+ / 27 原生流体玻璃</sub></td>
+    <td align="center" valign="bottom"><img src="docs/screenshots/dropdown.png" alt="用量详情下拉面板" width="230"><br><sub><b>实时详情面板</b><br>会话/模型下钻与实时用量</sub></td>
+    <td align="center" valign="bottom"><img src="docs/screenshots/normal_zh.png" alt="TokenClock normal" width="220"><br><sub><b>Normal 版</b><br>macOS / Windows 11 / Linux 原生控件</sub></td>
   </tr>
 </table>
 
 </div>
 
-TokenClock 是一个置顶显示在桌面的小时钟。除了时间，它还会显示今天用了多少 token、发送了多少条消息、哪些 AI 工具正在工作、当前使用速度和天气，让你不必在多个面板之间来回切换。
+---
 
-左键点击表盘即可查看会话与模型明细；右键可以切换表盘、尺寸、城市、时区、语言、透明度和其他设置。
+**TokenClock** 是一个常驻桌面置顶的精致小时钟。它不仅静默走时，更会在方寸之间聚合你今日所有 AI 编程工具的 **Token 消耗、消息频次、正在工作的 Agent 工具、Token 速率与当前天气**。无需频繁切出窗口打开各种复杂的用量控制台，抬头即可了然于心。
 
-## 你会得到什么
+- **左键点击表盘**：即刻滑出当日各工具会话、模型调用明细与耗费占比。
+- **右键点击表盘**：自由切换 8 款精致表盘、缩放尺寸、调整城市时区、透明度与偏好设置。
 
-- **15+ 种 AI 编程工具统一统计。** TokenClock 会自动寻找本地用量数据；路径特殊时也能在设置中手动选择。
-- **主用量更接近真实消耗。** 重复读取的提示词缓存不会抬高主数字；新输入、缓存创建、输出和推理仍会正常计入。
-- **8 套精心设计的表盘。** Glass、Classic、Glacier、Midnight、Luxe、Antique、Railgun、Sky，并支持保存自定义表盘。
-- **不用离开桌面就能看明细。** 可按会话或模型分组、展开单行，并按百分比比较各工具消耗。
-- **API 等价费用。** 按当前公开 API 牌价把当日 token 消耗折算成美元（LiteLLM 目录叠加厂商官方校验，每周更新）。这不是订阅实际账单；代理或自定义模型可在设置中手动补价。
-- **订阅额度集中查看。** 本机账户可用时，可在同一面板查看 Codex、Claude Code、Antigravity、Cursor 与智谱 GLM 的额度及重置时间。Cursor 模型和非 Cursor 模型分别显示，未登录的服务不会占据空卡片。
-- **不会弹出系统定位授权。** 自动天气通过公网 IP 大致判断城市，也可以自己选择城市。
-- **各平台保留原生体验。** macOS 使用 SwiftUI/AppKit，Windows 使用 Win32，Linux 使用 GTK3；工作流程一致，控件外观遵循各自系统。
-- **一键收起桌面组件。** macOS 可通过菜单栏仪表图标隐藏或恢复 TokenClock；Windows 可在表盘右键菜单选择 **隐藏 TokenClock**，再点击系统托盘图标恢复。
+---
 
-## 支持平台
+## ✨ 核心特性
 
-| 平台 | 版本 | 说明 |
+- 🤖 **统一纳管 15+ 种主流 AI 编程工具**  
+  原生支持 OpenClaw、Claude Code、Gemini CLI、Codex、Hermes、OpenCode、Qwen Code、Copilot CLI、Grok CLI、Aider、Antigravity、Cline、Continue、Cursor Agent、ZCode。自动侦测本地数据源，免去复杂配置。
+- 🔔 **订阅额度看板与续费提醒 (v1.5.11 新增)**  
+  集中查看 Codex、Cursor、Claude Code、Antigravity、Grok Bot 与智谱 GLM 的额度余量与重置时间。针对 Codex/ChatGPT 与 Cursor 支持**自动识别账单周期**，并在续费前 1 / 2 / 3 / 7 天弹出通知提醒，告别意外扣费。
+- 📈 **30 天历史全景与热力图 (Usage Overview)**  
+  提供如同 GitHub 贡献日历般的历史用量热力图，回溯任意日期的消耗分布、各工具调用频次与等价成本轨迹。
+- 📊 **真实有效的 Token 计算模型**  
+  科学区分输入、输出、推理与缓存创建 Token。针对重复读取的提示词缓存（Prompt Cache Hit）自动剔除，避免虚标膨胀，反映最真实的开发消耗。
+- 💳 **公开 API 等价费用折算**  
+  根据 LiteLLM 定期更新的公网牌价与官方覆盖字典，将当日 Token 消耗透明换算为等价美元参考价值（非订阅账单金额）；支持在设置中为第三方中转/自定义代理模型自定义单价。
+- 🎴 **精美用量分享卡片 (Usage Share Card)**  
+  一键生成极具设计感的高清用量与成就分享卡，方便在社交网络或团队频道中展示你的每日 AI 生产力。
+- 🎨 **8 款设计表盘与极光光晕**  
+  提供 Glass、Classic、Glacier、Midnight、Luxe、Antique、Railgun、Sky 风格，配合平滑的 Aurora 动态极光渐变，兼顾实用与视觉愉悦。
+- ⚡ **全平台深度原生实现**  
+  - **macOS**：SwiftUI + AppKit，支持 macOS 26+ 原生 Liquid Glass 特效与菜单栏一键隐藏。
+  - **Windows**：纯 Win32 + Fluent 原生渲染，极低内存开销，支持系统托盘常驻，单用户免管理员权限安装。
+  - **Linux**：GTK3 + Cairo 预编译 AppImage，内置免 FUSE2 解包容灾，开箱即用。
+- 🔌 **本地 Loopback API**  
+  提供 `127.0.0.1:9988` 只读 REST 接口，轻松接入 Raycast、GeekTool、Sketchybar 或自动化脚本。
+- 🔒 **100% 隐私安全与零权限骚扰**  
+  仅只读解析本机现有日志，**绝不上传任何代码、Session 或 Token**；天气查询通过公网 IP 粗略定位，**绝不触发系统的弹窗定位权限申请**。
+
+---
+
+## 💻 跨平台支持
+
+| 平台 | 版本形态 | 运行要求与特性 |
 |---|---|---|
-| macOS 26+ | Liquid Glass + Normal | Apple 芯片与 Intel 通用版本，已支持 macOS 27 Beta 5 |
-| macOS 12–25 | Normal | 经典不透明桌面小组件 |
-| Windows 11 x86_64 | Normal | 当前用户安装，无需管理员权限 |
-| Linux x86_64 | Normal | 预编译 GTK3 AppImage，要求 glibc 2.35+ |
+| **macOS 26+** | Liquid Glass + Normal | Apple Silicon / Intel 通用架构，支持 macOS 27 Beta 5，原生毛玻璃与流体光泽 |
+| **macOS 12–25** | Normal | 经典独立桌面悬浮小组件 |
+| **Windows 11 / 10** | Normal (Win32 Fluent) | x86_64 架构，免管理员提权，当前用户独立安装，集成系统托盘 |
+| **Linux** | Normal (GTK3 AppImage) | x86_64 架构，要求 glibc 2.35+，无 FUSE 环境自动兼容解包运行 |
 
-## 安装
+---
+
+## ⚡ 极速安装
 
 ### macOS 与 Linux
 
-复制到终端运行：
+打开终端（Terminal），直接运行官方一键脚本：
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Neo-Isshin/TokenClock/main/cli/install.sh | bash
 ```
 
-安装器会自动选择正确版本、校验下载文件、启动 TokenClock，并安装一个轻量的 `tokenclock` 管理命令。
+安装器会自动识别当前系统架构、校验 Release 构件哈希、启动 TokenClock，并注册 `tokenclock` CLI 管理命令。
 
-安装后常用命令：
+常用管理指令：
 
 ```bash
-tokenclock doctor
-tokenclock restart
-tokenclock update
-tokenclock uninstall
+tokenclock doctor     # 检查运行状态与数据源健康度
+tokenclock restart    # 重启桌面时钟进程
+tokenclock update     # 检查并更新到最新发布版
+tokenclock uninstall  # 卸载程序（可保留个人设置）
 ```
-
-Linux 缺少 FUSE 2 时会自动切换到解包运行模式，无需使用 `sudo` 安装额外依赖。
 
 ### Windows
 
-复制到 PowerShell 运行：
+在 PowerShell 中执行以下安装命令（无需管理员权限）：
 
 ```powershell
-& ([scriptblock]::Create((irm https://raw.githubusercontent.com/Neo-Isshin/TokenClock/windows-port/cli/install.ps1)))
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/Neo-Isshin/TokenClock/main/cli/install.ps1)))
 ```
 
-TokenClock 会安装到当前用户的 `%LOCALAPPDATA%\Programs\TokenClock`，下载后自动校验文件。默认不会创建快捷方式，也不会启用开机自启。
-
-Windows 可能会对尚未签名的首个版本显示信誉提示。继续前请确认来源是本仓库。
+程序将安全部署至 `%LOCALAPPDATA%\Programs\TokenClock` 并自动校验 SHA256。
 
 <details>
-<summary>Windows 安装器的可选用法</summary>
+<summary><strong>🛠️ Windows 高阶安装参数</strong></summary>
 
 ```powershell
-# 安装后不立即启动，并创建开始菜单快捷方式
-& ([scriptblock]::Create((irm https://raw.githubusercontent.com/Neo-Isshin/TokenClock/windows-port/cli/install.ps1))) -NoStart -StartMenuShortcut
+# 安装时不立即启动，并在开始菜单创建快捷方式
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/Neo-Isshin/TokenClock/main/cli/install.ps1))) -NoStart -StartMenuShortcut
 
-# 查看当前安装状态
-& ([scriptblock]::Create((irm https://raw.githubusercontent.com/Neo-Isshin/TokenClock/windows-port/cli/install.ps1))) -Action Check
+# 检查当前安装与文件完整性
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/Neo-Isshin/TokenClock/main/cli/install.ps1))) -Action Check
 
-# 卸载程序，但保留个人设置
-& ([scriptblock]::Create((irm https://raw.githubusercontent.com/Neo-Isshin/TokenClock/windows-port/cli/install.ps1))) -Action Uninstall
+# 卸载 TokenClock，但保留你的偏好设置
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/Neo-Isshin/TokenClock/main/cli/install.ps1))) -Action Uninstall
 ```
 
 </details>
 
-## 日常使用
+---
 
-- **左键点击表盘：** 展开或收起用量详情。
-- **隐藏或恢复组件：** macOS 使用菜单栏仪表图标；Windows 从右键菜单隐藏，再从系统托盘恢复。
-- **Subscription Quota：** 查看 Codex、Claude Code、Antigravity、Cursor 与智谱 GLM 的额度和重置时间。
-- **API 等价费用列：** 按公开 API 牌价折算，不代表订阅实际扣费（可在 Settings 中自定义代理价格）。
-- **By Session / By Model：** 切换会话或模型分组。
-- **By Percent：** 比较各工具的消耗占比。
-- **点击详情行：** 展开对应会话或模型。
-- **右键点击表盘：** 打开表盘、尺寸、显示设置、刷新、Settings、About 和退出菜单。
-- **拖动表盘：** 放到桌面任意位置；下次启动会记住位置。
-
-Settings 中可以重新探测工具、开关数据源、修改路径、调整速率阈值、设置本地 API，以及创建自定义表盘。不同平台的设置行可能略有差异。
-
-## 支持的工具
-
-| | | |
-|---|---|---|
-| OpenClaw | Claude Code | Gemini CLI |
-| Codex | Hermes | OpenCode |
-| Qwen Code | GitHub Copilot CLI | Grok CLI |
-| Aider | Antigravity | Cline |
-| Continue | Cursor Agent | ZCode |
-
-多数工具不需要额外配置。如果某个工具把数据放在特殊位置，请打开 **Settings → Data Source Paths**，选择对应文件夹或文件。
-
-Windows 还提供可选的 Kiro 会话格式探测，以及实验性的 CodeBuddy 当前会话统计。
-
-## 截图
+## 📸 界面预览
 
 <div align="center">
 
+<h3>📊 历史用量与全景热力图 (Usage Overview)</h3>
+<p><img src="docs/screenshots/usage_overview.png" alt="30 天历史用量与全景热力图" width="780"></p>
+
+<br>
+
 <table>
   <tr>
-    <td align="center"><img src="docs/screenshots/dropdown_zh.png" alt="用量详情" width="300"><br><sub>用量详情</sub></td>
-    <td align="center"><img src="docs/screenshots/themes_zh.png" alt="表盘选择器" width="300"><br><sub>表盘选择器</sub></td>
-    <td align="center"><img src="docs/screenshots/normal_full_zh.png" alt="TokenClock Normal 版" width="300"><br><sub>Normal 版</sub></td>
+    <td align="center" width="56%"><img src="docs/screenshots/subscription_quota.png" alt="订阅额度与续费提醒" width="460"><br><sub><b>🔔 订阅额度看板与续费提醒 (Subscription Quota)</b><br>Codex、Cursor、Grok Bot、Z.ai、Claude 等集中查看与倒计时</sub></td>
+    <td align="center" width="44%"><img src="docs/screenshots/themes.png" alt="8 套精选表盘与极光主题" width="280"><br><sub><b>🎨 8 套精选表盘选择器 (Theme Selector)</b><br>Classic、Glacier、Midnight、Luxe、Antique、Sky 等</sub></td>
   </tr>
 </table>
 
 </div>
 
-## 隐私
+---
 
-- Token 与会话总量来自各 AI 工具已经保存在本机的文件；TokenClock 不会上传这些日志或统计结果。
-- 可选的本地 API 只监听 `127.0.0.1`。
-- 自动天气会访问天气/IP 服务来大致判断城市，但不会申请 macOS 系统定位权限。
-- Subscription Quota 只在打开额度面板时运行；在可用时使用各工具本机已登录的服务或已保存凭据，无需用户向 TokenClock 粘贴账户密钥。
-- Cursor 云端用量查询是可选功能。开启后会使用 Cursor 已保存的凭据访问 Cursor 服务；只想使用本地数据时可以保持关闭。
+## 🕹️ 日常交互指南
 
-## 本地 API（可选）
+- **查看消耗详情**：单击表盘左键展开下拉面板，查看每个工具各 Session、各模型的详细 Token 与折算成本。
+- **切换分析视角**：在下拉面板中切换 **By Session**（按会话）或 **By Model**（按模型），点击 **By Percent** 快速查看占比柱状图。
+- **额度与订阅中心**：在面板中点击 **Subscription Quota**，即可查看 Codex、Claude Code、Cursor 等账号的订阅重置倒计时；点击铅笔图标可设置到期提醒天数（1/2/3/7 天）。
+- **打开历史全景**：点击 **History Usage** 唤出 Usage Overview 窗口，查看 30 天日历热力图与跨工具累计报表。
+- **个性化定制**：右键点击表盘，进入 **Settings**：
+  - 手动开关数据源或纠正特殊安装路径（Data Source Paths）；
+  - 调整刷新率与用量过快预警阈值；
+  - 为自定义中转 API 配置模型单价；
+  - 自定义配色与专属表盘。
+- **随心摆放与隐藏**：
+  - 随意拖拽表盘至桌面任意角落，位置自动记忆；
+  - **macOS**：点击顶部菜单栏的小仪表图标可一键隐现；
+  - **Windows**：右键选择 **Hide TokenClock** 收起至托盘，单击托盘图标即可唤醒。
 
-TokenClock 可以为个人脚本和仪表盘提供只读 JSON：
+---
 
-```text
-http://127.0.0.1:9988/api/usage
-http://127.0.0.1:9988/api/history?days=30
+## 🧩 支持的 AI 工具生态
+
+TokenClock 支持自动探测并解析以下 15+ 种工具的本地活动数据：
+
+| 官方 / 主流 CLI | 独立编辑器与 Agent | IDE 扩展与开源核心 |
+|---|---|---|
+| **Claude Code** | **Cursor Agent** | **Continue** |
+| **OpenClaw** | **Antigravity** | **Cline** |
+| **Codex** | **ZCode** | **Aider** |
+| **Gemini CLI** | **Qwen Code** | **OpenCode** |
+| **GitHub Copilot CLI** | **Grok CLI** | **Hermes** |
+
+> 注：若工具安装在自定义目录或容器挂载路径，只需在 **Settings → Data Source Paths** 中手动指定该目录即可。Windows 版本另提供针对 Kiro 会话格式与 CodeBuddy 状态的适配支持。
+
+---
+
+## 🔌 本地 REST API (开发集成)
+
+TokenClock 内置极轻量的本地只读 HTTP 接口（仅监听回环地址 `127.0.0.1`，拒绝任何外部网络连接）：
+
+```bash
+# 获取今日实时用量、消息数与各模型消耗
+curl http://127.0.0.1:9988/api/usage
+
+# 获取最近 30 天的历史用量轨迹
+curl http://127.0.0.1:9988/api/history?days=30
 ```
 
-服务只监听本机回环地址，其他电脑不能直接连接。
-含费用的响应会返回 `"costBasis": "api_equivalent_public_list"`，避免调用方把估算值误认为订阅账单。
+响应字段中包含标准 `"costBasis": "api_equivalent_public_list"` 标识，便于与监控看板、Raycast 脚本或 GeekTool 等桌面美化工具对接。
 
-## 常见问题
+---
 
-- **某个工具一直是 0：** 在 Settings 中点击 Re-detect，再检查 Data Source Path。该工具至少要先产生一个本地会话。
-- **某项订阅额度不可用：** 确认对应工具已安装并登录，再在额度面板中重试；部分平台或订阅方案可能不提供额度接口。
-- **天气不可用：** 手动选择城市，或检查当前网络能否访问 `wttr.in`。
-- **Linux AppImage 无法启动：** 先运行 `tokenclock doctor`，再重新安装。系统缺少 FUSE 2 时会自动使用解包运行模式，无需 `sudo` 安装依赖。
-- **CPU 占用异常：** 更新并重启 TokenClock。新版本已避免反复扫描旧 Codex 与 Gemini 历史。
-- **仍然无法解决：** macOS/Linux 可运行 `tokenclock doctor`，也可以在 [GitHub Issues](https://github.com/Neo-Isshin/TokenClock/issues) 中附上系统和 TokenClock 版本。
+## ❓ 常见问题排查 (FAQ)
 
-## 从源码构建
+<details>
+<summary><strong>Q: 某个工具明明在使用，但 Token 统计显示为 0？</strong></summary>
 
-普通用户建议使用上面的安装命令。开发者可以：
+1. 在右键菜单打开 **Settings**，点击 **Re-detect**（重新检测）。
+2. 检查该工具是否已经生成了本地日志（工具必须至少产生过一次实际会话并有数据写入磁盘）。
+3. 检查 **Data Source Paths** 中的路径是否正确映射到了该工具的存储目录。
+</details>
+
+<details>
+<summary><strong>Q: 订阅额度 (Subscription Quota) 提示不可用？</strong></summary>
+
+额度面板优先复用各工具本机已登录的本地凭证（如 Codex OAuth、Cursor 本地凭证）。请确保对应 CLI/IDE 已在当前机器登录。部分企业专有租户或未公开额度接口的模型方案可能无法返回配额数据。
+</details>
+
+<details>
+<summary><strong>Q: Linux AppImage 无法直接启动？</strong></summary>
+
+运行 `tokenclock doctor` 查看诊断日志。如果宿主机未安装 FUSE 2，最新安装器会自动降级采用解压模式运行，无需 `sudo apt install libfuse2`。
+</details>
+
+<details>
+<summary><strong>Q: 天气信息加载失败？</strong></summary>
+
+TokenClock 默认使用非侵入式网络 IP 解析城市并向 `wttr.in` 请求气象概览。若网络环境阻断，可在右键 **Settings → City** 中手动指定常用城市名称。
+</details>
+
+---
+
+## 🛠️ 从源码构建
 
 ```bash
 git clone https://github.com/Neo-Isshin/TokenClock.git
@@ -186,15 +234,15 @@ cd TokenClock
 swift build -c release
 ```
 
-Normal 版在 macOS、Windows 与 Linux 之间共享功能，同时保留各平台原生控件和专属数据路径；Liquid Glass 是建立在同一用量核心上的独立 macOS 外观。
+- **macOS**：输出通用可执行文件与 App Bundle，包含 Liquid Glass 与 Normal 引擎。
+- **Windows**：支持配合 Swift 6 for Windows 工具链及 Win32Shim 编译。
+- **Linux**：使用 Swift Package Manager + GTK3 依赖构建。
 
-## 许可证
+---
 
-TokenClock 基于 **[MIT 协议](LICENSE)** 开源 —— © 2026 Neo-Isshin。
+## ⚖️ 许可证与致谢
 
-## 致谢
-
-- [Swift](https://www.swift.org/) 与 SwiftUI/AppKit
-- Linux normal 使用的 GTK 与 Cairo
-- 提供本地数据格式的各款 AI 编程工具
-- 所有参与反馈、测试新平台和改进 TokenClock 的用户
+- 本项目基于 **[MIT 许可证](LICENSE)** 开源 —— Copyright © 2026 Neo-Isshin。
+- 感谢 [Swift](https://www.swift.org/) 社区对跨平台 Swift 的不懈推进。
+- 感谢 Linux Normal 版所依托的 GTK 与 Cairo 图形库。
+- 感谢所有保持本地日志规范的 AI 编程工具开发者与社区支持者！
