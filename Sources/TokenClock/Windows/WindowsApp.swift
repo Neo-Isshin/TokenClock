@@ -1831,7 +1831,7 @@ final class WindowsApp: @unchecked Sendable {
             let dates = overviewDates
             let data = UsageOverviewBuilder.load(
                 startDate: dates.0, endDate: dates.1, grouping: overviewGrouping,
-                includingCacheRead: overviewIncludesCacheRead
+                includingCacheRead: overviewIncludesCacheRead, hourlyWhenSingleDay: overviewPeriod == .custom
             )
             let index = Int(id - 1000)
             let visibleDays = Array(data.days.suffix(30))
@@ -1850,11 +1850,11 @@ final class WindowsApp: @unchecked Sendable {
         let dates = overviewDates
         let data = UsageOverviewBuilder.load(
             startDate: dates.0, endDate: dates.1, grouping: overviewGrouping,
-            includingCacheRead: overviewIncludesCacheRead
+            includingCacheRead: overviewIncludesCacheRead, hourlyWhenSingleDay: overviewPeriod == .custom
         )
         let modelData = overviewGrouping == .model ? data : UsageOverviewBuilder.load(
             startDate: dates.0, endDate: dates.1, grouping: .model,
-            includingCacheRead: overviewIncludesCacheRead
+            includingCacheRead: overviewIncludesCacheRead, hourlyWhenSingleDay: overviewPeriod == .custom
         )
         let tokenTitle = L10n.shared.tr(
             overviewIncludesCacheRead ? "overview.tokensWithCache" : "overview.tokens"
@@ -1862,12 +1862,13 @@ final class WindowsApp: @unchecked Sendable {
         let tokenHeader = L10n.shared.tr(
             overviewIncludesCacheRead ? "overview.tokensWithCacheShort" : "overview.tokens"
         )
+        if let key = overviewSelectedDayKey, !data.days.contains(where: { $0.dateKey == key }) { overviewSelectedDayKey = nil }
         let dayRows = min(30, data.days.count)
         let activeDay = overviewSelectedDayKey.flatMap { key in data.days.first { $0.dateKey == key } }
         let displayRows = activeDay?.rows ?? data.rows
         let rowCount = max(1, displayRows.count)
         let customHeight: Int32 = overviewPeriod == .custom ? 46 : 0
-        let chartHeight: Int32 = overviewChartStyle == .automatic && overviewPeriod != .month
+        let chartHeight: Int32 = overviewChartStyle == .automatic && overviewPeriod != .month && !data.isHourly
             ? Int32(dayRows * 26 + 46) : 210
         let contentHeight = Int32(330 + rowCount * 30) + chartHeight + customHeight
         dlg_reset_content(dlg, contentHeight)
@@ -1908,7 +1909,7 @@ final class WindowsApp: @unchecked Sendable {
         y += 28
         let listHeight = Int32(56 + rowCount * 30)
         dlg_add_card(dlg, 22, y, 760, listHeight)
-        brand_add_static(dlg, activeDay?.dateKey ?? L10n.shared.tr("overview.overview"), 36, y + 7, 220, 22)
+        brand_add_static(dlg, activeDay.map { HourlyOverviewLabels.label($0.dateKey) } ?? L10n.shared.tr("overview.overview"), 36, y + 7, 260, 22)
         appendOverviewColumns(dlg, y: y + 29, name: L10n.shared.tr("overview.name"), tokens: tokenHeader, messages: L10n.shared.tr("overview.messages"), cost: L10n.shared.tr("overview.cost"), cache: L10n.shared.tr("overview.averageCache"))
         if displayRows.isEmpty {
             brand_add_subtitle(dlg, L10n.shared.tr("overview.noData"), 42, y + 38, 700, 24)
@@ -1927,6 +1928,7 @@ final class WindowsApp: @unchecked Sendable {
         y += listHeight + 12
 
         var notes: [String] = []
+        if data.hasPartialHourlyData { notes.append(HourlyOverviewLabels.partial) }
         if data.summary.cost.available { notes.append(L10n.shared.tr("overview.apiEquivalentCost")) }
         if data.containsLegacyCacheEstimate { notes.append(L10n.shared.tr("overview.estimatedCache")) }
         if data.containsUnavailableCost { notes.append(L10n.shared.tr("overview.partialCost")) }
@@ -1951,12 +1953,12 @@ final class WindowsApp: @unchecked Sendable {
         modelData: UsageOverviewData,
         y: Int32
     ) -> Int32 {
-        brand_add_section(dlg, L10n.shared.tr("overview.daily"), 24, y, 200, 24)
+        brand_add_section(dlg, data.isHourly ? HourlyOverviewLabels.title : L10n.shared.tr("overview.daily"), 24, y, 200, 24)
         let cardY = y + 28
         let days = Array(data.days.suffix(30))
         let maxTokens = max(1, days.map { $0.metrics.displayedTokens(includingCacheRead: overviewIncludesCacheRead) }.max() ?? 1)
 
-        if overviewChartStyle == .automatic, overviewPeriod != .month {
+        if overviewChartStyle == .automatic, overviewPeriod != .month, !data.isHourly {
             dlg_add_card(dlg, 22, cardY, 760, Int32(days.count * 26 + 18))
             for (index, day) in days.enumerated() {
                 let rowY = cardY + 8 + Int32(index * 26)
@@ -1971,7 +1973,8 @@ final class WindowsApp: @unchecked Sendable {
 
         let chartHeight: Int32 = 174
         dlg_add_card(dlg, 22, cardY, 760, chartHeight)
-        switch overviewChartStyle {
+        let effectiveStyle: OverviewChartStyle = data.isHourly && overviewChartStyle == .automatic ? .line : overviewChartStyle
+        switch effectiveStyle {
         case .automatic:
             let leading = days.first.flatMap { overviewDate($0.dateKey) }.map {
                 (Calendar.current.component(.weekday, from: $0) - Calendar.current.firstWeekday + 7) % 7
@@ -2033,7 +2036,7 @@ final class WindowsApp: @unchecked Sendable {
     }
 
     private func overviewDayTooltip(_ day: UsageOverviewDay) -> String {
-        var lines = ["\(day.dateKey) · \(TokenFormat.compact(day.metrics.displayedTokens(includingCacheRead: overviewIncludesCacheRead))) tokens"]
+        var lines = ["\(HourlyOverviewLabels.label(day.dateKey)) · \(TokenFormat.compact(day.metrics.displayedTokens(includingCacheRead: overviewIncludesCacheRead))) tokens"]
         lines += day.rows.map {
             "\($0.emoji) \($0.name): \(TokenFormat.compact($0.metrics.displayedTokens(includingCacheRead: overviewIncludesCacheRead)))"
         }
@@ -2041,6 +2044,7 @@ final class WindowsApp: @unchecked Sendable {
     }
 
     private func overviewAxisLabel(_ key: String, previous: String?) -> String {
+        if key.count == 13 { return String(key.suffix(2)) }
         let parts = key.split(separator: "-")
         guard parts.count == 3 else { return key }
         let day = Int(parts[2]).map(String.init) ?? String(parts[2])

@@ -22,7 +22,7 @@ final class WindowsUsageModel: @unchecked Sendable {
     private var antigravityService = AntigravityUsageService()
     private var clineService = ClineUsageService()
     private var continueService = ContinueUsageService()
-    private var cursorAgentService = CursorAgentUsageService()
+    private var cursorAgentService = CursorAgentUsageService(onHourlyUpdate: HourlyHistoryStore.saveCursor)
     private var zcodeService = ZCodeUsageService()
     private var codeBuddyService: CodeBuddyStatsService?
     private var reloadServicesBeforeNextScan = false
@@ -165,6 +165,22 @@ final class WindowsUsageModel: @unchecked Sendable {
             codeBuddyUsage = codeBuddyService?.currentSessionUsage()
         }
 
+        let hourlySources: [(String, [String: HourlyUsage])] = [
+            ("Codex", codexService.hourlyData),
+            ("Claude Code", claudeCodeService.hourlyData),
+            ("Gemini CLI", geminiService.hourlyData),
+            ("OpenClaw", openclawService.hourlyData),
+            ("Antigravity", antigravityService.hourlyData),
+            ("OpenCode", opencodeService.hourlyData),
+            ("Qwen Code", qwenService.hourlyData),
+            ("Copilot", copilotService.hourlyData),
+            ("Continue", continueService.hourlyData),
+            ("Grok", grokService.hourlyData),
+            ("ZCode", zcodeService.hourlyData),
+        ]
+        for (name, hours) in hourlySources where enabledTools.contains(name) {
+            HourlyHistoryStore.shared.replace(tool: name, hours: hours, force: !incremental)
+        }
         var results: [String: ScanSnapshot] = [:]
         if enabledTools.contains("OpenClaw") {
             let usage = openclawService.todayUsage()
@@ -327,7 +343,7 @@ final class WindowsUsageModel: @unchecked Sendable {
         if enabledTools.contains("Antigravity") { antigravityService = AntigravityUsageService() }
         if enabledTools.contains("Cline") { clineService = ClineUsageService() }
         if enabledTools.contains("Continue") { continueService = ContinueUsageService() }
-        if enabledTools.contains("Cursor Agent") { cursorAgentService = CursorAgentUsageService() }
+        if enabledTools.contains("Cursor Agent") { cursorAgentService = CursorAgentUsageService(onHourlyUpdate: HourlyHistoryStore.saveCursor) }
         if enabledTools.contains("ZCode") { zcodeService = ZCodeUsageService() }
         if enabledTools.contains("CodeBuddy CLI") {
             codeBuddyService = CodeBuddyStatsService(endpoint: PathConfig.codeBuddyEndpoint())
