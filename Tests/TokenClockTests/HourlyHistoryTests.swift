@@ -78,6 +78,19 @@ final class HourlyHistoryTests: XCTestCase {
         XCTAssertTrue(report.hasPartialHourlyData)
         XCTAssertTrue(report.days.allSatisfy{$0.metrics.tokens == 0})
     }
+    func testNewerHoursDoNotDropUnsupportedToolsFromDayTotal() {
+        let key = DateHelper.dateKey(from: day())
+        let codex = hour(10).historyTool(name: "Codex")
+        let hermes = hour(30).historyTool(name: "Hermes")
+        let saved = DaySnapshot(date: key,totalTokens: 40,totalMessages: 2,tools: [codex,hermes])
+        let newer = DaySnapshot(date: key+"-01",totalTokens: 50,totalMessages: 1,tools: [hour(50).historyTool(name: "Codex")])
+        let result = UsageOverviewBuilder.makeHourly(date: day(),hourly: [newer],daily: [saved],grouping: .tool)
+        XCTAssertEqual(result.summary.tokens,80)
+        XCTAssertEqual(result.days[1].metrics.tokens,50)
+        XCTAssertEqual(Set(result.rows.map(\.name)),Set(["Codex","Hermes"]))
+        XCTAssertTrue(result.hasPartialHourlyData)
+    }
+
     func testUnstampedCountsCannotBecomeEventHours() throws {
         try temporary { root in
             let store = HourlyHistoryStore(path:root.appendingPathComponent("h.sqlite"))
