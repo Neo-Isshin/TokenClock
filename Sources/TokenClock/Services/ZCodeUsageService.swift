@@ -193,6 +193,9 @@ final class ZCodeUsageService: @unchecked Sendable {
             let hourKey = DateHelper.hourKey(from: date)
             add(tokens: tokens, messages: 1, to: dateKey, hourKey: hourKey)
             dailyCache[dateKey, default: 0] += cacheRead
+            let hourBuckets = ModelBuckets(input: freshInput, output: output + reasoning, cacheRead: cacheRead, cacheWrite: cacheWrite)
+            let hourCost = model.map { PricingService.shared.cost(of: [$0: hourBuckets]) } ?? .unavailable
+            hourlyData[hourKey]?.recordMetadata(tokens: tokens, cache: cacheRead, model: model, cost: hourCost)
 
             if let model {
                 let buckets = ModelBuckets(

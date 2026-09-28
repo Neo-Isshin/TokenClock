@@ -52,6 +52,17 @@ struct UsageOverviewView: View {
         self.onShare = onShare
     }
 
+    /// Deterministic view previews without changing the user's saved history.
+    init(previewData: UsageOverviewData, modelData: UsageOverviewData) {
+        initialRoute = nil; onShare = { _ in }
+        _period = State(initialValue: previewData.isHourly ? .custom : .week)
+        _customStart = State(initialValue: previewData.startDate)
+        _customEnd = State(initialValue: previewData.endDate)
+        _overview = State(initialValue: previewData)
+        _modelOverview = State(initialValue: modelData)
+        _routeApplied = State(initialValue: true)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             header
@@ -59,6 +70,9 @@ struct UsageOverviewView: View {
             metricCards
             dailyChart
             if period != .month || chartStyle != .automatic { breakdown }
+            if overview.hasPartialHourlyData {
+                Text(HourlyOverviewLabels.partial).font(.caption).foregroundStyle(.secondary)
+            }
             notes
         }
         .padding(22)
@@ -69,6 +83,9 @@ struct UsageOverviewView: View {
         )
         .background(Color(nsColor: .windowBackgroundColor))
         .onAppear { applyInitialRouteIfNeeded() }
+        .onReceive(NotificationCenter.default.publisher(for: HourlyHistoryStore.updated).debounce(for: .milliseconds(250), scheduler: RunLoop.main)) { _ in
+            if period == .custom { reload() }
+        }
         .onChange(of: period) { _ in reload() }
         .onChange(of: grouping) { _ in reload() }
         .onChange(of: includesCacheRead) { _ in reload() }
@@ -178,7 +195,7 @@ struct UsageOverviewView: View {
                 monthlyHeatmap
             } else {
                 HStack {
-                    Text(L10n.shared.tr("overview.daily")).font(.headline)
+                    Text(overview.isHourly ? HourlyOverviewLabels.title : L10n.shared.tr("overview.daily")).font(.headline)
                     Spacer()
                     chartStylePicker
                 }
@@ -276,7 +293,7 @@ struct UsageOverviewView: View {
                             )
                         chartDateLabel(day.dateKey, at: index)
                     }
-                    .help("\(day.dateKey) · \(TokenFormat.compact(displayedTokens(day.metrics))) tokens")
+                    .help("\(HourlyOverviewLabels.label(day.dateKey)) · \(TokenFormat.compact(displayedTokens(day.metrics))) tokens")
                     .frame(maxWidth: .infinity)
                     .contentShape(Rectangle())
                     .onTapGesture { selectDay(day.dateKey) }
@@ -349,7 +366,7 @@ struct UsageOverviewView: View {
                             )
                             .onTapGesture { selectDay(days[index].dateKey) }
                             .onHover { handleDayHover($0, dateKey: days[index].dateKey) }
-                            .help("\(days[index].dateKey) · \(TokenFormat.compact(value)) tokens")
+                            .help("\(HourlyOverviewLabels.label(days[index].dateKey)) · \(TokenFormat.compact(value)) tokens")
                     }
                 }
             }
@@ -409,7 +426,7 @@ struct UsageOverviewView: View {
                                             Rectangle()
                                                 .fill(modelColor(row.name))
                                                 .frame(height: CGFloat(value) / CGFloat(max(1, total)) * barHeight)
-                                                .help("\(day.dateKey) · \(displayName(row.name)) · \(TokenFormat.compact(value)) tokens")
+                                                .help("\(HourlyOverviewLabels.label(day.dateKey)) · \(displayName(row.name)) · \(TokenFormat.compact(value)) tokens")
                                         }
                                     }
                                     .frame(height: barHeight, alignment: .bottom)
@@ -504,6 +521,7 @@ struct UsageOverviewView: View {
     }
 
     private func dayNumber(_ dateKey: String) -> String {
+        if overview.isHourly { return String(dateKey.suffix(2)) }
         guard let value = dateKey.split(separator: "-").last, let day = Int(value) else { return dateKey }
         return "\(day)"
     }
@@ -587,7 +605,7 @@ struct UsageOverviewView: View {
     ) -> some View {
         VStack(alignment: .leading, spacing: 5) {
             HStack(alignment: .firstTextBaseline) {
-                Text(title).font(.system(size: 14, weight: .semibold))
+                Text(HourlyOverviewLabels.label(title)).font(.system(size: 14, weight: .semibold))
                 Spacer()
                 Text(TokenFormat.compact(displayedTokens(metrics)))
                     .font(.system(size: 14, weight: .bold, design: .rounded))
@@ -738,10 +756,10 @@ struct UsageOverviewView: View {
 
     private func reload() {
         hoveredDayKey = nil
-        if period != .month { selectedDayKey = nil }
+        if period != .month && !overview.isHourly { selectedDayKey = nil }
         let next = UsageOverviewBuilder.load(
             startDate: dates.0, endDate: dates.1, grouping: grouping,
-            includingCacheRead: includesCacheRead
+            includingCacheRead: includesCacheRead, hourlyWhenSingleDay: period == .custom
         )
         if let selectedDayKey, !next.days.contains(where: { $0.dateKey == selectedDayKey }) {
             self.selectedDayKey = nil
@@ -749,7 +767,7 @@ struct UsageOverviewView: View {
         overview = next
         modelOverview = grouping == .model ? next : UsageOverviewBuilder.load(
             startDate: dates.0, endDate: dates.1, grouping: .model,
-            includingCacheRead: includesCacheRead
+            includingCacheRead: includesCacheRead, hourlyWhenSingleDay: period == .custom
         )
     }
 
@@ -788,11 +806,12 @@ struct UsageOverviewView: View {
     private func shouldShowDate(at index: Int) -> Bool {
         let count = overview.days.count
         guard count > 1 else { return true }
-        let stride = count > 20 ? 7 : max(1, count / 6)
+        let stride = overview.isHourly ? 3 : (count > 20 ? 7 : max(1, count / 6))
         return index == 0 || index == count - 1 || index % stride == 0
     }
 
     private func shortDate(_ key: String) -> String {
+        if overview.isHourly { return String(key.suffix(2)) + ":00" }
         let parts = key.split(separator: "-")
         guard parts.count == 3 else { return key }
         return "\(parts[1])/\(parts[2])"

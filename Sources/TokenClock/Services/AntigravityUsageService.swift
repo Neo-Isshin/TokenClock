@@ -211,6 +211,11 @@ final class AntigravityUsageService: @unchecked Sendable {
                 hourlyData[hourKey] = HourlyUsage(tokens: total, messages: 1)
             }
 
+            if timestamp != nil {
+                let hourBuckets = ModelBuckets(input: inputTokens, output: outputTokens + thoughtTokens + toolTokens, cacheRead: cacheTokens)
+                hourlyData[hourKey]?.recordMetadata(tokens: total, cache: cacheTokens, model: model,
+                    cost: PricingService.shared.cost(of: [model: hourBuckets]))
+            }
             dailyCache[dateKey, default: 0] += cacheTokens
             dailyModelBuckets[dateKey, default: [:]][model, default: ModelBuckets()].merge(
                 ModelBuckets(

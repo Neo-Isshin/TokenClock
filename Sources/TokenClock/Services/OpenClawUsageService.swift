@@ -193,6 +193,7 @@ final class OpenClawUsageService: @unchecked Sendable {
     private func subtractHourlyContributions(_ contrib: [String: HourlyUsage]) {
         for (hourKey, usage) in contrib {
             if var existing = hourlyData[hourKey] {
+                existing.mergeMetadata(usage, subtract: true)
                 existing.tokens -= usage.tokens
                 existing.messages -= usage.messages
                 if existing.tokens <= 0 && existing.messages <= 0 {
@@ -319,6 +320,11 @@ final class OpenClawUsageService: @unchecked Sendable {
             hourlyContrib[result.hourKey] = existing
         } else {
             hourlyContrib[result.hourKey] = HourlyUsage(tokens: result.tokens, messages: 1)
+        }
+        if result.timestamp != nil {
+            let cost = ModelNormalizer.normalize(result.model).map { PricingService.shared.cost(of: [$0: result.buckets]) } ?? .unavailable
+            hourlyData[result.hourKey]?.recordMetadata(tokens: result.tokens, cache: result.cacheTokens, model: result.model, cost: cost)
+            hourlyContrib[result.hourKey]?.recordMetadata(tokens: result.tokens, cache: result.cacheTokens, model: result.model, cost: cost)
         }
         // cache
         dailyCache[result.dateKey, default: 0] += result.cacheTokens

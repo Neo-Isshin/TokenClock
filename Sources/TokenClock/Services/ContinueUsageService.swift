@@ -120,6 +120,7 @@ final class ContinueUsageService: @unchecked Sendable {
         let dateKey: String
         let hourKey: String
         let timestamp: Date?
+        var hasEventTimestamp = false
     }
 
     /// Continue.dev JSONL 字段多样，尝试多种可能
@@ -164,7 +165,7 @@ final class ContinueUsageService: @unchecked Sendable {
             date = DateHelper.parseISO8601(ts)
             guard dateKey.count == 10 else { return nil }
         }
-        return EventResult(tokens: total, dateKey: dateKey, hourKey: hourKey, timestamp: date)
+        return EventResult(tokens: total, dateKey: dateKey, hourKey: hourKey, timestamp: date, hasEventTimestamp: !ts.isEmpty && date != nil)
     }
 
     private func subtractDay(_ contrib: [String: DayUsage], from data: inout [String: DayUsage]) {
@@ -180,6 +181,7 @@ final class ContinueUsageService: @unchecked Sendable {
     private func subtractHour(_ contrib: [String: HourlyUsage], from data: inout [String: HourlyUsage]) {
         for (k, u) in contrib {
             if var e = data[k] {
+                e.mergeMetadata(u, subtract: true)
                 e.tokens -= u.tokens; e.messages -= u.messages
                 if e.tokens <= 0 && e.messages <= 0 { data.removeValue(forKey: k) }
                 else { data[k] = e }
@@ -200,6 +202,10 @@ final class ContinueUsageService: @unchecked Sendable {
         else { hourlyData[r.hourKey] = HourlyUsage(tokens: r.tokens, messages: 1) }
         if var e = hourly[r.hourKey] { e.tokens += r.tokens; e.messages += 1; hourly[r.hourKey] = e }
         else { hourly[r.hourKey] = HourlyUsage(tokens: r.tokens, messages: 1) }
+        if r.hasEventTimestamp {
+            hourlyData[r.hourKey]?.recordMetadata(tokens: r.tokens, cache: nil, model: nil)
+            hourly[r.hourKey]?.recordMetadata(tokens: r.tokens, cache: nil, model: nil)
+        }
 
         if r.dateKey == today, let ts = r.timestamp {
             recent.append(RecentEntry(timestamp: ts, tokens: r.tokens))

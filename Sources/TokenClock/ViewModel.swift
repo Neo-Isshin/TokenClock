@@ -390,7 +390,7 @@ final class ViewModel: ObservableObject {
     private let antigravityService = AntigravityUsageService()
     private let clineService = ClineUsageService()
     private let continueService = ContinueUsageService()
-    private let cursorAgentService = CursorAgentUsageService()
+    private let cursorAgentService = CursorAgentUsageService(onHourlyUpdate: HourlyHistoryStore.saveCursor)
     private let zcodeService = ZCodeUsageService()
 
     private static let allToolNames = ["OpenClaw", "Claude Code", "Gemini CLI", "Codex", "Hermes", "OpenCode", "Qwen Code", "Copilot", "Grok", "Aider", "Antigravity", "Cline", "Continue", "Cursor Agent", "ZCode"]
@@ -1525,6 +1525,22 @@ final class ViewModel: ObservableObject {
             }
 
             // 后台线程：提取数据（避免与主线程读取竞争）
+            let hourlySources: [(String, [String: HourlyUsage])] = [
+                ("Codex", self.codexService.hourlyData),
+                ("Claude Code", self.claudeCodeService.hourlyData),
+                ("Gemini CLI", self.geminiService.hourlyData),
+                ("OpenClaw", self.openclawService.hourlyData),
+                ("Antigravity", self.antigravityService.hourlyData),
+                ("OpenCode", self.opencodeService.hourlyData),
+                ("Qwen Code", self.qwenService.hourlyData),
+                ("Copilot", self.copilotService.hourlyData),
+                ("Continue", self.continueService.hourlyData),
+                ("Grok", self.grokService.hourlyData),
+                ("ZCode", self.zcodeService.hourlyData),
+            ]
+            for (name, hours) in hourlySources where enabled.contains(name) {
+                HourlyHistoryStore.shared.replace(tool: name, hours: hours, force: !incremental)
+            }
             var results: [String: ToolSnapshot] = [:]
             if enabled.contains("OpenClaw") {
                 let u = self.openclawService.todayUsage()
