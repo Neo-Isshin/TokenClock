@@ -33,7 +33,7 @@ final class LinuxUsageModel: @unchecked Sendable {
     private lazy var antigravityService = AntigravityUsageService()
     private lazy var clineService = ClineUsageService()
     private lazy var continueService = ContinueUsageService()
-    private lazy var cursorAgentService = CursorAgentUsageService()
+    private lazy var cursorAgentService = CursorAgentUsageService(onHourlyUpdate: HourlyHistoryStore.saveCursor)
 
     static let allToolNames = Set([
         "OpenClaw", "Claude Code", "Gemini CLI", "Codex", "Hermes", "OpenCode",
@@ -142,6 +142,21 @@ final class LinuxUsageModel: @unchecked Sendable {
         if enabled.contains("Continue") { incremental ? continueService.incrementalScan() : continueService.fullScan() }
         if enabled.contains("Cursor Agent") { incremental ? cursorAgentService.incrementalScan() : cursorAgentService.fullScan() }
 
+        let hourlySources: [(String, [String: HourlyUsage])] = [
+            ("Codex", codexService.hourlyData),
+            ("Claude Code", claudeCodeService.hourlyData),
+            ("Gemini CLI", geminiService.hourlyData),
+            ("OpenClaw", openclawService.hourlyData),
+            ("Antigravity", antigravityService.hourlyData),
+            ("OpenCode", opencodeService.hourlyData),
+            ("Qwen Code", qwenService.hourlyData),
+            ("Copilot", copilotService.hourlyData),
+            ("Continue", continueService.hourlyData),
+            ("Grok", grokService.hourlyData),
+        ]
+        for (name, hours) in hourlySources where enabled.contains(name) {
+            HourlyHistoryStore.shared.replace(tool: name, hours: hours, force: !incremental)
+        }
         var results: [String: ScanSnapshot] = [:]
         if enabled.contains("OpenClaw") {
             let usage = openclawService.todayUsage()

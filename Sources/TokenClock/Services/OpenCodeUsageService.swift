@@ -140,6 +140,7 @@ final class OpenCodeUsageService: @unchecked Sendable {
                 hourlyData[hourKey] = HourlyUsage(tokens: tokens, messages: 1)
             }
 
+            hourlyData[hourKey]?.recordMetadata(tokens: tokens, cache: Int(cacheRead), model: nil)
             dailyCache[dateKey, default: 0] += Int(cacheRead)
 
             if dateKey == today && date >= now.addingTimeInterval(-AppConfig.Scan.oneDaySeconds) {

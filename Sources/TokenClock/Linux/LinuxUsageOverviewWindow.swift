@@ -136,12 +136,13 @@ final class LinuxUsageOverviewWindow: @unchecked Sendable {
         let dates = selectedDates
         let data = UsageOverviewBuilder.load(
             startDate: dates.0, endDate: dates.1, grouping: grouping,
-            includingCacheRead: includesCacheRead
+            includingCacheRead: includesCacheRead, hourlyWhenSingleDay: period == .custom
         )
         let modelData = grouping == .model ? data : UsageOverviewBuilder.load(
             startDate: dates.0, endDate: dates.1, grouping: .model,
-            includingCacheRead: includesCacheRead
+            includingCacheRead: includesCacheRead, hourlyWhenSingleDay: period == .custom
         )
+        if let key = selectedDayKey, !data.days.contains(where: { $0.dateKey == key }) { selectedDayKey = nil }
         appendHeader(data, to: root)
         if period == .custom { appendCustomRange(to: root) }
         appendMetricCards(data.summary, to: root)
@@ -149,7 +150,7 @@ final class LinuxUsageOverviewWindow: @unchecked Sendable {
         let selected = selectedDayKey.flatMap { key in data.days.first { $0.dateKey == key } }
         appendBreakdown(
             selected?.rows ?? data.rows,
-            title: selected?.dateKey ?? L10n.shared.tr("overview.overview"),
+            title: selected.map { HourlyOverviewLabels.label($0.dateKey) } ?? L10n.shared.tr("overview.overview"),
             to: root
         )
         appendNotes(data, to: root)
@@ -247,7 +248,8 @@ final class LinuxUsageOverviewWindow: @unchecked Sendable {
         modelData: UsageOverviewData,
         to root: UnsafeMutablePointer<GtkWidget>
     ) {
-        appendSection(L10n.shared.tr("overview.daily"), to: root)
+        appendSection(data.isHourly ? HourlyOverviewLabels.title : L10n.shared.tr("overview.daily"), to: root)
+        if data.isHourly, chartStyle == .automatic { appendLineChart(data.days, to: root); return }
         switch chartStyle {
         case .automatic where period == .month:
             appendHeatmap(data.days, to: root)
@@ -401,6 +403,7 @@ final class LinuxUsageOverviewWindow: @unchecked Sendable {
     }
 
     private func axisDayLabel(_ dateKey: String, previous: UsageOverviewDay?) -> String {
+        if dateKey.count == 13 { return String(dateKey.suffix(2)) }
         let parts = dateKey.split(separator: "-")
         guard parts.count == 3 else { return dateKey }
         let day = Int(parts[2]).map(String.init) ?? String(parts[2])
@@ -416,7 +419,7 @@ final class LinuxUsageOverviewWindow: @unchecked Sendable {
     }
 
     private func dayTooltip(_ day: UsageOverviewDay) -> String {
-        var lines = ["\(day.dateKey) · \(TokenFormat.compact(displayedTokens(day.metrics))) tokens"]
+        var lines = ["\(HourlyOverviewLabels.label(day.dateKey)) · \(TokenFormat.compact(displayedTokens(day.metrics))) tokens"]
         lines += day.rows.map { "\($0.emoji) \($0.name): \(TokenFormat.compact(displayedTokens($0.metrics)))" }
         return lines.joined(separator: "\n")
     }
@@ -469,6 +472,7 @@ final class LinuxUsageOverviewWindow: @unchecked Sendable {
 
     private func appendNotes(_ data: UsageOverviewData, to root: UnsafeMutablePointer<GtkWidget>) {
         let notes = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 12)
+        if data.hasPartialHourlyData { appendNote(HourlyOverviewLabels.partial, to: notes) }
         if data.containsLegacyCacheEstimate { appendNote(L10n.shared.tr("overview.estimatedCache"), to: notes) }
         if data.containsUnavailableCost { appendNote(L10n.shared.tr("overview.partialCost"), to: notes) }
         if data.containsUnknownModel { appendNote(L10n.shared.tr("overview.unknownModel"), to: notes) }

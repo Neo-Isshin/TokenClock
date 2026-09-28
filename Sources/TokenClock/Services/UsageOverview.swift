@@ -51,6 +51,8 @@ struct UsageOverviewData: Sendable {
     let containsLegacyCacheEstimate: Bool
     let containsUnavailableCost: Bool
     let containsUnknownModel: Bool
+    var isHourly: Bool = false
+    var hasPartialHourlyData: Bool = false
 }
 
 enum UsageOverviewBuilder {
@@ -61,7 +63,9 @@ enum UsageOverviewBuilder {
         endDate: Date,
         grouping: UsageOverviewGrouping,
         includingCacheRead: Bool = false,
-        store: HistoryStore = .shared
+        store: HistoryStore = .shared,
+        hourlyWhenSingleDay: Bool = false,
+        hourlyStore: HourlyHistoryStore? = nil
     ) -> UsageOverviewData {
         let calendar = Calendar.current
         let start = calendar.startOfDay(for: min(startDate, endDate))
@@ -70,6 +74,10 @@ enum UsageOverviewBuilder {
             from: DateHelper.dateKey(from: start),
             through: DateHelper.dateKey(from: end)
         )
+        if hourlyWhenSingleDay, start == end {
+            return makeHourly(date: start, hourly: (hourlyStore ?? .shared).query(day: DateHelper.dateKey(from: start)),
+                daily: snapshots, grouping: grouping, includingCacheRead: includingCacheRead)
+        }
         return make(
             startDate: start, endDate: end, snapshots: snapshots,
             grouping: grouping, includingCacheRead: includingCacheRead
@@ -81,7 +89,8 @@ enum UsageOverviewBuilder {
         endDate: Date,
         snapshots: [DaySnapshot],
         grouping: UsageOverviewGrouping,
-        includingCacheRead: Bool = false
+        includingCacheRead: Bool = false,
+        bucketKeys: [String]? = nil
     ) -> UsageOverviewData {
         var summary = Accumulator()
         var dayMetrics: [String: UsageOverviewMetrics] = [:]
@@ -111,7 +120,7 @@ enum UsageOverviewBuilder {
             )
         }
 
-        let days = dateKeys(from: startDate, through: endDate).map { key in
+        let days = (bucketKeys ?? dateKeys(from: startDate, through: endDate)).map { key in
             UsageOverviewDay(dateKey: key, metrics: dayMetrics[key] ?? .zero, rows: dayRows[key] ?? [])
         }
         let rows = makeRows(from: grouped, grouping: grouping, includingCacheRead: includingCacheRead)
@@ -124,6 +133,24 @@ enum UsageOverviewBuilder {
                 (!finalSummary.cost.available || !finalSummary.cost.complete),
             containsUnknownModel: grouping == .model && unknownModel
         )
+    }
+
+    static func makeHourly(date: Date, hourly: [DaySnapshot], daily: [DaySnapshot],
+                           grouping: UsageOverviewGrouping, includingCacheRead: Bool = false) -> UsageOverviewData {
+        let day = DateHelper.dateKey(from: date)
+        let keys = (0..<24).map { day + "-" + String(format: "%02d", $0) }
+        let hours = make(startDate: date, endDate: date, snapshots: hourly.filter { keys.contains($0.date) },
+                         grouping: grouping, includingCacheRead: includingCacheRead, bucketKeys: keys)
+        let total = make(startDate: date, endDate: date, snapshots: daily.filter { $0.date == day },
+                         grouping: grouping, includingCacheRead: includingCacheRead)
+        let hourTokens = hours.summary.displayedTokens(includingCacheRead: includingCacheRead)
+        let dayTokens = total.summary.displayedTokens(includingCacheRead: includingCacheRead)
+        let header = dayTokens >= hourTokens && !daily.isEmpty ? total : hours
+        return UsageOverviewData(startDate: date,endDate: date,summary: header.summary,days: hours.days,rows: header.rows,
+            containsLegacyCacheEstimate: hours.containsLegacyCacheEstimate || header.containsLegacyCacheEstimate,
+            containsUnavailableCost: hours.containsUnavailableCost || header.containsUnavailableCost,
+            containsUnknownModel: hours.containsUnknownModel || header.containsUnknownModel,
+            isHourly: true, hasPartialHourlyData: dayTokens > hourTokens || !hours.summary.cacheIsExact)
     }
 
     private static func makeRows(

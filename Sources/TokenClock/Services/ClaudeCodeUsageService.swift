@@ -167,6 +167,7 @@ final class ClaudeCodeUsageService: @unchecked Sendable {
     private func subtractHourly(_ contrib: [String: HourlyUsage]) {
         for (k, u) in contrib {
             if var e = hourlyData[k] {
+                e.mergeMetadata(u, subtract: true)
                 e.tokens -= u.tokens; e.messages -= u.messages
                 if e.tokens <= 0 && e.messages <= 0 { hourlyData.removeValue(forKey: k) }
                 else { hourlyData[k] = e }
@@ -272,6 +273,10 @@ final class ClaudeCodeUsageService: @unchecked Sendable {
         if var e = hourly[r.hourKey] { e.tokens += r.tokens; e.messages += 1; hourly[r.hourKey] = e }
         else { hourly[r.hourKey] = HourlyUsage(tokens: r.tokens, messages: 1) }
         // cache tokens
+        if r.ts != nil {
+            hourlyData[r.hourKey]?.recordMetadata(tokens: r.tokens,cache: r.cacheTokens,model: r.model)
+            hourly[r.hourKey]?.recordMetadata(tokens: r.tokens,cache: r.cacheTokens,model: r.model)
+        }
         dailyCache[r.dateKey, default: 0] += r.cacheTokens
         cache[r.dateKey, default: 0] += r.cacheTokens
         // 费用分桶（按归一化模型名累计，跨日期后缀的同模型自动合并）

@@ -24,6 +24,7 @@ let linuxSources = [
     "Services/HermesUsageService.swift",
     "Services/JSONLLineReader.swift",
     "Services/HistoryStore.swift",
+    "Services/HourlyHistoryStore.swift",
     "Services/MockUsageService.swift",
     "Services/ModelEmoji.swift",
     "Services/BrandIconCatalog.swift",

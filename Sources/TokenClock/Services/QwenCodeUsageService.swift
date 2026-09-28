@@ -130,6 +130,7 @@ final class QwenCodeUsageService: @unchecked Sendable {
     private func subtractHour(_ contrib: [String: HourlyUsage], from data: inout [String: HourlyUsage]) {
         for (k, u) in contrib {
             if var e = data[k] {
+                e.mergeMetadata(u, subtract: true)
                 e.tokens -= u.tokens; e.messages -= u.messages
                 if e.tokens <= 0 && e.messages <= 0 { data.removeValue(forKey: k) }
                 else { data[k] = e }
@@ -179,6 +180,7 @@ final class QwenCodeUsageService: @unchecked Sendable {
         let dateKey: String
         let hourKey: String
         let timestamp: Date?
+        var hasEventTimestamp = false
     }
 
     private func parseEvent(_ msg: [String: Any]) -> Event? {
@@ -201,7 +203,7 @@ final class QwenCodeUsageService: @unchecked Sendable {
             guard dateKey.count == 10 else { return nil }
 
             return Event(tokens: total, cachedTokens: cached, dateKey: dateKey, hourKey: hourKey,
-                         timestamp: DateHelper.parseISO8601(ts))
+                         timestamp: DateHelper.parseISO8601(ts), hasEventTimestamp: DateHelper.parseISO8601(ts) != nil)
         }
 
         // Gemini API usageMetadata 格式: { "usageMetadata": { "promptTokenCount": N, "candidatesTokenCount": N, "cachedContentTokenCount": N }, "timestamp": "..." }
@@ -222,7 +224,7 @@ final class QwenCodeUsageService: @unchecked Sendable {
             guard dateKey.count == 10 else { return nil }
 
             return Event(tokens: total, cachedTokens: cached, dateKey: dateKey, hourKey: hourKey,
-                         timestamp: ts.isEmpty ? Date() : DateHelper.parseISO8601(ts))
+                         timestamp: ts.isEmpty ? Date() : DateHelper.parseISO8601(ts), hasEventTimestamp: DateHelper.parseISO8601(ts) != nil)
         }
 
         return nil
@@ -242,6 +244,10 @@ final class QwenCodeUsageService: @unchecked Sendable {
         else { hourlyData[r.hourKey] = HourlyUsage(tokens: r.tokens, messages: 1) }
         if var e = hourly[r.hourKey] { e.tokens += r.tokens; e.messages += 1; hourly[r.hourKey] = e }
         else { hourly[r.hourKey] = HourlyUsage(tokens: r.tokens, messages: 1) }
+        if r.hasEventTimestamp {
+            hourlyData[r.hourKey]?.recordMetadata(tokens: r.tokens, cache: r.cachedTokens, model: nil)
+            hourly[r.hourKey]?.recordMetadata(tokens: r.tokens, cache: r.cachedTokens, model: nil)
+        }
 
         dailyCache[r.dateKey, default: 0] += r.cachedTokens
         cache[r.dateKey, default: 0] += r.cachedTokens

@@ -42,6 +42,7 @@ final class CodexUsageService: @unchecked Sendable {
         var dailyCached: [String: Int] = [:]
         var hourlyTokens: [String: Int] = [:]
         var hourlyMessages: [String: Int] = [:]
+        var hourlyDetails: [String: HourlyUsage] = [:]
         var recentEntries: [RecentEntry] = []
         var modelTokens: [String: Int] = [:]
         /// dateKey → 归一化模型名 → 计费分桶（费用估算；input 已扣除 cached 部分）
@@ -207,6 +208,9 @@ final class CodexUsageService: @unchecked Sendable {
                 state.dailyCached[dateKey, default: 0] += cached
                 state.hourlyTokens[hourKey, default: 0] += tokens
                 state.hourlyMessages[hourKey, default: 0] += 1
+                let buckets = ModelBuckets(input: max(0,inputTokens-cached), output: outputTokens, cacheRead: cached)
+                let cost = ModelNormalizer.normalize(modelForTurn).map { PricingService.shared.cost(of: [$0:buckets]) } ?? .unavailable
+                state.hourlyDetails[hourKey, default: HourlyUsage(tokens: 0,messages: 0)].recordMetadata(tokens: tokens,cache: cached,model: modelForTurn,cost: cost)
                 if date >= recentCutoff {
                     state.recentEntries.append(RecentEntry(timestamp: date, tokens: tokens))
                 }
@@ -252,6 +256,7 @@ final class CodexUsageService: @unchecked Sendable {
             for (hourKey, tokens) in state.hourlyTokens {
                 hourlyData[hourKey, default: HourlyUsage(tokens: 0, messages: 0)].tokens += tokens
                 hourlyData[hourKey]!.messages += state.hourlyMessages[hourKey] ?? 0
+                if let detail = state.hourlyDetails[hourKey] { hourlyData[hourKey]!.mergeMetadata(detail) }
             }
             for (dateKey, models) in state.dailyBuckets {
                 for (model, b) in models {
