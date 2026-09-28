@@ -92,6 +92,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             viewModel: viewModel,
             onClose: { [weak self] in self?.notificationPanel.hide() },
             onOpen: { [weak self] notification in
+                if let url = notification.releaseURL {
+                    self?.notificationPanel.hide()
+                    NSWorkspace.shared.open(url)
+                    return
+                }
                 if let accountID = notification.subscriptionAccountID {
                     self?.notificationPanel.hide()
                     self?.showSubscriptionQuotaWindow()
@@ -1223,7 +1228,7 @@ private struct NotificationCenterView: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 10) {
                         ForEach(viewModel.notifications) { notification in
-                            if notification.route != nil || notification.subscriptionAccountID != nil {
+                            if notification.route != nil || notification.subscriptionAccountID != nil || notification.releaseURL != nil {
                                 Button { onOpen(notification) } label: {
                                     notificationRow(notification, showsDisclosure: true)
                                 }
