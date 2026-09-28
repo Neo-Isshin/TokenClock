@@ -77,9 +77,10 @@ struct RecentEntry: Sendable {
 }
 
 /// 按小时聚合的 token 数据
-struct HourlyUsage: Sendable {
+struct HourlyUsage: Sendable, Codable {
     var tokens: Int
     var messages: Int
+    var parts: [String: HourlyUsagePart] = [:]
 }
 
 /// 日期工具

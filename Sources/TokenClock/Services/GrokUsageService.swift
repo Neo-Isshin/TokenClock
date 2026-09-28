@@ -122,6 +122,7 @@ final class GrokUsageService: @unchecked Sendable {
     private func subtractHour(_ contrib: [String: HourlyUsage], from data: inout [String: HourlyUsage]) {
         for (k, u) in contrib {
             if var e = data[k] {
+                e.mergeMetadata(u, subtract: true)
                 e.tokens -= u.tokens; e.messages -= u.messages
                 if e.tokens <= 0 && e.messages <= 0 { data.removeValue(forKey: k) }
                 else { data[k] = e }
@@ -155,6 +156,10 @@ final class GrokUsageService: @unchecked Sendable {
             else { hourlyData[hourKey] = HourlyUsage(tokens: totalTokens, messages: 1) }
             if var e = newHourly[hourKey] { e.tokens += totalTokens; e.messages += 1; newHourly[hourKey] = e }
             else { newHourly[hourKey] = HourlyUsage(tokens: totalTokens, messages: 1) }
+            if DateHelper.parseISO8601(ts) != nil {
+                hourlyData[hourKey]?.recordMetadata(tokens: totalTokens, cache: nil, model: obj["model"] as? String)
+                newHourly[hourKey]?.recordMetadata(tokens: totalTokens, cache: nil, model: obj["model"] as? String)
+            }
 
             if dateKey == today {
                 let date = ts.isEmpty ? Date() : (DateHelper.parseISO8601(ts) ?? Date())

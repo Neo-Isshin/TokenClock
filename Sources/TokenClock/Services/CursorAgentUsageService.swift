@@ -65,7 +65,9 @@ final class CursorAgentUsageService: @unchecked Sendable {
     private var userId: String?
     private var lastFetchTime: Date = .distantPast
 
-    init() {
+    private let onHourlyUpdate: (@Sendable ([String: HourlyUsage], [String: HourlyUsage]) -> Void)?
+    init(onHourlyUpdate: (@Sendable ([String: HourlyUsage], [String: HourlyUsage]) -> Void)? = nil) {
+        self.onHourlyUpdate = onHourlyUpdate
 #if !os(Windows)
         let config = URLSessionConfiguration.default
         config.timeoutIntervalForRequest = AppConfig.HTTP.requestTimeout
@@ -393,6 +395,7 @@ final class CursorAgentUsageService: @unchecked Sendable {
     /// rangeDays > 2 时（fullScan），先清空再重建；否则增量覆盖当日
     /// internal 便于用真实 API 响应形状做解析回归测试。
     func applyEvents(_ events: [[String: Any]], rangeDays: Int) {
+        defer { onHourlyUpdate?(hourlyData, hourlyGrokBotData) }
         if rangeDays >= 30 {
             // 全量重建
             dailyData.removeAll()
@@ -489,6 +492,14 @@ final class CursorAgentUsageService: @unchecked Sendable {
                 dailyCache[dateKey, default: 0] += cacheRead
             }
 
+            let hourModel = Self.normalizeDashboardModel(rawModel)
+            let hourBuckets = ModelBuckets(input: inputTokens, output: outputTokens, cacheRead: cacheRead, cacheWrite: cacheWrite)
+            let hourCost = hourModel.map { PricingService.shared.cost(of: [$0: hourBuckets]) } ?? .unavailable
+            if isGrokBot {
+                hourlyGrokBotData[hourKey]?.recordMetadata(tokens: total, cache: cacheRead, model: hourModel, cost: hourCost)
+            } else {
+                hourlyData[hourKey]?.recordMetadata(tokens: total, cache: cacheRead, model: hourModel, cost: hourCost)
+            }
             if let model = Self.normalizeDashboardModel(rawModel) {
                 dailyModelBuckets[dateKey, default: [:]][model, default: ModelBuckets()].merge(
                     ModelBuckets(
