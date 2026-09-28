@@ -476,6 +476,7 @@ final class ViewModel: ObservableObject {
 
     func markNotificationsRead() {
         BillingReminderStore.markRead()
+        ReleaseUpdateService.shared.markRead()
         guard unreadNotificationCount > 0 else { return }
         notifications = notifications.map {
             var notification = $0
@@ -487,7 +488,8 @@ final class ViewModel: ObservableObject {
     private var lastBillingFetch = Date.distantPast
     private func refreshBillingNotices() {
         let billing = BillingReminderStore.notifications(accounts: subscriptionAccounts)
-        notifications = (notifications.filter { $0.subscriptionAccountID == nil } + billing)
+        notifications = (notifications.filter { $0.subscriptionAccountID == nil && $0.releaseURL == nil }
+                         + billing + ReleaseUpdateService.shared.notifications())
             .sorted { $0.createdAt > $1.createdAt }
     }
     private func refreshBillingIfNeeded() {
@@ -1299,6 +1301,10 @@ final class ViewModel: ObservableObject {
     }
 
     private func generatePendingReports(through completedDate: Date) {
+        refreshBillingNotices()
+        ReleaseUpdateService.shared.checkDaily { [weak self] in
+            Task { @MainActor [weak self] in self?.refreshBillingNotices() }
+        }
         generatePendingDailyReports(through: completedDate)
         generatePendingWeeklyReports(through: completedDate)
         generatePendingMonthlyReports(through: completedDate)

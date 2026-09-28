@@ -23,7 +23,11 @@ final class BrandIconCatalogTests: XCTestCase {
 
     func testToolAndModelIdentitiesRemainDistinct() {
         XCTAssertEqual(BrandIconCatalog.key(for: "Codex"), "codex")
-        XCTAssertEqual(BrandIconCatalog.key(for: "openai/gpt-6-astra"), "openai")
+        for name in ["ChatGPT", "openai/gpt-6-astra", "gpt-6-sol", "gpt-6-luna", "o3", "o4-mini"] {
+            XCTAssertEqual(BrandIconCatalog.key(for: name), BrandIconCatalog.key(for: "Codex"))
+            XCTAssertEqual(BrandIconCatalog.token(for: name, fallback: "💫", style: .official), "[[brand:codex]]")
+            XCTAssertEqual(BrandIconCatalog.token(for: name, fallback: "💫", style: .emoji), "💫")
+        }
         XCTAssertEqual(BrandIconCatalog.key(for: "Grok Bot"), "grok-bot")
         XCTAssertEqual(BrandIconCatalog.key(for: "grok-bot-default"), "grok")
         XCTAssertEqual(BrandIconCatalog.key(for: "Qwen Code"), "qwen-code")
