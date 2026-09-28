@@ -116,6 +116,7 @@ struct TokenClockNotification: Identifiable, Hashable {
     let createdAt: Date
     let route: UsageOverviewRoute?
     var subscriptionAccountID: String? = nil
+    var releaseURL: URL? = nil
     var isRead: Bool
 
     init(

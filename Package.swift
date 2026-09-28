@@ -36,6 +36,7 @@ let linuxSources = [
     "Services/ProviderQuotaService.swift",
     "Services/SubscriptionAccountStore.swift",
     "Services/SubscriptionBilling.swift",
+    "Services/ReleaseUpdateService.swift",
     "Services/QwenCodeUsageService.swift",
     "Services/TokenAccounting.swift",
     "Services/UsageAggregator.swift",

@@ -11,6 +11,7 @@ final class LinuxNotificationWindow: @unchecked Sendable {
     private let onOpen: (UsageOverviewRoute) -> Void
     private let onBilling: (String) -> Void
     private var billingRoutes: [String: String] = [:]
+    private var releaseRoutes: [String: URL] = [:]
     private lazy var opaque = Unmanaged.passUnretained(self).toOpaque()
 
     init(parent: UnsafeMutablePointer<GtkWidget>, onBilling: @escaping (String) -> Void = { _ in }, onOpen: @escaping (UsageOverviewRoute) -> Void) {
@@ -24,8 +25,9 @@ final class LinuxNotificationWindow: @unchecked Sendable {
         guard let window, let root else { return }
         routes.removeAll()
         billingRoutes.removeAll()
+        releaseRoutes.removeAll()
         tc_gtk_remove_all_children(root)
-        let actionable = notifications.filter { $0.route != nil || $0.subscriptionAccountID != nil }
+        let actionable = notifications.filter { $0.route != nil || $0.subscriptionAccountID != nil || $0.releaseURL != nil }
         if actionable.isEmpty {
             let empty = gtk_label_new(L10n.shared.tr("notification.empty"))
             gtk_widget_set_margin_top(empty, 20)
@@ -37,6 +39,7 @@ final class LinuxNotificationWindow: @unchecked Sendable {
                 let id = notification.id.uuidString
                 routes[id] = notification.route
                 billingRoutes[id] = notification.subscriptionAccountID
+                releaseRoutes[id] = notification.releaseURL
                 gtk_widget_set_name(button, "notification:\(id)")
                 gtk_button_set_relief(tc_gtk_button(button), GTK_RELIEF_NONE)
                 gtk_widget_set_tooltip_text(button, notification.message)
@@ -54,6 +57,11 @@ final class LinuxNotificationWindow: @unchecked Sendable {
 
     fileprivate func handleAction(widget: UnsafeMutablePointer<GtkWidget>) {
         let name = String(cString: tc_gtk_widget_name(widget))
+        if name.hasPrefix("notification:"), let url = releaseRoutes[String(name.dropFirst("notification:".count))] {
+            gtk_show_uri_on_window(tc_gtk_window(parent), url.absoluteString, 0, nil)
+            hide()
+            return
+        }
         if name.hasPrefix("notification:"), let account = billingRoutes[String(name.dropFirst("notification:".count))] {
             hide()
             onBilling(account)
