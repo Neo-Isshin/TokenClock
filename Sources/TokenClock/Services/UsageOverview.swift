@@ -141,16 +141,41 @@ enum UsageOverviewBuilder {
         let keys = (0..<24).map { day + "-" + String(format: "%02d", $0) }
         let hours = make(startDate: date, endDate: date, snapshots: hourly.filter { keys.contains($0.date) },
                          grouping: grouping, includingCacheRead: includingCacheRead, bucketKeys: keys)
-        let total = make(startDate: date, endDate: date, snapshots: daily.filter { $0.date == day },
-                         grouping: grouping, includingCacheRead: includingCacheRead)
-        let hourTokens = hours.summary.displayedTokens(includingCacheRead: includingCacheRead)
-        let dayTokens = total.summary.displayedTokens(includingCacheRead: includingCacheRead)
-        let header = dayTokens >= hourTokens && !daily.isEmpty ? total : hours
+        var combined: [String: DaySnapshot.Tool] = [:]
+        for snapshot in daily where snapshot.date == day {
+            for tool in snapshot.tools { combined[tool.name] = tool }
+        }
+        var sums: [String: Accumulator] = [:]
+        var sessions: [String: [DaySnapshot.Tool.Session]] = [:]
+        for snapshot in hourly where keys.contains(snapshot.date) {
+            for tool in snapshot.tools {
+                sums[tool.name, default: Accumulator()].add(tool: tool)
+                sessions[tool.name, default: []].append(contentsOf: tool.sessions)
+            }
+        }
+        var partial = combined.values.contains { sums[$0.name] == nil && ($0.tokens > 0 || $0.messages > 0) }
+        for (name, sum) in sums {
+            let metrics = sum.metrics
+            if let saved = combined[name] {
+                var baseline = Accumulator(); baseline.add(tool: saved)
+                if baseline.metrics.displayedTokens(includingCacheRead: includingCacheRead) > metrics.displayedTokens(includingCacheRead: includingCacheRead) {
+                    partial = true; continue
+                }
+            }
+            combined[name] = DaySnapshot.Tool(name: name, tokens: metrics.tokens, messages: metrics.messages,
+                cacheRate: metrics.averageCacheRate, isActive: false, cost: metrics.cost,
+                cacheReadTokens: metrics.cacheIsExact ? metrics.cacheReadTokens : nil, sessions: sessions[name] ?? [])
+        }
+        let tools = Array(combined.values)
+        let header = make(startDate: date,endDate: date,
+            snapshots: [DaySnapshot(date: day,totalTokens: tools.reduce(0){$0+$1.tokens},
+                totalMessages: tools.reduce(0){$0+$1.messages},tools: tools)],
+            grouping: grouping,includingCacheRead: includingCacheRead)
         return UsageOverviewData(startDate: date,endDate: date,summary: header.summary,days: hours.days,rows: header.rows,
             containsLegacyCacheEstimate: hours.containsLegacyCacheEstimate || header.containsLegacyCacheEstimate,
             containsUnavailableCost: hours.containsUnavailableCost || header.containsUnavailableCost,
             containsUnknownModel: hours.containsUnknownModel || header.containsUnknownModel,
-            isHourly: true, hasPartialHourlyData: dayTokens > hourTokens || !hours.summary.cacheIsExact)
+            isHourly: true, hasPartialHourlyData: partial || !hours.summary.cacheIsExact)
     }
 
     private static func makeRows(
