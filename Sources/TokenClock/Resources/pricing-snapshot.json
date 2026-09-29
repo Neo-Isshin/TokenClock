@@ -1,5 +1,5 @@
 {
-  "_meta": {"generatedAt": "2026-09-26T17:14:47Z", "unit": "USD/MTok", "source": "BerriAI/litellm model_prices_and_context_window.json", "officialOverrides": 32, "officialReviewAfter": "2026-11-21", "models": 317},
+  "_meta": {"generatedAt": "2026-09-29T09:53:31Z", "unit": "USD/MTok", "source": "BerriAI/litellm model_prices_and_context_window.json", "officialOverrides": 32, "officialReviewAfter": "2026-11-21", "models": 318},
   "models": {
     "chat-latest": {"in": 5.0, "out": 30.0, "cr": 0.5, "p": "openai"},
     "chatgpt-4o-latest": {"in": 5.0, "out": 15.0, "p": "openai"},
@@ -32,6 +32,7 @@
     "claude-sonnet-4-5-20250929": {"in": 3.0, "out": 15.0, "cr": 0.3, "cw": 3.75, "p": "anthropic"},
     "claude-sonnet-4-6": {"in": 3.0, "out": 15.0, "cr": 0.3, "cw": 3.75, "p": "anthropic"},
     "claude-sonnet-5": {"in": 2.0, "out": 10.0, "cr": 0.2, "cw": 2.5, "p": "anthropic"},
+    "claude-sonnet-5-5": {"in": 2.0, "out": 10.0, "cr": 0.2, "cw": 2.5, "p": "anthropic"},
     "codex-mini-latest": {"in": 1.5, "out": 6.0, "cr": 0.375, "p": "openai"},
     "computer-use-preview": {"in": 3.0, "out": 12.0, "p": "openai"},
     "dashscope/deepseek-v4-flash": {"in": 0.2, "out": 0.4, "cr": 0.04, "p": "dashscope"},
