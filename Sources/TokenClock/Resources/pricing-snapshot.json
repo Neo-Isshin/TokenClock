@@ -1,5 +1,5 @@
 {
-  "_meta": {"generatedAt": "2026-09-29T09:53:31Z", "unit": "USD/MTok", "source": "BerriAI/litellm model_prices_and_context_window.json", "officialOverrides": 32, "officialReviewAfter": "2026-11-21", "models": 318},
+  "_meta": {"generatedAt": "2026-09-30T09:45:50Z", "unit": "USD/MTok", "source": "BerriAI/litellm model_prices_and_context_window.json", "officialOverrides": 32, "officialReviewAfter": "2026-11-21", "models": 319},
   "models": {
     "chat-latest": {"in": 5.0, "out": 30.0, "cr": 0.5, "p": "openai"},
     "chatgpt-4o-latest": {"in": 5.0, "out": 15.0, "p": "openai"},
@@ -181,6 +181,7 @@
     "gpt-6-astra": {"in": 10.0, "out": 50.0, "cr": 1.0, "cw": 12.5, "lt": 272000, "lin": 20.0, "lout": 75.0, "lcr": 2.0, "lcw": 25.0, "pm": 2.0, "p": "openai"},
     "gpt-6-luna": {"in": 0.1, "out": 0.5, "cr": 0.01, "cw": 0.125, "lt": 272000, "lin": 0.2, "lout": 0.75, "lcr": 0.02, "lcw": 0.25, "pm": 2.0, "p": "openai"},
     "gpt-6-sol": {"in": 2.0, "out": 10.0, "cr": 0.2, "cw": 2.5, "lt": 272000, "lin": 4.0, "lout": 15.0, "lcr": 0.4, "lcw": 5.0, "pm": 2.0, "p": "openai"},
+    "gpt-6.1-sol": {"in": 2.0, "out": 10.0, "cr": 0.1, "cw": 2.5, "p": "openai"},
     "gpt-audio": {"in": 2.5, "out": 10.0, "p": "openai"},
     "gpt-audio-1.5": {"in": 2.5, "out": 10.0, "p": "openai"},
     "gpt-audio-2025-08-28": {"in": 2.5, "out": 10.0, "p": "openai"},
