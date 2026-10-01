@@ -78,6 +78,7 @@ final class L10n: @unchecked Sendable {
         "menu.appearance":       [.zhHans: "外观",                  .zhHant: "外觀",                 .en: "Appearance"],
         "menu.weatherTime":      [.zhHans: "天气与时间",             .zhHant: "天氣與時間",            .en: "Weather & Time"],
         "menu.general":          [.zhHans: "通用",                  .zhHant: "一般",                 .en: "General"],
+        "detail.generationSpeedHelp": [.zhHans: "近10分钟已完成响应的平均生成速度；仅统计有效计时，含思考输出，不含输入、缓存或工具执行。≈ 表示估算；— 表示数据不足。", .zhHant: "近10分鐘已完成回應的平均生成速度；僅統計有效計時，含思考輸出，不含輸入、快取或工具執行。≈ 表示估算；— 表示資料不足。", .en: "Average generation speed for completed responses in the last 10 minutes. Valid timings only; includes reasoning output, excludes input/cache/tool execution. ≈ is estimated; — means insufficient data."],
         "menu.myClockFaces":     [.zhHans: "✏️ 我的表盘",            .zhHant: "✏️ 我的錶盤",           .en: "✏️ My Clock Faces"],
         "menu.api":              [.zhHans: "🔌 API: localhost:%d/api/usage", .zhHant: "🔌 API: localhost:%d/api/usage", .en: "🔌 API: localhost:%d/api/usage"],
         "menu.overview":         [.zhHans: "📈 查看总计", .zhHant: "📈 查看總計", .en: "📈 Usage Overview"],

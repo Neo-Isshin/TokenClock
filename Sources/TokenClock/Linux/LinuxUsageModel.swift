@@ -157,6 +157,7 @@ final class LinuxUsageModel: @unchecked Sendable {
         for (name, hours) in hourlySources where enabled.contains(name) {
             HourlyHistoryStore.shared.replace(tool: name, hours: hours, force: !incremental)
         }
+        GenerationSpeedStore.shared.refresh(enabledTools: enabledTools)
         var results: [String: ScanSnapshot] = [:]
         if enabled.contains("OpenClaw") {
             let usage = openclawService.todayUsage()

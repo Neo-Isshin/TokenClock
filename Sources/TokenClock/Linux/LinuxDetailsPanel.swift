@@ -609,6 +609,8 @@ final class LinuxDetailsPanel: @unchecked Sendable {
         appendLabel(tr(valueMode == .tokens ? "detail.messages" : "detail.share"), width: 40, alignment: 1, style: "tokenclock-detail-header", to: row)
         if grouping == .session {
             appendLabel(tr("detail.cacheRate"), width: 44, alignment: 1, style: "tokenclock-detail-header", to: row)
+        } else {
+            appendLabel("t/s", width: 44, alignment: 1, style: "tokenclock-detail-header", to: row)
         }
         return row
     }
@@ -672,7 +674,7 @@ final class LinuxDetailsPanel: @unchecked Sendable {
                 title: "\(prefix) \(group.emoji) \(group.name)",
                 tokens: primaryValue(tokens: group.totalTokens, cacheRead: group.totalCacheReadTokens, cost: group.totalCost, includeCacheRead: includeCache),
                 messages: secondaryValue(tokens: group.totalTokens, cacheRead: group.totalCacheReadTokens, messages: group.totalMessages, total: total, includeCacheRead: includeCache),
-                trailing: nil,
+                trailing: group.generationSpeed.formatted,
                 actionName: group.contributions.isEmpty ? nil : "details:model-row:\(group.name)",
                 child: false,
                 to: list
@@ -683,7 +685,7 @@ final class LinuxDetailsPanel: @unchecked Sendable {
                         title: "    \(contribution.emoji) \(contribution.tool)",
                         tokens: primaryValue(tokens: contribution.tokens, cacheRead: contribution.cacheReadTokens, cost: contribution.cost, includeCacheRead: includeCache),
                         messages: secondaryValue(tokens: contribution.tokens, cacheRead: contribution.cacheReadTokens, messages: contribution.messages, total: total, includeCacheRead: includeCache),
-                        trailing: nil,
+                        trailing: GenerationSpeedStore.shared.summary(model: group.name, providers: [contribution.tool]).formatted,
                         actionName: nil,
                         child: true,
                         to: list

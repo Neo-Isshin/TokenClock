@@ -97,6 +97,9 @@ enum UsageAggregator {
 }
 /// 「按模型」视图：某个模型下，各工具对其的消耗贡献
 struct ModelGroup: Identifiable, Hashable {
+    var generationSpeed: GenerationSpeed {
+        GenerationSpeedStore.shared.summary(model: name, providers: Set(contributions.map(\.tool)))
+    }
     var id: String { name }
     /// 归一化后的模型名（或「未知」占位名）
     let name: String
