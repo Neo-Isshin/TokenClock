@@ -843,17 +843,12 @@ final class WindowsApp: @unchecked Sendable {
     }
 
     func trayClick(button: Int32) {
-        // 隐藏后，托盘左键始终恢复整个 TokenClock；可见时保留原有的详情切换行为。
-        // 双击会连发两次 LBUTTONUP，用 0.35s 去抖保证单击/双击都只处理一次。
+        // Toggle the entire clock, matching the macOS status item.
         if button == 1 {
             let now = Date()
             guard now.timeIntervalSince(lastTrayToggle) > 0.35 else { return }
-            if !mainVisible {
-                lastTrayToggle = now
-                setMainVisible(true)
-                return
-            }
-            toggleDetailsDebounced()
+            lastTrayToggle = now
+            setMainVisible(!mainVisible)
         }
     }
 
@@ -1148,7 +1143,7 @@ final class WindowsApp: @unchecked Sendable {
         defer { aboutDlg = nil; dlg_destroy(dlg) }
         dlg_add_brand_logo(dlg, 136, 22, 88, 88)
         brand_add_title(dlg, "TokenClock", 112, 120, 180, 30)
-        brand_add_static(dlg, "v1.5.11", 154, 154, 90, 22)
+        brand_add_static(dlg, "v1.5.12", 154, 154, 90, 22)
         dlg_add_sep(dlg, 28, 188, 304)
         brand_add_static(dlg, "Copyright © 2026 Neo-Isshin", 78, 210, 250, 22)
         brand_add_static(dlg, L10n.shared.tr("about.license"), 128, 238, 180, 22)

@@ -114,6 +114,7 @@ static void show_context_menu(HWND h, int x, int y) {
     if (x < 0 || y < 0) GetCursorPos(&pt);
     SetForegroundWindow(h);
     TrackPopupMenu(hmenu, TPM_RIGHTBUTTON, pt.x, pt.y, 0, h, NULL);
+    PostMessageW(h, WM_NULL, 0, 0);
     DestroyMenu(hmenu);
 }
 
@@ -331,9 +332,9 @@ static LRESULT CALLBACK wnd_proc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
         /* NOTIFYICON_VERSION_4: lParam low word = the mouse event, high word = icon id. */
         if (g_cb.on_tray_click) {
             switch (LOWORD(lp)) {
-            case WM_LBUTTONUP:
-            case WM_LBUTTONDBLCLK: g_cb.on_tray_click(g_cb.ctx, 1); break;
-            case WM_RBUTTONUP: {
+            case NIN_SELECT:
+            case NIN_KEYSELECT: g_cb.on_tray_click(g_cb.ctx, 1); break;
+            case WM_CONTEXTMENU: {
                 show_context_menu(h, -1, -1);
                 break;
             }
