@@ -191,6 +191,7 @@ final class PricingService: @unchecked Sendable {
         "kimi-k2.7-code-highspeed": "moonshot/kimi-k2.7-code-highspeed",
         "kimi-k2.6": "moonshot/kimi-k2.6",
         "kimi-k2.5": "moonshot/kimi-k2.5",
+        "glm-5.2": "zai/glm-5.2",
         "glm-5.1": "zai/glm-5.1",
         "glm-5": "zai/glm-5",
         "qwen3.8-max": "dashscope/qwen3.8-max",

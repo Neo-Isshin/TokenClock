@@ -366,37 +366,39 @@ final class ClaudeCodeUsageService: @unchecked Sendable {
         }
     }
 
-    // MARK: - 今日活跃 Session 列表
+    // MARK: - 今日 Session 列表
 
-    /// Claude Code session 存储十分零碎：session 元数据在 ~/.claude/sessions/*.json 中，
-    /// 实际对话记录在 ~/.claude/projects/<path>/<sessionId>.jsonl 中。
-    /// 需要先读取 sessions 目录获取 sessionId，再在 projects 中定位对应文件。
+    /// Usage logs survive closed sessions; optional metadata only enriches their labels.
     func todaySessions() -> [SessionInfo] {
         let sessionsDir = claudeHome + "/sessions"
-        var isDir: ObjCBool = false
-        guard fm.fileExists(atPath: sessionsDir, isDirectory: &isDir), isDir.boolValue else { return [] }
-        guard let sessionFiles = try? fm.contentsOfDirectory(atPath: sessionsDir) else { return [] }
+        let sessionFiles = (try? fm.contentsOfDirectory(atPath: sessionsDir)) ?? []
 
         let today = DateHelper.todayKey()
         let cachedUsage = cachedSessionUsage(for: today)
-        var seen = Set<String>()
+        var metadata: [String: [String: Any]] = [:]
         var results: [SessionInfo] = []
 
-        for file in sessionFiles where file.hasSuffix(".json") {
+        for file in sessionFiles.sorted() where file.hasSuffix(".json") {
             let metaPath = sessionsDir + "/" + file
             guard let metaData = fm.contents(atPath: metaPath),
                   let meta = try? JSONSerialization.jsonObject(with: metaData) as? [String: Any],
                   let sessionId = meta["sessionId"] as? String else { continue }
 
-            guard seen.insert(sessionId).inserted else { continue }
+            if metadata[sessionId] == nil { metadata[sessionId] = meta }
+        }
 
-            let usage = cachedUsage[sessionId]
-            let tokens = usage?.tokens ?? 0
-            let messages = usage?.messages ?? 0
-            let model = usage?.model
+        let activeCutoff = Date().addingTimeInterval(-AppConfig.Scan.activeThresholdSeconds)
+        for sessionId in cachedUsage.keys.sorted() {
+            guard let usage = cachedUsage[sessionId] else { continue }
+            let meta = metadata[sessionId] ?? [:]
+            let tokens = usage.tokens
+            let messages = usage.messages
+            let model = usage.model
             guard tokens > 0 || messages > 0 else { continue }
 
-            let displayId = SessionIdDisplay.format(sessionId)
+            let title = (meta["customTitle"] as? String ?? meta["title"] as? String)?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            let displayId = title.flatMap { $0.isEmpty ? nil : $0 } ?? SessionIdDisplay.format(sessionId)
             let cwd = meta["cwd"] as? String ?? ""
             let detail = cwd.isEmpty ? nil : cwd
 
@@ -406,10 +408,10 @@ final class ClaudeCodeUsageService: @unchecked Sendable {
                 detail: detail,
                 todayTokens: tokens,
                 todayMessages: messages,
-                isActive: true,
+                isActive: usage.lastActivity.map { $0 >= activeCutoff } ?? false,
                 model: model,
-                todayCost: usage.map { PricingService.shared.cost(of: $0.buckets) } ?? .zero,
-                cacheReadTokens: usage?.cacheReadTokens ?? 0
+                todayCost: PricingService.shared.cost(of: usage.buckets),
+                cacheReadTokens: usage.cacheReadTokens
             ))
         }
 
@@ -422,6 +424,7 @@ final class ClaudeCodeUsageService: @unchecked Sendable {
         var model: String?
         /// 该 session 今日的计费分桶（与 tokens 同源：顶层优先，其次嵌套明细）
         var buckets: [String: ModelBuckets] = [:]
+        var lastActivity: Date?
         /// 分桶中的缓存读合计（「包含缓存读」展示用）
         var cacheReadTokens: Int {
             buckets.values.reduce(0) { $0 + $1.cacheRead }
@@ -433,7 +436,8 @@ final class ClaudeCodeUsageService: @unchecked Sendable {
 
         // Top-level files have always been scanned for tool totals; reuse those
         // contributions first so the detail result retains the old lookup order.
-        for (path, dates) in fileDailyContrib {
+        for path in fileDailyContrib.keys.sorted() {
+            guard let dates = fileDailyContrib[path] else { continue }
             guard let usage = dates[dateKey] else { continue }
             let sessionId = sessionId(fromJSONLPath: path)
             guard !sessionId.isEmpty, result[sessionId] == nil else { continue }
@@ -441,13 +445,15 @@ final class ClaudeCodeUsageService: @unchecked Sendable {
                 tokens: usage.tokens,
                 messages: usage.messages,
                 model: fileLastModel[path]?[dateKey],
-                buckets: fileBucketContrib[path]?[dateKey] ?? [:]
+                buckets: fileBucketContrib[path]?[dateKey] ?? [:],
+                lastActivity: fileRecentContrib[path]?.map(\.timestamp).max()
             )
         }
 
         // Nested files remain detail-only, matching the baseline aggregation
         // boundary while preserving recursive session discovery.
-        for (path, dates) in nestedDailyContrib {
+        for path in nestedDailyContrib.keys.sorted() {
+            guard let dates = nestedDailyContrib[path] else { continue }
             guard let usage = dates[dateKey] else { continue }
             let sessionId = sessionId(fromJSONLPath: path)
             guard !sessionId.isEmpty, result[sessionId] == nil else { continue }
