@@ -218,9 +218,18 @@ cmd_start() {
     echo "Detected Linux → selecting the normal GTK3 build"
   elif [ -z "$variant" ]; then
     local m; m="$(os_major)"
+    local preferred; preferred="$(defaults read TokenClock TC_preferredMacVariant 2>/dev/null || true)"
+    case "$preferred" in
+      normal) variant=normal ;;
+      glass) [ "$m" -lt "$LIQUID_GLASS_MIN_MACOS" ] || variant=glass ;;
+    esac
+    if [ -n "$variant" ]; then
+      echo "Using preferred macOS edition: $variant"
+    else
     if   [ "$m" -ge "$LIQUID_GLASS_MIN_MACOS" ]; then variant=glass;  echo "Detected macOS $m → auto-selecting the liquid-glass build"
     elif [ "$m" -ge "$MIN_MACOS" ]; then variant=normal; echo "Detected macOS $m → auto-selecting the normal build"
     else die "macOS $MIN_MACOS or later is required (current major version ${m:-unknown})."
+    fi
     fi
   fi
 
