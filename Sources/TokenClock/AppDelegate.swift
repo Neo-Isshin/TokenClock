@@ -234,7 +234,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         button.imagePosition = .imageOnly
         button.imageScaling = .scaleProportionallyDown
         button.target = self
-        button.action = #selector(toggleStatusBarVisibility(_:))
+        button.action = #selector(statusBarClicked(_:))
+        button.sendAction(on: [.leftMouseUp, .rightMouseUp])
         statusItem = item
 
         NotificationCenter.default.addObserver(
@@ -260,11 +261,45 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         button.setAccessibilityLabel("TokenClock — \(actionLabel)")
     }
 
+    @objc private func statusBarClicked(_ sender: NSStatusBarButton) {
+        let event = NSApp.currentEvent
+        if event?.type == .rightMouseUp || event?.modifierFlags.contains(.control) == true {
+            showStatusBarMenu(sender)
+        } else {
+            toggleStatusBarVisibility(sender)
+        }
+    }
+
+    private func showStatusBarMenu(_ button: NSStatusBarButton) {
+        let menu = (panel?.menu?.copy() as? NSMenu) ?? NSMenu()
+        let toggle = NSMenuItem(
+            title: L10n.shared.tr(statusBarVisibility.isHidden ? "status.show" : "status.hide"),
+            action: #selector(toggleStatusBarVisibility(_:)), keyEquivalent: ""
+        )
+        toggle.target = self
+        menu.insertItem(toggle, at: 0)
+        menu.insertItem(.separator(), at: 1)
+        // A status button has a different responder chain from the clock panel.
+        func connectActions(_ menu: NSMenu) {
+            for item in menu.items {
+                if item.action != nil && item.target == nil { item.target = self }
+                if let submenu = item.submenu { connectActions(submenu) }
+            }
+        }
+        connectActions(menu)
+        menu.popUp(positioning: nil, at: NSPoint(x: 0, y: button.bounds.maxY), in: button)
+        // Actions such as opacity update the copied menu's checkmarks in place.
+        if panel != nil { setupRightClickMenu() }
+    }
+
     @objc private func toggleStatusBarVisibility(_ sender: Any?) {
         if statusBarVisibility.isHidden {
             statusBarVisibility.setHidden(false)
             NSApp.unhideWithoutActivation()
-            panel.orderFront(nil)
+            isHiddenForFullscreen = false
+            NSApp.activate(ignoringOtherApps: true)
+            // Raise once, without changing the user's persistent window level.
+            panel?.orderFrontRegardless()
         } else {
             statusBarVisibility.setHidden(true)
             // Close transient picker tracking before hiding the app. NSApp.hide
@@ -766,6 +801,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
         var shouldHide = false
         for w in info {
+            // The list is front-to-back: windows behind our visible dial cannot cover it.
+            if (w[kCGWindowNumber as String] as? NSNumber)?.intValue == panel.windowNumber { break }
             if (w[kCGWindowOwnerName as String] as? String) == "TokenClock" { continue }
             let layer = (w[kCGWindowLayer as String] as? Int) ?? -1
             guard layer == 0 else { continue }   // 仅普通 app 窗口（排除菜单栏/Dock 正层 + 桌面/WindowServer 负层）
