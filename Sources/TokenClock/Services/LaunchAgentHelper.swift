@@ -47,7 +47,7 @@ enum LaunchAgentHelper {
         if lastComponent != "TokenClock" { return nil }
         if let v = Variant(rawValue: parent) { return v }
         // 开发态 `.build/<config>/TokenClock` → fallback
-        return .glass
+        return Variant(rawValue: AppConfig.macOSVariant)
     }
 
     /// plist 完整路径：`~/Library/LaunchAgents/com.tokenclock.app.<variant>.plist`

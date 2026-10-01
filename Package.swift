@@ -182,6 +182,7 @@ let package = Package(
             resources: [
                 .copy("Resources/glass_disc.png"),
                 .copy("Resources/pricing-snapshot.json"),
+                .copy("Resources/macos-variant-switch.sh"),
                 .copy("Resources/BrandIcons"),
             ],
             swiftSettings: [.unsafeFlags(["-parse-as-library"])]

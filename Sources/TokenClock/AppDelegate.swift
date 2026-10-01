@@ -17,6 +17,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var themePickerPanel: NSPanel?
     private var themePickerEventMonitor: Any?
     private var statusItem: NSStatusItem?
+    private var isSwitchingEdition = false
     private var statusBarVisibility = StatusBarVisibilityState()
 
     // 全屏智能隐藏（仅 alwaysOnTop=OFF 时启用）：见下方 MARK 区
@@ -180,6 +181,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         setupStatusBarItem()
         panel.makeKeyAndOrderFront(nil)
         setupRightClickMenu()
+
+        if UserDefaults.standard.string(forKey: MacVariantSwitcher.failureKey) != nil {
+            UserDefaults.standard.removeObject(forKey: MacVariantSwitcher.failureKey)
+            DispatchQueue.main.async {
+                let alert = NSAlert()
+                alert.messageText = L10n.shared.tr("edition.failed")
+                alert.informativeText = L10n.shared.tr("edition.restored")
+                alert.runModal()
+            }
+        }
         // 兜底迁移：清理旧的 installer plist / SMAppService 残留
         LaunchAgentHelper.cleanupLegacy()
     }
@@ -524,6 +535,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
         generalMenu.addItem(alwaysOnTopItem)
         generalMenu.addItem(launchItem)
+        let editionMenu = NSMenu()
+        let currentEdition = LaunchAgentHelper.detectVariant()
+        for edition in LaunchAgentHelper.Variant.allCases {
+            let item = NSMenuItem(title: edition == .glass ? "Glass" : "Normal",
+                                  action: #selector(switchMacEdition(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = edition.rawValue
+            item.state = currentEdition == edition ? .on : .off
+            item.isEnabled = !isSwitchingEdition && currentEdition != edition && MacVariantSwitcher.supported(edition)
+            if !MacVariantSwitcher.supported(edition) { item.toolTip = tr("edition.requires26") }
+            editionMenu.addItem(item)
+        }
+        editionMenu.autoenablesItems = false
+        let editionItem = NSMenuItem(title: tr(isSwitchingEdition ? "edition.switching" : "edition.menu"), action: nil, keyEquivalent: "")
+        editionItem.submenu = editionMenu
+        generalMenu.addItem(editionItem)
         generalMenu.addItem(.separator())
         generalMenu.addItem(langItem)
         generalMenu.addItem(apiItem)
@@ -554,6 +581,41 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     // MARK: - 菜单 Actions
+
+    @objc private func switchMacEdition(_ sender: NSMenuItem) {
+        guard !isSwitchingEdition, let raw = sender.representedObject as? String,
+              let target = LaunchAgentHelper.Variant(rawValue: raw),
+              let source = LaunchAgentHelper.detectVariant(), target != source else { return }
+        if MacVariantSwitcher.needsInstallation(target) {
+            let alert = NSAlert()
+            alert.messageText = L10n.shared.tr("edition.downloadTitle")
+            alert.informativeText = L10n.shared.tr("edition.downloadBody", target == .glass ? "Glass" : "Normal")
+            alert.addButton(withTitle: L10n.shared.tr("edition.installSwitch"))
+            alert.addButton(withTitle: L10n.shared.tr("edition.cancel"))
+            guard alert.runModal() == .alertFirstButtonReturn else { return }
+        }
+        isSwitchingEdition = true
+        setupRightClickMenu()
+        Task {
+            do {
+                try await MacVariantSwitcher.prepare(target)
+                let enabled = UserDefaults.standard.object(forKey: SettingsKey.launchAtLogin.rawValue)
+                    .map { _ in UserDefaults.standard.bool(for: .launchAtLogin) }
+                    ?? LaunchAgentHelper.isRegistered(variant: source)
+                try MacVariantSwitcher.launchHandoff(to: target, from: source,
+                    sourcePath: ProcessInfo.processInfo.arguments[0], sourcePID: ProcessInfo.processInfo.processIdentifier,
+                    launchAtLogin: enabled)
+                NSApp.terminate(nil)
+            } catch {
+                isSwitchingEdition = false
+                setupRightClickMenu()
+                let alert = NSAlert()
+                alert.messageText = L10n.shared.tr("edition.failed")
+                alert.informativeText = error.localizedDescription
+                alert.runModal()
+            }
+        }
+    }
 
     @objc private func selectClockSize(_ sender: NSMenuItem) {
         guard let raw = sender.representedObject as? String,
