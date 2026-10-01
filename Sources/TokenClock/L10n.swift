@@ -107,6 +107,7 @@ final class L10n: @unchecked Sendable {
         "menu.settings":         [.zhHans: "⚙️ 设置",              .zhHant: "⚙️ 設定",              .en: "⚙️ Settings"],
         "menu.launchAtLogin":    [.zhHans: "开机自启",              .zhHant: "開機自啟",              .en: "Launch at Login"],
         "menu.dialTextColor":    [.zhHans: "文字颜色",             .zhHant: "文字顏色",              .en: "Text Color"],
+        "detail.generationSpeedHelp": [.zhHans: "近10分钟已完成响应的平均生成速度；仅统计有效计时，含思考输出，不含输入、缓存或工具执行。≈ 表示估算；— 表示数据不足。", .zhHant: "近10分鐘已完成回應的平均生成速度；僅統計有效計時，含思考輸出，不含輸入、快取或工具執行。≈ 表示估算；— 表示資料不足。", .en: "Average generation speed for completed responses in the last 10 minutes. Valid timings only; includes reasoning output, excludes input/cache/tool execution. ≈ is estimated; — means insufficient data."],
         "menu.dialTextTheme":    [.zhHans: "跟随主题",             .zhHant: "跟隨主題",              .en: "Follow Theme"],
         "menu.dialTextWhite":    [.zhHans: "白色",                 .zhHant: "白色",                  .en: "White"],
         "menu.dialTextBlack":    [.zhHans: "黑色",                 .zhHant: "黑色",                  .en: "Black"],

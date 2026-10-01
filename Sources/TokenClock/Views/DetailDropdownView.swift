@@ -264,6 +264,10 @@ struct DetailDropdownView: View {
                 }
                 .font(.system(size: 9, weight: .medium))
                 .foregroundColor(headerColor)
+                    } else {
+                        Text("t/s")
+                            .frame(width: 48, alignment: .trailing)
+                            .help(L10n.shared.tr("detail.generationSpeedHelp"))
                 .padding(.horizontal, 16)
                 .padding(.top, 6)
                 .padding(.bottom, 4)
@@ -1016,8 +1020,13 @@ private struct ModelExpandableRow: View {
                         .padding(.horizontal, 12)
 
                     ForEach(group.contributions) { c in
-                        ModelContributionRow(contribution: c, theme: theme, textColorOverride: textColorOverride, valueMode: valueMode, grandTotal: grandTotal, usageIncludesCache: usageIncludesCache)
+                        ModelContributionRow(contribution: c, modelName: group.name, theme: theme, textColorOverride: textColorOverride, valueMode: valueMode, grandTotal: grandTotal, usageIncludesCache: usageIncludesCache)
                     }
+                    Text(group.generationSpeed.formatted)
+                        .font(.system(size: 9, design: .monospaced))
+                        .foregroundColor(subtextColor)
+                        .frame(width: 48, alignment: .trailing)
+                        .help(L10n.shared.tr("detail.generationSpeedHelp"))
                 }
                 .transition(.opacity.combined(with: .move(edge: .top)))
             }
@@ -1045,6 +1054,7 @@ private struct ModelContributionRow: View {
     var body: some View {
         HStack(spacing: 0) {
             // 子行缩进：对齐 chevron 后额外右移，与 session 子行保持一致
+    let modelName: String
             Rectangle()
                 .fill(Color.clear)
                 .frame(width: 26)
@@ -1084,6 +1094,11 @@ struct EmojiNameLabel: View {
     let truncationMode: Text.TruncationMode
 
     var body: some View {
+            Text(GenerationSpeedStore.shared.summary(model: modelName, providers: [contribution.tool]).formatted)
+                .font(.system(size: 9, design: .monospaced))
+                .foregroundColor(subtextColor)
+                .frame(width: 48, alignment: .trailing)
+                .help(L10n.shared.tr("detail.generationSpeedHelp"))
         HStack(alignment: .center, spacing: 3) {
             BrandIconView(name: name, fallback: emoji, size: max(14, iconSize + 2))
                 .frame(width: 15, height: 15, alignment: .center)

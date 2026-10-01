@@ -1547,6 +1547,7 @@ final class ViewModel: ObservableObject {
             for (name, hours) in hourlySources where enabled.contains(name) {
                 HourlyHistoryStore.shared.replace(tool: name, hours: hours, force: !incremental)
             }
+            GenerationSpeedStore.shared.refresh(enabledTools: enabled)
             var results: [String: ToolSnapshot] = [:]
             if enabled.contains("OpenClaw") {
                 let u = self.openclawService.todayUsage()
