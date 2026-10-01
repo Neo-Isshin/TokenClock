@@ -24,6 +24,7 @@
 import argparse
 import json
 import math
+import re
 import ssl
 import sys
 import urllib.request
@@ -72,8 +73,8 @@ ALLOWED_ROUTE_PREFIXES = (
 # 只收对话类模型；embedding/audio/image/moderation 无 token 计费意义。
 ALLOWED_MODES = {"chat", "responses", "completion"}
 
-# Official first-party overrides protect the bundled catalog from stale or reseller
-# rows in aggregation feeds. Values are USD / MTok. `lt` selects a full-request
+# Official first-party defaults fill missing feed fields without freezing published
+# prices. Values are USD / MTok. `lt` selects a full-request
 # long-context tier; `pm` is the API Priority multiplier.
 OFFICIAL_OVERRIDES = {
     "gpt-6-sol": {"in": 2.0, "out": 10.0, "cr": 0.2, "cw": 2.5, "lt": 272_000,
@@ -157,6 +158,8 @@ def per_mtok(value) -> float | None:
     """上游 per-token 单价 → USD/MTok，保留 6 位有效数字。缺失返回 None。"""
     if value is None:
         return None
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError("upstream token prices must be numeric")
     v = float(value) * 1_000_000
     if v == 0:
         return 0.0
@@ -180,7 +183,7 @@ def is_relevant(key: str, entry: dict) -> bool:
     return True
 
 
-def build_models(upstream: dict) -> dict:
+def build_models(upstream: dict, previous: dict | None = None) -> dict:
     models = {}
     for key, entry in upstream.items():
         if not is_relevant(key, entry):
@@ -194,9 +197,32 @@ def build_models(upstream: dict) -> dict:
         }
         if price["in"] is None or price["out"] is None:
             continue  # 没有输入/输出单价的条目无法计费
+        # The app represents one full-request long-context tier.
+        tiers = [match for field in entry
+                 if (match := re.fullmatch(r"input_cost_per_token_above_(\d+)k_tokens", field))]
+        if len(tiers) == 1:
+            threshold = tiers[0].group(1)
+            suffix = f"_above_{threshold}k_tokens"
+            if entry.get("output_cost_per_token" + suffix) is not None:
+                price["lt"] = int(threshold) * 1000
+                for target, source in (("lin", "input_cost_per_token"), ("lout", "output_cost_per_token"),
+                                       ("lcr", "cache_read_input_token_cost"), ("lcw", "cache_creation_input_token_cost")):
+                    price[target] = per_mtok(entry.get(source + suffix))
+        priority_input = per_mtok(entry.get("input_cost_per_token_priority"))
+        priority_output = per_mtok(entry.get("output_cost_per_token_priority"))
+        if priority_input is not None and priority_output is not None and price["in"] > 0 and price["out"] > 0:
+            multiplier = priority_input / price["in"]
+            if multiplier > 0 and math.isclose(multiplier, priority_output / price["out"]):
+                price["pm"] = float(f"{multiplier:.6g}")
         models[key] = {k: v for k, v in price.items() if v is not None}
     for key, official in OFFICIAL_OVERRIDES.items():
-        models[key] = dict(official)
+        published = models.get(key, {})
+        providers = {official["p"]}
+        if official["p"] in {"gemini", "vertex_ai-language-models"}:
+            providers.update({"gemini", "vertex_ai-language-models"})
+        if published and published["p"] not in providers:
+            raise ValueError(f"{key}: unexpected first-party provider")
+        models[key] = {**official, **(previous or {}).get(key, {}), **published}
     return dict(sorted(models.items()))
 
 
@@ -208,9 +234,9 @@ def validated_models(upstream: dict, current: dict) -> dict:
                 if isinstance(value, dict) and is_relevant(key, value)}
     if len(relevant) < 100:
         raise ValueError("upstream contains fewer than 100 supported models")
-    fresh = build_models(relevant)
-    # Retain discontinued rows for historical usage; absence is not a zero price.
     previous = current.get("models", {})
+    fresh = build_models(relevant, previous)
+    # Retain discontinued rows for historical usage; absence is not a zero price.
     if len(fresh) < max(100, len(previous) * 0.5):
         raise ValueError("upstream model coverage dropped unexpectedly")
     for key, price in fresh.items():
@@ -259,14 +285,6 @@ def main() -> int:
     parser.add_argument("--check", action="store_true",
                         help="只检查上游变化是否影响快照，不写文件")
     args = parser.parse_args()
-
-    if datetime.now(timezone.utc).date() > OFFICIAL_REVIEW_AFTER:
-        print(
-            "error: OpenAI GPT-5.6 promotional pricing review date has passed; "
-            "re-verify official overrides before regenerating",
-            file=sys.stderr,
-        )
-        return 1
 
     upstream = fetch_upstream()
     current = json.loads(SNAPSHOT_PATH.read_text()) if SNAPSHOT_PATH.exists() else {}
