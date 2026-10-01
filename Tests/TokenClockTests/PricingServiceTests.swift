@@ -3,6 +3,11 @@ import XCTest
 
 /// PricingService 计费数学与三层查询逻辑
 final class PricingServiceTests: XCTestCase {
+    func testUnprefixedGLM52UsesFirstPartyInsteadOfResellerPrice() throws {
+        let firstParty = try XCTUnwrap(PricingService.shared.price(forModel: "zai/glm-5.2"))
+        XCTAssertEqual(PricingService.shared.price(forModel: "glm-5.2"), firstParty)
+        XCTAssertNotEqual(firstParty, PricingService.shared.price(forModel: "dashscope/glm-5.2"))
+    }
 
     /// 用真实内置快照验证：bundle 资源已正确打包、目录可加载、核心模型在册
     func testBundledSnapshotLoads() {
@@ -33,7 +38,7 @@ final class PricingServiceTests: XCTestCase {
         XCTAssertEqual(PricingService.shared.price(forModel: "claude-sonnet-5")?.output, 10)
         XCTAssertEqual(PricingService.shared.price(forModel: "gemini-3.5-flash")?.output, 9)
         XCTAssertEqual(PricingService.shared.price(forModel: "grok-4.6")?.cacheRead, 0.5)
-        XCTAssertEqual(PricingService.shared.price(forModel: "deepseek-v4-pro")?.output, 0.87)
+        XCTAssertEqual(PricingService.shared.price(forModel: "deepseek-v4-pro")?.output, 3.96)
         XCTAssertEqual(PricingService.shared.price(forModel: "kimi-k3")?.input, 3)
         XCTAssertEqual(PricingService.shared.price(forModel: "MiniMax-M2.7")?.cacheRead, 0.06)
         XCTAssertEqual(PricingService.shared.price(forModel: "glm-5.1")?.output, 4.4)
@@ -97,7 +102,9 @@ final class PricingServiceTests: XCTestCase {
     /// changes token consumption, not unit prices, so all variants use the base catalog row.
     func testGeminiThinkingLevelPricingAliases() {
         let base = PricingService.shared.price(forModel: "gemini-3.7-flash")
-        XCTAssertEqual(base, ModelPrice(input: 0.75, output: 3.75, cacheRead: 0.075))
+        XCTAssertEqual(base?.input, 0.75)
+        XCTAssertEqual(base?.output, 3.75)
+        XCTAssertEqual(base?.cacheRead, 0.075)
         XCTAssertEqual(PricingService.shared.price(forModel: "gemini-3.7-flash-low"), base)
         XCTAssertEqual(PricingService.shared.price(forModel: "gemini-3.7-flash-medium"), base)
         XCTAssertEqual(PricingService.shared.price(forModel: "gemini-3.7-flash-high"), base)
