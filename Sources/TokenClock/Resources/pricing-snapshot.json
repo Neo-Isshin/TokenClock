@@ -1,5 +1,5 @@
 {
-  "_meta": {"generatedAt": "2026-10-01T04:11:37Z", "unit": "USD/MTok", "source": "BerriAI/litellm model_prices_and_context_window.json", "officialOverrides": 32, "officialReviewAfter": "2026-11-21", "models": 319},
+  "_meta": {"generatedAt": "2026-10-07T10:19:34Z", "unit": "USD/MTok", "source": "BerriAI/litellm model_prices_and_context_window.json", "officialOverrides": 32, "officialReviewAfter": "2026-11-21", "models": 320},
   "models": {
     "chat-latest": {"in": 5.0, "out": 30.0, "cr": 0.5, "p": "openai"},
     "chatgpt-4o-latest": {"in": 5.0, "out": 15.0, "p": "openai"},
@@ -64,6 +64,7 @@
     "dashscope/qwq-plus": {"in": 0.8, "out": 2.4, "p": "dashscope"},
     "daybreak-blue-latest": {"in": 4.0, "out": 20.0, "cr": 0.4, "cw": 5.0, "p": "openai", "lt": 272000, "lin": 8.0, "lout": 30.0, "lcr": 0.8, "lcw": 10.0},
     "daybreak-red-latest": {"in": 12.5, "out": 75.0, "cr": 1.25, "cw": 15.625, "p": "openai", "lt": 272000, "lin": 25.0, "lout": 112.5, "lcr": 2.5, "lcw": 31.25},
+    "deep-research-pro-preview-12-2025": {"in": 2.0, "out": 12.0, "cr": 0.2, "p": "vertex_ai-language-models"},
     "deepseek-chat": {"in": 0.28, "out": 0.42, "cr": 0.028, "p": "deepseek"},
     "deepseek-flash": {"in": 0.3, "out": 1.2, "cr": 0.006, "cw": 0.0, "p": "deepseek"},
     "deepseek-reasoner": {"in": 0.28, "out": 0.42, "cr": 0.028, "p": "deepseek"},
