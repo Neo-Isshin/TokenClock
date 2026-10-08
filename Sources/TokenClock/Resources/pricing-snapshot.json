@@ -1,5 +1,5 @@
 {
-  "_meta": {"generatedAt": "2026-10-07T10:19:34Z", "unit": "USD/MTok", "source": "BerriAI/litellm model_prices_and_context_window.json", "officialOverrides": 32, "officialReviewAfter": "2026-11-21", "models": 320},
+  "_meta": {"generatedAt": "2026-10-08T10:39:12Z", "unit": "USD/MTok", "source": "BerriAI/litellm model_prices_and_context_window.json", "officialOverrides": 32, "officialReviewAfter": "2026-11-21", "models": 321},
   "models": {
     "chat-latest": {"in": 5.0, "out": 30.0, "cr": 0.5, "p": "openai"},
     "chatgpt-4o-latest": {"in": 5.0, "out": 15.0, "p": "openai"},
@@ -12,6 +12,7 @@
     "claude-fable-5-1": {"in": 10.0, "out": 50.0, "cr": 0.25, "cw": 12.5, "p": "anthropic"},
     "claude-haiku-4-5": {"in": 1.0, "out": 5.0, "cr": 0.1, "cw": 1.25, "p": "anthropic"},
     "claude-haiku-4-5-20251001": {"in": 1.0, "out": 5.0, "cr": 0.1, "cw": 1.25, "p": "anthropic"},
+    "claude-haiku-5-5": {"in": 0.1, "out": 0.5, "cr": 0.01, "cw": 0.125, "p": "anthropic", "lt": 100000, "lin": 0.5, "lout": 2.5, "lcr": 0.05, "lcw": 0.625},
     "claude-mythos-5": {"in": 10.0, "out": 50.0, "cr": 1.0, "cw": 12.5, "p": "anthropic"},
     "claude-mythos-5-1": {"in": 10.0, "out": 50.0, "cr": 0.25, "cw": 12.5, "p": "anthropic"},
     "claude-mythos-preview": {"in": 10.0, "out": 50.0, "cr": 1.0, "cw": 12.5, "p": "anthropic"},
@@ -32,7 +33,7 @@
     "claude-sonnet-4-5-20250929": {"in": 3.0, "out": 15.0, "cr": 0.3, "cw": 3.75, "p": "anthropic", "lt": 200000, "lin": 6.0, "lout": 22.5, "lcr": 0.6, "lcw": 7.5},
     "claude-sonnet-4-6": {"in": 3.0, "out": 15.0, "cr": 0.3, "cw": 3.75, "p": "anthropic"},
     "claude-sonnet-5": {"in": 2.0, "out": 10.0, "cr": 0.2, "cw": 2.5, "p": "anthropic"},
-    "claude-sonnet-5-5": {"in": 2.0, "out": 10.0, "cr": 0.2, "cw": 2.5, "p": "anthropic"},
+    "claude-sonnet-5-5": {"in": 2.0, "out": 10.0, "cr": 0.1, "cw": 2.5, "p": "anthropic"},
     "codex-mini-latest": {"in": 1.5, "out": 6.0, "cr": 0.375, "p": "openai"},
     "computer-use-preview": {"in": 3.0, "out": 12.0, "p": "openai"},
     "dashscope/deepseek-v4-flash": {"in": 0.2, "out": 0.4, "cr": 0.04, "p": "dashscope"},
