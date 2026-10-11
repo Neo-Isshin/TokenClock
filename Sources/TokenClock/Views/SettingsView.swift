@@ -17,6 +17,7 @@ struct SettingsView: View {
     @State private var aiderPath: String = ""
     @State private var antigravityPath: String = ""
     @State private var clinePath: String = ""
+    @State private var harnessPaths: [String: String] = [:]
     @State private var continuePath: String = ""
     @State private var cursorAgentPath: String = ""
     @State private var zcodePath: String = ""
@@ -227,6 +228,14 @@ struct SettingsView: View {
                             )
                             }
 
+                            ForEach(AdditionalHarness.allCases, id: \.rawValue) { harness in
+                                if viewModel.enabledTools.contains(harness.name) {
+                                    pathRow(emoji: harness.emoji, name: harness.name,
+                                        path: Binding(get: { harnessPaths[harness.rawValue] ?? "" }, set: { harnessPaths[harness.rawValue] = $0 }),
+                                        service: harness.rawValue, browseTitle: harness.name)
+                                    if let limitation = harness.limitation { Text(limitation).font(.caption).foregroundStyle(.secondary) }
+                                }
+                            }
                             hintText()
                         }
                     }
@@ -559,7 +568,7 @@ struct SettingsView: View {
         ("▶️", "Continue", "continue"),
         ("💎", "Cursor Agent", "cursorAgent"),
         ("🅉", "ZCode", "zcode"),
-    ]
+    ] + AdditionalHarness.allCases.map { ($0.emoji, $0.name, $0.rawValue) }
 
     /// 工具是否已探测到有效数据路径
     private func isToolDetected(_ service: String) -> Bool {
@@ -575,7 +584,7 @@ struct SettingsView: View {
                     let detected = isToolDetected(tool.service)
                     // 视觉 on/off = detected && enabled:未探测到的工具即便被用户启用也显示灰色,
                     // 让用户清楚知道哪些工具当前真正在统计;点击仍可切换 enabledTools(以便后续指向自定义路径)。
-                    let shownOn = detected && isEnabled
+                    let shownOn = isEnabled && (detected || AdditionalHarness(rawValue: tool.service) != nil)
                     HStack(spacing: 6) {
                         EmojiNameLabel(
                             emoji: tool.emoji,
@@ -599,7 +608,7 @@ struct SettingsView: View {
                     .background(isEnabled ? Color.accentColor.opacity(0.08) : Color.clear)
                     .cornerRadius(6)
                     .opacity(detected ? 1.0 : 0.5)
-                    .allowsHitTesting(detected)
+                    .allowsHitTesting(detected || AdditionalHarness(rawValue: tool.service) != nil)
                 }
             }
             .padding(10)
@@ -1326,6 +1335,7 @@ struct SettingsView: View {
         aiderPath = UserDefaults.standard.string(for: .aiderPath) ?? ""
         antigravityPath = UserDefaults.standard.string(for: .antigravityPath) ?? ""
         clinePath = UserDefaults.standard.string(for: .clinePath) ?? ""
+        harnessPaths = Dictionary(uniqueKeysWithValues: AdditionalHarness.allCases.map { ($0.rawValue, UserDefaults.standard.string(for: $0.pathKey) ?? "") })
         continuePath = UserDefaults.standard.string(for: .continuePath) ?? ""
         cursorAgentPath = UserDefaults.standard.string(for: .cursorAgentPath) ?? ""
         zcodePath = UserDefaults.standard.string(for: .zcodePath) ?? ""
@@ -1344,6 +1354,7 @@ struct SettingsView: View {
         setPath(.aiderPath, aiderPath)
         setPath(.antigravityPath, antigravityPath)
         setPath(.clinePath, clinePath)
+        for harness in AdditionalHarness.allCases { setPath(harness.pathKey, harnessPaths[harness.rawValue] ?? "") }
         setPath(.continuePath, continuePath)
         setPath(.cursorAgentPath, cursorAgentPath)
         setPath(.zcodePath, zcodePath)
@@ -1364,6 +1375,7 @@ struct SettingsView: View {
 
         // 强制更新所有探测到的路径
         for result in summary.results where result.exists {
+            if let harness = AdditionalHarness(rawValue: result.service), result.exists, result.source == .userDefaults { harnessPaths[harness.rawValue] = result.detectedPath }
             switch result.service {
             case "openclaw": openclawPath = result.detectedPath
             case "claudeCode": claudeCodePath = result.detectedPath
@@ -1416,10 +1428,12 @@ struct SettingsView: View {
             "cursorAgent":("💎", "Cursor Agent"),
             "zcode":      ("🅉", "ZCode"),
         ]
-        let label = toolLabels[service] ?? ("", service)
+        let harness = AdditionalHarness(rawValue: service)
+        let label = toolLabels[service] ?? (harness?.emoji ?? "", harness?.name ?? service)
 
         if let result = summary.results.first(where: { $0.service == service }) {
             if result.exists {
+                if let harness = AdditionalHarness(rawValue: service), result.source == .userDefaults { harnessPaths[harness.rawValue] = result.detectedPath }
                 switch service {
                 case "openclaw": openclawPath = result.detectedPath
                 case "claudeCode": claudeCodePath = result.detectedPath
@@ -1448,6 +1462,7 @@ struct SettingsView: View {
 
     /// 检查指定路径下是否有有效的日志文件
     private func hasValidLogFiles(service: String, basePath: String) -> Bool {
+        if let harness = AdditionalHarness(rawValue: service) { return !HarnessUsageService.sourceFiles(roots: [basePath], harness: harness).isEmpty }
         switch service {
         case "openclaw":
             return PathDetector.findJSONLFiles(in: basePath, subpath: "agents", recursive: true)
@@ -1526,6 +1541,7 @@ struct SettingsView: View {
         guard panel.runModal() == .OK, let url = panel.url else { return }
 
         let selectedPath = url.path
+        if let harness = AdditionalHarness(rawValue: service) { harnessPaths[harness.rawValue] = selectedPath }
         switch service {
         case "openclaw": openclawPath = selectedPath
         case "claudeCode": claudeCodePath = selectedPath

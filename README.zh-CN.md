@@ -246,3 +246,7 @@ swift build -c release
 - 感谢 [Swift](https://www.swift.org/) 社区对跨平台 Swift 的不懈推进。
 - 感谢 Linux Normal 版所依托的 GTK 与 Cairo 图形库。
 - 感谢所有保持本地日志规范的 AI 编程工具开发者与社区支持者！
+
+### 新增本地 Harness
+
+已接入 Kilo Code（CLI 与旧版 VS Code 扩展记录）、Pi、OMP / Oh My Pi、Command Code 的本地 Token 用量。Freebuff 单独显示本地完成回复数，不将上下文大小或 credits 折算成 Token，也不声称支持其订阅额度。Hermes 统一使用黑白人物头像。详见[数据格式与限制](docs/ADDITIONAL_HARNESSES.md)。

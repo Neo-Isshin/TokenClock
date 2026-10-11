@@ -61,6 +61,8 @@ struct ToolUsage: Identifiable, Hashable {
 
     /// 今日活跃的 session/agent 列表（用于展开展示）
     var sessions: [SessionInfo] = []
+    /// Today's local Codex cost split, never attributed to a subscription account.
+    var costModes: CostModeBreakdown? = nil
 
     /// 计量值（tokens/credits/requests 的统一出口；today 口径回退 todayTokens）
     var value: Int { measurementValue ?? todayTokens }
@@ -79,6 +81,15 @@ struct ToolUsage: Identifiable, Hashable {
     var formattedMessages: String {
         "\(todayMessages)"
     }
+}
+
+/// Exact model-level usage within a session that may switch models.
+struct SessionModelUsage: Hashable {
+    let model: String
+    let tokens: Int
+    let messages: Int
+    var cost: CostEstimate = .unavailable
+    var cacheReadTokens: Int = 0
 }
 
 /// 单个 session 或 agent 的今日数据
@@ -108,6 +119,15 @@ struct SessionInfo: Identifiable, Hashable {
 
     /// 该 session 今日的缓存读 token 数（「包含缓存读」口径用）
     var cacheReadTokens: Int = 0
+
+    /// Exact request-model breakdown when available; never substitute a
+    /// session's dominant model for a different model's generation speed.
+    var modelBreakdown: [SessionModelUsage] = []
+
+    /// Exact log source supplied by the provider's index or scan. Not a path
+    /// inferred from the display name, project directory, model, or session ID.
+    /// Ambiguous or aggregate sessions leave this nil and require file selection.
+    var sourceLogPath: String? = nil
 
     /// 格式化的 token 数
     var formattedTokens: String { TokenFormat.compact(todayTokens) }

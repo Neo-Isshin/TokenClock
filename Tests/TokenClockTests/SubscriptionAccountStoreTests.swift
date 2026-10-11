@@ -60,6 +60,30 @@ final class SubscriptionAccountStoreTests: XCTestCase {
         XCTAssertEqual(indicator.details.map(\.remainingPercent), [80, 70, 60, 50])
     }
 
+    func testGrokBotDialAcceptsActualNonWeeklyPeriodsWithoutInventingInnerQuota() throws {
+        for minutes in [878, 1_440, 10_080, 44_640] {
+            let groups = [ProviderQuotaGroup(id: "grok", name: "Subscription", buckets: [
+                bucket("grok", name: "Grok Bot", used: 2, minutes: minutes),
+            ])]
+            let indicator = try XCTUnwrap(DialQuotaResolver.resolve(provider: .grokBot, groups: groups))
+            XCTAssertEqual(indicator.outerRemainingPercent, 98)
+            XCTAssertNil(indicator.innerRemainingPercent)
+            XCTAssertEqual(indicator.details.map(\.labelKey), ["quota.dial.currentPeriod"])
+        }
+        XCTAssertNil(DialQuotaResolver.resolve(provider: .grokBot, groups: []))
+        XCTAssertNil(DialQuotaResolver.resolve(provider: .grokBot, groups: [
+            ProviderQuotaGroup(id: "invalid", name: "Grok Bot", buckets: [
+                bucket("bad", used: .nan, minutes: 878),
+            ]),
+        ]))
+        // Do not relax the weekly/five-hour policy for unrelated providers.
+        XCTAssertNil(DialQuotaResolver.resolve(provider: .codex, groups: [
+            ProviderQuotaGroup(id: "short", name: "Subscription", buckets: [
+                bucket("short", used: 2, minutes: 878),
+            ]),
+        ]))
+    }
+
     func testDialQuotaResolverMapsCursorModelGroups() throws {
         let groups = [ProviderQuotaGroup(id: "cursor", name: "Models", buckets: [
             bucket("cursor", name: "Cursor Models", used: 2, minutes: 44_640),

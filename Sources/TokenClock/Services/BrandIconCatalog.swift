@@ -77,7 +77,7 @@ enum BrandIconCatalog {
     static func url(forKey key: String) -> URL? { urls[key] }
 
     static func token(for name: String, fallback: String, style: BrandIconStyle = .current) -> String {
-        guard style == .official else { return fallback }
+        guard style == .official || key(for: name) == "hermes" else { return fallback }
         guard let key = key(for: name), url(forKey: key) != nil else { return fallback }
         return "[[brand:\(key)]]"
     }
@@ -96,7 +96,7 @@ enum BrandIconCatalog {
     }
 
     static func nativeLabel(_ label: String, style: BrandIconStyle = .current) -> String {
-        guard style == .official else { return label }
+        guard style == .official || labelParts(label)?.key == "hermes" else { return label }
         guard let parts = labelParts(label) else { return label }
         return "\(parts.prefix)[[brand:\(parts.key)]] \(parts.text)"
     }

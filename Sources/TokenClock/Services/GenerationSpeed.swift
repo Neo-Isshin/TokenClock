@@ -1,9 +1,31 @@
 import Foundation
+#if canImport(Combine)
+import Combine
+protocol GenerationSpeedObservable: ObservableObject {}
+#else
+protocol GenerationSpeedObservable: AnyObject {}
+#endif
 #if os(macOS)
 import SQLite3
 #else
 import CSQLite
 #endif
+
+/// Rank only completed attempts, before applying time/timing filters. This
+/// replaces quadratic correlated scans without modifying the provider database.
+enum ZCodeLedger {
+    static let latestCompletedRowsSQL = """
+    WITH latest_completed AS (
+      SELECT rowid AS ledger_rowid,
+        ROW_NUMBER() OVER (
+          PARTITION BY logical_request_id,
+            CASE WHEN logical_request_id IS NULL OR attempt_index IS NULL THEN rowid ELSE 0 END
+          ORDER BY attempt_index DESC, rowid DESC
+        ) AS completion_rank
+      FROM model_usage WHERE status = 'completed'
+    )
+    """
+}
 
 struct GenerationSpeed: Hashable {
     var outputTokens = 0
@@ -18,7 +40,7 @@ struct GenerationSpeed: Hashable {
     }
     var formatted: String {
         guard let rate = tokensPerSecond else { return "—" }
-        return (estimated ? "≈" : "") + String(format: "%.1f", rate)
+        return String(format: "%.1f", rate)
     }
     mutating func include(_ sample: GenerationSample) {
         let (sum, overflow) = outputTokens.addingReportingOverflow(sample.outputTokens)
@@ -43,18 +65,64 @@ struct GenerationSample: Hashable {
 
 /// Independent of usage/cost accounting. Readers run on the provider scan queue;
 /// UI callers only take the short snapshot lock and never perform I/O.
-final class GenerationSpeedStore: @unchecked Sendable {
+struct GenerationSpeedRefreshSchedule {
+    static let interval: TimeInterval = 180
+    private var lastRefresh: Date?
+    private var lastTools: Set<String>?
+
+    mutating func shouldRefresh(enabledTools: Set<String>, now: Date) -> Bool {
+        if let lastRefresh, lastTools == enabledTools,
+           now >= lastRefresh, now.timeIntervalSince(lastRefresh) < Self.interval {
+            return false
+        }
+        lastRefresh = now
+        lastTools = enabledTools
+        return true
+    }
+}
+
+final class GenerationSpeedStore: GenerationSpeedObservable, @unchecked Sendable {
     static let shared = GenerationSpeedStore()
     private let lock = NSLock()
     private let scanLock = NSLock()
     private var samples: [String: [GenerationSample]] = [:]
     private var codex = CodexGenerationReader()
+    private let scheduleLock = NSLock()
+    private var schedule = GenerationSpeedRefreshSchedule()
+    #if canImport(Combine)
+    let objectWillChange = ObservableObjectPublisher()
+    #endif
+
+    /// Native Windows/Linux usage polling may be more frequent than speed
+    /// sampling. Keep expensive timing I/O on its own three-minute cadence.
+    @discardableResult
+    func refreshIfDue(enabledTools: Set<String>, now: Date = Date()) -> Bool {
+        scheduleLock.lock()
+        let due = schedule.shouldRefresh(enabledTools: enabledTools, now: now)
+        scheduleLock.unlock()
+        guard due else { return false }
+        refresh(enabledTools: enabledTools, now: now)
+        return true
+    }
 
     func refresh(enabledTools: Set<String>, now: Date = Date()) {
+        #if os(macOS)
+        let activity = ProcessInfo.processInfo.beginActivity(
+            options: .userInitiatedAllowingIdleSystemSleep, reason: "Refresh local token generation speed")
+        defer { ProcessInfo.processInfo.endActivity(activity) }
+        #endif
         scanLock.lock(); defer { scanLock.unlock() }
         replace(provider: "Codex", with: enabledTools.contains("Codex") ? codex.scan(home: PathConfig.codexHome(), now: now) : [])
         #if !os(Linux)
         replace(provider: "ZCode", with: enabledTools.contains("ZCode") ? Self.zcodeSamples(home: PathConfig.zcodeHome(), now: now) : [])
+        #endif
+        // Publish even when the ledger is unchanged: samples can expire from
+        // the rolling window without any new token usage.
+        publishRefresh()
+    }
+    private func publishRefresh() {
+        #if canImport(Combine)
+        DispatchQueue.main.async { [weak self] in self?.objectWillChange.send() }
         #endif
     }
     func replace(provider: String, with values: [GenerationSample]) {
@@ -69,8 +137,10 @@ final class GenerationSpeedStore: @unchecked Sendable {
         var result = GenerationSpeed()
         var seen = Set<String>()
         let cutoff = now.addingTimeInterval(-600)
+        let canonicalModel = ModelNormalizer.normalize(model.lowercased())
         for provider in providers.sorted() {
-            for sample in data[provider] ?? [] where sample.valid && sample.model == model
+            for sample in data[provider] ?? [] where sample.valid
+                && ModelNormalizer.normalize(sample.model.lowercased()) == canonicalModel
                 && sample.completedAt >= cutoff && sample.completedAt <= now {
                 guard seen.insert(provider + ":" + sample.id).inserted else { continue }
                 result.include(sample)
@@ -87,17 +157,13 @@ final class GenerationSpeedStore: @unchecked Sendable {
             if let db { sqlite3_close(db) }; return []
         }
         defer { sqlite3_close(db) }
-        let query = """
+        let query = ZCodeLedger.latestCompletedRowsSQL + "\n" + """
         SELECT m.logical_request_id, m.model_id, m.started_at, m.first_token_at, m.completed_at,
                m.output_tokens, m.reasoning_tokens
-        FROM model_usage m
-        WHERE m.status = 'completed' AND m.first_token_at IS NOT NULL
+        FROM latest_completed latest JOIN model_usage m ON m.rowid = latest.ledger_rowid
+        WHERE latest.completion_rank = 1 AND m.first_token_at IS NOT NULL
           AND m.completed_at >= ? AND m.completed_at <= ?
           AND m.first_token_at >= m.started_at AND m.completed_at > m.first_token_at
-          AND NOT EXISTS (SELECT 1 FROM model_usage newer
-            WHERE newer.logical_request_id = m.logical_request_id AND newer.status = 'completed'
-              AND (newer.attempt_index > m.attempt_index
-                OR (newer.attempt_index = m.attempt_index AND newer.rowid > m.rowid)))
         """
         var statement: OpaquePointer?
         guard sqlite3_prepare_v2(db, query, -1, &statement, nil) == SQLITE_OK else { return [] }
@@ -105,10 +171,12 @@ final class GenerationSpeedStore: @unchecked Sendable {
         sqlite3_bind_int64(statement, 1, Int64(now.addingTimeInterval(-600).timeIntervalSince1970 * 1000))
         sqlite3_bind_int64(statement, 2, Int64(now.timeIntervalSince1970 * 1000))
         var result: [GenerationSample] = []
-        while sqlite3_step(statement) == SQLITE_ROW {
+        var stepResult = sqlite3_step(statement)
+        while stepResult == SQLITE_ROW {
+            defer { stepResult = sqlite3_step(statement) }
             guard let idPointer = sqlite3_column_text(statement, 0),
                   let modelPointer = sqlite3_column_text(statement, 1),
-                  let model = ModelNormalizer.normalize(String(cString: modelPointer)) else { continue }
+                  let model = ModelNormalizer.normalize(String(cString: modelPointer).lowercased()) else { continue }
             let output = max(0, sqlite3_column_int64(statement, 5))
             let reasoning = max(0, sqlite3_column_int64(statement, 6))
             let (generated, overflow) = output.addingReportingOverflow(reasoning)
@@ -120,7 +188,7 @@ final class GenerationSpeedStore: @unchecked Sendable {
                 seconds: (ended - first) / 1000, estimated: false)
             if sample.valid { result.append(sample) }
         }
-        return result
+        return stepResult == SQLITE_DONE ? result : []
     }
 }
 
@@ -136,7 +204,6 @@ struct CodexGenerationParser {
     private var model: String?
     private var spans: [Span] = []
     private var ambiguous = false
-    private var hasAnswer = false
     private var previousOutput: Int?
     private(set) var samples: [GenerationSample] = []
 
@@ -148,7 +215,7 @@ struct CodexGenerationParser {
         if type == "turn_context" || type == "thread_settings_applied" {
             let raw = payload["model"] as? String ?? (payload["thread_settings"] as? [String: Any])?["model"] as? String
             if let next = ModelNormalizer.normalize(raw), next != model {
-                spans.removeAll(); ambiguous = false; hasAnswer = false; model = next
+                spans.removeAll(); ambiguous = false; model = next
             }
             return
         }
@@ -164,12 +231,11 @@ struct CodexGenerationParser {
                   let end = payload["completed_at_ms"] as? Double,
                   start.isFinite, end.isFinite, end > start else { ambiguous = true; return }
             let key = thread + ":" + turn + ":" + id
-            if kind == "AgentMessage" { hasAnswer = true }
             if !spans.contains(where: { $0.id == key }) { spans.append(Span(id: key, start: start, end: end)) }
             return
         }
         guard type == "token_count", let info = payload["info"] as? [String: Any] else { return }
-        defer { spans.removeAll(); ambiguous = false; hasAnswer = false }
+        defer { spans.removeAll(); ambiguous = false }
         let total = (info["total_token_usage"] as? [String: Any])?["output_tokens"] as? Int
         let last = (info["last_token_usage"] as? [String: Any])?["output_tokens"] as? Int
         var output = last
@@ -180,7 +246,7 @@ struct CodexGenerationParser {
                 output = total - previousOutput
             }
         }
-        guard !ambiguous, hasAnswer, !spans.isEmpty, let output, output > 0, let model,
+        guard !ambiguous, !spans.isEmpty, let output, output > 0, let model,
               let timestamp = object["timestamp"] as? String,
               let recordedAt = DateHelper.parseISO8601(timestamp) else { return }
         // Merge overlapping intervals before summing: parallel item notifications
@@ -205,6 +271,17 @@ struct CodexGenerationParser {
 }
 
 final class CodexGenerationReader {
+    /// Cheap cold-start filter for canonical UTC logs. Noncanonical timestamps
+    /// fall back to the full parser rather than being incorrectly discarded.
+    static func precedesWindow(_ line: String, cutoffSecond: String) -> Bool {
+        guard let key = line.range(of: "\"timestamp\":\""),
+              let end = line[key.upperBound...].firstIndex(of: "\"") else { return false }
+        let stamp = line[key.upperBound..<end]
+        guard stamp.hasSuffix("Z"), stamp.count >= 20 else { return false }
+        let second = String(stamp.prefix(19))
+        guard second.count == 19, second[second.index(second.startIndex, offsetBy: 10)] == "T" else { return false }
+        return second < cutoffSecond
+    }
     private struct State {
         var offset: UInt64 = 0
         var tail = Data()
@@ -220,6 +297,7 @@ final class CodexGenerationReader {
     func scan(home: String, now: Date) -> [GenerationSample] {
         if root != home { root = home; states.removeAll() }
         let fm = FileManager.default
+        let cutoffSecond = String(ISO8601DateFormatter().string(from: now.addingTimeInterval(-600)).prefix(19))
         var live = Set<String>()
         for directory in ["sessions", "archived_sessions"] {
             let path = URL(fileURLWithPath: home).appendingPathComponent(directory)
@@ -235,9 +313,26 @@ final class CodexGenerationReader {
                 if state.inode != inode || size < state.offset || (size == state.offset && modified != state.modified) { state = State() }
                 state.parser.minimumDate = now.addingTimeInterval(-600)
                 if size != state.offset || modified != state.modified {
-                    if let result = JSONLLineReader.read(path: file.path, from: state.offset, prefix: state.tail, matchingAny: Self.needles, onLine: { state.parser.consume($0) }) {
+                    let coldStart = state.offset == 0
+                    var previousCount: String?
+                    let consume: (String) -> Void = { line in
+                        if coldStart && Self.precedesWindow(line, cutoffSecond: cutoffSecond) {
+                            // Native event headers precede the potentially huge
+                            // tool payload. Never search that payload for an
+                            // absent token_count key just to skip an old item.
+                            let header = String(decoding: line.utf8.prefix(512), as: UTF8.self)
+                            if header.contains("\"type\":\"item_completed\"") { return }
+                            if header.contains("\"type\":\"token_count\"") { previousCount = line; return }
+                            state.parser.consume(line) // model context still matters
+                            return
+                        }
+                        if let baseline = previousCount { state.parser.consume(baseline); previousCount = nil }
+                        state.parser.consume(line)
+                    }
+                    if let result = JSONLLineReader.read(path: file.path, from: state.offset, prefix: state.tail, matchingAny: Self.needles, onLine: consume) {
                         state.offset = result.offset
-                        state.tail = JSONLLineReader.consumeCompleteTrailingLine(result.trailingData) { state.parser.consume($0) }
+                        state.tail = JSONLLineReader.consumeCompleteTrailingLine(result.trailingData, onLine: consume)
+                        if let baseline = previousCount { state.parser.consume(baseline) }
                         state.modified = modified
                         state.inode = inode
                     }

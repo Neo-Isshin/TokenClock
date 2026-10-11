@@ -29,6 +29,7 @@ final class ZCodeUsageService: @unchecked Sendable {
         var cacheRead = 0
         var latest = Date.distantPast
         var modelTokens: [String: Int] = [:]
+        var modelMessages: [String: Int] = [:]
         var modelBuckets: [String: ModelBuckets] = [:]
     }
 
@@ -118,7 +119,13 @@ final class ZCodeUsageService: @unchecked Sendable {
                 source: value.taskType,
                 model: model,
                 todayCost: PricingService.shared.cost(of: value.modelBuckets),
-                cacheReadTokens: value.cacheRead
+                cacheReadTokens: value.cacheRead,
+                modelBreakdown: value.modelTokens.keys.sorted().map { model in
+                    SessionModelUsage(model: model, tokens: value.modelTokens[model] ?? 0,
+                        messages: value.modelMessages[model] ?? 0,
+                        cost: PricingService.shared.cost(of: [model: value.modelBuckets[model] ?? ModelBuckets()]),
+                        cacheReadTokens: value.modelBuckets[model]?.cacheRead ?? 0)
+                }
             )
         }.sorted { $0.todayTokens > $1.todayTokens }
     }
@@ -138,35 +145,36 @@ final class ZCodeUsageService: @unchecked Sendable {
         }.max() ?? .distantPast
         guard force || newest > lastScanTime else { return }
 
-        clearData()
         var db: OpaquePointer?
-        guard sqlite3_open_v2(dbFile, &db, SQLITE_OPEN_READONLY, nil) == SQLITE_OK else { return }
+        guard sqlite3_open_v2(dbFile, &db, SQLITE_OPEN_READONLY, nil) == SQLITE_OK else {
+            if let db { sqlite3_close(db) }
+            return
+        }
         defer { sqlite3_close(db) }
 
-        let query = """
+        let query = ZCodeLedger.latestCompletedRowsSQL + "\n" + """
         SELECT m.session_id,
                COALESCE(s.title, ''), COALESCE(s.directory, ''), COALESCE(s.task_type, ''),
                m.model_id, m.started_at, COALESCE(m.completed_at, m.started_at),
                m.input_tokens, m.output_tokens, m.reasoning_tokens,
                m.cache_creation_input_tokens, m.cache_read_input_tokens
-        FROM model_usage m
+        FROM latest_completed latest JOIN model_usage m ON m.rowid = latest.ledger_rowid
         LEFT JOIN session s ON s.id = m.session_id
-        WHERE m.status = 'completed'
-          AND NOT EXISTS (
-            SELECT 1 FROM model_usage newer
-            WHERE newer.logical_request_id = m.logical_request_id
-              AND newer.status = 'completed'
-              AND (newer.attempt_index > m.attempt_index
-                   OR (newer.attempt_index = m.attempt_index AND newer.rowid > m.rowid))
-          )
+        WHERE latest.completion_rank = 1
         ORDER BY m.started_at ASC
         """
         var statement: OpaquePointer?
         guard sqlite3_prepare_v2(db, query, -1, &statement, nil) == SQLITE_OK else { return }
         defer { sqlite3_finalize(statement) }
 
+        let previousDaily = dailyData, previousHourly = hourlyData
+        let previousCache = dailyCache, previousModels = dailyModelBuckets
+        let previousSessions = dailySessions, previousRecent = recentEntries
+        clearData()
         let today = DateHelper.todayKey()
-        while sqlite3_step(statement) == SQLITE_ROW {
+        var stepResult = sqlite3_step(statement)
+        while stepResult == SQLITE_ROW {
+            defer { stepResult = sqlite3_step(statement) }
             let sessionID = text(statement, 0)
             guard !sessionID.isEmpty else { continue }
             let title = text(statement, 1)
@@ -213,10 +221,17 @@ final class ZCodeUsageService: @unchecked Sendable {
                 session.cacheRead += cacheRead
                 session.latest = max(session.latest, date)
                 session.modelTokens[model, default: 0] += tokens
+                session.modelMessages[model, default: 0] += 1
                 session.modelBuckets[model, default: ModelBuckets()].merge(buckets)
                 dailySessions[dateKey, default: [:]][sessionID] = session
             }
             if dateKey == today { recentEntries.append(RecentEntry(timestamp: date, tokens: tokens)) }
+        }
+        guard stepResult == SQLITE_DONE else {
+            dailyData = previousDaily; hourlyData = previousHourly
+            dailyCache = previousCache; dailyModelBuckets = previousModels
+            dailySessions = previousSessions; recentEntries = previousRecent
+            return
         }
         let cutoff = Date().addingTimeInterval(-AppConfig.Scan.activeThresholdSeconds * 3)
         recentEntries = recentEntries.filter { $0.timestamp >= cutoff }

@@ -246,3 +246,7 @@ swift build -c release
 - Thanks to the [Swift](https://www.swift.org/) team for cross-platform Swift advancements.
 - Thanks to GTK and Cairo powering the Linux experience.
 - Appreciation to all AI coding agent creators maintaining transparent local telemetry!
+
+### Additional local harnesses
+
+Kilo Code (CLI and legacy VS Code records), Pi, OMP / Oh My Pi, and Command Code now have local token readers. Freebuff shows completed local responses, not inferred tokens or subscription quota. Hermes uses its bundled black-and-white portrait. See [source formats and limitations](docs/ADDITIONAL_HARNESSES.md).

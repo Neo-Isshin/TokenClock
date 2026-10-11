@@ -67,6 +67,7 @@ final class CodexUsageService: @unchecked Sendable {
         let usage: RawUsage
         let model: String?
         let serviceTier: PricingServiceTier
+        let tierEvidence: PricingTierEvidence
     }
 
     private struct ReplaySignature: Equatable, Sendable {
@@ -104,6 +105,7 @@ final class CodexUsageService: @unchecked Sendable {
         var trailingData = Data()
         var currentModel: String?
         var currentServiceTier: PricingServiceTier = .standard
+        var currentTierEvidence: PricingTierEvidence = .configuration
         var previousTotalUsage: RawUsage?
         /// Derived usage sequence includes replayed events so descendants can match it.
         var usageSequence: [TimestampedUsage] = []
@@ -345,6 +347,18 @@ final class CodexUsageService: @unchecked Sendable {
             if state.replaySignature.parentSessionId == nil || state.replayFallbackResolved,
                let tier = codexServiceTier(fromPayload: payload) {
                 state.currentServiceTier = tier
+                let raw = (payload["thread_settings"] as? [String: Any])?["service_tier"] as? String
+                    ?? payload["service_tier"] as? String
+                state.currentTierEvidence = ["fast", "priority", "default", "standard"].contains(raw?.lowercased() ?? "")
+                    ? .recorded : .unknown
+            }
+            let settings = payload["thread_settings"] as? [String: Any]
+            if state.replaySignature.parentSessionId == nil || state.replayFallbackResolved {
+                if let value = settings?["service_tier"] ?? payload["service_tier"], !(value is String) {
+                    // Preserve the previous estimator's fallback, but never
+                    // present a malformed/null setting as a recorded mode.
+                    state.currentTierEvidence = .unknown
+                }
             }
             return
         }
@@ -364,7 +378,7 @@ final class CodexUsageService: @unchecked Sendable {
             timestamp: date,
             usage: usage,
             model: modelForTurn,
-            serviceTier: state.currentServiceTier
+            serviceTier: state.currentServiceTier, tierEvidence: state.currentTierEvidence
         )
         let sequenceEvent = TimestampedUsage(timestamp: date, usage: usage)
         let eventIndex = state.usageSequence.count
@@ -454,7 +468,7 @@ final class CodexUsageService: @unchecked Sendable {
                 model: model,
                 buckets: buckets,
                 contextInputTokens: usage.input,
-                serviceTier: event.serviceTier
+                serviceTier: event.serviceTier, tierEvidence: event.tierEvidence
             ))
         }
     }
@@ -731,6 +745,13 @@ final class CodexUsageService: @unchecked Sendable {
         PricingService.shared.cost(of: dailyRequests[DateHelper.todayKey()] ?? [])
     }
 
+    func todayCostModes() -> CostModeBreakdown {
+        let key = DateHelper.todayKey()
+        let requests = dailyRequests[key] ?? []
+        return CostModeBreakdown.make(requests,
+            missingModels: max(0, (dailyData[key]?.messages ?? 0) - requests.count))
+    }
+
     /// 今日缓存读 token 总数（dailyCache 累计的 cached_input_tokens；「包含缓存读」展示用）
     func todayCacheReadTokens() -> Int {
         dailyCache[DateHelper.todayKey()] ?? 0
@@ -862,6 +883,12 @@ final class CodexUsageService: @unchecked Sendable {
 
             let matchedBuckets = sessionBucketsMatching(sessionId, in: sessionBuckets)
             let matchedRequests = sessionRequestsMatching(sessionId, in: sessionRequests)
+            let modelBreakdown = Dictionary(grouping: matchedRequests, by: { $0.model }).map { model, requests in
+                SessionModelUsage(model: model,
+                    tokens: requests.reduce(0) { $0 + $1.buckets.input + $1.buckets.output + $1.buckets.cacheWrite },
+                    messages: requests.count, cost: PricingService.shared.cost(of: requests),
+                    cacheReadTokens: requests.reduce(0) { $0 + $1.buckets.cacheRead })
+            }
             let sessionCacheRead = matchedBuckets.values.reduce(0) { $0 + $1.cacheRead }
             results.append(SessionInfo(
                 rawId: sessionId,
@@ -872,7 +899,8 @@ final class CodexUsageService: @unchecked Sendable {
                 isActive: true,
                 model: sessionModel(for: sessionId, in: sessionModels),
                 todayCost: PricingService.shared.cost(of: matchedRequests),
-                cacheReadTokens: sessionCacheRead
+                cacheReadTokens: sessionCacheRead,
+                modelBreakdown: modelBreakdown
             ))
         }
 

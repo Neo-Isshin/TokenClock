@@ -137,6 +137,9 @@ final class UsageAPIServer: @unchecked Sendable {
                 var dict: [String: Any] = [
                     "name": tool.name,
                     "emoji": tool.emoji,
+                    "unit": tool.measurementUnit.rawValue,
+                    "value": tool.value,
+                    "scope": tool.measurementScope.rawValue,
                     "todayTokens": tool.todayTokens,
                     "todayCacheReadTokens": tool.todayCacheReadTokens,
                     "todayMessages": tool.todayMessages,

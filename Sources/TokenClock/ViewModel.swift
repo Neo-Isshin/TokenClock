@@ -354,6 +354,7 @@ final class ViewModel: ObservableObject {
 
     private var clockTimer: Timer?
     private var dataTimer: Timer?
+    private var generationSpeedTimer: Timer?
     private var recentResetTimer: Timer?
     private var weatherTimer: Timer?
     private var historyTimer: Timer?
@@ -368,6 +369,7 @@ final class ViewModel: ObservableObject {
 
     /// 后台扫描重入守卫：防止 dataTimer/全量扫描并发触发同一时刻多扫描
     private var isScanning = false
+    private var isSamplingGenerationSpeed = false
 
     // 真实数据服务
     private let openclawService = OpenClawUsageService()
@@ -389,16 +391,17 @@ final class ViewModel: ObservableObject {
     private let aiderService = AiderUsageService()
     private let antigravityService = AntigravityUsageService()
     private let clineService = ClineUsageService()
+    private let additionalHarnessServices = AdditionalHarness.allCases.map { HarnessUsageService($0) }
     private let continueService = ContinueUsageService()
     private let cursorAgentService = CursorAgentUsageService(onHourlyUpdate: HourlyHistoryStore.saveCursor)
     private let zcodeService = ZCodeUsageService()
 
-    private static let allToolNames = ["OpenClaw", "Claude Code", "Gemini CLI", "Codex", "Hermes", "OpenCode", "Qwen Code", "Copilot", "Grok", "Aider", "Antigravity", "Cline", "Continue", "Cursor Agent", "ZCode"]
+    private static let allToolNames = ["OpenClaw", "Claude Code", "Gemini CLI", "Codex", "Hermes", "OpenCode", "Qwen Code", "Copilot", "Grok", "Aider", "Antigravity", "Cline", "Continue", "Cursor Agent", "ZCode"] + AdditionalHarness.allCases.map(\.name)
 
     init() {
         // 加载启用的工具集合
         let saved = UserDefaults.standard.stringArray(for: .enabledTools)
-        var enabledTools = Set(saved ?? Self.allToolNames)
+        var enabledTools = AdditionalHarness.enabled(saved: saved, defaults: Self.allToolNames)
         if !UserDefaults.standard.bool(for: .zcodeSupportMigrated) {
             let zcodeDB = PathConfig.defaultZCodeHome() + "/cli/db/db.sqlite"
             if FileManager.default.fileExists(atPath: zcodeDB) { enabledTools.insert("ZCode") }
@@ -1181,6 +1184,12 @@ final class ViewModel: ObservableObject {
             }
         }
 
+        generationSpeedTimer = Timer.scheduledTimer(
+            withTimeInterval: GenerationSpeedRefreshSchedule.interval, repeats: true
+        ) { [weak self] _ in
+            Task { @MainActor in self?.refreshGenerationSpeed() }
+        }
+
         // 重置 recentTokens：每 10 分钟
         recentResetTimer = Timer.scheduledTimer(withTimeInterval: AppConfig.Timers.recentReset, repeats: true) { [weak self] _ in
             Task { @MainActor in
@@ -1202,6 +1211,7 @@ final class ViewModel: ObservableObject {
 
         RunLoop.main.add(clockTimer!, forMode: .common)
         RunLoop.main.add(dataTimer!, forMode: .common)
+        RunLoop.main.add(generationSpeedTimer!, forMode: .common)
         RunLoop.main.add(recentResetTimer!, forMode: .common)
         RunLoop.main.add(weatherTimer!, forMode: .common)
     }
@@ -1251,7 +1261,7 @@ final class ViewModel: ObservableObject {
 
     func persistCurrentUsage(synchronously: Bool = true) {
         let dateKey = DateHelper.todayKey()
-        let snapshots: [TokenClock.ToolSnapshot] = tools.map { tool in
+        let snapshots: [TokenClock.ToolSnapshot] = tools.filter { $0.measurementUnit == .tokens }.map { tool in
             let sessions: [SessionSnapshot] = tool.sessions.map {
                 SessionSnapshot(id: $0.rawId, displayName: $0.displayName,
                                 tokens: $0.todayTokens, messages: $0.todayMessages,
@@ -1432,6 +1442,8 @@ final class ViewModel: ObservableObject {
     private func stopTimers() {
         clockTimer?.invalidate()
         dataTimer?.invalidate()
+        generationSpeedTimer?.invalidate()
+        generationSpeedTimer = nil
         recentResetTimer?.invalidate()
         weatherTimer?.invalidate()
         historyTimer?.invalidate()
@@ -1459,10 +1471,21 @@ final class ViewModel: ObservableObject {
     }
 
     private func performFullScan() {
+        refreshGenerationSpeed()
         runBackgroundScan(incremental: false)
     }
 
     /// 在后台线程执行扫描 + 数据提取，主线程只负责更新 UI
+    private func refreshGenerationSpeed() {
+        guard !isSamplingGenerationSpeed else { return }
+        isSamplingGenerationSpeed = true
+        let enabled = enabledTools
+        Task.detached(priority: .utility) { [weak self] in
+            GenerationSpeedStore.shared.refresh(enabledTools: enabled)
+            await MainActor.run { self?.isSamplingGenerationSpeed = false }
+        }
+    }
+
     private func runBackgroundScan(incremental: Bool) {
         // 重入守卫：dataTimer(30s) 与首次全量扫描可能并发触发；同一时刻只允许一个扫描
         guard !isScanning else { return }
@@ -1473,7 +1496,7 @@ final class ViewModel: ObservableObject {
         let grokBotNativeInstance = grokBotNativeAccessState != .unavailable
         let shouldScanCursorUsage = enabled.contains("Cursor Agent") || grokBotNativeInstance
 
-        Task.detached(priority: .utility) { [weak self] in
+        Task.detached(priority: incremental ? .utility : .userInitiated) { [weak self] in
             guard let self = self else {
                 // self 已释放也要重置标志，否则永不能再扫（self 为 weak，这里其实拿不到 self；
                 // 但 self==nil 意味着 ViewModel 已 dealloc，标志位随实例一起消失，无需处理）
@@ -1481,6 +1504,9 @@ final class ViewModel: ObservableObject {
             }
 
             // 后台线程：执行所有 I/O 密集的扫描
+            let activity = ProcessInfo.processInfo.beginActivity(
+                options: .userInitiatedAllowingIdleSystemSleep, reason: "Refresh local token usage")
+            defer { ProcessInfo.processInfo.endActivity(activity) }
             if enabled.contains("OpenClaw") { incremental ? self.openclawService.incrementalScan() : self.openclawService.fullScan() }
             if enabled.contains("Claude Code") { incremental ? self.claudeCodeService.incrementalScan() : self.claudeCodeService.fullScan() }
             if enabled.contains("Gemini CLI") { incremental ? self.geminiService.incrementalScan() : self.geminiService.fullScan() }
@@ -1493,6 +1519,11 @@ final class ViewModel: ObservableObject {
             if enabled.contains("Aider") { incremental ? self.aiderService.incrementalScan() : self.aiderService.fullScan() }
             if enabled.contains("Antigravity") { incremental ? self.antigravityService.incrementalScan() : self.antigravityService.fullScan() }
             if enabled.contains("Cline") { incremental ? self.clineService.incrementalScan() : self.clineService.fullScan() }
+            for service in self.additionalHarnessServices where enabled.contains(service.harness.name) {
+                incremental ? service.incrementalScan() : service.fullScan()
+                if !incremental { service.importHistoryIfNeeded() }
+                if service.harness.unit == .tokens { HourlyHistoryStore.shared.replace(tool: service.harness.name, hours: service.hourlyData, force: !incremental) }
+            }
             if enabled.contains("Continue") { incremental ? self.continueService.incrementalScan() : self.continueService.fullScan() }
             if shouldScanCursorUsage { incremental ? self.cursorAgentService.incrementalScan() : self.cursorAgentService.fullScan() }
             if enabled.contains("ZCode") { incremental ? self.zcodeService.incrementalScan() : self.zcodeService.fullScan() }
@@ -1547,7 +1578,6 @@ final class ViewModel: ObservableObject {
             for (name, hours) in hourlySources where enabled.contains(name) {
                 HourlyHistoryStore.shared.replace(tool: name, hours: hours, force: !incremental)
             }
-            GenerationSpeedStore.shared.refresh(enabledTools: enabled)
             var results: [String: ToolSnapshot] = [:]
             if enabled.contains("OpenClaw") {
                 let u = self.openclawService.todayUsage()
@@ -1632,10 +1662,19 @@ final class ViewModel: ObservableObject {
                 results["ZCode"] = ToolSnapshot(tokens: u.tokens, messages: u.messages, recent: self.zcodeService.recentUsage(minutes: rateWindow).tokens, hourly: self.zcodeService.currentHourTokens(), active: self.zcodeService.isActive(), cacheRate: u.cacheRate, cost: self.zcodeService.todayCost(), cacheRead: self.zcodeService.todayCacheReadTokens(), sessions: self.zcodeService.todaySessions())
             }
 
+            for service in self.additionalHarnessServices where enabled.contains(service.harness.name) {
+                let usage = service.todayUsage()
+                results[service.harness.name] = ToolSnapshot(tokens: usage.tokens, messages: usage.messages, recent: service.recentUsage(minutes: rateWindow).tokens, hourly: service.currentHourTokens(), active: service.isActive(), cacheRate: usage.cacheRate, cost: service.todayCost(), cacheRead: service.todayCacheReadTokens(), sessions: service.todaySessions())
+            }
+
+            let costModes = enabled.contains("Codex") ? self.codexService.todayCostModes() : nil
             // 主线程：批量更新 @Published tools
             await MainActor.run {
                 for (name, snap) in results {
                     self.applySnapshot(name: name, snap: snap)
+                }
+                if let index = self.tools.firstIndex(where: { $0.name == "Codex" }) {
+                    self.tools[index].costModes = costModes
                 }
                 // 首次真实数据已就绪，退出加载态
                 self.isInitialLoading = false
@@ -1666,6 +1705,8 @@ final class ViewModel: ObservableObject {
             name: tools[idx].name,
             abbreviation: tools[idx].abbreviation,
             emoji: tools[idx].emoji,
+            measurementUnit: tools[idx].measurementUnit,
+            measurementValue: tools[idx].measurementUnit == .requests ? snap.messages : nil,
             todayTokens: snap.tokens,
             todayMessages: snap.messages,
             isActive: snap.active,

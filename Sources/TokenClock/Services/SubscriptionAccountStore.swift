@@ -81,6 +81,14 @@ enum DialQuotaResolver {
         groups: [ProviderQuotaGroup]
     ) -> DialQuotaIndicator? {
         switch provider {
+        case .grokBot:
+            // The API's current billing/rate-limit period is not necessarily a
+            // week. Display its real remaining quota without relabeling it.
+            let buckets = groups.flatMap(\.buckets).filter { $0.usedPercent.isFinite }
+            guard let remaining = minimumRemaining(buckets) else { return nil }
+            return DialQuotaIndicator(provider: provider, outerRemainingPercent: remaining,
+                innerRemainingPercent: nil,
+                details: [DialQuotaDetail(labelKey: "quota.dial.currentPeriod", remainingPercent: remaining)])
         case .antigravity:
             if let indicator = antigravity(groups: groups) { return indicator }
         case .cursor:
