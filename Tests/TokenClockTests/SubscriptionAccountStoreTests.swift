@@ -3,6 +3,28 @@ import XCTest
 @testable import TokenClock
 
 final class SubscriptionAccountStoreTests: XCTestCase {
+    func testGrokBotDialAcceptsActualNonWeeklyPeriodsWithoutInventingInnerQuota() throws {
+        for minutes in [878, 1_440, 10_080, 44_640] {
+            let groups = [ProviderQuotaGroup(id: "grok", name: "Subscription", buckets: [
+                CodexQuotaBucket(id: "grok", name: "Grok Bot", usedPercent: 2, windowMinutes: minutes, resetsAt: nil),
+            ])]
+            let indicator = try XCTUnwrap(DialQuotaResolver.resolve(provider: .grokBot, groups: groups))
+            XCTAssertEqual(indicator.outerRemainingPercent, 98)
+            XCTAssertNil(indicator.innerRemainingPercent)
+            XCTAssertEqual(indicator.details.map(\.labelKey), ["quota.dial.currentPeriod"])
+        }
+        XCTAssertNil(DialQuotaResolver.resolve(provider: .grokBot, groups: []))
+        XCTAssertNil(DialQuotaResolver.resolve(provider: .grokBot, groups: [
+            ProviderQuotaGroup(id: "invalid", name: "Grok Bot", buckets: [
+                CodexQuotaBucket(id: "bad", name: "Grok Bot", usedPercent: .nan, windowMinutes: 878, resetsAt: nil),
+            ]),
+        ]))
+        XCTAssertNil(DialQuotaResolver.resolve(provider: .codex, groups: [
+            ProviderQuotaGroup(id: "short", name: "Subscription", buckets: [
+                CodexQuotaBucket(id: "short", name: "Codex", usedPercent: 2, windowMinutes: 878, resetsAt: nil),
+            ]),
+        ]))
+    }
     func testDefaultDialProviderChoosesMostConsumedQuotaThenPanelOrder() {
         let codex = DialQuotaIndicator(
             provider: .codex, outerRemainingPercent: 80,

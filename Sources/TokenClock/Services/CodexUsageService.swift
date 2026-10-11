@@ -25,6 +25,7 @@ final class CodexUsageService: @unchecked Sendable {
     private var dailyModelBuckets: [String: [String: ModelBuckets]] = [:]
     /// dateKey → sessionId → 归一化模型名 → 计费分桶（session 级费用）
     private var sessionBucketsByDate: [String: [String: [String: ModelBuckets]]] = [:]
+    private var sessionModelMessagesByDate: [String: [String: [String: Int]]] = [:]
     /// 每个 session 的代表模型（按 token 占比最高的那个）。
     /// Codex rollout 里模型由 turn_context 事件声明，同一 session 切换模型时取用量最大的。
     private var sessionModels: [String: String] = [:]
@@ -47,6 +48,7 @@ final class CodexUsageService: @unchecked Sendable {
         var modelTokens: [String: Int] = [:]
         /// dateKey → 归一化模型名 → 计费分桶（费用估算；input 已扣除 cached 部分）
         var dailyBuckets: [String: [String: ModelBuckets]] = [:]
+        var dailyModelMessages: [String: [String: Int]] = [:]
     }
 
     private var jsonlCache: [String: JSONLFileState] = [:]
@@ -219,6 +221,7 @@ final class CodexUsageService: @unchecked Sendable {
                 }
                 // 费用分桶：input_tokens 已含 cached，扣除后按未缓存输入计价；模型名归一化
                 if let model = ModelNormalizer.normalize(modelForTurn) {
+                    state.dailyModelMessages[dateKey, default: [:]][model, default: 0] += 1
                     state.dailyBuckets[dateKey, default: [:]][model, default: ModelBuckets()].merge(
                         ModelBuckets(
                             input: max(0, inputTokens - cached),
@@ -245,6 +248,7 @@ final class CodexUsageService: @unchecked Sendable {
         sessionTokensByDate.removeAll(keepingCapacity: true)
         dailyModelBuckets.removeAll(keepingCapacity: true)
         sessionBucketsByDate.removeAll(keepingCapacity: true)
+        sessionModelMessagesByDate.removeAll(keepingCapacity: true)
         sessionModels.removeAll(keepingCapacity: true)
 
         for (path, state) in jsonlCache {
@@ -273,6 +277,7 @@ final class CodexUsageService: @unchecked Sendable {
             for (dateKey, models) in state.dailyBuckets {
                 for (model, b) in models {
                     sessionBucketsByDate[dateKey, default: [:]][sessionId, default: [:]][model, default: ModelBuckets()].merge(b)
+                    sessionModelMessagesByDate[dateKey, default: [:]][sessionId, default: [:]][model, default: 0] += state.dailyModelMessages[dateKey]?[model] ?? 0
                 }
             }
             if let dominant = state.modelTokens.max(by: { $0.value < $1.value })?.key {
@@ -293,6 +298,11 @@ final class CodexUsageService: @unchecked Sendable {
     /// 今日工具级估算费用
     func todayCost() -> CostEstimate {
         PricingService.shared.cost(of: todayModelBuckets())
+    }
+    /// The legacy Linux reader lacks reliable per-request tier evidence.
+    /// Keep its existing total and label that scope as unclassified.
+    func todayCostModes() -> CostModeBreakdown {
+        .unclassified(total: todayCost(), requests: todayUsage().messages)
     }
 
     /// 今日缓存读 token 总数（dailyCache 累计的 cached_input_tokens；「包含缓存读」展示用）
@@ -424,6 +434,16 @@ final class CodexUsageService: @unchecked Sendable {
             guard tokens > 0 else { continue }
 
             let matchedBuckets = sessionBucketsMatching(sessionId, in: sessionBuckets)
+            let modelCounts = sessionModelMessagesByDate[today] ?? [:]
+            let matchingID = modelCounts[sessionId] != nil ? sessionId
+                : modelCounts.keys.first { sessionId.hasPrefix($0) || $0.hasPrefix(sessionId) }
+            let counts = matchingID.flatMap { modelCounts[$0] } ?? [:]
+            let modelBreakdown = matchedBuckets.map { model, buckets in
+                SessionModelUsage(model: model, tokens: buckets.input + buckets.output + buckets.cacheWrite,
+                    messages: counts[model] ?? 0,
+                    cost: PricingService.shared.cost(of: [model: buckets]),
+                    cacheReadTokens: buckets.cacheRead)
+            }
             let sessionCacheRead = matchedBuckets.values.reduce(0) { $0 + $1.cacheRead }
             results.append(SessionInfo(
                 rawId: sessionId,
@@ -434,7 +454,8 @@ final class CodexUsageService: @unchecked Sendable {
                 isActive: true,
                 model: sessionModel(for: sessionId, in: sessionModels),
                 todayCost: PricingService.shared.cost(of: matchedBuckets),
-                cacheReadTokens: sessionCacheRead
+                cacheReadTokens: sessionCacheRead,
+                modelBreakdown: modelBreakdown
             ))
         }
 

@@ -32,18 +32,19 @@ final class LinuxUsageModel: @unchecked Sendable {
     private lazy var aiderService = AiderUsageService()
     private lazy var antigravityService = AntigravityUsageService()
     private lazy var clineService = ClineUsageService()
+    private let additionalHarnessServices = AdditionalHarness.allCases.map { HarnessUsageService($0) }
     private lazy var continueService = ContinueUsageService()
     private lazy var cursorAgentService = CursorAgentUsageService(onHourlyUpdate: HourlyHistoryStore.saveCursor)
 
     static let allToolNames = Set([
         "OpenClaw", "Claude Code", "Gemini CLI", "Codex", "Hermes", "OpenCode",
         "Qwen Code", "Copilot", "Grok", "Aider", "Antigravity", "Cline",
-        "Continue", "Cursor Agent",
+        "Continue", "Cursor Agent", "Kilo Code", "Pi", "OMP", "Freebuff", "Command Code",
     ])
 
     init() {
         let saved = UserDefaults.standard.stringArray(for: .enabledTools)
-        let enabled = Set(saved ?? Array(Self.allToolNames))
+        let enabled = AdditionalHarness.enabled(saved: saved, defaults: Array(Self.allToolNames))
         let savedWindow = UserDefaults.standard.int(for: .rateWindow)
         let rateWindow = savedWindow > 0 ? savedWindow : 10
         storedEnabledTools = enabled
@@ -120,6 +121,7 @@ final class LinuxUsageModel: @unchecked Sendable {
         let enabled = storedEnabledTools
         let rateWindow = storedRateWindowMinutes
         lock.unlock()
+        GenerationSpeedStore.shared.refreshIfDue(enabledTools: enabled)
 
         defer {
             lock.lock()
@@ -157,8 +159,15 @@ final class LinuxUsageModel: @unchecked Sendable {
         for (name, hours) in hourlySources where enabled.contains(name) {
             HourlyHistoryStore.shared.replace(tool: name, hours: hours, force: !incremental)
         }
-        GenerationSpeedStore.shared.refresh(enabledTools: enabledTools)
         var results: [String: ScanSnapshot] = [:]
+        for service in additionalHarnessServices where enabled.contains(service.harness.name) {
+            incremental ? service.incrementalScan() : service.fullScan()
+            if !incremental { service.importHistoryIfNeeded() }
+            if service.harness.unit == .tokens { HourlyHistoryStore.shared.replace(tool: service.harness.name, hours: service.hourlyData, force: !incremental) }
+            let usage = service.todayUsage()
+            results[service.harness.name] = snapshot(usage, service.recentUsage(minutes: rateWindow).tokens, service.currentHourTokens(), service.isActive(), service.todaySessions(), cost: service.todayCost(), cacheRead: service.todayCacheReadTokens())
+        }
+
         if enabled.contains("OpenClaw") {
             let usage = openclawService.todayUsage()
             results["OpenClaw"] = snapshot(usage, openclawService.recentUsage(minutes: rateWindow).tokens, openclawService.currentHourTokens(), openclawService.isActive(), openclawService.todaySessions(), cost: openclawService.todayCost(), cacheRead: openclawService.todayCacheReadTokens())
@@ -240,6 +249,8 @@ final class LinuxUsageModel: @unchecked Sendable {
                 name: old.name,
                 abbreviation: old.abbreviation,
                 emoji: old.emoji,
+                measurementUnit: old.measurementUnit,
+                measurementValue: old.measurementUnit == .requests ? result.messages : nil,
                 todayTokens: result.tokens,
                 todayMessages: result.messages,
                 isActive: result.active,
@@ -248,7 +259,8 @@ final class LinuxUsageModel: @unchecked Sendable {
                 hourlyTokens: result.hourly,
                 todayCost: result.cost,
                 todayCacheReadTokens: result.cacheRead,
-                sessions: result.sessions
+                sessions: result.sessions,
+                costModes: name == "Codex" ? codexService.todayCostModes() : nil
             )
         }
         let current = storedTools
@@ -310,6 +322,9 @@ final class LinuxUsageModel: @unchecked Sendable {
             "tools": current.map { tool -> [String: Any] in
                 [
                     "name": tool.name,
+                    "unit": tool.measurementUnit.rawValue,
+                    "value": tool.value,
+                    "scope": tool.measurementScope.rawValue,
                     "emoji": tool.emoji,
                     "todayTokens": tool.todayTokens,
                     "todayCacheReadTokens": tool.todayCacheReadTokens,
@@ -428,7 +443,7 @@ final class LinuxUsageModel: @unchecked Sendable {
     }
 
     private func persistToday(_ tools: [ToolUsage]) {
-        let snapshots = tools.map { tool in
+        let snapshots = tools.filter { $0.measurementUnit == .tokens }.map { tool in
             ToolSnapshot(
                 name: tool.name,
                 tokens: tool.todayTokens,

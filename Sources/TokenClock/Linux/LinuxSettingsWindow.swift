@@ -25,7 +25,7 @@ final class LinuxSettingsWindow: @unchecked Sendable {
         .init(emoji: "🧰", name: "Cline", service: "cline", pathKey: .clinePath),
         .init(emoji: "▶️", name: "Continue", service: "continue", pathKey: .continuePath),
         .init(emoji: "💎", name: "Cursor Agent", service: "cursorAgent", pathKey: .cursorAgentPath),
-    ]
+    ] + AdditionalHarness.allCases.map { ToolOption(emoji: $0.emoji, name: $0.name, service: $0.rawValue, pathKey: $0.pathKey) }
 
     private weak var owner: LinuxApp?
     private let model: LinuxUsageModel
@@ -969,6 +969,7 @@ final class LinuxSettingsWindow: @unchecked Sendable {
     private func runDetection() {
         let summary = PathDetector.runFullDetection()
         for result in summary.results where result.exists {
+            if AdditionalHarness(rawValue: result.service) != nil && result.source != .userDefaults { continue }
             if let entry = pathEntries[result.service] {
                 gtk_entry_set_text(tc_gtk_entry(entry), result.detectedPath)
             }

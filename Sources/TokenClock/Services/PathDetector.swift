@@ -52,6 +52,7 @@ enum PathDetector {
             detectContinue(),
             detectCursorAgent(),
         ]
+        results += HarnessSourceDetection.results()
         let found = results.filter(\.exists).count
         return DetectionSummary(results: results, foundCount: found, totalCount: results.count)
     }

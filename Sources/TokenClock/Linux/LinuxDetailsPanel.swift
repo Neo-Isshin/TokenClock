@@ -73,6 +73,7 @@ final class LinuxDetailsPanel: @unchecked Sendable {
     private var grokBotQuotaFetchInFlight = false
     private var zhipuQuotaFetchInFlight = false
     private var quotaOrderEditing = false
+    private var quotaCostModesExpanded = false
     private var dialQuotaProviders: [LinuxQuotaProvider] = {
         if let forced = ProcessInfo.processInfo.environment["TC_DIAL_QUOTA_PROVIDERS"] {
             return Array(forced.split(separator: ",").compactMap {
@@ -166,13 +167,15 @@ final class LinuxDetailsPanel: @unchecked Sendable {
         size: LinuxClockSize
     ) {
         let dialStyleChanged = self.theme != theme
+        let costModesChanged = self.tools.first { $0.name == "Codex" }?.costModes
+            != tools.first { $0.name == "Codex" }?.costModes
         self.tools = tools
         self.notifications = notifications
         self.weather = weather
         self.useFahrenheit = useFahrenheit
         self.theme = theme
         self.size = size
-        if dialStyleChanged, let quotaWindow, gtk_widget_get_visible(quotaWindow) != 0 {
+        if dialStyleChanged || costModesChanged, let quotaWindow, gtk_widget_get_visible(quotaWindow) != 0 {
             rebuildQuotaWindow()
         }
         if isVisible {
@@ -263,6 +266,10 @@ final class LinuxDetailsPanel: @unchecked Sendable {
             refreshQuota(force: true)
         case "details:quota-edit":
             quotaOrderEditing.toggle()
+            rebuildQuotaWindow()
+            return
+        case "details:quota-cost-modes":
+            quotaCostModesExpanded.toggle()
             rebuildQuotaWindow()
             return
         default:
@@ -608,9 +615,9 @@ final class LinuxDetailsPanel: @unchecked Sendable {
         appendLabel(tr(valueMode == .tokens ? "detail.todayUsage" : "detail.cost"), width: 60, alignment: 1, style: "tokenclock-detail-header", to: row)
         appendLabel(tr(valueMode == .tokens ? "detail.messages" : "detail.share"), width: 40, alignment: 1, style: "tokenclock-detail-header", to: row)
         if grouping == .session {
-            appendLabel(tr("detail.cacheRate"), width: 44, alignment: 1, style: "tokenclock-detail-header", to: row)
+            appendLabel(tr("detail.cacheRate"), width: 40, alignment: 1, style: "tokenclock-detail-header", to: row)
         } else {
-            appendLabel("t/s", width: 44, alignment: 1, style: "tokenclock-detail-header", to: row)
+            appendLabel("t/s", width: 40, alignment: 1, style: "tokenclock-detail-header", to: row)
         }
         return row
     }
@@ -630,9 +637,9 @@ final class LinuxDetailsPanel: @unchecked Sendable {
             let title = "\(prefix) \(tool.emoji) \(tool.name)"
             appendDataRow(
                 title: title,
-                tokens: primaryValue(tokens: tool.todayTokens, cacheRead: tool.todayCacheReadTokens, cost: tool.todayCost, includeCacheRead: includeCache),
-                messages: secondaryValue(tokens: tool.todayTokens, cacheRead: tool.todayCacheReadTokens, messages: tool.todayMessages, total: total, includeCacheRead: includeCache),
-                trailing: cacheText(tool.cacheRate),
+                tokens: tool.measurementUnit == .requests ? "\(tool.value) \(tr("harness.responses"))" : primaryValue(tokens: tool.todayTokens, cacheRead: tool.todayCacheReadTokens, cost: tool.todayCost, includeCacheRead: includeCache),
+                messages: tool.measurementUnit == .requests ? "—" : secondaryValue(tokens: tool.todayTokens, cacheRead: tool.todayCacheReadTokens, messages: tool.todayMessages, total: total, includeCacheRead: includeCache),
+                trailing: tool.measurementUnit == .requests ? "—" : cacheText(tool.cacheRate),
                 actionName: tool.sessions.isEmpty ? nil : "details:tool:\(tool.name)",
                 child: false,
                 to: list
@@ -644,8 +651,8 @@ final class LinuxDetailsPanel: @unchecked Sendable {
                     if let source = session.source, !source.isEmpty { name += " · \(source)" }
                     appendDataRow(
                         title: name,
-                        tokens: primaryValue(tokens: session.todayTokens, cacheRead: session.cacheReadTokens, cost: session.todayCost, includeCacheRead: includeCache),
-                        messages: secondaryValue(tokens: session.todayTokens, cacheRead: session.cacheReadTokens, messages: session.todayMessages, total: total, includeCacheRead: includeCache),
+                        tokens: tool.measurementUnit == .requests ? "\(session.todayMessages) \(tr("harness.responses"))" : primaryValue(tokens: session.todayTokens, cacheRead: session.cacheReadTokens, cost: session.todayCost, includeCacheRead: includeCache),
+                        messages: tool.measurementUnit == .requests ? "—" : secondaryValue(tokens: session.todayTokens, cacheRead: session.cacheReadTokens, messages: session.todayMessages, total: total, includeCacheRead: includeCache),
                         trailing: "–",
                         actionName: nil,
                         child: true,
@@ -711,7 +718,7 @@ final class LinuxDetailsPanel: @unchecked Sendable {
         appendLabel(tokens, width: 60, alignment: 1, style: "tokenclock-detail-text", to: row)
         appendLabel(messages, width: 40, alignment: 1, style: "tokenclock-detail-subtext", to: row)
         if let trailing {
-            appendLabel(trailing, width: 44, alignment: 1, style: "tokenclock-detail-subtext", to: row)
+            appendLabel(trailing, width: 40, alignment: 1, style: "tokenclock-detail-subtext", to: row)
         }
 
         if let actionName, let button = gtk_button_new() {
@@ -806,6 +813,7 @@ final class LinuxDetailsPanel: @unchecked Sendable {
         _ = appendControl("↻", name: "details:quota-refresh", to: heading)
         gtk_box_pack_start(tc_gtk_box(content), heading, 0, 0, 0)
 
+        appendQuotaCostModes(to: content)
         if let selectorBox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6),
            let selectorLabel = gtk_label_new(tr("quota.dialDisplay")),
            let selectorGrid = gtk_grid_new() {
@@ -856,6 +864,39 @@ final class LinuxDetailsPanel: @unchecked Sendable {
             gtk_box_pack_start(tc_gtk_box(row), section, 1, 1, 0)
             gtk_box_pack_start(tc_gtk_box(content), row, 0, 0, 0)
         }
+    }
+
+    private func appendQuotaCostModes(to content: UnsafeMutablePointer<GtkWidget>) {
+        let tool = tools.first { $0.name == "Codex" }
+        let header = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0)
+        let marker = quotaCostModesExpanded ? "▾ " : "▸ "
+        if let button = appendControl(marker + tr("quota.costMode.title") + "   " + (tool?.formattedCost ?? "—"),
+                                      name: "details:quota-cost-modes", to: header) {
+            gtk_widget_set_hexpand(button, 1)
+            gtk_widget_set_size_request(button, -1, 28)
+            gtk_box_set_child_packing(tc_gtk_box(header), button, 1, 1, 0, GTK_PACK_START)
+        }
+        gtk_box_pack_start(tc_gtk_box(content), header, 0, 0, 0)
+        guard quotaCostModesExpanded else { return }
+        func note(_ text: String) {
+            guard let label = gtk_label_new(text) else { return }
+            gtk_label_set_xalign(tc_gtk_label(label), 0)
+            gtk_label_set_line_wrap(tc_gtk_label(label), 1)
+            tc_gtk_add_class(label, "tokenclock-quota-source")
+            gtk_box_pack_start(tc_gtk_box(content), label, 0, 0, 0)
+        }
+        note(tr("quota.costMode.scope"))
+        if let split = tool?.costModes, split.requestCount > 0 {
+            for part in split.parts {
+                guard let row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6) else { continue }
+                let label = tr(part.mode.labelKey) + (part.rateBadge.isEmpty ? "" : " · " + part.rateBadge)
+                appendLabel(label, width: 120, expands: true, alignment: 0, style: "tokenclock-quota-source", to: row)
+                appendLabel(tr("quota.costMode.calls", part.requests), width: 98, alignment: 1, style: "tokenclock-quota-source", to: row)
+                appendLabel(part.formattedCost, width: 82, alignment: 1, style: "tokenclock-quota-source", to: row)
+                gtk_box_pack_start(tc_gtk_box(content), row, 0, 0, 0)
+            }
+            note(tr("quota.costMode.note"))
+        } else { note(tr("quota.costMode.empty")) }
     }
 
     private func appendQuotaProvider(

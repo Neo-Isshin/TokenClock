@@ -16,11 +16,29 @@ enum TokenFormat {
     }
 }
 /// 单个工具的 token 使用数据
+enum UsageMeasurementUnit: String, Codable, CaseIterable {
+    case tokens
+    case credits
+    case requests
+}
+
+enum UsageMeasurementScope: String, Codable, CaseIterable {
+    case today
+    case currentSession
+    case lifetime
+    /// 仅有官方契约可探测、尚无稳定数值语义的 provider（Windows 供应商目录使用）
+    case contractOnly
+}
+
 struct ToolUsage: Identifiable, Hashable {
     var id: String { name }
     let name: String
     let abbreviation: String
     let emoji: String
+    var measurementUnit: UsageMeasurementUnit = .tokens
+    var measurementScope: UsageMeasurementScope = .today
+    var measurementValue: Int? = nil
+    var value: Int { measurementValue ?? todayTokens }
     var todayTokens: Int
     var todayMessages: Int
     var isActive: Bool
@@ -41,6 +59,8 @@ struct ToolUsage: Identifiable, Hashable {
 
     /// 今日活跃的 session/agent 列表（用于展开展示）
     var sessions: [SessionInfo] = []
+    /// Today's local Codex cost split, never attributed to a subscription account.
+    var costModes: CostModeBreakdown? = nil
 
     /// 格式化的 token 数（如 "847.2K" / "1.23B"）
     var formattedTokens: String { TokenFormat.compact(todayTokens) }
@@ -54,6 +74,15 @@ struct ToolUsage: Identifiable, Hashable {
     var formattedMessages: String {
         "\(todayMessages)"
     }
+}
+
+/// Exact model-level usage within a session that may switch models.
+struct SessionModelUsage: Hashable {
+    let model: String
+    let tokens: Int
+    let messages: Int
+    var cost: CostEstimate = .unavailable
+    var cacheReadTokens: Int = 0
 }
 
 /// 单个 session 或 agent 的今日数据
@@ -83,6 +112,12 @@ struct SessionInfo: Identifiable, Hashable {
 
     /// 该 session 今日的缓存读 token 数（「包含缓存读」口径用）
     var cacheReadTokens: Int = 0
+
+    /// Exact request-model breakdown when available; never substitute a
+    /// session's dominant model for a different model's generation speed.
+    var modelBreakdown: [SessionModelUsage] = []
+    /// Exact local transcript/database source; never inferred from the session title.
+    var sourceLogPath: String? = nil
 
     /// 格式化的 token 数
     var formattedTokens: String { TokenFormat.compact(todayTokens) }

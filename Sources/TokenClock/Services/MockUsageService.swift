@@ -27,11 +27,17 @@ final class MockUsageService {
             ("Grok Bot", "GB", "😶"),
         ]
 
-        return tools.map { tool in
+        let existing = tools.map { (name: $0.name, abbr: $0.abbr, emoji: $0.emoji, unit: UsageMeasurementUnit.tokens, scope: UsageMeasurementScope.today) }
+        let additional = AdditionalHarness.allCases.filter { harness in !tools.contains { $0.name == harness.name } }.map { harness in
+            (name: harness.name, abbr: harness.abbreviation, emoji: harness.emoji, unit: harness.unit, scope: UsageMeasurementScope.today)
+        }
+        return (existing + additional).map { tool in
             ToolUsage(
                 name: tool.name,
                 abbreviation: tool.abbr,
                 emoji: tool.emoji,
+                measurementUnit: tool.unit,
+                measurementScope: tool.scope,
                 todayTokens: 0,
                 todayMessages: 0,
                 isActive: false,

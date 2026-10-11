@@ -52,7 +52,7 @@ enum PathDetector {
     }
 
     static func runFullDetection() -> DetectionSummary {
-        let results = LinuxProviderCatalog.Provider.allCases.map(detect)
+        let results = LinuxProviderCatalog.Provider.allCases.map(detect) + HarnessSourceDetection.results()
         return DetectionSummary(
             results: results,
             declaredCount: results.filter(\.catalogDeclared).count,

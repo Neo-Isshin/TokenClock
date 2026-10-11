@@ -418,3 +418,7 @@ TokenClock is open-sourced under the **[GPL v3 License](LICENSE)** — © 2026 N
 [![Star](https://img.shields.io/badge/⭐-Star%20on%20GitHub-181717?style=for-the-badge&logo=github&logoColor=white)](https://github.com/Neo-Isshin/TokenClock)
 
 </div>
+
+### Additional local harnesses
+
+Kilo Code (CLI and legacy VS Code records), Pi, OMP / Oh My Pi, and Command Code now have local token readers. Freebuff shows completed local responses, not inferred tokens or subscription quota. Hermes uses its bundled black-and-white portrait. See [source formats and limitations](docs/ADDITIONAL_HARNESSES.md).

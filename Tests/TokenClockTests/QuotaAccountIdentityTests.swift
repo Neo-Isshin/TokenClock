@@ -3,6 +3,25 @@ import XCTest
 @testable import TokenClock
 
 final class QuotaAccountIdentityTests: XCTestCase {
+    func testPinnedGrokBotActualPeriodRendersOnlyForTheFreshActiveAccount() throws {
+        let now = Date()
+        let groups = [ProviderQuotaGroup(id: "grok", name: "Subscription", buckets: [
+            CodexQuotaBucket(id: "grok", name: "Grok Bot", usedPercent: 2, windowMinutes: 878,
+                             resetsAt: now.addingTimeInterval(1500)),
+        ])]
+        let record = SubscriptionAccountRecord(provider: .grokBot, accountID: "active-grok",
+            email: "test@example.com", note: "", detectedPlan: "pro", manualPlan: nil,
+            groups: groups, refreshedAt: now, source: "test",
+            creditBalance: nil, hasUnlimitedCredits: false, resetCreditCount: 0)
+        let ring = try XCTUnwrap(DialQuotaAccountSelection.indicator(provider: .grokBot,
+            selectedID: record.id, activeID: record.id, records: [record], liveGroups: groups, now: now))
+        XCTAssertEqual(ring.outerRemainingPercent, 98)
+        XCTAssertNil(DialQuotaAccountSelection.indicator(provider: .grokBot,
+            selectedID: record.id, activeID: "another-account", records: [record], liveGroups: groups, now: now))
+        XCTAssertNil(DialQuotaAccountSelection.indicator(provider: .grokBot,
+            selectedID: record.id, activeID: record.id, records: [record], liveGroups: groups,
+            now: now.addingTimeInterval(16 * 60)))
+    }
     private func account(_ id: String, email: String? = nil, age: TimeInterval = 0) -> SubscriptionAccountRecord {
         SubscriptionAccountRecord(provider: .codex, accountID: id, email: email, note: "Primary",
             detectedPlan: "pro", manualPlan: "Pro 20x",

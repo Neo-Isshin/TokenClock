@@ -417,3 +417,7 @@ TokenClock 基于 **[GPL v3 协议](LICENSE)** 开源 —— © 2026 Neo-Isshin�
 [![Star](https://img.shields.io/badge/⭐-Star%20on%20GitHub-181717?style=for-the-badge&logo=github&logoColor=white)](https://github.com/Neo-Isshin/TokenClock)
 
 </div>
+
+### 新增本地 Harness
+
+已接入 Kilo Code（CLI 与旧版 VS Code 扩展记录）、Pi、OMP / Oh My Pi、Command Code 的本地 Token 用量。Freebuff 单独显示本地完成回复数，不将上下文大小或 credits 折算成 Token，也不声称支持其订阅额度。Hermes 统一使用黑白人物头像。详见[数据格式与限制](docs/ADDITIONAL_HARNESSES.md)。
