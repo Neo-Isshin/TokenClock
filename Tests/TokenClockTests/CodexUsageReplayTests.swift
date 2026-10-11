@@ -3,6 +3,33 @@ import XCTest
 @testable import TokenClock
 
 final class CodexUsageReplayTests: XCTestCase {
+    func testModeSwitchesAndUnmarkedUsageSplitWithoutChangingExistingCost() throws {
+        let home = try makeRoot()
+        try write("service_tier = \"priority\"\n", to: home.appendingPathComponent("config.toml"))
+        let directory = home.appendingPathComponent("sessions", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let id = "019fa671-a3fc-7902-8b91-6077ac1b28c3"
+        let now = Date()
+        var lines = [metadata(id: id, at: now.addingTimeInterval(-20)), turn(model: "gpt-6.1-sol")]
+        for i in 0..<4 {
+            if i == 1 { lines.append(settings(tier: "default")) }
+            if i == 2 { lines.append(settings(tier: "fast")) }
+            if i == 3 { lines.append(settings(tier: "future-unknown-tier")) }
+            lines.append(usage(at: now.addingTimeInterval(Double(i - 10)), input: 100, cached: 60,
+                output: 20, total: 120, cumulativeInput: (i+1)*100, cumulativeCached: (i+1)*60,
+                cumulativeOutput: (i+1)*20, cumulativeTotal: (i+1)*120))
+        }
+        try write(lines.joined(separator: "\n") + "\n",
+                  to: directory.appendingPathComponent("rollout-2026-10-03T00-00-00-\(id).jsonl"))
+        let service = CodexUsageService(codexHome: home.path)
+        service.fullScan()
+        let split = service.todayCostModes()
+        XCTAssertEqual(split.parts.map(\.requests), [1, 1, 2])
+        XCTAssertEqual(split.total.value, service.todayCost().value, accuracy: 0.000000001)
+        XCTAssertEqual(split.parts.reduce(0) { $0 + $1.cost.value }, service.todayCost().value, accuracy: 0.000000001)
+        service.incrementalScan()
+        XCTAssertEqual(service.todayCostModes(), split)
+    }
     private var roots: [URL] = []
 
     override func tearDownWithError() throws {

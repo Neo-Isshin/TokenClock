@@ -11,7 +11,7 @@ struct BrandIconView: View {
     private static var images: [String: NSImage] = [:]
 
     private var image: NSImage? {
-        guard BrandIconStyle.resolved(iconStyle) == .official else { return nil }
+        guard BrandIconStyle.resolved(iconStyle) == .official || BrandIconCatalog.key(for: name) == "hermes" else { return nil }
         guard let key = BrandIconCatalog.key(for: name) else { return nil }
         if let cached = Self.images[key] { return cached }
         guard let url = BrandIconCatalog.url(forKey: key), let image = NSImage(contentsOf: url) else { return nil }

@@ -85,6 +85,68 @@ enum PricingServiceTier: String, Sendable {
     case priority
 }
 
+/// Evidence describes recorded request settings, not the actual served tier.
+enum PricingTierEvidence: String, Sendable {
+    case recorded, configuration, unknown
+}
+
+enum CostMode: String, CaseIterable, Hashable, Sendable {
+    case standard, fast, unclassified
+    var labelKey: String { "quota.costMode." + rawValue }
+}
+
+struct CostModePart: Hashable, Sendable {
+    let mode: CostMode
+    var requests: Int
+    var cost: CostEstimate
+    var multipliers: [Double] = []
+    var formattedCost: String {
+        var displayed = cost
+        if mode == .unclassified && requests > 0 { displayed.complete = false }
+        return CostFormat.estimate(displayed)
+    }
+    var rateBadge: String {
+        guard mode == .fast, let first = multipliers.first, let last = multipliers.last else { return "" }
+        let lower = String(format: "%.3g", first)
+        return first == last ? "API ×" + lower : "API ×" + lower + "–" + String(format: "%.3g", last)
+    }
+}
+
+struct CostModeBreakdown: Hashable, Sendable {
+    var parts: [CostModePart]
+    let total: CostEstimate
+    var requestCount: Int { parts.reduce(0) { $0 + $1.requests } }
+
+    static func make(_ requests: [ModelUsageRequest], missingModels: Int = 0,
+                     pricing: PricingService = .shared) -> CostModeBreakdown {
+        let parts = CostMode.allCases.map { mode in
+            let selected = requests.filter {
+                let category: CostMode = $0.tierEvidence == .recorded
+                    ? ($0.serviceTier == .priority ? .fast : .standard) : .unclassified
+                return category == mode
+            }
+            let premiums = mode == .fast ? Set(selected.compactMap {
+                pricing.price(forModel: $0.model)?.priorityMultiplier
+            }.filter { $0.isFinite && $0 > 1 }).sorted() : []
+            var estimate = pricing.cost(of: selected)
+            if mode == .unclassified && missingModels > 0 {
+                if selected.isEmpty { estimate = .unavailable }
+                else { estimate.complete = false }
+            }
+            return CostModePart(mode: mode,
+                requests: selected.count + (mode == .unclassified ? max(0, missingModels) : 0),
+                cost: estimate, multipliers: premiums)
+        }
+        // Keep the existing estimator intact: a presentation split must never
+        // change the dial amount, reprice a request, or mutate a historical ledger.
+        return CostModeBreakdown(parts: parts, total: pricing.cost(of: requests))
+    }
+    static func unclassified(total: CostEstimate, requests: Int) -> CostModeBreakdown {
+        CostModeBreakdown(parts: [CostModePart(mode: .unclassified, requests: requests, cost: total)],
+                          total: total)
+    }
+}
+
 /// One billable model request. Request granularity is required for full-request
 /// long-context tiers and for service-tier changes inside a session.
 struct ModelUsageRequest: Sendable {
@@ -93,17 +155,20 @@ struct ModelUsageRequest: Sendable {
     /// Whole input context, including cached input, used only to choose a pricing tier.
     let contextInputTokens: Int
     let serviceTier: PricingServiceTier
+    let tierEvidence: PricingTierEvidence
 
     init(
         model: String,
         buckets: ModelBuckets,
         contextInputTokens: Int,
-        serviceTier: PricingServiceTier = .standard
+        serviceTier: PricingServiceTier = .standard,
+        tierEvidence: PricingTierEvidence = .recorded
     ) {
         self.model = model
         self.buckets = buckets
         self.contextInputTokens = max(0, contextInputTokens)
         self.serviceTier = serviceTier
+        self.tierEvidence = tierEvidence
     }
 }
 

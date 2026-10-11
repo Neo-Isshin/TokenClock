@@ -8,6 +8,7 @@ struct SubscriptionQuotaWindowView: View {
     @State private var isEditingOrder = false
     @State private var providerOrder: [SubscriptionProvider]
     @State private var expandedEmails: Set<String> = []
+    @State private var costModesExpanded = false
 
     init(
         viewModel: ViewModel,
@@ -108,6 +109,11 @@ struct SubscriptionQuotaWindowView: View {
 
             Divider()
 
+            costModeDisclosure
+                .padding(.horizontal, 20)
+                .padding(.vertical, 7)
+            Divider()
+
             if visibleProviders.isEmpty {
                 VStack(spacing: 10) {
                     if isLoading { ProgressView().controlSize(.regular) }
@@ -142,6 +148,66 @@ struct SubscriptionQuotaWindowView: View {
         .background(Color(nsColor: .windowBackgroundColor))
         .onAppear { onLayoutChange(isTwoColumn) }
         .onChange(of: isTwoColumn) { onLayoutChange($0) }
+    }
+
+    private var costModeDisclosure: some View {
+        let tool = viewModel.visibleTools.first { $0.name == "Codex" }
+        let split = tool?.costModes
+        return VStack(alignment: .leading, spacing: 0) {
+            Button {
+                withAnimation(.easeInOut(duration: 0.15)) {
+                    costModesExpanded.toggle()
+                }
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: costModesExpanded ? "chevron.down" : "chevron.right")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 12)
+                        .accessibilityHidden(true)
+                    Text(L10n.shared.tr("quota.costMode.title"))
+                        .font(.system(size: 11, weight: .medium))
+                    Spacer(minLength: 6)
+                    Text(tool?.formattedCost ?? "—")
+                        .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                }
+                .padding(.vertical, 5)
+                .frame(maxWidth: .infinity, minHeight: 28, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityValue(L10n.shared.tr(costModesExpanded ? "quota.costMode.expanded" : "quota.costMode.collapsed"))
+
+            if costModesExpanded {
+                VStack(alignment: .leading, spacing: 7) {
+                    Text(L10n.shared.tr("quota.costMode.scope"))
+                        .font(.system(size: 10)).foregroundStyle(.secondary)
+                    if let split, split.requestCount > 0 {
+                        ForEach(split.parts, id: \.mode) { part in
+                            HStack(spacing: 6) {
+                                Text(L10n.shared.tr(part.mode.labelKey))
+                                    .font(.system(size: 11, weight: .medium))
+                                if !part.rateBadge.isEmpty {
+                                    Text(part.rateBadge).font(.system(size: 9)).foregroundStyle(.secondary)
+                                }
+                                Spacer(minLength: 6)
+                                Text(L10n.shared.tr("quota.costMode.calls", part.requests))
+                                    .font(.system(size: 10)).foregroundStyle(.secondary)
+                                Text(part.formattedCost)
+                                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                                    .frame(width: 85, alignment: .trailing)
+                            }
+                        }
+                        Text(L10n.shared.tr("quota.costMode.note"))
+                            .font(.system(size: 9)).foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    } else {
+                        Text(L10n.shared.tr("quota.costMode.empty"))
+                            .font(.system(size: 10)).foregroundStyle(.secondary)
+                    }
+                }.padding(.top, 5)
+            }
+        }
     }
 
     @ViewBuilder

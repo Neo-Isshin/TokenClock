@@ -44,6 +44,7 @@ private struct ChipPressStyle: ButtonStyle {
 
 /// 展开态详情列表（主题感知，支持 session/agent 展开）
 struct DetailDropdownView: View {
+    @ObservedObject private var generationSpeedStore = GenerationSpeedStore.shared
     let tools: [ToolUsage]
     var theme: ClockFaceTheme = .classic
     /// Glass 版可覆写详情面板文字色；nil 时跟随表盘主题。
@@ -98,12 +99,13 @@ struct DetailDropdownView: View {
 
     /// 过滤掉今日消耗为 0 的工具
     private var activeTools: [ToolUsage] {
-        tools.filter { $0.todayTokens > 0 }
+        tools.filter { $0.todayTokens > 0 || $0.measurementValue != nil && $0.value > 0 }
     }
 
     /// 「按模型」分组的视图数据（跨工具归并）
     private var modelGroups: [ModelGroup] {
-        UsageAggregator.groupedByModel(tools, unknownLabel: L10n.shared.tr("detail.unknownModel"))
+        UsageAggregator.groupedByModel(tools, unknownLabel: L10n.shared.tr("detail.unknownModel"),
+                                       generationSpeedStore: generationSpeedStore)
     }
 
     /// 百分比分母：所有工具当日 token 总和（随用量口径切换；未激活工具为 0，
@@ -259,16 +261,18 @@ struct DetailDropdownView: View {
                         .frame(width: 36, alignment: .trailing)
                     if groupingMode == .session {
                         Text(L10n.shared.tr("detail.cacheRate"))
-                            .frame(width: 40, alignment: .trailing)
+                            .frame(width: 36, alignment: .trailing)
+                    } else {
+                        // Numeric right edges use the same 36 pt step without
+                        // expanding the message column or squeezing model names.
+                        Text("t/s")
+                            .frame(width: 36, alignment: .trailing)
+                            .help(L10n.shared.tr("detail.generationSpeedHelp"))
                     }
                 }
                 .font(.system(size: 9, weight: .medium))
                 .foregroundColor(headerColor)
-                    } else {
-                        Text("t/s")
-                            .frame(width: 48, alignment: .trailing)
-                            .help(L10n.shared.tr("detail.generationSpeedHelp"))
-                .padding(.horizontal, 16)
+                .padding(.horizontal, 12)
                 .padding(.top, 6)
                 .padding(.bottom, 4)
 
@@ -821,20 +825,20 @@ private struct ToolExpandableRow: View {
                         .foregroundColor(textColor)
                         .frame(maxWidth: .infinity, alignment: .leading)
 
-                    Text(primaryValueText(tokens: tool.todayTokens, cacheRead: tool.todayCacheReadTokens, cost: tool.todayCost, mode: valueMode, includeCacheRead: usageIncludesCache))
+                    Text(tool.measurementUnit == .requests ? "\(tool.value) \(L10n.shared.tr("harness.responses"))" : primaryValueText(tokens: tool.todayTokens, cacheRead: tool.todayCacheReadTokens, cost: tool.todayCost, mode: valueMode, includeCacheRead: usageIncludesCache))
                         .font(.system(size: 11, weight: .semibold, design: .monospaced))
                         .foregroundColor(textColor)
                         .frame(width: 62, alignment: .trailing)
 
-                    Text(secondaryValueText(tokens: tool.todayTokens, cacheRead: tool.todayCacheReadTokens, messages: tool.todayMessages, mode: valueMode, grandTotal: grandTotal, includeCacheRead: usageIncludesCache))
+                    Text(tool.measurementUnit == .requests ? "—" : secondaryValueText(tokens: tool.todayTokens, cacheRead: tool.todayCacheReadTokens, messages: tool.todayMessages, mode: valueMode, grandTotal: grandTotal, includeCacheRead: usageIncludesCache))
                         .font(.system(size: 10, design: .monospaced))
                         .foregroundColor(subtextColor)
                         .frame(width: 36, alignment: .trailing)
 
-                    Text(formatCacheRate(tool.cacheRate))
+                    Text(tool.measurementUnit == .requests ? "—" : formatCacheRate(tool.cacheRate))
                         .font(.system(size: 10, design: .monospaced))
                         .foregroundColor(subtextColor)
-                        .frame(width: 40, alignment: .trailing)
+                        .frame(width: 36, alignment: .trailing)
                 }
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
@@ -940,12 +944,12 @@ private struct SessionRow: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
-            Text(primaryValueText(tokens: session.todayTokens, cacheRead: session.cacheReadTokens, cost: session.todayCost, mode: valueMode, includeCacheRead: usageIncludesCache))
+            Text(session.source == "Local responses · tokens unavailable" ? "\(session.todayMessages) \(L10n.shared.tr("harness.responses"))" : primaryValueText(tokens: session.todayTokens, cacheRead: session.cacheReadTokens, cost: session.todayCost, mode: valueMode, includeCacheRead: usageIncludesCache))
                 .font(.system(size: 10, weight: .semibold, design: .monospaced))
                 .foregroundColor(subtextColor)
                 .frame(width: 62, alignment: .trailing)
 
-            Text(secondaryValueText(tokens: session.todayTokens, cacheRead: session.cacheReadTokens, messages: session.todayMessages, mode: valueMode, grandTotal: grandTotal, includeCacheRead: usageIncludesCache))
+            Text(session.source == "Local responses · tokens unavailable" ? "—" : secondaryValueText(tokens: session.todayTokens, cacheRead: session.cacheReadTokens, messages: session.todayMessages, mode: valueMode, grandTotal: grandTotal, includeCacheRead: usageIncludesCache))
                 .font(.system(size: 9, design: .monospaced))
                 .foregroundColor(subtextColor)
                 .frame(width: 36, alignment: .trailing)
@@ -953,7 +957,7 @@ private struct SessionRow: View {
             // 子行无缓存率列，占位保持对齐
             Rectangle()
                 .fill(Color.clear)
-                .frame(width: 40)
+                .frame(width: 36, alignment: .trailing)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 5)
@@ -1011,6 +1015,11 @@ private struct ModelExpandableRow: View {
                         .font(.system(size: 10, design: .monospaced))
                         .foregroundColor(subtextColor)
                         .frame(width: 36, alignment: .trailing)
+                    Text(group.generationSpeed.formatted)
+                        .font(.system(size: 9, design: .monospaced))
+                        .foregroundColor(subtextColor)
+                        .frame(width: 36, alignment: .trailing)
+                        .help(L10n.shared.tr("detail.generationSpeedHelp"))
                 }
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
@@ -1027,11 +1036,6 @@ private struct ModelExpandableRow: View {
                     ForEach(group.contributions) { c in
                         ModelContributionRow(contribution: c, modelName: group.name, theme: theme, textColorOverride: textColorOverride, valueMode: valueMode, grandTotal: grandTotal, usageIncludesCache: usageIncludesCache)
                     }
-                    Text(group.generationSpeed.formatted)
-                        .font(.system(size: 9, design: .monospaced))
-                        .foregroundColor(subtextColor)
-                        .frame(width: 48, alignment: .trailing)
-                        .help(L10n.shared.tr("detail.generationSpeedHelp"))
                 }
                 .transition(.opacity.combined(with: .move(edge: .top)))
             }
@@ -1043,6 +1047,7 @@ private struct ModelExpandableRow: View {
 
 private struct ModelContributionRow: View {
     let contribution: ToolContribution
+    let modelName: String
     let theme: ClockFaceTheme
     var textColorOverride: Color? = nil
     /// 数值显示模式
@@ -1059,7 +1064,6 @@ private struct ModelContributionRow: View {
     var body: some View {
         HStack(spacing: 0) {
             // 子行缩进：对齐 chevron 后额外右移，与 session 子行保持一致
-    let modelName: String
             Rectangle()
                 .fill(Color.clear)
                 .frame(width: 26)
@@ -1083,6 +1087,11 @@ private struct ModelContributionRow: View {
                 .font(.system(size: 9, design: .monospaced))
                 .foregroundColor(subtextColor)
                 .frame(width: 36, alignment: .trailing)
+            Text(contribution.generationSpeed.formatted)
+                .font(.system(size: 9, design: .monospaced))
+                .foregroundColor(subtextColor)
+                .frame(width: 36, alignment: .trailing)
+                .help(L10n.shared.tr("detail.generationSpeedHelp"))
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 5)
@@ -1099,11 +1108,6 @@ struct EmojiNameLabel: View {
     let truncationMode: Text.TruncationMode
 
     var body: some View {
-            Text(GenerationSpeedStore.shared.summary(model: modelName, providers: [contribution.tool]).formatted)
-                .font(.system(size: 9, design: .monospaced))
-                .foregroundColor(subtextColor)
-                .frame(width: 48, alignment: .trailing)
-                .help(L10n.shared.tr("detail.generationSpeedHelp"))
         HStack(alignment: .center, spacing: 3) {
             BrandIconView(name: name, fallback: emoji, size: max(14, iconSize + 2))
                 .frame(width: 15, height: 15, alignment: .center)

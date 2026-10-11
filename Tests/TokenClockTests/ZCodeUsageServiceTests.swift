@@ -12,7 +12,9 @@ final class ZCodeUsageServiceTests: XCTestCase {
             throw XCTSkip("Set TOKENCLOCK_RUN_REAL_ZCODE_TESTS=1 to scan local ZCode data")
         }
         let service = ZCodeUsageService()
+        let started = Date()
         service.fullScan()
+        print("[ZCode] full ledger scan: \(Date().timeIntervalSince(started)) seconds")
         XCTAssertGreaterThan(service.dailyData.values.reduce(0) { $0 + $1.tokens }, 0)
         XCTAssertGreaterThan(service.dailyData.values.reduce(0) { $0 + $1.messages }, 0)
         XCTAssertGreaterThan(service.dailyCache.values.reduce(0, +), 0)
@@ -75,6 +77,21 @@ final class ZCodeUsageServiceTests: XCTestCase {
         XCTAssertEqual(historical?.tokens, 465)
         XCTAssertEqual(historical?.cacheReadTokens, 950)
         XCTAssertEqual(historical?.sessions.first?.messages, 2)
+        insert(db, id: "retry-final", logical: "request-retry", attempt: 2, session: "sess-main",
+               model: "GLM-5.3-Flash", status: "completed", time: now + 4,
+               input: 50, output: 10, reasoning: 0, cacheWrite: 0, cacheRead: 20)
+        service.incrementalScan()
+        XCTAssertEqual(service.todayUsage().tokens, 420)
+        XCTAssertEqual(service.todayUsage().messages, 2)
+        XCTAssertEqual(service.todayCacheReadTokens(), 820)
+        service.fullScan()
+        XCTAssertEqual(service.todayUsage().tokens, 420)
+        // An unreadable/schema-incompatible database must not publish half
+        // a new scan or replace the last valid totals with zero.
+        exec(db, "DROP TABLE model_usage;")
+        service.fullScan()
+        XCTAssertEqual(service.todayUsage().tokens, 420)
+        XCTAssertEqual(service.todayUsage().messages, 2)
     }
 
     private func exec(_ db: OpaquePointer?, _ sql: String) {

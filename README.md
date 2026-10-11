@@ -198,3 +198,7 @@ TokenClock is open-sourced under the **[MIT License](LICENSE)** — © 2026 Neo-
 - GTK and Cairo for the Linux normal edition
 - The AI coding tools whose local data formats make this overview possible
 - Everyone who reports issues, tests new platforms, and improves TokenClock
+
+### Additional local harnesses
+
+Kilo Code (CLI and legacy VS Code records), Pi, OMP / Oh My Pi, and Command Code now have local token readers. Freebuff shows completed local responses, not inferred tokens or subscription quota. Hermes uses its bundled black-and-white portrait. See [source formats and limitations](docs/ADDITIONAL_HARNESSES.md).
