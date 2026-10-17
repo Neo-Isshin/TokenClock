@@ -214,7 +214,7 @@ struct ProviderQuotaSnapshot: Equatable, Sendable {
 /// Reads Antigravity's local, authenticated Models & Usage summary on demand.
 /// The short-lived loopback token remains in memory and is never logged or persisted.
 final class AntigravityQuotaService: @unchecked Sendable {
-    private struct Endpoint { let port: Int; let csrfToken: String }
+    private typealias Endpoint = AntigravityLocalEndpointDiscovery.Endpoint
     private let fileManager: FileManager
     private let environment: [String: String]
     private let homeDirectory: String
@@ -227,13 +227,19 @@ final class AntigravityQuotaService: @unchecked Sendable {
 
     func fetch() -> ProviderQuotaSnapshot {
         let source = "Antigravity local service"
-        guard let endpoint = endpointFromLatestLog() else {
-            return .unavailable("Antigravity is not running or its local quota service was not found.", source: source)
+        let endpoints = AntigravityLocalEndpointDiscovery.discover()
+        for endpoint in endpoints {
+            if let data = request(endpoint: endpoint), let snapshot = Self.decodeResponse(data) { return snapshot }
         }
-        guard let data = request(endpoint: endpoint), let snapshot = Self.decodeResponse(data) else {
-            return .unavailable("Antigravity quota response was not available.", source: source)
+        // New standalone apps no longer update the IDE's ls-main.log. Only
+        // scan historical IDE logs if no running service answered successfully.
+        guard let legacy = endpointFromLatestLog() else {
+            return .unavailable(endpoints.isEmpty
+                ? "Antigravity is not running or its local quota service was not found."
+                : "Antigravity quota response was not available.", source: source)
         }
-        return snapshot
+        if !endpoints.contains(legacy), let data = request(endpoint: legacy), let snapshot = Self.decodeResponse(data) { return snapshot }
+        return .unavailable("Antigravity quota response was not available.", source: source)
     }
 
     static func decodeResponse(_ data: Data, now: Date = Date()) -> ProviderQuotaSnapshot? {
@@ -311,15 +317,21 @@ final class AntigravityQuotaService: @unchecked Sendable {
         return response.body
         #else
         guard let executable = ["/usr/bin/curl", "/usr/local/bin/curl"].first(where: fileManager.isExecutableFile(atPath:)) else { return nil }
-        let process = Process(); let output = Pipe()
+        let process = Process(); let output = Pipe(); let input = Pipe()
         process.executableURL = URL(fileURLWithPath: executable)
-        process.arguments = ["-ksS", "--max-time", "12", "-X", "POST", "-H", "Content-Type: application/json",
-            "-H", "x-codeium-csrf-token: \(endpoint.csrfToken)", "--data-binary", "{\"forceRefresh\":true}", url]
-        process.standardOutput = output; process.standardError = Pipe()
+        process.arguments = ["-fksS", "--noproxy", "*", "--max-time", "4", "-X", "POST", "-H", "Content-Type: application/json",
+            "--config", "-", "--data-binary", "{\"forceRefresh\":true}", url]
+        process.standardOutput = output; process.standardError = FileHandle.nullDevice
+        process.standardInput = input
         do {
-            try process.run(); process.waitUntilExit()
+            try process.run()
+            let token = endpoint.csrfToken.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
+            try input.fileHandleForWriting.write(contentsOf: Data("header = \"x-codeium-csrf-token: \(token)\"\n".utf8))
+            try input.fileHandleForWriting.close()
+            let data = output.fileHandleForReading.readDataToEndOfFile()
+            process.waitUntilExit()
             guard process.terminationStatus == 0 else { return nil }
-            return output.fileHandleForReading.readDataToEndOfFile()
+            return data
         } catch { return nil }
         #endif
     }
