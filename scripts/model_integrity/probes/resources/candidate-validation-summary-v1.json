@@ -1,0 +1,62 @@
+{
+  "schema": "tokenclock-candidate-validation-summary/v1",
+  "date": "2026-10-15",
+  "formal_admission": false,
+  "formal_direction_use": false,
+  "evidence_sha256": "8f481b62bd02ebcdad02493ce9954be4a6d8b5382bd0f6b7a51fd886f1edc185",
+  "preregistration_sha256": "c0a41906358caa7fd05ecf364bd47e6a4c34e4b9fa4050e72ddafde3efec272d",
+  "extractor_sha256": "f8a12fee52fe518e818d42657ee276cf859eb18f52ed326f5ebe1ec6fbc56633",
+  "summary": {
+    "hash_verified_existing_answers": 548,
+    "paired_heldout_groups": 34,
+    "heldout_task_families": 9,
+    "baseline": {
+      "abstained": 16,
+      "correct": 16,
+      "incorrect": 2
+    },
+    "candidate": {
+      "correct": 10,
+      "abstained": 18,
+      "incorrect": 6
+    },
+    "incremental_correct_groups": 4,
+    "incremental_gain_families": [
+      "C02",
+      "N02",
+      "O06"
+    ],
+    "unknown_control_groups": 50,
+    "unknown_accepted_groups": 31,
+    "independent_new_temporal_window": false
+  },
+  "gates": {
+    "gain_families": true,
+    "no_wrong_heldout": false,
+    "unknown_controls_present": true,
+    "unknowns_rejected": false,
+    "new_temporal_window": false
+  },
+  "new_model_calls": 0,
+  "historical_labels_authenticated": false,
+  "user_summary": [
+    {
+      "id": "visible-style-v1",
+      "title": "表达习惯特征",
+      "status": "暂不用于判型",
+      "reason": "能补充一些差别，但在留出对照和未纳入候选的型号上混淆较多。"
+    },
+    {
+      "id": "single-number-v1",
+      "title": "选数偏好与题面扰动",
+      "status": "保留候选",
+      "reason": "公开参考曾大幅变化，空格扰动容易被还原；还缺少本条件下的新对照。"
+    },
+    {
+      "id": "modeltrace-sequence-v1",
+      "title": "数字串指纹",
+      "status": "尚未完成本地验证",
+      "reason": "外部参考的采样条件与当前短题不同，需要单独建立和验证参考。"
+    }
+  ]
+}

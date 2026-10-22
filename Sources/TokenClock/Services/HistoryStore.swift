@@ -158,6 +158,12 @@ final class HistoryStore: @unchecked Sendable {
             .appendingPathComponent("TokenClock", isDirectory: true)
             .appendingPathComponent("history.sqlite")
 #else
+        // Integration runs may use an isolated history database. This is only
+        // an explicit host setting; session content never supplies this path.
+        if let override = ProcessInfo.processInfo.environment["TOKENCLOCK_HISTORY_DB_PATH"] {
+            precondition(override.hasPrefix("/"), "TOKENCLOCK_HISTORY_DB_PATH must be absolute")
+            return URL(fileURLWithPath: override)
+        }
         let appSupport = (try? FileManager.default.url(
             for: .applicationSupportDirectory, in: .userDomainMask,
             appropriateFor: nil, create: true

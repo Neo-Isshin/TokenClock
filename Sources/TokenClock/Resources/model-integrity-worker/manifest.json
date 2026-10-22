@@ -1,0 +1,409 @@
+{
+  "schema": "tokenclock-l1-runtime-bundle/v1",
+  "files": [
+    {
+      "path": "scripts/model_integrity/l1/__init__.py",
+      "sha256": "9fbc9b0cfa0cf60eae03db745e2fbf816d76ad9a5cf80dfe3f7f6e1d5e60f0a0",
+      "bytes": 81
+    },
+    {
+      "path": "scripts/model_integrity/l1/__main__.py",
+      "sha256": "935a1c1166b0c1ea35a82256345000bf2c73ded718d77773bc27a71ecce28f7d",
+      "bytes": 48
+    },
+    {
+      "path": "scripts/model_integrity/l1/capabilities.py",
+      "sha256": "c59009cf12fceaf9342151f8f9d48816a73a36758dab7f85996354eeeef73e72",
+      "bytes": 2770
+    },
+    {
+      "path": "scripts/model_integrity/l1/catalog.py",
+      "sha256": "1fc1a12cfb037593e8208a93f3d5fd84c19f27fa168b44ed5ddaf04ce56ef6f4",
+      "bytes": 10893
+    },
+    {
+      "path": "scripts/model_integrity/l1/cli.py",
+      "sha256": "c86cd5eec2ba9f777d3c70d8f07c6287ac5f947cd896cab2eddc0936d113fbc3",
+      "bytes": 8145
+    },
+    {
+      "path": "scripts/model_integrity/l1/connections.py",
+      "sha256": "997830620c7e82c215db8849370207defaeb9d550728176587241a15302806ba",
+      "bytes": 11665
+    },
+    {
+      "path": "scripts/model_integrity/l1/engine.py",
+      "sha256": "e53911831fb59a39bbe0e25028e75e154a9ae1bd9d50a221601739a99810e351",
+      "bytes": 29502
+    },
+    {
+      "path": "scripts/model_integrity/l1/ingest.py",
+      "sha256": "b3a30382c2a0aa93a845a173b516ca50fc75b6b584e66f08ddf90d3df69fb5b7",
+      "bytes": 14548
+    },
+    {
+      "path": "scripts/model_integrity/l1/jobs.py",
+      "sha256": "a991bb870599a66c11a3eb53922f740454e5a65c3945a8ce2ddd092286a416cd",
+      "bytes": 53922
+    },
+    {
+      "path": "scripts/model_integrity/l1/model_catalog.py",
+      "sha256": "7843f6417963b8e8051c0dd60cda0a8ba9c2e55b3222dc39f71839a7c8600d62",
+      "bytes": 4488
+    },
+    {
+      "path": "scripts/model_integrity/l1/model_fields.py",
+      "sha256": "1a9ca0014ea1140a4cd3a267a0f161a00aa4d409a29014f1de76971ef0017cc2",
+      "bytes": 12332
+    },
+    {
+      "path": "scripts/model_integrity/l1/pipeline.py",
+      "sha256": "1c44162d493b7a56698ac3b9a0e670ad77784531027dcf23af803067a0f23d74",
+      "bytes": 4019
+    },
+    {
+      "path": "scripts/model_integrity/l1/preview.py",
+      "sha256": "e3cb07406c284946500743456d132de8b2c0cd215319dd56ddfd7708b74013d0",
+      "bytes": 17312
+    },
+    {
+      "path": "scripts/model_integrity/l1/references.py",
+      "sha256": "6f48e896b3d37a3f9ed11156a1c01c2959bdb31e3103c376dc316b2be8d15502",
+      "bytes": 13641
+    },
+    {
+      "path": "scripts/model_integrity/l1/render.py",
+      "sha256": "e9492cb62c0e840cc8cf03e6dc470055a451dcd401b2a8bb9103133a16a03f7c",
+      "bytes": 40952
+    },
+    {
+      "path": "scripts/model_integrity/l1/resources/behavior-reference-v1.json",
+      "sha256": "823b577fd3e73bed806cda78319aa584f4de13070e2baf13b8ca89ffbd016a5c",
+      "bytes": 438959
+    },
+    {
+      "path": "scripts/model_integrity/l1/semantic.py",
+      "sha256": "84336c27a6d9638cbb97102557a523b30d82f08b7ff3c4aa287f808f16537ab9",
+      "bytes": 32391
+    },
+    {
+      "path": "scripts/model_integrity/l1/sources.py",
+      "sha256": "efcc6df1069cf470af895910732eaace33b58acdc0facbff861700ce92193ad4",
+      "bytes": 28313
+    },
+    {
+      "path": "scripts/model_integrity/l1/verification.py",
+      "sha256": "9c2fc1a04199858c04665ff50e28d3b2dee3182be493c98b564cd8ca121802a8",
+      "bytes": 7123
+    },
+    {
+      "path": "scripts/model_integrity/l1/web/app.js",
+      "sha256": "85260174324e08ba56970b610cf6cafc33d2c6ee642e826e6e625fac9e7f6d62",
+      "bytes": 74347
+    },
+    {
+      "path": "scripts/model_integrity/l1/web/index.html",
+      "sha256": "a31acb901cf9c7842f556e5a38791c5f2fbf5e3fda7eb5d51614d863e5a4e238",
+      "bytes": 16803
+    },
+    {
+      "path": "scripts/model_integrity/l1/web/style.css",
+      "sha256": "19c398a7ef2e5e0ba60451ac7615f93779a0bafd2e8e64adff21c112f2a1bd33",
+      "bytes": 14613
+    },
+    {
+      "path": "scripts/model_integrity/l1/webui.py",
+      "sha256": "bc0c46627606e0327956e64f96aa0a33086320f39ed3a29131c0ba41c17620ba",
+      "bytes": 18931
+    },
+    {
+      "path": "scripts/model_integrity/m10_features.py",
+      "sha256": "76dfccc52b2ba4ff8686d5289dde2dee9f482be7c51e647a3a5d0df4024ffc88",
+      "bytes": 6963
+    },
+    {
+      "path": "scripts/model_integrity/probes/__init__.py",
+      "sha256": "3bf2979cc351e43a2e421d6434a5982add26c69d8721f5fed16951f60a69383c",
+      "bytes": 77
+    },
+    {
+      "path": "scripts/model_integrity/probes/assessment.py",
+      "sha256": "d26781c57848b630c5d8f4f64defef652b06ef040f3bfaa75e3152177ba3f690",
+      "bytes": 24910
+    },
+    {
+      "path": "scripts/model_integrity/probes/assessment_quality.py",
+      "sha256": "783098dfe19781b9998d052efc64479ba7ccf079ae2696e3c2aecd9cf27d7217",
+      "bytes": 18558
+    },
+    {
+      "path": "scripts/model_integrity/probes/assessment_specs.py",
+      "sha256": "6cb08edbac72094dd41414302442c519a712c0509ea9311f99ebd3edf51c9342",
+      "bytes": 14267
+    },
+    {
+      "path": "scripts/model_integrity/probes/batch_assessment.py",
+      "sha256": "813b03a2c58289e09b2cb1b529b6a0cfecc30dc26efdd8e71a4f8b2da0521bc8",
+      "bytes": 6235
+    },
+    {
+      "path": "scripts/model_integrity/probes/browser_driver.cjs",
+      "sha256": "a51dc7bde28dd7ec135f3d21b0b9711ba204dcf4c99b285265b62b89f49d42f3",
+      "bytes": 20743
+    },
+    {
+      "path": "scripts/model_integrity/probes/browser_driver.py",
+      "sha256": "4f4646ce7157cd75dbd51961f4a3e43ca23f4755d079027363cb7b119f8a1557",
+      "bytes": 14361
+    },
+    {
+      "path": "scripts/model_integrity/probes/candidate_style.py",
+      "sha256": "f8a12fee52fe518e818d42657ee276cf859eb18f52ed326f5ebe1ec6fbc56633",
+      "bytes": 3663
+    },
+    {
+      "path": "scripts/model_integrity/probes/catalog.py",
+      "sha256": "224ba31d1906eecfc36912044f15d08f33eaa576d59329f4deff7a9665f0adc7",
+      "bytes": 1450
+    },
+    {
+      "path": "scripts/model_integrity/probes/common.py",
+      "sha256": "fe426d8e7a9bd8ff1dcefea729bd3abc2dbf1a44bd317b085f620c385172735c",
+      "bytes": 2439
+    },
+    {
+      "path": "scripts/model_integrity/probes/diagnostics.py",
+      "sha256": "d1b713b7dcb32b77615f53daa618c0722e76509b0856d3e37644d77ccffd38c3",
+      "bytes": 19025
+    },
+    {
+      "path": "scripts/model_integrity/probes/direction_guard.py",
+      "sha256": "f03ac85cc377d275d7fc67352428400f3ccbcb3976b77cfa38e3cb786367368d",
+      "bytes": 5506
+    },
+    {
+      "path": "scripts/model_integrity/probes/features.py",
+      "sha256": "ed58040edac1a6011e31595e255b632e9ac7c4c2905adba7c0505389d84330d3",
+      "bytes": 20267
+    },
+    {
+      "path": "scripts/model_integrity/probes/fingerprint_summary.py",
+      "sha256": "fded1b51649bb7e4527a40f0aae6460d0cb13f03f69e23c3b28001204dcff91d",
+      "bytes": 3579
+    },
+    {
+      "path": "scripts/model_integrity/probes/fingerprints.py",
+      "sha256": "d3067f71619465a0a0d0742471e4d72c5a95e37514acf839e321e9c48592dde6",
+      "bytes": 39891
+    },
+    {
+      "path": "scripts/model_integrity/probes/h01.py",
+      "sha256": "707fe48189f8130066e2bcf4e8b10f7eab4a4aedbe932310f882d0d2ef4873ce",
+      "bytes": 20158
+    },
+    {
+      "path": "scripts/model_integrity/probes/h02.py",
+      "sha256": "bba9df9f433868779306b541295f654fa33bc5009b40dd71153a88e07c7b562a",
+      "bytes": 5976
+    },
+    {
+      "path": "scripts/model_integrity/probes/h03.py",
+      "sha256": "d02a1f3e0cfe6e86afa2bf3824710d4ec67d0d62e656fc70d261b4b7ba87eb4b",
+      "bytes": 25361
+    },
+    {
+      "path": "scripts/model_integrity/probes/h03_checks.py",
+      "sha256": "f28e9efb03327f0515e9f9e6b996985fd7c5978204f08a468531e373dfd801b8",
+      "bytes": 18811
+    },
+    {
+      "path": "scripts/model_integrity/probes/h04.py",
+      "sha256": "3fb787d5a89beac64de6edf0e3cdee78b8002130164e84a060a6ee46be655d90",
+      "bytes": 27471
+    },
+    {
+      "path": "scripts/model_integrity/probes/history_comparison.py",
+      "sha256": "d3a0d860031ca7d5aa8058cdd634a53ba11e6996259f2d65cd391a0eef588afb",
+      "bytes": 13110
+    },
+    {
+      "path": "scripts/model_integrity/probes/isolation.py",
+      "sha256": "aa9c618b48fb21fe68281e8b29a7caa869f3934463ac77b81d520a920c4cdd64",
+      "bytes": 12967
+    },
+    {
+      "path": "scripts/model_integrity/probes/l2.py",
+      "sha256": "4c092a2477fb4bdff5c8ec09fd40ca70a12702ede18010b28dee40e497bbbb3f",
+      "bytes": 14046
+    },
+    {
+      "path": "scripts/model_integrity/probes/numeric_fingerprint.py",
+      "sha256": "e5180b325aa29f1460a936219162f696a5ff234565bc9596d95afe966e58fbff",
+      "bytes": 13486
+    },
+    {
+      "path": "scripts/model_integrity/probes/numeric_input.py",
+      "sha256": "4e5d2060cea804323939749bcd07bf4ea495170b33a4162976c069b3f9c153bd",
+      "bytes": 3811
+    },
+    {
+      "path": "scripts/model_integrity/probes/process_assessment.py",
+      "sha256": "e6b71b8b4116aad10fc940ebec005af2f7678a166d96c3bfa3ec2c476acfe7ef",
+      "bytes": 11146
+    },
+    {
+      "path": "scripts/model_integrity/probes/process_reference.py",
+      "sha256": "a613bb1de1b8a4dc82d6e5b55ce22e5f5f3c75ae129868605c68af1d19dd7184",
+      "bytes": 30153
+    },
+    {
+      "path": "scripts/model_integrity/probes/program_interface.py",
+      "sha256": "fba4a1aa0c0c598faa4a9f2f3a2db3ff8523bfc16433e314f705b5afbbc87fff",
+      "bytes": 14222
+    },
+    {
+      "path": "scripts/model_integrity/probes/recommendations.py",
+      "sha256": "5eb01ebc738baeda24972dec13702d5a8e0074a72a336ed96420d5618de6a884",
+      "bytes": 20983
+    },
+    {
+      "path": "scripts/model_integrity/probes/reference_labels.py",
+      "sha256": "877e71272e808b23f12925667fabf84eeab153ed4aeacf20d64b50244385d132",
+      "bytes": 798
+    },
+    {
+      "path": "scripts/model_integrity/probes/reference_readiness.py",
+      "sha256": "69671646a53c6d288e71585f5feffdfdd3b979a7dc478b9aa0ff10f61f0a1278",
+      "bytes": 6557
+    },
+    {
+      "path": "scripts/model_integrity/probes/reference_release.py",
+      "sha256": "edc229072b18bcec4fe9bbac37bcdaa7303ae65dc9625d3181d3c7a85aeea87c",
+      "bytes": 12534
+    },
+    {
+      "path": "scripts/model_integrity/probes/report.py",
+      "sha256": "2b50561e278e7395e380236e5ac65af643b1807feee43d07f30ba126f5045d0f",
+      "bytes": 17115
+    },
+    {
+      "path": "scripts/model_integrity/probes/resources/assessment-specs.json",
+      "sha256": "64a9d23c48bce574a5d15928632d06115603e3ef447b186f76d534c4f37535b3",
+      "bytes": 190642
+    },
+    {
+      "path": "scripts/model_integrity/probes/resources/candidate-validation-summary-v1.json",
+      "sha256": "ec475a8d0080cf18646afb048fa7ae09aab607df2011ea2accaac5e7bc133658",
+      "bytes": 1932
+    },
+    {
+      "path": "scripts/model_integrity/probes/resources/catalog.json",
+      "sha256": "1612a45806267723fa77a0c3f6a81b0a1ee0e00a2392b8babbc6eda1c93a92a6",
+      "bytes": 20071
+    },
+    {
+      "path": "scripts/model_integrity/probes/resources/fingerprint-reference-v1.json",
+      "sha256": "652ec16ffa4b799f448d930573d0eb250348a4e9d6457a12f28a64968902874f",
+      "bytes": 2410428
+    },
+    {
+      "path": "scripts/model_integrity/probes/resources/h01_adapters.json",
+      "sha256": "3abfbca1371fe6f019d865ab084c4f5ab4abafcabdb12b350ab8bcdfb249f20b",
+      "bytes": 1170
+    },
+    {
+      "path": "scripts/model_integrity/probes/resources/h01_cases.json",
+      "sha256": "6e4c0cd69d2e8b95ba16a931af6a17d18a3b34ec5dc61c5861238e84764d5832",
+      "bytes": 2094
+    },
+    {
+      "path": "scripts/model_integrity/probes/resources/h01_interface.json",
+      "sha256": "336280b111771c2d2df22b4033f8a72190684ab6d2a7e60fa257c8964f7cb166",
+      "bytes": 2595
+    },
+    {
+      "path": "scripts/model_integrity/probes/resources/h03_pipeline.json",
+      "sha256": "ab58001fd56f6831341592bfc31fa8bb713f53567d81a680785ed1b9c1a2bd7f",
+      "bytes": 16232
+    },
+    {
+      "path": "scripts/model_integrity/probes/resources/h04_annotations.json",
+      "sha256": "3f2bf4206ab17e79abc87ed8fd21a9deef3b0876557a31dae63f9048692c806a",
+      "bytes": 66443
+    },
+    {
+      "path": "scripts/model_integrity/probes/resources/numeric-reference-v1.json",
+      "sha256": "90ed23954fbfd485837cfffc9164188e73dd547564b45e677dfc09d7f69693ce",
+      "bytes": 5785137
+    },
+    {
+      "path": "scripts/model_integrity/probes/resources/process-reference-v1.json",
+      "sha256": "4e3e8b62b9d7a8017004dcd9986c82ae21f805275efd3de749e256f803f4121b",
+      "bytes": 22046
+    },
+    {
+      "path": "scripts/model_integrity/probes/resources/reference-release-v1.json",
+      "sha256": "0ff17e9042ec5bf7d0183d87a72d81111323618b794b9a2b444012c2206d1948",
+      "bytes": 5201
+    },
+    {
+      "path": "scripts/model_integrity/probes/result_brief.py",
+      "sha256": "dde224a67544923019f6b904f074b3a25da7929269947562571abfda309d081f",
+      "bytes": 33919
+    },
+    {
+      "path": "scripts/model_integrity/probes/review_config.py",
+      "sha256": "771c89f1324f4c9a709f8364b383717361b2f8acd6d9e88acce21005fc8ccce4",
+      "bytes": 1817
+    },
+    {
+      "path": "scripts/model_integrity/probes/scoring.py",
+      "sha256": "e59225922382bab4a4a80722f4b5fe83b0c2de0121e426892588ae4b5314fcbe",
+      "bytes": 12417
+    },
+    {
+      "path": "scripts/model_integrity/probes/service_details.py",
+      "sha256": "d6cebfadefb13205917f3a6a5e06389f828886b5dbb62e61db2e1fa0a76bc301",
+      "bytes": 13685
+    },
+    {
+      "path": "scripts/model_integrity/probes/synthesis.py",
+      "sha256": "276cbece20f1e9f2361a9194462be64e9d8bfc95b47626725f73c02c2e5a30b5",
+      "bytes": 37090
+    },
+    {
+      "path": "scripts/model_integrity/probes/trajectory.py",
+      "sha256": "416eb40a4adcad72558c19a3c517007911e00e3ee703c86448c3669e92c46202",
+      "bytes": 3288
+    },
+    {
+      "path": "scripts/model_integrity/probes/transport.py",
+      "sha256": "02bb0c81abe05e209bfad66f31d212e9a8f425ff7b64439152a9e045153c5dab",
+      "bytes": 32659
+    },
+    {
+      "path": "scripts/model_integrity/probes/user_summary.py",
+      "sha256": "433694a26894ea90d24135164e62ac56cfa7f7384ea61696753ea5bffd3c5801",
+      "bytes": 15157
+    },
+    {
+      "path": "scripts/model_integrity/probes/visual_assessment.py",
+      "sha256": "6260a1d463adceaeb1c52c716f5135aefbd137c852e35e01dcf1a96f0c070876",
+      "bytes": 29085
+    },
+    {
+      "path": "scripts/model_integrity/probes/workflow.py",
+      "sha256": "ea92c82b26798b110a48b2c439141d04232bd6aa15c5f58d6839ae4928872932",
+      "bytes": 24769
+    }
+  ],
+  "research_raw_records_included": false,
+  "credentials_included": false,
+  "python_interpreter_included": false,
+  "minimum_python": "3.10",
+  "optional_runtime": {
+    "h01_h03": "verified OS sandbox",
+    "h02_h04": "Node.js + Playwright + verified OS network guard"
+  },
+  "runtime_sha256": "c5380bde7a4d59e9a1e7ca1cc24d331eb32ed5a9ede7a2febfbd8197a2f4ab7c"
+}

@@ -387,6 +387,7 @@ final class ClaudeCodeUsageService: @unchecked Sendable {
 
         let today = DateHelper.todayKey()
         let cachedUsage = cachedSessionUsage(for: today)
+        let sourcePaths = cachedSessionSourcePaths(for: today)
         var metadata: [String: [String: Any]] = [:]
         var results: [SessionInfo] = []
 
@@ -424,7 +425,8 @@ final class ClaudeCodeUsageService: @unchecked Sendable {
                 source: sourceLabel(for: sessionId),
                 model: model,
                 todayCost: PricingService.shared.cost(of: usage.buckets),
-                cacheReadTokens: usage.cacheReadTokens
+                cacheReadTokens: usage.cacheReadTokens,
+                sourceLogPath: sourcePaths[sessionId]
             ))
         }
 
@@ -485,6 +487,22 @@ final class ClaudeCodeUsageService: @unchecked Sendable {
             )
         }
         return result
+    }
+
+    private func cachedSessionSourcePaths(for dateKey: String) -> [String: String] {
+        var paths: [String: Set<String>] = [:]
+        // Reuse exactly the files already read by the usage scanner. Do not
+        // construct a filename from session metadata or choose one of duplicates.
+        for contributions in [fileDailyContrib, nestedDailyContrib] {
+            for (path, dates) in contributions where dates[dateKey] != nil {
+                let id = sessionId(fromJSONLPath: path)
+                guard !id.isEmpty, (path as NSString).isAbsolutePath else { continue }
+                paths[id, default: []].insert(path)
+            }
+        }
+        return paths.reduce(into: [:]) { result, entry in
+            if entry.value.count == 1 { result[entry.key] = entry.value.first }
+        }
     }
 
     private func sessionId(fromJSONLPath path: String) -> String {

@@ -1,0 +1,29 @@
+{
+  "schema": "tokenclock-h01-historical-interfaces/v1",
+  "adapters": {
+    "25c7c933064ef9b7d4fbd139e082cbac02eeac02a59da6d14df3e5842fd4e604": {
+      "mode": "ledger_people",
+      "remainder_policy": "payer_first",
+      "annotation_scope": "previous_nonblind_interface_review_hash_bound",
+      "original_program_modified": false
+    },
+    "a24e160346e8d834d3c1716826bbcf2ccfb3a01fc7334bcd6c0ee910bede1134": {
+      "mode": "expense_settler",
+      "remainder_policy": "beneficiary_order",
+      "annotation_scope": "previous_nonblind_interface_review_hash_bound",
+      "original_program_modified": false
+    },
+    "298219a5e2b1a515c7f86e3376302103dd2376408c1bd95c364ef693ec14cbde": {
+      "mode": "ledger_add",
+      "remainder_policy": "sorted_names",
+      "annotation_scope": "previous_nonblind_interface_review_hash_bound",
+      "original_program_modified": false
+    },
+    "bf54bfadf5990e608e0ec7cb354d61a424d45feef07c3799708ac55ae92b1d13": {
+      "mode": "expense_dataclass",
+      "remainder_policy": "beneficiary_order",
+      "annotation_scope": "previous_nonblind_interface_review_hash_bound",
+      "original_program_modified": false
+    }
+  }
+}

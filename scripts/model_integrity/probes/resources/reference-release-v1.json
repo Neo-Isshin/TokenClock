@@ -1,0 +1,92 @@
+{
+  "schema": "tokenclock-reference-release/v1",
+  "release_id": "research-reference-2026-10-15-r1",
+  "verified_on": "2026-10-15",
+  "activation": "application_bundle_only",
+  "candidate_formal_enabled": [],
+  "reference_data_changed": false,
+  "source_scope": "Historical research labels; serving identity not authenticated",
+  "files": {
+    "fingerprint": {
+      "sha256": "652ec16ffa4b799f448d930573d0eb250348a4e9d6457a12f28a64968902874f",
+      "bytes": 2410428
+    },
+    "process": {
+      "sha256": "4e3e8b62b9d7a8017004dcd9986c82ae21f805275efd3de749e256f803f4121b",
+      "bytes": 22046
+    },
+    "behavior": {
+      "sha256": "823b577fd3e73bed806cda78319aa584f4de13070e2baf13b8ca89ffbd016a5c",
+      "bytes": 438959
+    },
+    "catalog": {
+      "sha256": "1612a45806267723fa77a0c3f6a81b0a1ee0e00a2392b8babbc6eda1c93a92a6",
+      "bytes": 20071
+    },
+    "validation": {
+      "sha256": "ec475a8d0080cf18646afb048fa7ae09aab607df2011ea2accaac5e7bc133658",
+      "bytes": 1932
+    }
+  },
+  "task_prompts": {
+    "N01:A": "e6487e6cede5983112f17cba45a76954525519c5247c6fd676d22fad8a690196",
+    "N01:B": "cb923cd8129a00f7792549d475e6dc9509d4b03ad92e60f2b8ec83d68935fd0e",
+    "N02:A": "c386abf247aa44852374fda9f21ae4d0f9d4a154dc4ec6213ff8e930a18a25e4",
+    "N02:B": "4fa72cb024df91a11f49a80f0938d6ea7ca1ba5103ff94e73953164171f029c2",
+    "N03:A": "c9b97c7985c4fb432e3a99737d290bc3b08b710729c167f411d41b2fa2ef5641",
+    "N03:B": "c77ab2b7d90ec9684ef1cf55e7a10da03aa1f8f06cfddb7d005a47f247c8a701",
+    "N04:A": "36750cc0d1cc349b4935943fb58f82d5eae558d11fc5d4e675bd372a6dad1756",
+    "N04:B": "8ef2aae3f3d615192477206425303f95412a52691b35415980eb02be06cafddd",
+    "C01:A": "a3c690544221a51d69698988c2d9b3b5c599b6a6a9b7fe5d6e7b419b1383f871",
+    "C01:B": "8c01cb605fff32bd6f789427960373d22921a15b95b5d0a4fd2e52301eb12f52",
+    "C02:A": "19097cb8f9d4af031f2918d4ddecb8a17dcefad7ccba789d3d72f6324d5ece7e",
+    "C02:B": "f49e8d711e70dd1a3912cd2c8030295255e00c1aea8f6ac57c8f1e7d53625b43",
+    "C03:A": "bd0757384aedc9614ae4695e7b9b78cd9771906472e8f6b9c3b703c8b57375dd",
+    "C03:B": "9011f5b70575fbfd447d123cc922e7dd0b6bc928ca03c2ca342d2094695fc32b",
+    "C04:A": "c29650b111edd6e3f3a3980849713813178bb2e8e8370343c6e0a37c6049cae7",
+    "C04:B": "787e1ad93eba1592f201d676809abd525edaf82b14c92db5b8316f1d17376190",
+    "C05:A": "ed74c9b0a53cf4d255d218c986570b78489f7bf200db7cbeb705f5df06887160",
+    "C05:B": "f32343bb227b548991d55afcacebf98fd52af22aa74a11765f01ab90917377e2",
+    "C06:A": "1b5205032bf415f93de73a13ab7afe9d24cf6485348a93fc7a3e768a693963db",
+    "C06:B": "f69363e4f2404c3c002a2f59ab8187d5a50710870bf74c50d3aa984ba0ffb456",
+    "O01:A": "ffd088af68d3440e2cf78fd34d2470dca6a8ca93430149a3ec2b44f87d573caf",
+    "O01:B": "5a12bd725722d272f6890a27c6b165a64664f290d88e78df8ab40601aeaa497c",
+    "O02:A": "5d743b63105df6f8bc0148c70d8bfcaddb9422b3e663e98124f4b2a28bfe5bf3",
+    "O02:B": "cdc76bcea001f4d4ce3e5c3fec35e9f5c7273aebbf785abd2847c344b5757d36",
+    "O03:A": "5c95d0d3fe822682a739d0b517a8f806069f5cac97fc4b8f447204ba33850806",
+    "O03:B": "3338e0a10b6c22946893764b9b7221ce62028ee9ed128de72c9fa3828ff09e4d",
+    "O04:A": "f2269912fb0edb6f03f6d77bbf00e4c72143e67763bf4b9e8dedf4428c8ab398",
+    "O04:B": "e0e17666dd9af866791b142fddbe24993a1d42adc484e650812ca1ea61d5ae69",
+    "O05:A": "0a09747cb109d0f37a1057e338c2f71b3083725cd1fa90f8fb9f4a239955facd",
+    "O05:B": "c6d2699768a51a9ab91ace351121fc28e2c7130a1da0962f7268c1a31c63fb5f",
+    "O06:A": "cabd12052ce700bf67efb940b55c4c9923e7a6854d952eb89cab021de02e8cc4",
+    "O06:B": "9389cb47088994e3c415684c7c0c0d3c4b97cf5978de5f7b63925bd2c197ced1",
+    "O07:A": "8cd71aa4610467a810b268c6b2514da12629ad72bf76b377a2fee0734b8476d1",
+    "O07:B": "55a0b30242eb2a2c1d685541143ff6c4ef2d9761d2ccfa24775d6c87b507668c",
+    "O08:A": "3061b203f18c6f3d8b43a9c54c022f043e7ae1f3dbd7fc5e6c89c91eae4ec313",
+    "O08:B": "122dce59f9f348f0315f5c3c3a91372c0e1cbf8ab53c17733516d148a2c87bae",
+    "O09:A": "8f0f3d51ff28a3c70165ea242d4dc9b093f0ebf40d289eccd0984ce6c46a3611",
+    "O09:B": "da4f0f40445dec288412989aadbd098b1c358ee8f4b4dd9781b72c3104808118",
+    "O10:A": "dcacc162e9164c12f268da43e30252b68cc02965b3165d18141d7715acd054a7",
+    "O10:B": "a324db53b64a65cd9f76495260229442c6bd26ae4e71996f71bef1fbad817782",
+    "H01": "e5c1e6f32d822fd65175746b0b93313094b43fe3307a0c17a5413c5cc0f67b3e",
+    "H02": "9813fd823b09e9d9f55051764082a24ed390d3d87083086aa8478458b6579147",
+    "H04": "8c4b7c962ff0ab380387b54dc1b858eac46c61b8bc0045acf062b75dddebdf4f",
+    "H04:ascii": "bf50d73fd27f17a83d06932f7d1b46c38bfa5b3d98e53ac860f28d48a2ae1f48",
+    "H03": "57f20ae351d958cb737eb8d11f1f3cd67705fc31940fe2b4a24e9b875ae4be63"
+  },
+  "implementation_bindings": {
+    "features.py": "ed58040edac1a6011e31595e255b632e9ac7c4c2905adba7c0505389d84330d3",
+    "candidate_style.py": "f8a12fee52fe518e818d42657ee276cf859eb18f52ed326f5ebe1ec6fbc56633"
+  },
+  "historical_behavior_reextract": {
+    "current_cells": 195,
+    "bundled_cells": 195,
+    "new_cell_ids": 0,
+    "missing_cell_ids": 0,
+    "changed_cells": 0,
+    "source_records_verified": 548,
+    "exact_match": true,
+    "evidence_sha256": "d7178e8ec9fd1bae72206b0b345a5a2a2e7c9848377f74e9d4bdbeae02ce37b2"
+  }
+}
