@@ -115,6 +115,9 @@ struct SettingsView: View {
                                 service: "claudeCode",
                                 browseTitle: L10n.shared.tr("settings.browseClaudeCode")
                             )
+                            Text(L10n.shared.tr("settings.claudeUsageSources"))
+                                .font(.system(size: 10)).foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
                             }
 
                             if viewModel.enabledTools.contains("Gemini CLI") {
@@ -133,6 +136,9 @@ struct SettingsView: View {
                                 service: "codex",
                                 browseTitle: L10n.shared.tr("settings.browseCodex")
                             )
+                            Text(L10n.shared.tr("settings.codexDataHomeHint"))
+                                .font(.system(size: 10)).foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
                             }
 
                             if viewModel.enabledTools.contains("Hermes") {
@@ -1364,6 +1370,7 @@ struct SettingsView: View {
         setPath(.continuePath, continuePath)
         setPath(.cursorAgentPath, cursorAgentPath)
         setPath(.zcodePath, zcodePath)
+        viewModel.refreshUsageData()
     }
 
     private func setPath(_ key: SettingsKey, _ value: String) {

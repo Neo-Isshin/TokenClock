@@ -8,6 +8,9 @@ import FoundationNetworking
 
 enum ClaudeQuotaSource: String, Sendable {
     case oauthAPI
+    case desktopCache
+    case desktopWeb
+    case connectedWeb
 }
 
 struct ClaudeQuotaSnapshot: Equatable, Sendable {
@@ -18,6 +21,15 @@ struct ClaudeQuotaSnapshot: Equatable, Sendable {
     var source: ClaudeQuotaSource?
     var message: String?
     var account: SubscriptionAccountIdentity? = nil
+    var requiresConnection = false
+    var sourceDescription: String {
+        switch source {
+        case .desktopCache: return "Claude Desktop usage cache"
+        case .desktopWeb: return "Claude App · Web quota"
+        case .connectedWeb: return "Claude · Connected Web quota"
+        default: return "Claude OAuth API"
+        }
+    }
 
     static let idle = ClaudeQuotaSnapshot(
         status: .idle, buckets: [], planType: nil, refreshedAt: nil, source: nil, message: nil
@@ -44,15 +56,16 @@ struct ClaudeQuotaSnapshot: Equatable, Sendable {
     }
 }
 
-/// Reads Claude.ai subscription windows on demand using Claude Code's existing OAuth login.
-/// Credentials are kept in memory only, never logged or persisted by TokenClock. macOS uses the
-/// same Keychain item as Claude Code; Windows/Linux use Claude Code's secure-storage fallback.
+/// Reads subscription windows without requiring a CLI installation. Imported App/Code
+/// credentials are memory-only and silent; an explicitly connected web login is managed
+/// in an isolated WebKit profile. No cloud token estimates are produced.
 final class ClaudeQuotaService: @unchecked Sendable {
     struct CredentialInfo: Equatable, Sendable {
         let accessToken: String
         let subscriptionType: String?
         let rateLimitTier: String?
     }
+
     struct AccountProfile: Equatable, Sendable {
         let id: String
         let email: String?
@@ -87,34 +100,52 @@ final class ClaudeQuotaService: @unchecked Sendable {
     private let fileManager: FileManager
     private let environment: [String: String]
     private let homeDirectory: String
-    private let claudeHome: String
+    private let overrideHome: String?
+    private var claudeHome: String { overrideHome ?? PathConfig.claudeCodeHome() }
+    private let desktopHomes: [String]
 
     init(
-        claudeHome: String = PathConfig.claudeCodeHome(),
+        claudeHome: String? = nil,
         environment: [String: String] = ProcessInfo.processInfo.environment,
         homeDirectory: String = NSHomeDirectory(),
         fileManager: FileManager = .default
     ) {
-        self.claudeHome = claudeHome
+        self.overrideHome = claudeHome
+        self.desktopHomes = ClaudeDesktopData.homes(home: homeDirectory, environment: environment)
         self.environment = environment
         self.homeDirectory = homeDirectory
         self.fileManager = fileManager
     }
 
     func fetch() -> ClaudeQuotaSnapshot {
-        guard let credential = loadCredential() else {
+        #if os(macOS)
+        if let session = ClaudeAppCookieReader.read(homes: desktopHomes) {
+            return appQuota(session)
+        }
+        #endif
+        let desktop = ClaudeDesktopData.quota(in: desktopHomes, fileManager: fileManager)
+        // A fresh Desktop receipt is usable without probing another app's
+        // Keychain ACL. File/env OAuth is still preferred when present.
+        guard let credential = loadCredential(allowKeychain: desktop == nil) else {
+            if let desktop { return desktop }
             return .unavailable("Claude Code OAuth login was not found.")
         }
         guard let response = requestUsage(accessToken: credential.accessToken) else {
+            if let desktop { return desktop }
             return .unavailable("Claude quota request failed.")
         }
         guard (200..<300).contains(response.statusCode) else {
+            if let desktop { return desktop }
             return .unavailable("Claude quota request returned HTTP \(response.statusCode).")
         }
         var snapshot = Self.decodeUsageResponse(
             response.body,
-            planType: Self.detailedPlan(subscriptionType: credential.subscriptionType, rateLimitTier: credential.rateLimitTier)
+            planType: Self.detailedPlan(
+                subscriptionType: credential.subscriptionType,
+                rateLimitTier: credential.rateLimitTier
+            )
         ) ?? .unavailable("Claude quota response was not recognized.")
+        if snapshot.status != .available, let desktop { return desktop }
         if snapshot.status == .available {
             let profile = loadAccountProfile()
             snapshot.account = SubscriptionAccountIdentity(
@@ -122,12 +153,39 @@ final class ClaudeQuotaService: @unchecked Sendable {
                     ?? SubscriptionAccountIdentity.opaqueID(namespace: "claude", secret: credential.accessToken),
                 email: profile?.email
             )
-            if snapshot.planType?.isEmpty != false, let tier = profile?.rateLimitTier {
+            if snapshot.planType?.isEmpty != false,
+               let tier = profile?.rateLimitTier {
                 snapshot.planType = Self.detailedPlan(subscriptionType: nil, rateLimitTier: tier)
             }
         }
         return snapshot
     }
+
+    #if os(macOS)
+    /// Once the user chooses a connected Web profile, do not silently change
+    /// accounts by falling back to Desktop/CLI on expiration or network errors.
+    func fetch(connectedSession: ClaudeAppSession?, connectionSelected: Bool) -> ClaudeQuotaSnapshot {
+        if connectionSelected {
+            guard let connectedSession else { return ClaudeAppQuotaError.signIn.snapshot }
+            return appQuota(connectedSession)
+        }
+        var result = fetch()
+        if result.status == .unavailable {
+            result.requiresConnection = true
+            if result.message == "Claude Code OAuth login was not found." {
+                result.message = L10n.shared.tr("quota.claudeConnectRequired")
+            }
+        }
+        return result
+    }
+
+    private func appQuota(_ session: ClaudeAppSession) -> ClaudeQuotaSnapshot {
+        switch ClaudeAppQuotaService().fetch(session) {
+        case .success(let snapshot): return snapshot
+        case .failure(let error): return error.snapshot
+        }
+    }
+    #endif
 
     static func decodeCredentialPayload(_ data: Data) -> CredentialInfo? {
         guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -155,8 +213,10 @@ final class ClaudeQuotaService: @unchecked Sendable {
         let rawID = (account["accountUuid"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
         let id = rawID?.isEmpty == false ? rawID! : (email?.lowercased() ?? "claude-active")
         return AccountProfile(
-            id: id, email: email?.isEmpty == false ? email : nil,
-            rateLimitTier: account["userRateLimitTier"] as? String ?? account["organizationRateLimitTier"] as? String
+            id: id,
+            email: email?.isEmpty == false ? email : nil,
+            rateLimitTier: account["userRateLimitTier"] as? String
+                ?? account["organizationRateLimitTier"] as? String
         )
     }
 
@@ -185,7 +245,8 @@ final class ClaudeQuotaService: @unchecked Sendable {
     /// `Claude Code-credentials` and the current macOS user account. Custom config directories
     /// add the same eight-character SHA-256 suffix used by Claude Code secure storage.
     static func macOSKeychainServices(
-        environment: [String: String], configuredClaudeHome: String
+        environment: [String: String], configuredClaudeHome: String,
+        defaultClaudeHome: String = NSHomeDirectory() + "/.claude"
     ) -> [String] {
         let oauthSuffix = environment["CLAUDE_CODE_CUSTOM_OAUTH_URL"]?.isEmpty == false
             ? "-custom-oauth" : ""
@@ -195,7 +256,9 @@ final class ClaudeQuotaService: @unchecked Sendable {
         let secureOverridePresent = environment.keys.contains("CLAUDE_SECURESTORAGE_CONFIG_DIR")
         let secureOverride = environment["CLAUDE_SECURESTORAGE_CONFIG_DIR"] ?? ""
         let configOverride = environment["CLAUDE_CONFIG_DIR"]
-        let omitsHash = secureOverridePresent ? secureOverride.isEmpty : configOverride == nil
+        let normalize: (String) -> String = { ($0 as NSString).expandingTildeInPath.precomposedStringWithCanonicalMapping }
+        let customConfiguredHome = normalize(configuredClaudeHome) != normalize(defaultClaudeHome)
+        let omitsHash = secureOverridePresent ? secureOverride.isEmpty : (configOverride == nil && !customConfiguredHome)
         if !omitsHash {
             let raw = secureOverridePresent ? secureOverride : (configOverride ?? configuredClaudeHome)
             let normalized = (raw as NSString).expandingTildeInPath.precomposedStringWithCanonicalMapping
@@ -271,7 +334,7 @@ final class ClaudeQuotaService: @unchecked Sendable {
         )
     }
 
-    private func loadCredential() -> CredentialInfo? {
+    private func loadCredential(allowKeychain: Bool = true) -> CredentialInfo? {
         if let token = environment["CLAUDE_CODE_OAUTH_TOKEN"], !token.isEmpty {
             return CredentialInfo(accessToken: token, subscriptionType: nil, rateLimitTier: nil)
         }
@@ -288,7 +351,7 @@ final class ClaudeQuotaService: @unchecked Sendable {
             return credential
         }
         #if os(macOS)
-        return loadMacOSKeychainCredential()
+        return allowKeychain ? loadMacOSKeychainCredential() : nil
         #else
         return nil
         #endif
@@ -330,28 +393,7 @@ final class ClaudeQuotaService: @unchecked Sendable {
     private func readMacOSKeychainCredential(
         service: String, account: String, timeout: TimeInterval
     ) -> CredentialInfo? {
-        let process = Process()
-        let output = Pipe()
-        let errors = Pipe()
-        let completed = DispatchSemaphore(value: 0)
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/security")
-        process.arguments = [
-            "find-generic-password", "-s", service, "-a", account, "-w",
-        ]
-        process.standardOutput = output
-        process.standardError = errors
-        process.terminationHandler = { _ in completed.signal() }
-        do {
-            try process.run()
-        } catch {
-            return nil
-        }
-        if completed.wait(timeout: .now() + timeout) == .timedOut {
-            if process.isRunning { process.terminate() }
-            return nil
-        }
-        guard process.terminationStatus == 0 else { return nil }
-        let data = output.fileHandleForReading.readDataToEndOfFile()
+        guard let data = ClaudeSilentKeychain.read(service: service, account: account) else { return nil }
         return Self.decodeCredentialPayload(data)
     }
     #endif

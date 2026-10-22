@@ -41,6 +41,35 @@ final class ReleaseUpdateServiceTests: XCTestCase {
         }
     }
 
+    func testManualCheckBypassesDailyThrottleAndPreservesReadState() throws {
+        let checker = service(#"{"tag_name":"v1.5.11","draft":false,"prerelease":false,"html_url":"https://evil.example/"}"#)
+        check(checker)
+        checker.markRead()
+        let done = expectation(description:"Manual check")
+        checker.checkNow { result in
+            XCTAssertEqual(result,.available(version:"1.5.11",url:URL(string:"https://github.com/Neo-Isshin/TokenClock/releases/tag/v1.5.11")!))
+            done.fulfill()
+        }
+        wait(for:[done],timeout:3)
+        XCTAssertEqual(checker.notifications().first?.isRead,true)
+        XCTAssertFalse(checker.checkDaily(now:now,calendar:calendar))
+    }
+
+    func testManualCheckDistinguishesUnavailableFromCurrent() {
+        let cases: [(String?, ReleaseUpdateService.CheckResult)] = [
+            (nil,.unavailable), ("<html>offline</html>",.unavailable),
+            (#"{"tag_name":"v9.0.0","draft":true,"prerelease":false}"#,.unavailable),
+            (#"{"tag_name":"v9.0.0-rc.1","draft":false,"prerelease":false}"#,.unavailable),
+            (#"{"tag_name":"v1.5.9","draft":false,"prerelease":false}"#,.current),
+            (#"{"tag_name":"v1.5.8","draft":false,"prerelease":false}"#,.current),
+        ]
+        for (body,expected) in cases {
+            let done = expectation(description:"Manual result")
+            service(body).checkNow { result in XCTAssertEqual(result,expected); done.fulfill() }
+            wait(for:[done],timeout:3)
+        }
+    }
+
     func testNewReleaseCreatesSafeActionableNoticeAndPersistsReadState() throws {
         let checker = service(#"{"tag_name":"v1.5.11","draft":false,"prerelease":false,"html_url":"https://evil.example/"}"#)
         check(checker)

@@ -131,12 +131,14 @@ final class CodexUsageService: @unchecked Sendable {
     private var sessionMetadataCache: [String: SessionMetadataCacheEntry] = [:]
 
     private let fm = FileManager.default
-    private let codexHome: String
-    private let configuredServiceTier: PricingServiceTier
+    private let overrideHome: String?
+    private var codexHome: String { overrideHome ?? PathConfig.codexHome() }
+    private var configuredServiceTier: PricingServiceTier
+    private var scannedHome: String?
 
     init(codexHome: String? = nil) {
         let resolvedHome = codexHome ?? PathConfig.codexHome()
-        self.codexHome = resolvedHome
+        self.overrideHome = codexHome
         self.configuredServiceTier = Self.readConfiguredServiceTier(codexHome: resolvedHome)
     }
 
@@ -178,6 +180,12 @@ final class CodexUsageService: @unchecked Sendable {
     // MARK: - JSONL 扫描（tokens + messages + cache）
 
     private func scanJSONL() {
+        if scannedHome != codexHome {
+            jsonlCache.removeAll()
+            sessionMetadataCache.removeAll()
+            configuredServiceTier = Self.readConfiguredServiceTier(codexHome: codexHome)
+            scannedHome = codexHome
+        }
         let calendar = Calendar.current
         let startOfToday = calendar.startOfDay(for: Date())
         let cutoff = calendar.date(
@@ -486,7 +494,7 @@ final class CodexUsageService: @unchecked Sendable {
             var isDirectory: ObjCBool = false
             guard fm.fileExists(atPath: directory, isDirectory: &isDirectory), isDirectory.boolValue,
                   let enumerator = fm.enumerator(
-                    at: URL(fileURLWithPath: directory, isDirectory: true),
+                    at: URL(fileURLWithPath: directory, isDirectory: true).resolvingSymlinksInPath(),
                     includingPropertiesForKeys: [.isRegularFileKey],
                     options: [.skipsHiddenFiles]
                   ) else { continue }

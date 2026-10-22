@@ -300,6 +300,7 @@ final class ViewModel: ObservableObject {
     private var generationSpeedTimer: Timer?
     private var recentResetTimer: Timer?
     private var weatherTimer: Timer?
+    private var claudeAppQuotaTimer: Timer?
     private var historyTimer: Timer?
     private var codexQuotaTask: Task<Void, Never>?
     private var claudeQuotaTask: Task<Void, Never>?
@@ -487,8 +488,10 @@ final class ViewModel: ObservableObject {
             claudeQuota = .loading(previous: claudeQuota)
             let service = claudeQuotaService
             claudeQuotaTask = Task { [weak self] in
+                let selected = ClaudeConnectionController.isSelected
+                let session = await ClaudeConnectionController.shared.currentSession()
                 let result = await Task.detached(priority: .utility) {
-                    service.fetch()
+                    service.fetch(connectedSession: session, connectionSelected: selected)
                 }.value
                 guard !Task.isCancelled else { return }
                 self?.claudeQuota = result
@@ -532,6 +535,16 @@ final class ViewModel: ObservableObject {
                 self?.rememberProviderQuota(result, provider: .zhipu)
                 self?.selectAutomaticDialQuotaProviderIfReady()
             }
+        }
+    }
+
+    func connectClaude() {
+        ClaudeConnectionController.shared.show { [weak self] snapshot in
+            guard let self else { return }
+            self.claudeQuotaTask?.cancel()
+            self.claudeQuota = snapshot
+            self.rememberClaudeQuota(snapshot)
+            self.selectAutomaticDialQuotaProviderIfReady()
         }
     }
 
@@ -685,7 +698,7 @@ final class ViewModel: ObservableObject {
         rememberSubscriptionAccount(
             provider: .claude, identity: snapshot.account, plan: snapshot.planType,
             groups: [ProviderQuotaGroup(id: "claude:subscription", name: "Subscription", buckets: snapshot.buckets)],
-            refreshedAt: snapshot.refreshedAt, source: "Claude OAuth API"
+            refreshedAt: snapshot.refreshedAt, source: snapshot.sourceDescription
         )
     }
 
@@ -1130,11 +1143,19 @@ final class ViewModel: ObservableObject {
             Task { @MainActor in
                 self?.refreshWeather()
                 if let self, !self.dialQuotaProviders.isEmpty {
-                    self.refreshSubscriptionQuotas(providers: Set(self.dialQuotaProviders))
+                    let providers = Set(self.dialQuotaProviders).subtracting([.claude])
+                    if !providers.isEmpty { self.refreshSubscriptionQuotas(providers: providers) }
                 }
             }
         }
 
+        claudeAppQuotaTimer = Timer.scheduledTimer(withTimeInterval: AppConfig.Scan.claudeQuotaCacheSeconds, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                guard let self, ClaudeConnectionController.isSelected || self.dialQuotaProviders.contains(.claude) else { return }
+                self.refreshSubscriptionQuotas(providers: [.claude])
+            }
+        }
+        RunLoop.main.add(claudeAppQuotaTimer!, forMode: .common)
         RunLoop.main.add(clockTimer!, forMode: .common)
         RunLoop.main.add(dataTimer!, forMode: .common)
         RunLoop.main.add(generationSpeedTimer!, forMode: .common)
@@ -1375,6 +1396,7 @@ final class ViewModel: ObservableObject {
         generationSpeedTimer = nil
         recentResetTimer?.invalidate()
         weatherTimer?.invalidate()
+        claudeAppQuotaTimer?.invalidate()
         historyTimer?.invalidate()
         historyTimer = nil
     }
