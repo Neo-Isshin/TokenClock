@@ -3,7 +3,7 @@ import Foundation
 import FoundationNetworking
 #endif
 
-enum ClaudeQuotaSource: String, Sendable { case oauthAPI }
+enum ClaudeQuotaSource: String, Sendable { case oauthAPI, desktopCache }
 
 struct ClaudeQuotaSnapshot: Equatable, Sendable {
     var status: CodexQuotaStatus
@@ -13,6 +13,7 @@ struct ClaudeQuotaSnapshot: Equatable, Sendable {
     var source: ClaudeQuotaSource?
     var message: String?
     var account: SubscriptionAccountIdentity? = nil
+    var sourceDescription: String { source == .desktopCache ? "Claude Desktop usage cache" : "Claude OAuth API" }
     static let idle = ClaudeQuotaSnapshot(
         status: .idle, buckets: [], planType: nil, refreshedAt: nil, source: nil, message: nil
     )
@@ -54,22 +55,33 @@ final class ClaudeQuotaService: @unchecked Sendable {
     private let fileManager: FileManager
     private let environment: [String: String]
     private let homeDirectory: String
-    private let claudeHome: String
+    private let overrideHome: String?
+    private var claudeHome: String { overrideHome ?? PathConfig.claudeCodeHome() }
+    private let desktopHomes: [String]
     init(
-        claudeHome: String = PathConfig.claudeCodeHome(),
+        claudeHome: String? = nil,
         environment: [String: String] = ProcessInfo.processInfo.environment,
         homeDirectory: String = NSHomeDirectory(), fileManager: FileManager = .default
     ) {
-        self.claudeHome = claudeHome; self.environment = environment
+        self.overrideHome = claudeHome
+        self.desktopHomes = ClaudeDesktopData.homes(home: homeDirectory, environment: environment); self.environment = environment
         self.homeDirectory = homeDirectory; self.fileManager = fileManager
     }
 
     func fetch() -> ClaudeQuotaSnapshot {
-        guard let credential = loadCredential() else { return .unavailable("Claude Code OAuth login was not found.") }
+        let desktop = ClaudeDesktopData.quota(in: desktopHomes, fileManager: fileManager)
+        // A fresh Desktop receipt is usable without probing another app's
+        // Keychain ACL. File/env OAuth is still preferred when present.
+        guard let credential = loadCredential(allowKeychain: desktop == nil) else {
+            if let desktop { return desktop }
+            return .unavailable("Claude Code OAuth login was not found.")
+        }
         guard let response = requestUsage(accessToken: credential.accessToken) else {
+            if let desktop { return desktop }
             return .unavailable("Claude quota request failed.")
         }
         guard (200..<300).contains(response.statusCode) else {
+            if let desktop { return desktop }
             return .unavailable("Claude quota request returned HTTP \(response.statusCode).")
         }
         var snapshot = Self.decodeUsageResponse(
@@ -79,6 +91,7 @@ final class ClaudeQuotaService: @unchecked Sendable {
                 rateLimitTier: credential.rateLimitTier
             )
         ) ?? .unavailable("Claude quota response was not recognized.")
+        if snapshot.status != .available, let desktop { return desktop }
         if snapshot.status == .available {
             let profile = loadAccountProfile()
             snapshot.account = SubscriptionAccountIdentity(
@@ -86,7 +99,8 @@ final class ClaudeQuotaService: @unchecked Sendable {
                     ?? SubscriptionAccountIdentity.opaqueID(namespace: "claude", secret: credential.accessToken),
                 email: profile?.email
             )
-            if snapshot.planType?.isEmpty != false, let tier = profile?.rateLimitTier {
+            if snapshot.planType?.isEmpty != false,
+               let tier = profile?.rateLimitTier {
                 snapshot.planType = Self.detailedPlan(subscriptionType: nil, rateLimitTier: tier)
             }
         }
@@ -163,7 +177,7 @@ final class ClaudeQuotaService: @unchecked Sendable {
         )
     }
 
-    private func loadCredential() -> CredentialInfo? {
+    private func loadCredential(allowKeychain: Bool = true) -> CredentialInfo? {
         if let token = environment["CLAUDE_CODE_OAUTH_TOKEN"], !token.isEmpty {
             return CredentialInfo(accessToken: token, subscriptionType: nil, rateLimitTier: nil)
         }

@@ -54,10 +54,12 @@ final class CodexUsageService: @unchecked Sendable {
     private var jsonlCache: [String: JSONLFileState] = [:]
 
     private let fm = FileManager.default
-    private let codexHome: String
+    private let overrideHome: String?
+    private var codexHome: String { overrideHome ?? PathConfig.codexHome() }
+    private var scannedHome: String?
 
     init(codexHome: String? = nil) {
-        self.codexHome = codexHome ?? PathConfig.codexHome()
+        self.overrideHome = codexHome
     }
 
     func fullScan() {
@@ -98,6 +100,10 @@ final class CodexUsageService: @unchecked Sendable {
     // MARK: - JSONL 扫描（tokens + messages + cache）
 
     private func scanJSONL() {
+        if scannedHome != codexHome {
+            jsonlCache.removeAll()
+            scannedHome = codexHome
+        }
         let sessionsDir = codexHome + "/sessions"
         var isDir: ObjCBool = false
         guard fm.fileExists(atPath: sessionsDir, isDirectory: &isDir), isDir.boolValue else {
@@ -106,7 +112,7 @@ final class CodexUsageService: @unchecked Sendable {
             return
         }
 
-        let rootURL = URL(fileURLWithPath: sessionsDir, isDirectory: true)
+        let rootURL = URL(fileURLWithPath: sessionsDir, isDirectory: true).resolvingSymlinksInPath()
         let calendar = Calendar.current
         let startOfToday = calendar.startOfDay(for: Date())
         let cutoff = calendar.date(

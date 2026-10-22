@@ -11,6 +11,7 @@ let linuxSources = [
     "Services/AntigravityUsageService.swift",
     "Services/AppPaths.swift",
     "Services/ClaudeCodeUsageService.swift",
+    "Services/ClaudeDesktopData.swift",
     "Services/ClaudeQuotaService.swift",
     "Services/CodexQuotaService.swift",
     "Services/ClineUsageService.swift",

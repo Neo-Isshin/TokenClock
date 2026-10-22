@@ -337,6 +337,15 @@ final class LinuxSettingsWindow: @unchecked Sendable {
             gtk_box_pack_start(tc_gtk_box(row), browse, 0, 0, 0)
             gtk_box_pack_start(tc_gtk_box(page), row, 0, 0, 0)
             pathEntries[option.service] = entry
+            if option.service == "claudeCode" || option.service == "codex" {
+                let key = option.service == "codex" ? "settings.codexDataHomeHint" : "settings.claudeUsageSources"
+                let note = gtk_label_new(L10n.shared.tr(key))
+                gtk_label_set_xalign(tc_gtk_label(note), 0)
+                gtk_label_set_line_wrap(tc_gtk_label(note), 1)
+                gtk_label_set_max_width_chars(tc_gtk_label(note), 65)
+                tc_gtk_add_class(note, "tokenclock-settings-hint")
+                gtk_box_pack_start(tc_gtk_box(page), note, 0, 0, 0)
+            }
         }
         let hint = gtk_label_new(L10n.shared.tr("settings.hint.emptyPath"))
         gtk_label_set_xalign(tc_gtk_label(hint), 0)

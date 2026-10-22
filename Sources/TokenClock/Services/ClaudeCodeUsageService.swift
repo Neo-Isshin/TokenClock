@@ -25,13 +25,28 @@ final class ClaudeCodeUsageService: @unchecked Sendable {
     private var recentEntries: [RecentEntry] = []
 
     private let fm = FileManager.default
-    private let claudeHome: String
+    private let overrideHome: String?
+    private var claudeHome: String { overrideHome ?? PathConfig.claudeCodeHome() }
+    private var scannedHome: String?
+    private let desktopHomesOverride: [String]?
+    private var desktopHomes: [String] {
+        if let desktopHomesOverride { return desktopHomesOverride }
+        // A custom CLI account/directory must not silently import another
+        // account's Desktop records. Default installations can discover both.
+        let configured = (claudeHome as NSString).expandingTildeInPath
+        if ["local-agent-mode-sessions", "claude-code-sessions"].contains(where: {
+            fm.fileExists(atPath: configured + "/" + $0)
+        }) { return [configured] }
+        return configured == PathConfig.defaultClaudeCodeHome() ? ClaudeDesktopData.homes() : []
+    }
 
-    init(claudeHome: String? = nil) {
-        self.claudeHome = claudeHome ?? PathConfig.claudeCodeHome()
+    init(claudeHome: String? = nil, desktopHomes: [String]? = nil) {
+        self.overrideHome = claudeHome
+        self.desktopHomesOverride = desktopHomes
     }
 
     func fullScan() {
+        scannedHome = claudeHome
         dailyData.removeAll()
         hourlyData.removeAll()
         dailyCache.removeAll()
@@ -50,7 +65,10 @@ final class ClaudeCodeUsageService: @unchecked Sendable {
         scanProjectsDir()
     }
 
-    func incrementalScan() { scanProjectsDir() }
+    func incrementalScan() {
+        if scannedHome != claudeHome { fullScan() }
+        else { scanProjectsDir() }
+    }
 
     func todayUsage() -> (tokens: Int, messages: Int, cacheRate: Double) {
         let d = dailyData[DateHelper.todayKey()]
@@ -81,54 +99,47 @@ final class ClaudeCodeUsageService: @unchecked Sendable {
     // MARK: - 内部
 
     private func scanProjectsDir() {
-        let projectsDir = claudeHome + "/projects"
-        guard let projects = try? fm.contentsOfDirectory(atPath: projectsDir) else {
-            evictTopLevelFiles(notIn: [])
-            nestedFileCache.removeAll()
-            nestedDailyContrib.removeAll()
-            nestedLastModel.removeAll()
-            nestedBucketContrib.removeAll()
-            rebuildRecentEntries()
-            return
-        }
-
-        var liveTopLevelPaths = Set<String>()
-        var liveNestedPaths = Set<String>()
-
-        for project in projects {
-            let projectPath = projectsDir + "/" + project
-            var isDir: ObjCBool = false
-            guard fm.fileExists(atPath: projectPath, isDirectory: &isDir), isDir.boolValue else { continue }
-            let projectURL = URL(fileURLWithPath: projectPath, isDirectory: true)
-            guard let enumerator = fm.enumerator(
-                at: projectURL,
-                includingPropertiesForKeys: [.isRegularFileKey],
-                options: [.skipsHiddenFiles]
-            ) else { continue }
-
-            for case let url as URL in enumerator where url.pathExtension == "jsonl" {
-                let fullPath = url.path
-                guard let attrs = try? fm.attributesOfItem(atPath: fullPath),
-                      let modDate = attrs[.modificationDate] as? Date else { continue }
-
-                if url.deletingLastPathComponent().standardizedFileURL.path
-                    == projectURL.standardizedFileURL.path {
-                    liveTopLevelPaths.insert(fullPath)
-                    if fileCache[fullPath]?.modDate == modDate { continue }
-
-                    if let old = fileDailyContrib[fullPath] { subtractDaily(old) }
-                    if let old = fileHourlyContrib[fullPath] { subtractHourly(old) }
-                    if let old = fileCacheContrib[fullPath] { subtractCache(old) }
-
-                    parseFile(path: fullPath)
-                    fileCache[fullPath] = FileMeta(path: fullPath, modDate: modDate)
-                } else {
-                    liveNestedPaths.insert(fullPath)
-                    if nestedFileCache[fullPath]?.modDate == modDate { continue }
-                    parseNestedDetailFile(path: fullPath)
-                    nestedFileCache[fullPath] = FileMeta(path: fullPath, modDate: modDate)
+        let roots = [URL(fileURLWithPath: claudeHome + "/projects").resolvingSymlinksInPath().path]
+            + ClaudeDesktopData.projectRoots(in: desktopHomes)
+        var topBySession: [String: (path: String, modified: Date)] = [:]
+        var nested: [String: Date] = [:]
+        var seenFiles = Set<String>()
+        for projectsDir in roots {
+            guard let projects = try? fm.contentsOfDirectory(atPath: projectsDir) else { continue }
+            for project in projects.sorted() {
+                let projectURL = URL(fileURLWithPath: projectsDir).appendingPathComponent(project).resolvingSymlinksInPath()
+                guard let enumerator = fm.enumerator(at: projectURL,
+                    includingPropertiesForKeys: [.isRegularFileKey], options: [.skipsHiddenFiles]) else { continue }
+                for case let url as URL in enumerator where url.pathExtension == "jsonl" {
+                    let path = url.resolvingSymlinksInPath().path
+                    guard seenFiles.insert(path).inserted,
+                          let attrs = try? fm.attributesOfItem(atPath: path),
+                          let modified = attrs[.modificationDate] as? Date else { continue }
+                    if url.deletingLastPathComponent().standardizedFileURL.path == projectURL.standardizedFileURL.path {
+                        let id = sessionId(fromJSONLPath: path)
+                        // Desktop and CLI may mirror the same complete transcript.
+                        // Keep its newest writer, never sum copies of one session.
+                        if let old = topBySession[id], old.modified >= modified { continue }
+                        topBySession[id] = (path, modified)
+                    } else { nested[path] = modified }
                 }
             }
+        }
+        let liveTopLevelPaths = Set(topBySession.values.map(\.path))
+        let liveNestedPaths = Set(nested.keys)
+        for file in topBySession.values {
+            let path = file.path
+            if fileCache[path]?.modDate == file.modified { continue }
+            if let old = fileDailyContrib[path] { subtractDaily(old) }
+            if let old = fileHourlyContrib[path] { subtractHourly(old) }
+            if let old = fileCacheContrib[path] { subtractCache(old) }
+            parseFile(path: path)
+            fileCache[path] = FileMeta(path: path, modDate: file.modified)
+        }
+        for (path, modified) in nested {
+            if nestedFileCache[path]?.modDate == modified { continue }
+            parseNestedDetailFile(path: path)
+            nestedFileCache[path] = FileMeta(path: path, modDate: modified)
         }
         evictTopLevelFiles(notIn: liveTopLevelPaths)
         nestedFileCache = nestedFileCache.filter { liveNestedPaths.contains($0.key) }
@@ -409,6 +420,7 @@ final class ClaudeCodeUsageService: @unchecked Sendable {
                 todayTokens: tokens,
                 todayMessages: messages,
                 isActive: usage.lastActivity.map { $0 >= activeCutoff } ?? false,
+                source: sourceLabel(for: sessionId),
                 model: model,
                 todayCost: PricingService.shared.cost(of: usage.buckets),
                 cacheReadTokens: usage.cacheReadTokens
@@ -429,6 +441,13 @@ final class ClaudeCodeUsageService: @unchecked Sendable {
         var cacheReadTokens: Int {
             buckets.values.reduce(0) { $0 + $1.cacheRead }
         }
+    }
+
+    private func sourceLabel(for id: String) -> String? {
+        guard let path = fileDailyContrib.keys.first(where: { sessionId(fromJSONLPath: $0) == id }) else { return nil }
+        if path.contains("/local-agent-mode-sessions/") { return "Cowork (local)" }
+        if path.contains("/claude-code-sessions/") { return "App Code (local)" }
+        return nil
     }
 
     private func cachedSessionUsage(for dateKey: String) -> [String: CachedSessionUsage] {

@@ -1160,9 +1160,12 @@ final class LinuxDetailsPanel: @unchecked Sendable {
             appendQuotaUnavailable(
                 tr(claudeQuota.status == .loading ? "quota.loadingClaude" : "quota.claudeUnavailable"),
                 to: content)
+            if claudeQuota.status == .unavailable {
+                appendQuotaUnavailable(tr("quota.claudeRecoveryHelp"), to: content)
+            }
         } else {
             for bucket in claudeQuota.buckets { appendQuotaCard(bucket, to: content) }
-            var source = tr("quota.claudeSource")
+            var source = claudeQuota.sourceDescription
             if let refreshedAt = claudeQuota.refreshedAt {
                 source += "  ·  " + tr("quota.updated", quotaUpdatedLabel(refreshedAt))
             }
@@ -1411,7 +1414,7 @@ final class LinuxDetailsPanel: @unchecked Sendable {
                 groups: [ProviderQuotaGroup(
                     id: "claude:subscription", name: "Subscription", buckets: snapshot.buckets
                 )],
-                refreshedAt: snapshot.refreshedAt, source: "Claude OAuth API"
+                refreshedAt: snapshot.refreshedAt, source: snapshot.sourceDescription
             )
         } else if snapshot.status == .unavailable {
             activeSubscriptionAccountIDs[.claude] = nil
