@@ -73,15 +73,17 @@ def _append(doc,kind,role,data,line=None,pointer=None,**kwargs):
     index=len(doc['records'])
     record={'id':f'local-{index+1:06d}','seq':index,'kind':kind,'role':role,'data':data}
     if line is not None:record['source_pointer']={'path':doc['source']['refs'][0]['path'],'line':line}
-    if pointer is not None:record['source_pointer']={'path':doc['source']['refs'][0]['path'],'json_pointer':pointer}
+    if pointer is not None:record.setdefault('source_pointer',{'path':doc['source']['refs'][0]['path']})['json_pointer']=pointer
     record.update({k:v for k,v in kwargs.items() if v is not None})
     doc['records'].append(record)
     if len(doc['records'])>MAX_RECORDS:raise ValueError('Too many events; select a smaller explicit session scope')
 
 
 def import_codex(rows,path,raw):
+    from .model_fields import capture, owner_of
     doc=_base(path,raw,'codex_jsonl')
     turn=None
+    owner='main'
     call_generations={}
     for line,item in rows:
         if not isinstance(item,dict):
@@ -91,6 +93,27 @@ def import_codex(rows,path,raw):
         kind=item.get('type'); payload=item.get('payload')
         if not isinstance(payload,dict):
             _append(doc,'metadata','unknown',{'record_type':str(kind)},line);continue
+        if kind=='session_meta':
+            owner=owner_of(payload);turn=None
+            if isinstance(payload.get('id'),str):doc['context']['session_id']=payload['id']
+        event_type=payload.get('type','')
+        field_turn=payload.get('turn_id') or turn
+        scope='session_default' if kind=='session_meta' else 'request' if kind=='turn_context' else 'response' if kind=='response_item' and event_type=='message' and payload.get('role')=='assistant' else 'unknown'
+        field_owner=owner_of(payload,owner)
+        if payload.get('role')=='child':field_owner='child'
+        elif payload.get('role') in {'tool','evaluator'}:field_owner='unknown'
+        if kind=='compacted' or event_type in {'context_compacted','history_compacted','compaction','compaction_summary'}:
+            scope='compaction';field_owner='compaction'
+        if 'subagent' in str(event_type) or event_type in {'agent_spawned','agent_completed'}:field_owner='child'
+        if not (kind=='response_item' and event_type=='reasoning'):
+            capture(doc,{k:v for k,v in item.items() if k!='payload'},line,_append,scope=scope,owner=field_owner,turn=field_turn,pointer='')
+            capture(doc,payload,line,_append,scope=scope,owner=field_owner,turn=field_turn)
+        if kind=='response_item' and event_type in {'function_call','custom_tool_call'} and str(payload.get('name','')).rsplit('.',1)[-1]=='spawn_agent':
+            args=payload.get('arguments',{})
+            if isinstance(args,str):
+                try:args=strict_loads(args)
+                except (ValueError,TypeError):args={}
+            capture(doc,args,line,_append,scope='child_request',owner='child',turn=field_turn,pointer='/payload/arguments')
         if kind=='session_meta':
             if isinstance(payload.get('id'),str):doc['context']['session_id']=payload['id']
         elif kind=='turn_context':
@@ -133,6 +156,7 @@ def import_codex(rows,path,raw):
 
 
 def import_claude(rows,path,raw):
+    from .model_fields import capture
     doc=_base(path,raw,'claude_code_jsonl')
     for line,item in rows:
         if not isinstance(item,dict):
@@ -145,6 +169,8 @@ def import_claude(rows,path,raw):
         if role not in {'assistant','user'} or not isinstance(message,dict):
             _append(doc,'metadata','unknown',{'record_type':str(role)},line);continue
         generation=message.get('id') if role=='assistant' else None
+        capture(doc,message,line,_append,scope='response' if role=='assistant' else 'unknown',
+                owner='child' if item.get('isSidechain') is True else 'main',turn=generation,pointer='/message')
         if role=='assistant' and isinstance(message.get('model'),str):
             _append(doc,'model_response','assistant',{'model':message['model'],'declaration_scope':'local_assistant_message'},line,generation_id=generation)
         content=message.get('content')

@@ -1016,7 +1016,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private func showModelDetectSession(_ session: SessionInfo) {
         if NSApp.isHidden { NSApp.unhideWithoutActivation() }
         if modelDetectWindow == nil { modelDetectWindow = ModelDetectNativeWindow() }
-        modelDetectWindow?.showSession(sourcePath: session.sourceLogPath)
+        modelDetectWindow?.showSession(sourcePath: session.sourceLogPath, expectedModel: session.model)
     }
 
     @objc private func copyAPIEndpoint(_ sender: NSMenuItem) {

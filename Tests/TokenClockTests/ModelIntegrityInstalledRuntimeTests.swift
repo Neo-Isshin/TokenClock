@@ -107,6 +107,21 @@ final class ModelIntegrityInstalledRuntimeTests: XCTestCase {
         XCTAssertEqual(capabilities["architecture"] as? String, metadata["architecture"] as? String)
         XCTAssertEqual(response["external_default"] as? Bool, false)
         XCTAssertEqual(response["api_key_in_profile_json"] as? Bool, false)
+        let workerMetadata = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: sourceWorker.deletingLastPathComponent().appendingPathComponent("manifest.json"))) as? [String: Any])
+        if (workerMetadata["files"] as? [[String: Any]])?.contains(where: { ($0["path"] as? String)?.hasSuffix("/reference_release.py") == true }) == true {
+            let references = try XCTUnwrap(response["references"] as? [String: Any])
+            XCTAssertEqual(references["status"] as? String, "verified")
+            XCTAssertEqual(references["candidate_formal_enabled"] as? Bool, false)
+            XCTAssertEqual(references["identity_accuracy_validated"] as? Bool, false)
+            XCTAssertEqual((references["models"] as? [String])?.count, 6)
+            XCTAssertEqual(references["original_behavior_answers"] as? Int, 548)
+            if (workerMetadata["files"] as? [[String: Any]])?.contains(where: { ($0["path"] as? String)?.hasSuffix("/numeric_fingerprint.py") == true }) == true {
+                XCTAssertEqual(references["external_numeric_enabled"] as? Bool, true)
+                let numeric = try XCTUnwrap(references["external_numeric"] as? [String: Any])
+                XCTAssertEqual(numeric["models"] as? Int, 59)
+                XCTAssertEqual(numeric["local_independent_identity_validation"] as? Bool, false)
+            }
+        }
 
         launcher.stop()
         var stopped = false

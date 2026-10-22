@@ -23,7 +23,11 @@ def summarize(fingerprint):
             state='equal_observed_distance';text=label+'在当前共同特征上的距离相同，没有形成区分方向。'
         else:
             state='local_descriptive_direction';text=label+'的当前观察在数值上更接近 '+ ' / '.join(nearest)+' 的已有参考。'
-            directions[(panel.get('subject_id'),tuple(sorted(values)))].append((panel.get('task_family'),set(nearest)))
+            from .direction_guard import evaluate
+            guard=evaluate(panel)
+            base['direction_guard']=guard
+            if guard['status']=='repeat_supported':directions[(panel.get('subject_id'),tuple(sorted(values)))].append((panel.get('task_family'),set(nearest)))
+            else:text+=' '+guard['reasons'][0]
         if panel.get('mode')!='strict':text+=' 生成条件或测量来源不完全一致，此项仅作情境参考。'
         statements.append({**base,'state':state,'nearest_labels':nearest,'distances':values,'text':text})
     alignment=[]

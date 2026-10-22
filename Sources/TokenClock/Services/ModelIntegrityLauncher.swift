@@ -35,7 +35,9 @@ enum ModelIntegrityLaunchError: Error, LocalizedError, Sendable {
 final class ModelIntegrityLauncher: @unchecked Sendable {
     typealias Completion = @Sendable (Result<URL, ModelIntegrityLaunchError>) -> Void
     static let shared = ModelIntegrityLauncher()
-    private let queue = DispatchQueue(label: "TokenClock.ModelIntegrityLauncher", qos: .utility)
+    // A user is waiting for this startup. Remain off the UI thread without
+    // relegating integrity verification to background/energy-saving priority.
+    private let queue = DispatchQueue(label: "TokenClock.ModelIntegrityLauncher", qos: .userInitiated)
     private let lifecycle = NSLock()
     private var ownedProcess: Process?
     private var stopping = false

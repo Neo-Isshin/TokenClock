@@ -25,6 +25,14 @@ MODULE_LABELS = {'partial': '部分实现', 'limited': '范围受限', 'not_impl
 ACTOR_LABELS = {'assistant': '目标助手', 'user': '用户', 'evaluator': '评测器',
                 'child': '子代理', 'tool': '工具返回载体', 'system': '系统', 'unknown': '未知主体'}
 FACT_LABELS = {
+    'source.harness_model_observed': '原始结构化型号字段',
+    'source.harness_model_difference': '同轮次请求与响应条目型号不同',
+    'source.harness_model_consistent': '同轮次本地型号声明一致',
+    'source.harness_model_change': '主调用型号记录变化',
+    'source.harness_default_difference': '会话默认与轮次型号不同',
+    'source.harness_multiple_models_in_turn': '同轮次存在多个型号声明',
+    'source.harness_unbound_models': '未绑定字段出现多个型号',
+    'source.comparison_target_difference': '比较目标与最近请求型号不同',
     'capture.record_count': '可见记录数量',
     'capture.duplicate_events': '重复事件',
     'source.model_claim_difference': '同调用型号声明差异',
@@ -42,6 +50,8 @@ FACT_LABELS = {
     'resource.stream_shape': '客户端接收事件形态',
 }
 UNKNOWN_LABELS = {
+    'source.harness_response_missing': '缺少主响应型号字段',
+    'source.harness_model_scope_unknown': '型号字段用途或轮次归属不完整',
     'capture.completeness_unknown': '无法确认会话记录完整',
     'capture.gap': '存在明确的会话记录缺口',
     'capture.malformed_records': '部分记录格式无法解释',
@@ -177,6 +187,9 @@ def _condition(value):
 
 def _fact_body(fact):
     code, value = fact.get('code'), fact.get('value')
+    if code.startswith('source.harness_') or code=='source.comparison_target_difference':
+        from .model_fields import describe
+        return '<p>'+safe(describe(code,value),1000)+'</p>'
     if code.startswith('semantic.') and isinstance(value, dict):
         if code == 'semantic.explicit_candidate_set':
             names = [candidate.get('name', '') for candidate in value.get('candidates', [])]
@@ -292,6 +305,8 @@ def render_report(report: dict, observation: dict) -> str:
     parts.append('<h2>主要观察</h2>')
     primary_codes = {'source.model_claim_difference', 'source.billing_claim_difference', 'source.provider_change', 'source.binding_collision',
                      'process.edit_outside_explicit_scope', 'process.unverified_completion_claim', 'process.latest_change_unverified', 'process.test_exit_mismatch'}
+    primary_codes.update({'source.harness_model_difference','source.harness_multiple_models_in_turn','source.harness_model_change',
+                          'source.harness_default_difference','source.harness_unbound_models','source.comparison_target_difference'})
     selected = [fact for fact in facts if fact.get('code') in primary_codes or (fact.get('code') == 'resource.usage_consistency' and fact.get('value') is False)]
     if not verification.get('groups'): selected += [fact for fact in facts if fact.get('code') == 'process.test_result']
     semantic_selected = [fact for fact in facts if fact.get('code') in ('semantic.decision_statement', 'semantic.user_requirement', 'semantic.hypothesis_revision', 'semantic.validation_proposal', 'semantic.explicit_candidate_set')]

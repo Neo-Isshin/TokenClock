@@ -361,6 +361,7 @@ class JobManager:
             self._jobs[job['id']] = job
 
     def _recover_probe_receipts(self,job,directory):
+        before=deepcopy(job)
         candidates=[]
         for base,pattern in [(directory,'.attempt-*'),(directory/'partial','attempt-*'),(directory/'reports','attempt-*')]:
             if base.is_symlink() or not base.is_dir():continue
@@ -404,7 +405,7 @@ class JobManager:
                         job['probe_receipts_require_review']=True
         if job.get('status') in {'running','cancelling'} and _external(job.get('semantic_config',{})) and not any(a==job.get('attempt_count',0) for a,p in candidates):
             job['probe_receipts_require_review']=True
-        self._save(job)
+        if job!=before:self._save(job)
 
     def _snapshot(self, path, destination):
         path = Path(path).expanduser().absolute()
@@ -442,13 +443,12 @@ class JobManager:
                 'sha256': hasher.hexdigest(), 'bytes': total, 'captured_at': _now(),
                 'original_mtime_ns': before.st_mtime_ns}
 
-    def _recommendation_config(self, origin, action_id, runtime_config):
+    def _recommendation_input(self, origin):
         """One durable child per parent; old reports cannot reissue a budget.
 
         Runs under the manager lock. Recovers the remaining amount from all
         attempts' receipts, never from a client-supplied report or displayed cap.
         """
-        from ..probes.recommendations import recommend, _seen
         from ..probes.common import load_json
         parent=self._jobs.get(origin)
         if parent is None or parent.get('status')!='completed':raise ValueError('推荐来源任务尚未完成或不存在')
@@ -457,6 +457,7 @@ class JobManager:
         report=load_json(self.report_path(origin)/'report.json')
         previous=deepcopy(parent['semantic_config'])
         if previous.get('transport_mode')!='live':raise ValueError('已有会话或文件的建议须作为新检测明确配置连接和预算')
+        if 'probe_budget_cap_usd' not in parent or not isinstance(previous.get('provider'),dict):raise ValueError('缺少原任务预算记录，不能重新获得一份补测预算')
         by=parent.get('probe_billing',{}).get('by_purpose',{})
         checked=deepcopy(report)
         for role,key,provider in [('target','probe_budget_cap_usd',previous.get('provider')),
@@ -474,11 +475,29 @@ class JobManager:
             if role=='target':checked['result']['accounting']=accounting
             else:checked['result'].setdefault('reviewer_assessment',{})['accounting']=accounting
         previous['_planning_history']=parent.get('planning_history',[])
+        return parent,report,checked,previous
+
+    def recommendation_for_display(self, origin):
+        from ..probes.recommendations import recommend, SCHEMA
+        with self._condition:
+            parent=self._jobs.get(origin)
+            if not parent or parent.get("semantic_config",{}).get("transport_mode")!="live":return None
+            try:
+                parent,report,checked,previous=self._recommendation_input(origin)
+                return recommend(checked,previous)
+            except (ValueError,KeyError,TypeError) as exc:
+                message="这份结果已安排过补测，可在历史中查看后续结果。" if parent.get("recommendation_child_job_id") else str(exc)
+                return {"schema":SCHEMA,"status":"review_first","summary":message,"actions":[],"stop_reasons":[message],"automatic_dispatch":False}
+
+    def _recommendation_config(self, origin, action_id, runtime_config, *, describe=False):
+        from ..probes.recommendations import recommend, _seen
+        parent,report,checked,previous=self._recommendation_input(origin)
         proposal=recommend(checked,previous)
         selected=next((a for a in proposal['actions'] if a['id']==action_id),None)
         if proposal['status']!='recommended' or not selected:raise ValueError('该推荐已不适用，请重新查看报告与预算')
         expected=selected['configuration_patch']
-        for key in ('workflow_mode','transport_mode','family','task_id','task_ids'):
+        if runtime_config.get('l2_method')=='numeric':raise ValueError('推荐对应原行为题包；数字指纹请另建检测，保留原预算记录')
+        for key in ('workflow_mode','transport_mode','family','task_id','task_ids','repeats'):
             if key in expected and runtime_config.get(key)!=expected[key]:raise ValueError('推荐方法或题目改变，请改为新的手动检测')
         old=proposal['target_binding'];new=runtime_config.get('provider',{})
         if any(new.get(k,'responses' if k=='api_format' else None)!=v for k,v in old.items()):raise ValueError('推荐的待测接口或型号不一致')
@@ -494,7 +513,11 @@ class JobManager:
         if not quote['valid'] or quote.get('total_upper_usd') is None or Decimal(quote['total_upper_usd'])>asked:raise ValueError('剩余预算不足以完整预留这项推荐')
         tasks,_=_seen(report.get('result',report),report.get('result',{}).get('subject',{}).get('id'))
         history=sorted(set(parent.get('planning_history',[]))|tasks)
-        return history
+        return {'history':history,'action':deepcopy(selected)} if describe else history
+
+    def preview_recommendation(self, origin, action_id, runtime_config):
+        with self._condition:
+            return self._recommendation_config(origin,action_id,runtime_config,describe=True)['action']
 
     def submit(self, source_path, comparison_model=None, semantic_config=None, *, input_name=None,
                recommendation_origin_job_id=None, recommendation_action_id=None):
@@ -569,7 +592,7 @@ class JobManager:
             raise ValueError('列表上限必须为 1..100')
         with self._condition:
             jobs = [j for j in self._jobs.values() if not completed_only or j['status'] == 'completed']
-            return deepcopy(sorted(jobs, key=lambda j: j['updated_at'], reverse=True)[:limit])
+            return deepcopy(sorted(jobs, key=lambda j: j.get('completed_at',j.get('created_at',j['updated_at'])) if j.get('status')=='completed' else j['updated_at'], reverse=True)[:limit])
 
     def cancel(self, job_id):
         with self._condition:
@@ -590,6 +613,10 @@ class JobManager:
     def _resume_config(self, job, runtime_config):
         runtime_config=deepcopy(runtime_config)
         previous=job['semantic_config']
+        if previous.get('l2_method','behavior')!=runtime_config.get('l2_method','behavior'):
+            raise ValueError('恢复必须使用原检测方法；切换数字指纹请另建任务')
+        if previous.get('l2_method')=='numeric' and previous.get('numeric_output_limit',8192)!=runtime_config.get('numeric_output_limit',8192):
+            raise ValueError('恢复必须保留原数字题生成上限')
         for key in ('workflow_mode','task_id','transport_mode'):
             if previous.get(key)!=runtime_config.get(key):raise ValueError('恢复必须使用原流程、任务及模式；改变配置请另建任务')
         for provider_path in ('provider','assessment'):
@@ -616,7 +643,7 @@ class JobManager:
                 if remaining<=0:raise ValueError('该任务的'+purpose+'预算已用完')
                 provider['max_cost_usd']=str(min(remaining,Decimal(str(provider['max_cost_usd']))))
             runtime_config,stored_config=_config(runtime_config)
-        if runtime_config.get('workflow_mode')=='l2' and runtime_config.get('transport_mode')!='artifact':
+        if runtime_config.get('workflow_mode')=='l2' and runtime_config.get('l2_method')!='numeric' and runtime_config.get('transport_mode')!='artifact':
             from ..probes.catalog import l2_plan
             if l2_plan(previous.get('family','openai'),previous.get('task_ids'))!=l2_plan(runtime_config.get('family','openai'),runtime_config.get('task_ids')):
                 raise ValueError('恢复需使用原题包；更换题目请另建任务')
@@ -821,7 +848,7 @@ class JobManager:
                     raise ValueError('报告目标已存在，不覆盖历史结果')
                 os.rename(staging, published)
                 os.chmod(published, 0o700)
-                job.update(status='completed', error=None, report_directory=str(published.relative_to(directory)),
+                job.update(status='completed', error=None, completed_at=_now(), report_directory=str(published.relative_to(directory)),
                            report_summary=_redacted_metadata(result.get('summary', {})),
                            user_summary=_redacted_metadata(result.get('user_summary',{})),
                            progress={'stage': 'completed', 'message': '完整报告已就绪', 'fraction': 1})

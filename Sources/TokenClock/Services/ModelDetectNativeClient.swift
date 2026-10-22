@@ -259,7 +259,7 @@ final class ModelDetectNativeClient: ModelDetectNativeServing {
         let reportFiles = ["report.html", "report.json", "observation.json", "evidence.zip"]
         if download { return !post && parts.count == 3 && parts[0] == "reports" && job(parts[1]) && reportFiles.contains(parts[2]) }
         if post {
-            if ["api/connections", "api/connections/delete", "api/model-catalog", "api/preview", "api/jobs", "api/upload", "api/combine"].contains(route) { return true }
+            if ["api/connections", "api/connections/delete", "api/model-catalog", "api/preview", "api/jobs", "api/upload", "api/combine", "api/history/compare"].contains(route) { return true }
             return parts.count == 4 && parts[0] == "api" && parts[1] == "jobs" && job(parts[2]) && ["cancel", "resume"].contains(parts[3])
         }
         if ["api/info", "api/sessions", "api/connections", "api/probes", "api/jobs"].contains(route) { return true }

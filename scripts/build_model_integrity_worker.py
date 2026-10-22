@@ -8,12 +8,18 @@ import zipfile
 
 ROOT=Path(__file__).resolve().parents[1]
 DEST=ROOT/'Sources/TokenClock/Resources/model-integrity-worker'
-MODULES=['__init__.py','__main__.py','cli.py','engine.py','ingest.py','sources.py','render.py',
+MODULES=['__init__.py','__main__.py','cli.py','engine.py','ingest.py','sources.py','render.py','model_fields.py',
          'pipeline.py','semantic.py','references.py','verification.py','jobs.py','catalog.py','webui.py',
          'connections.py','capabilities.py','preview.py','model_catalog.py']
 
 
 def build(destination=DEST):
+    import sys
+    if str(ROOT) not in sys.path:sys.path.insert(0,str(ROOT))
+    from scripts.model_integrity.probes.reference_release import verify_bundle
+    verify_bundle()  # Reject incomplete or inconsistent references before packaging.
+    from scripts.model_integrity.probes.numeric_fingerprint import reference as numeric_reference
+    numeric_reference()  # Hash-pinned adopted external method, separate from local validation.
     destination=Path(destination);destination.mkdir(parents=True,exist_ok=True)
     prefix='scripts/model_integrity/l1/'
     selected={prefix+name:ROOT/prefix/name for name in MODULES}

@@ -187,8 +187,8 @@ def trace_content_hash(events):
  return stable_hash({'canonical_trace_version':1,'events':records})
 
 def original_identity(trace_hash,fallback):
- try:reference=json.loads(files(__package__).joinpath('resources/process-reference-v1.json').read_text(encoding='utf-8'))
- except FileNotFoundError:return fallback
+ from .reference_release import reference as load_reference
+ reference=load_reference('process')
  matches={row['original_sample_sha256'] for row in reference.get('process_trace_aliases',[]) if row.get('trace_content_sha256')==trace_hash}
  return next(iter(matches)) if len(matches)==1 else fallback
 
@@ -372,8 +372,8 @@ def build(root,output_dir,resource_path=None):
 
 def merge_reference(reference):
  """Default bundled extension only; an explicit caller reference stays explicit."""
- try:extra=json.loads(files(__package__).joinpath('resources/process-reference-v1.json').read_text(encoding='utf-8'))
- except FileNotFoundError:return reference
+ from .reference_release import reference as load_reference
+ extra=load_reference('process')
  result=deepcopy(reference);existing={cell['id'] for cell in result.get('cells',[])}
  result.setdefault('cells',[]).extend(cell for cell in extra.get('cells',[]) if cell['id'] not in existing)
  result['model_labels']=sorted(set(result.get('model_labels',[]))|set(extra.get('model_labels',[])))

@@ -62,7 +62,8 @@ def from_answers(source_path,output_dir,config=None,cancelled_check=None,progres
         samples.append({'id':f'import-{index+1:03d}','task_id':task['id'],'repeat':row.get('repeat',index+1),
                         'answer':row['answer'],'prompt_sha256':task['prompt_sha256'],'metadata':metadata,'extracted':extracted,
                         'record':record,'status':extracted['status']})
-    reference=json.loads(files('scripts.model_integrity.l1').joinpath('resources/behavior-reference-v1.json').read_text())
+    from .reference_release import reference as load_reference
+    reference=load_reference('behavior')
     result={'schema':'tokenclock-l2-run/v1','layer':'L2','status':'completed','samples':samples,
             'planned_requests':0,'attempted_requests':0,'completed_answers':sum(s['metadata'].get('completed') is True and not s['metadata'].get('truncated') for s in samples),'recorded_samples':len(samples),
             'comparison':compare_behavior(samples,reference),'source_scope':'imported_answers',
@@ -145,7 +146,8 @@ def run(source_path,output_dir,config=None,cancelled_check=None,progress=None):
                   'admission_stopped_without_new_call':len(client.records)==before}
             break
     from .scoring import compare_behavior
-    reference=json.loads(files('scripts.model_integrity.l1').joinpath('resources/behavior-reference-v1.json').read_text())
+    from .reference_release import reference as load_reference
+    reference=load_reference('behavior')
     comparison=compare_behavior(samples,reference,model_labels=config.get('reference_models'))
     if requested_mode=='demo':
         comparison['scope']='synthetic_demo_not_model_comparison'

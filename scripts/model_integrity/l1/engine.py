@@ -21,7 +21,7 @@ from scripts.model_integrity.m10_features import command_segments, is_other_test
 INPUT_SCHEMA = 'tokenclock-l1-observation/v1'
 OUTPUT_SCHEMA = 'tokenclock-l1-assessment/v1'
 KNOWN_KINDS = {'message','model_request','model_response','billing','tool_call','tool_result',
-               'artifact_snapshot','usage','stream_delta','gap','metadata'}
+               'artifact_snapshot','usage','stream_delta','gap','metadata','model_declaration'}
 MAX_RECORDS = 100000
 MAX_TEXT = 8 * 1024 * 1024
 
@@ -266,6 +266,9 @@ def analyze(document: dict, comparison_model: str | None = None) -> dict:
     if isinstance(context.get('requested_model'),str):
         add('source.context_model_label',context['requested_model'],['/context/requested_model'],dimension='来源声明',group='G-ROUTE')
 
+    from .model_fields import inspect as inspect_model_fields
+    model_declarations=inspect_model_fields(records,add,unknown,comparison_model,collisions)
+
     claims = [r for r in records if r['kind'] in {'model_request','model_response','billing'} and model_key(r['data'].get('model'))]
     request_groups = defaultdict(list)
     for r in claims:
@@ -415,7 +418,7 @@ def analyze(document: dict, comparison_model: str | None = None) -> dict:
     issues=visible_fail or bool(codes & {'process.edit_outside_explicit_scope','process.unverified_completion_claim','process.latest_change_unverified'})
     quality_status='visible_issue_or_unverified_claim' if issues else 'limited_observations'
     headline='发现可定位的声明差异' if source_status=='declaration_difference' else '发现可见的验证问题或待核实声明' if issues else '已提取可见记录，当前仅提供局部观察'
-    return {'schema':OUTPUT_SCHEMA,'input_id':str(document.get('id','')),
+    return {'schema':OUTPUT_SCHEMA,'input_id':str(document.get('id','')),'model_declarations':model_declarations,
             'scope':{'synthetic':source.get('kind')=='synthetic_fixture','source_format':str(source.get('format','unknown')),'capture_complete':complete,'comparison_model':comparison_model},
             'record_index':{r['id']:{'pointer':'/records/'+str(r['_order']),'native_id':r['_native_id']} for r in records},
             'summary':{'headline':headline,'source_status':source_status,'quality_status':quality_status,'identity_status':'not_estimated'},
@@ -423,7 +426,7 @@ def analyze(document: dict, comparison_model: str | None = None) -> dict:
             'coverage':{'records_total':len(original),'records_unique':len(records),'records_used':len(used & set(evidence_ids)),
                         'unsupported_kinds':unsupported,'modules':{'S01':'partial','P01':'partial','P02':'partial','P03':'partial',
                         'P04':'limited','Q01':'limited','R01':'partial','T02':'partial','T03':'partial','I03':'partial',
-                        'B01-B04':'not_implemented','P05':'not_implemented','T01':'not_implemented','T05':'not_implemented'}}}
+                        'B01-B04':'not_implemented','P05':'not_implemented','T01':'not_implemented','T05':'limited'}}}
 
 
 def _usage(r, add, unknown):

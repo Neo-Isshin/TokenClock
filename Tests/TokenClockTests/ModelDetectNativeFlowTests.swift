@@ -20,6 +20,9 @@ final class ModelDetectNativeFlowTests: XCTestCase {
         var cancelReply: ModelDetectJSON = .null
         var reportReply: ModelDetectJSON = .null
         var profiles: [ModelDetectJSON] = []
+        var historyRows: [ModelDetectJSON] = []
+        var historyReply: ModelDetectJSON = .object([:])
+        var infoReply: ModelDetectJSON = .object([:])
         var submitError: Error?
         var pollError: Error?
 
@@ -31,7 +34,9 @@ final class ModelDetectNativeFlowTests: XCTestCase {
             }
             if route == "api/sessions" { return .object(["sessions": .array([])]) }
             if route == "api/connections" { return .object(["profiles": .array(profiles)]) }
-            if route == "api/jobs", body == nil { return .object(["jobs": .array([])]) }
+            if route == "api/jobs", body == nil { return .object(["jobs": .array(historyRows)]) }
+            if route == "api/history/compare" { return historyReply }
+            if route == "api/info" { return infoReply }
             if route == "api/preview" { return previewReply }
             if route == "api/jobs" {
                 if let submitError { throw submitError }
@@ -87,7 +92,7 @@ final class ModelDetectNativeFlowTests: XCTestCase {
             user["recommendation"] = .object(["schema": .string("tokenclock-next-detection/v1"), "status": .string("recommended"),
                 "automatic_dispatch": .bool(false), "remaining_budget_usd": .string("0.4"),
                 "target_binding": .object(["endpoint": .string("https://example.invalid/v1/chat/completions"), "api_format": .string("chat_completions"), "model": .string("gpt-5.5")]),
-                "actions": .array([.object(["id": .string("next-N01-A"), "configuration_patch": .object([
+                "actions": .array([.object(["id": .string("next-N01-A"), "title":.string("复查回答"), "reason":.string("确认差别是否重复出现"), "request_count":.number(2), "estimated_reserve_usd":.string("0.123456"), "configuration_patch": .object([
                     "workflow_mode": .string("l2"), "transport_mode": .string("live"), "family": .string("openai"),
                     "task_ids": .array([.string("N01:A")]), "provider": .object(["max_cost_usd": .string("0.4")])])])])])
         }
@@ -113,6 +118,7 @@ final class ModelDetectNativeFlowTests: XCTestCase {
         return (model, service)
     }
     private func configureAPI(_ model: ModelDetectNativeModel, judge: Bool = false) {
+        if judge { model.l2Method = "behavior" }
         model.mode = .api; model.endpoint = "https://example.invalid/v1/chat/completions"; model.modelID = "gpt-5.5"
         model.apiFormat = "chat_completions"; model.inputPrice = "1"; model.outputPrice = "2"; model.budget = "1"
         model.apiKey = "synthetic-native-flow-key"; model.assessmentEnabled = judge; model.reuseTargetForAssessment = true
@@ -160,6 +166,50 @@ final class ModelDetectNativeFlowTests: XCTestCase {
         model.budget = "0.5"
         XCTAssertNil(model.preview); XCTAssertFalse(model.targetConsent); XCTAssertFalse(model.canStart)
         await model.confirmStartNow(); XCTAssertEqual(service.count("api/jobs"), 0)
+    }
+
+    func testQuickConfirmationSubmitsBothDisclosedRolesOnceAndNothingBeforeClick() async throws {
+        let (model, service) = makeModel(); configureAPI(model, judge: true)
+        service.previewReply = preview(local: false, judge: true)
+        await model.prepareNow()
+        XCTAssertTrue(model.canConfirmReviewed)
+        XCTAssertFalse(model.canStart)
+        XCTAssertEqual(service.count("api/jobs"), 0)
+        model.confirmReviewedStart(); model.confirmReviewedStart()
+        try await wait { service.count("api/jobs") == 1 }
+        XCTAssertEqual(service.count("api/jobs"), 1)
+        XCTAssertFalse(model.canConfirmReviewed)
+    }
+
+    func testQuickConfirmationCannotReuseChangedScopeOrMissingExternalRoles() async throws {
+        let (model, service) = makeModel(); configureAPI(model)
+        service.previewReply = preview(local: false)
+        await model.prepareNow(); model.modelID = "gpt-6-astra"
+        XCTAssertFalse(model.canConfirmReviewed); model.confirmReviewedStart()
+        await Task.yield(); XCTAssertEqual(service.count("api/jobs"), 0)
+        service.previewReply = preview(local: true)
+        await model.prepareNow(); XCTAssertFalse(model.canConfirmReviewed)
+        model.confirmReviewedStart(); await Task.yield()
+        XCTAssertEqual(service.count("api/jobs"), 0)
+    }
+
+    func testSessionModelPrefillIsComparedWithoutStartingOrReplacingRecordedClaims() async throws {
+        let (model, service) = makeModel(); let url = try source()
+        model.recentSessions = [.init(id: url.path, title: "Astra session", url: url, model: "gpt-6-astra")]
+        model.selectSession(id: url.path)
+        XCTAssertEqual(model.comparisonModel, "gpt-6-astra")
+        XCTAssertEqual(service.count("api/jobs"), 0)
+        await model.prepareNow()
+        let request = try XCTUnwrap(service.calls.first { $0.route == "api/jobs" && $0.body != nil }?.body)
+        XCTAssertEqual(request["comparison_model"].string, "gpt-6-astra")
+        XCTAssertNil(request["semantic_config"]["provider"]["model"].string)
+    }
+
+    func testChoosingANewFileClearsPreviousExpectedModel() throws {
+        let (model, _) = makeModel()
+        model.prefillSource(try source(), expectedModel: "gpt-6-astra")
+        model.prefillSource(try source())
+        XCTAssertEqual(model.comparisonModel, "")
     }
 
     func testLateLocalPreviewCannotSubmitChangedInput() async throws {
@@ -252,10 +302,15 @@ final class ModelDetectNativeFlowTests: XCTestCase {
     }
 
     func testMissingBriefIsNotInventedAsNormalOrGivenAnInertRetry() async throws {
-        let (model, service) = makeModel(); model.sourceURL = try source(); service.jobReply = job("completed"); service.reportReply = .object([:])
+        let (model, service) = makeModel(); model.sourceURL = try source(); service.jobReply = job("completed"); service.reportReply = .object(["result":.object(["status":.string("completed")])])
         await model.prepareNow(); try await wait { model.phase == .result }
         XCTAssertNotEqual(model.brief?.title, "型号正常")
-        XCTAssertNil(model.brief?.primaryActionTitle, "Completed task with unreadable report cannot use failed-task retry as a dead primary action")
+        XCTAssertEqual(model.brief?.primaryActionTitle, "重新读取结果")
+        let route = "reports/" + Self.jobID + "/report.json"
+        let reads = service.count(route, post: false)
+        model.performPrimaryAction()
+        try await wait { service.count(route, post: false) > reads }
+        XCTAssertEqual(service.count("api/jobs"), 1, "Reloading cannot submit a second job")
     }
 
     func testRecommendationRetainsRemainingBudgetAndLineageBeforeNewConfirmation() async throws {
@@ -278,6 +333,82 @@ final class ModelDetectNativeFlowTests: XCTestCase {
             XCTAssertEqual(service.count("api/preview"), 0, "Reject the malformed full value instead of quoting a parsed prefix")
             XCTAssertFalse(model.canStart)
         }
+    }
+
+    func testReferencePreviewAppearsBeforeAnyPaidSubmission() async throws {
+        let (model, service) = makeModel(); configureAPI(model)
+        model.l2Method = "behavior"
+        var value = preview(local: false).object
+        value["reference_readiness"] = .object(["title":.string("部分题目有可对照的参考"),"summary":.string("3道题中2道有参考")])
+        service.previewReply = .object(value)
+        await model.prepareNow()
+        XCTAssertEqual(model.preview?.referenceTitle,"部分题目有可对照的参考")
+        XCTAssertEqual(service.count("api/jobs"),0)
+        model.modelID = "unknown-model"
+        XCTAssertTrue(model.needsReferenceChoice)
+        XCTAssertNil(model.preview)
+    }
+
+    func testNumericDefaultUsesLocalScoringAndNoFamilyRequirement() async throws {
+        let (model, service) = makeModel(); configureAPI(model)
+        XCTAssertEqual(model.l2Method, "numeric")
+        model.modelID = "gemini-3.8-flash"
+        model.inputPrice = "1"; model.outputPrice = "2"
+        let config = try model.configuration(secrets: false, authorized: false)
+        XCTAssertEqual(config["l2_method"].string, "numeric")
+        XCTAssertEqual(config["provider"]["reasoning_effort"].string, "low")
+        XCTAssertEqual(config["family"], .null)
+        XCTAssertEqual(config["assessment"], .null)
+        XCTAssertFalse(model.needsReferenceChoice)
+        XCTAssertTrue(model.planSummary.contains("3 次"))
+        XCTAssertEqual(service.count("api/jobs"), 0)
+    }
+
+    func testReferenceValidationOverviewIsReadOnlyAndRejectsMissingVerification() async throws {
+        let (model, service) = makeModel()
+        service.infoReply = .object(["references":.object(["schema":.string("tokenclock-reference-overview/v1"),"status":.string("verified"),"title":.string("参考资料已校验"),"candidate_formal_enabled":.bool(false)])])
+        model.refreshReferenceOverview(); try await wait { !model.referenceLoading }
+        XCTAssertEqual(model.referenceOverview["status"].string,"verified")
+        XCTAssertEqual(model.referenceOverview["candidate_formal_enabled"].bool,false)
+        XCTAssertEqual(service.count("api/jobs"),0);XCTAssertEqual(service.count("api/info",post:false),1)
+        service.infoReply = .object([:]);model.refreshReferenceOverview();try await wait { !model.referenceLoading }
+        XCTAssertEqual(model.referenceOverview,.null);XCTAssertNotNil(model.referenceError)
+        XCTAssertEqual(service.count("api/jobs"),0)
+    }
+
+    func testHistoryComparisonIsLocalAndLateResultCannotReplaceNewSelection() async throws {
+        let (model, service) = makeModel(); model.sourceURL = try source(); service.jobReply = job("completed")
+        let earlier = "job-" + String(repeating:"b",count:32)
+        service.historyRows = [.object(["id":.string(earlier),"status":.string("completed"),"input_name":.string("earlier")])]
+        await model.prepareNow(); try await wait { model.phase == .result && model.history.count == 1 }
+        service.held.insert("POST api/history/compare")
+        model.compareHistory(with: earlier)
+        try await wait { service.waiting["POST api/history/compare"] != nil }
+        XCTAssertEqual(service.count("api/jobs"),1)
+        model.newDetection()
+        service.release("POST api/history/compare", value: .object(["title":.string("stale history")]))
+        await Task.yield()
+        XCTAssertEqual(model.historyComparison,.null)
+        XCTAssertFalse(model.comparingHistory)
+    }
+
+    func testFollowUpPreviewCarriesParentBudgetButDoesNotDispatchItself() async throws {
+        let (model, service) = makeModel(); configureAPI(model); service.previewReply = preview(local:false)
+        service.jobReply = job("completed"); service.reportReply = report(recommendation:true)
+        await model.prepareNow(); model.targetConsent=true; await model.confirmStartNow(); try await wait { model.phase == .result }
+        let previews = service.count("api/preview")
+        model.performPrimaryAction()
+        try await wait { service.count("api/preview") > previews && !model.isBusy }
+        let payload = try XCTUnwrap(service.calls.last { $0.route == "api/preview" }?.body)
+        XCTAssertEqual(payload["recommendation_origin_job_id"].string,Self.jobID)
+        XCTAssertEqual(payload["semantic_config"]["provider"]["max_cost_usd"].string,"0.4")
+        XCTAssertEqual(service.count("api/jobs"),1)
+        XCTAssertFalse(model.targetConsent)
+        XCTAssertEqual(model.followUps.first?.reserve,"$0.13")
+        XCTAssertTrue(model.canReturnToResult)
+        model.returnToResult()
+        try await wait { model.phase == .result }
+        XCTAssertEqual(service.count("api/jobs"),1)
     }
 }
 #endif

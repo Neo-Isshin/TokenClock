@@ -95,7 +95,7 @@ class ModelDetectProductTests(unittest.TestCase):
         module = ROOT / 'scripts/model_integrity/probes/numeric_fingerprint.py'
         runtime = os.environ.get('TOKENCLOCK_TEST_NUMERIC_RUNTIME')
         if not module.is_file() or not runtime:
-            self.skipTest('Requires the Glass numerical module and an explicit prepared Node runtime')
+            self.skipTest('Requires the numerical module and an explicit prepared Node runtime')
         import random
         from unittest.mock import patch
         from scripts.model_integrity.probes.numeric_fingerprint import reference, assess

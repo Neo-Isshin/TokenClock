@@ -109,8 +109,9 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(catalog());return
             if route=='api/info':
                 from .capabilities import capabilities
+                from ..probes.reference_release import overview
                 self._send({'version':'model-detect-simple-ui-v1','mode_default':'local','max_upload_bytes':MAX_UPLOAD_BYTES,
-                            'external_default':False,'api_key_in_profile_json':False,'capabilities':capabilities()});return
+                            'external_default':False,'api_key_in_profile_json':False,'capabilities':capabilities(),'references':overview()});return
             if route=='api/connections':
                 self._send(self.server.connections.list());return
             if route.startswith('support/'):
@@ -138,7 +139,12 @@ class Handler(BaseHTTPRequestHandler):
                     value=json.loads(report.read_bytes())
                     from ..probes.user_summary import summarize
                     from ..probes.result_brief import build_brief
-                    if not isinstance(value.get('user_summary'),dict):value['user_summary']=summarize(value)
+                    previous=value.get('user_summary') if isinstance(value.get('user_summary'),dict) else {}
+                    value['user_summary']=summarize(value)
+                    if isinstance(previous.get('recommendation'),dict):value['user_summary']['recommendation']=previous['recommendation']
+                    if hasattr(self.server.manager,'recommendation_for_display'):
+                        fresh=self.server.manager.recommendation_for_display(parts[1])
+                        if fresh is not None:value['user_summary']['recommendation']=fresh
                     value['user_summary']['brief']=build_brief(value)
                     value['presentation']={'version':'single-result-v1','derived_for_display':True,'stored_report_modified':False}
                     self._send(value);return
@@ -165,6 +171,23 @@ class Handler(BaseHTTPRequestHandler):
         route,_=routed
         try:
             body=self._body()
+            if route=='api/history/compare':
+                from ..probes.history_comparison import compare_history
+                from .ingest import strict_loads
+                reports=[];jobs=[]
+                for key in ('left_job_id','right_job_id'):
+                    identifier=body.get(key)
+                    if not isinstance(identifier,str):raise ValueError('请选择两份已完成的结果')
+                    job=self.server.manager.get(identifier)
+                    path=Path(self.server.manager.report_path(identifier))/'report.json'
+                    if path.is_symlink() or path.stat().st_size>32*1024*1024:raise ValueError('报告文件无法安全读取')
+                    report=strict_loads(path.read_bytes())
+                    if not isinstance(report,dict):raise ValueError('报告格式不完整')
+                    reports.append(report);jobs.append(job)
+                comparison=compare_history(*reports)
+                for key,job in zip(('left','right'),jobs):
+                    comparison[key].update(job_id=job['id'],input_name=job.get('input_name'),created_at=job.get('created_at'))
+                self._send(comparison);return
             if route=='api/model-catalog':
                 from .model_catalog import fetch_catalog
                 self._send(fetch_catalog(body.get('endpoint')));return
@@ -176,7 +199,13 @@ class Handler(BaseHTTPRequestHandler):
                 source=body.get('source_path')
                 if body.get('resume_job_id'):
                     source,config=self.server.manager.preview_resume(body['resume_job_id'],config)
+                follow_up=None
+                if body.get('recommendation_origin_job_id') or body.get('recommendation_action_id'):
+                    origin=body.get('recommendation_origin_job_id');action=body.get('recommendation_action_id')
+                    if not isinstance(origin,str) or not isinstance(action,str):raise ValueError('补测来源不完整')
+                    follow_up=self.server.manager.preview_recommendation(origin,action,config)
                 result=preview(config,source)
+                if follow_up:result['follow_up']={key:follow_up.get(key) for key in ('title','reason','purpose','request_count','estimated_reserve_usd')}
                 if body.get('resume_job_id'):
                     result['resume_job_id']=body['resume_job_id']
                     job=self.server.manager.get(body['resume_job_id'])

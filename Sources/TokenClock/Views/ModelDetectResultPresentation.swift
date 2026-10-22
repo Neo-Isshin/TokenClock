@@ -90,6 +90,31 @@ struct ModelDetectResultPresentation {
     var observedCount: Int { Self.items.filter { item in (1...3).contains { cell(item.id, $0).hasObservation } }.count }
     var issueCount: Int { Self.items.filter { item in (1...3).contains { cell(item.id, $0).state == .issue } }.count }
     func observedCount(layer: Int) -> Int { Self.items.filter { cell($0.id, layer).hasObservation }.count }
+    struct RadarAxis: Identifiable {
+        let id: Int
+        let title: String
+        let observed: Int
+        let total: Int
+        let state: State
+        /// Coverage only: no quality, identity probability or duplicated layer votes.
+        var coverage: Double { total > 0 ? Double(observed) / Double(total) : 0 }
+    }
+    var radarAxes: [RadarAxis] {
+        let names = [T.text("型号记录", "型號紀錄", "Model records"), T.text("接口表现", "介面表現", "Service"),
+                     T.text("工作过程", "工作過程", "Work process"), T.text("任务完成", "任務完成", "Task delivery"),
+                     T.text("回答习惯", "回答習慣", "Answer habits"), T.text("资源使用", "資源使用", "Resources")]
+        return (0..<6).map { group in
+            let items = Self.items.filter { $0.group == group }
+            let observed = items.filter { item in (1...3).contains { cell(item.id, $0).hasObservation } }.count
+            let active = items.flatMap { item in (1...3).map { cell(item.id, $0) } }.filter { $0.state != .unavailable && $0.state != .notRun }
+            let state: State
+            if active.contains(where: { $0.state == .issue }) { state = .issue }
+            else if active.contains(where: { $0.state == .limited }) { state = .limited }
+            else if observed == items.count && !active.isEmpty && active.allSatisfy({ $0.state == .aligned }) { state = .aligned }
+            else { state = observed > 0 ? .observed : .notRun }
+            return RadarAxis(id: group, title: names[group], observed: observed, total: items.count, state: state)
+        }
+    }
     var firstCell: String {
         for state in [State.issue, .limited, .observed, .aligned] {
             for item in Self.items { for layer in 1...3 where cell(item.id, layer).state == state { return Self.key(item.id, layer) } }
@@ -136,7 +161,7 @@ struct ModelDetectResultPresentation {
         for (index, fact) in report["facts"].array.enumerated() { factCell(fact, layer: 1, path: prefix + "/facts/\(index)") }
         for (index, unknown) in report["unknowns"].array.enumerated() {
             let code = unknown["code"].string ?? ""
-            let mapping = ["source.unbound_model_claims": "S01", "process.read_coverage_incomplete": "P01", "process.test_result_unknown": "P03", "process.test_execution_not_observed": "P03", "resource.usage_missing": "T02", "resource.stream_timing_unknown": "T03", "delivery.semantic_review_not_implemented": "Q01"]
+            let mapping = ["source.harness_response_missing": "S01", "source.harness_model_scope_unknown": "S01", "source.unbound_model_claims": "S01", "process.read_coverage_incomplete": "P01", "process.test_result_unknown": "P03", "process.test_execution_not_observed": "P03", "resource.usage_missing": "T02", "resource.stream_timing_unknown": "T03", "delivery.semantic_review_not_implemented": "Q01"]
             if let id = mapping[code] { add(id, 1, .limited, T.text("现有记录缺少此项核验所需信息。", "現有記錄缺少此項核驗所需資訊。", "The record lacks information needed for this check."), prefix + "/unknowns/\(index)") }
         }
         for (index, group) in report["verification_history"]["groups"].array.enumerated() {
@@ -145,6 +170,12 @@ struct ModelDetectResultPresentation {
             if group["last_result"].string == "fail" { add("P03", 1, .issue, T.text("最近的同项检查仍未通过。", "最近的同項檢查仍未通過。", "The latest result of this check still fails."), path) }
         }
         diagnostics(result["task_id"].string == "diagnostics" ? result : result["diagnostics"], layer: layer, path: prefix + (result["task_id"].string == "diagnostics" ? "/result" : "/result/diagnostics"))
+        if result["numeric_fingerprint"]["schema"].string == "tokenclock-numeric-fingerprint/v1" {
+            let status = result["numeric_fingerprint"]["status"].string ?? "insufficient"
+            let usable = ["likely", "reference_only", "ambiguous", "demonstration"].contains(status)
+            add("N01", layer, usable ? .observed : .limited,
+                result["numeric_fingerprint"]["title"].string ?? "数字指纹未完成", prefix + "/result/numeric_fingerprint")
+        }
         for (index, sample) in result["samples"].array.enumerated() {
             let task = String((sample["task_id"].string ?? "").prefix(3)), path = prefix + "/result/samples/\(index)"
             let item = ["O07":"B01", "C06":"B02", "O05":"B02", "C02":"B04", "O06":"B03", "O09":"B03", "O10":"B04", "O08":"B04", "C04":"B04"] [task] ?? (task.hasPrefix("N") ? "N01" : "Q01")
@@ -183,6 +214,23 @@ struct ModelDetectResultPresentation {
 
     private mutating func factCell(_ fact: ModelDetectJSON, layer: Int, path: String) {
         let code = fact["code"].string ?? ""
+        if code.hasPrefix("source.harness_") || code == "source.comparison_target_difference" {
+            let v = fact["value"]
+            func label(_ key: String) -> String { v[key].string ?? v[key].array.compactMap(\.string).joined(separator: "、") }
+            let note: String
+            switch code {
+            case "source.harness_model_consistent": note = "可配对轮次的型号声明一致：" + label("model") + "；仅核对本地记录。"
+            case "source.harness_model_difference": note = "同轮请求：" + label("requested") + "；响应条目：" + label("reported") + "。"
+            case "source.harness_model_change": note = "主调用型号从 " + label("from") + " 变为 " + label("to") + "。"
+            case "source.harness_default_difference": note = "会话默认：" + label("session_default") + "；最近请求：" + label("latest_request") + "。"
+            case "source.comparison_target_difference": note = "比较目标：" + label("comparison_target") + "；最近请求：" + label("latest_recorded_request") + "。"
+            case "source.harness_model_observed": note = "结构化型号字段：" + label("model") + "（" + label("owner") + " / " + label("scope") + "）。"
+            default: note = "记录中出现多个型号：" + label("models") + "；归属需结合原始位置核对。"
+            }
+            let state: State = ["source.harness_model_difference", "source.harness_multiple_models_in_turn"].contains(code) ? .issue : .observed
+            add(code == "source.harness_model_change" ? "T05" : "S01", layer, state, note, path)
+            return
+        }
         let rows: [String: (String, State, String)] = [
             "source.model_claim_difference": ("S01", .issue, "同次调用的请求与响应型号声明不同。"),
             "source.billing_claim_difference": ("S01", .issue, "计费与调用型号声明不同。"),
@@ -232,9 +280,16 @@ struct ModelDetectResultPresentation {
         "asks_rule":"B04", "premise_handling":"B04", "event_model":"B04", "asks_target":"B04", "asks_for_code":"B04", "adds_horizon_assumption":"B04", "asks_context":"B04", "selection_mode":"B04",
     ]
     private mutating func conclusion(_ brief: ModelDetectJSON) {
+        let human = brief["display"]
+        if human["schema"].string == "tokenclock-human-result/v1", let heading = human["title"].string {
+            title = heading; summary = human["summary"].string ?? ""
+            tone = State(rawValue: human["tone"].string ?? "limited") ?? .limited
+            return
+        }
         title = brief["title"].string ?? T.text("资料不足，无法判定型号", "資料不足，無法判定型號", "Insufficient evidence to identify the model")
         summary = brief["summary"].string ?? ""
         switch brief["status"].string {
+        case "model_record_difference": tone = issueCount > 0 ? .issue : .observed
         case "source_conflict": title = T.text("型号声明或调用记录不一致", "型號聲明或呼叫記錄不一致", "Model claims or call records conflict"); tone = .issue
         case "local_deviation_signal": title = T.text("已测特征偏离申报型号", "已測特徵偏離申報型號", "Measured traits diverge from the declared model"); tone = .issue
         case "local_declared_alignment": title = T.text("已测特征更接近申报型号", "已測特徵更接近申報型號", "Measured traits favor the declared model"); tone = .aligned

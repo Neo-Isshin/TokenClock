@@ -312,7 +312,8 @@ def _distance_bounds(left,right,left_total,right_total):
 
 def compare(report_or_result, reference=None):
     if reference is None:
-        reference = json.loads(files('scripts.model_integrity.probes').joinpath('resources', 'fingerprint-reference-v1.json').read_text())
+        from .reference_release import reference as load_reference
+        reference = load_reference('fingerprint')
         from .process_reference import merge_reference
         reference = merge_reference(reference)
     if reference.get('schema') != SCHEMA: raise ValueError('Unsupported fingerprint reference schema')
@@ -386,10 +387,13 @@ def compare(report_or_result, reference=None):
                             for row in accepted_rows: selected_rows[row['sample_hash']] = row
                     if not ref_counts or not selected_rows: continue
                     current = Counter(encoded_value(name, r['features'][name], dimension) for r in selected_rows.values())
+                    ordered_current=list(selected_rows.values())
+                    split_counts=[dict(Counter(encoded_value(name,r['features'][name],dimension) for r in ordered_current[offset::2])) for offset in (0,1)]
                     current_total=len({row['sample_hash'] for row in rows})
                     bounds=_distance_bounds(current,ref_counts,current_total,reference_total)
                     outside = sum(n for key, n in current.items() if key not in ref_counts)
                     value = {'feature_id': name, 'current_counts': dict(current), 'reference_counts': dict(ref_counts),
+                             'current_split_counts':split_counts,'current_sample_ids':[r['sample_hash'] for r in ordered_current],
                              'current_n': sum(current.values()), 'reference_n': sum(ref_counts.values()),
                              'current_total_n':current_total,'reference_total_n':reference_total,
                              'current_coverage':sum(current.values())/current_total,'reference_coverage':sum(ref_counts.values())/reference_total,
@@ -428,6 +432,8 @@ def compare(report_or_result, reference=None):
                                'source_evidence_groups':sorted({r['source_evidence_group']for r in rows if r.get('source_evidence_group')}),
                                'no_additional_independent_vote':origin=='model_assessed','eligible_as_independent_identity_evidence':False,
                                'shared_evidence_group': _family(task), 'no_independent_votes_from_related_features': True})
+                from .direction_guard import evaluate
+                panels[-1]['direction_guard']=evaluate(panels[-1])
     cards = []
     subjects={row['subject_id']:{'label':row['subject_label'],'scope':row['subject_scope']} for row in observations}
     for subject_id,subject in subjects.items():
@@ -454,6 +460,7 @@ def compare(report_or_result, reference=None):
                               'sample_count_scope':'Declared records; weak identities do not certify independent original API calls',
                               'identity_kinds': dict(Counter(r.get('identity_kind','unknown') for r in observations))},
             'reference_coverage': reference.get('banks', {}),
+            'reference_identity': {'version':reference.get('version'),'sha256':stable_hash(reference)},
             'assessment_relationships':list({stable_hash(relationship_policy(v)):relationship_policy(v) for row in observations if row['origin']=='model_assessed'
                                              for v in row.get('assessment_relationships',[row.get('assessment_relationship')])}.values()),
             'reference_overlap': {'sample_identity_overlap': bool(sample_hashes & {h for c in cells for h in c.get('sample_hashes', [])}),

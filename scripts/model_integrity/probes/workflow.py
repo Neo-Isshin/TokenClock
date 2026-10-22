@@ -19,6 +19,7 @@ def validate_config(config):
     config['assessment']=validate_assessment(config.get('assessment'))
     workflow=config.get('workflow_mode','l1')
     if workflow not in {'l1','l2','l3','diagnostics','combined'}:raise ValueError('未知的评估流程')
+    if workflow=='l2' and config.get('l2_method','behavior') not in {'behavior','numeric'}:raise ValueError('未知的轻量检测方法')
     if workflow in {'l2','l3'}:
         mode=config.get('transport_mode','artifact' if workflow=='l3' else 'replay')
         if mode not in ({'live','replay','demo','artifact'} if workflow=='l2' else {'live','replay','demo','artifact'}):raise ValueError('未知的执行模式')
@@ -33,6 +34,10 @@ def validate_config(config):
         else:config['mode']='local'
     if config['assessment']['enabled'] and workflow not in {'l2','l3'}:raise ValueError('新评审配置仅适用于L2/L3，L1语义增强使用原配置')
     if config['assessment'].get('batch_once') and workflow!='l2':raise ValueError('批量一次解析目前仅用于已收集的轻量回答')
+    if workflow=='l2' and config.get('l2_method')=='numeric':
+        from .numeric_fingerprint import reference,ensure_runtime,plan
+        reference();ensure_runtime();plan(config)
+        if config['assessment']['enabled']:raise ValueError('数字指纹在本地评分，无需模型辅助解析。')
     if assessment_live(config['assessment']):config['mode']='external'
     return config
 
@@ -147,7 +152,8 @@ def _group_comparisons(result):
     for sample in result.get('samples',[]):
         subject=sample.get('subject',{'id':'unbound','label':'未绑定输入组'})
         groups.setdefault(subject['id'],{'subject':subject,'samples':[]})['samples'].append(sample)
-    reference=json.loads(files('scripts.model_integrity.l1').joinpath('resources/behavior-reference-v1.json').read_text())
+    from .reference_release import reference as load_reference
+    reference=load_reference('behavior')
     comparisons=[]
     for group in groups.values():
         comparison=compare_behavior(group['samples'],reference)
@@ -205,7 +211,8 @@ def _assess_language(result,judge,freeze_path=None):
     if digest([{'id':s['id'],'task_id':s['task_id'],'answer':s['answer']} for s in eligible])!=frozen_hash:raise ValueError('Collected answers changed during interpretation')
     result['interpretation_phase']={'mode':'single_post_collection_batch' if batch_once else 'post_collection_per_answer',
         'frozen_answer_count':len(frozen),'frozen_answers_sha256':frozen_hash,'feedback_to_target':False,'automatic_retry_or_split':False}
-    reference=json.loads(files('scripts.model_integrity.l1').joinpath('resources/behavior-reference-v1.json').read_text())
+    from .reference_release import reference as load_reference
+    reference=load_reference('behavior')
     result['comparison']=compare_behavior(result.get('samples',[]),reference)
     result['assessment_status']='model_assisted_with_evidence_not_independently_certified'
 
@@ -251,6 +258,8 @@ def _role_progress(callback,purpose):
 
 def run_analysis(source_path,comparison_model=None,semantic_config=None,progress=None,cancelled=None,output_dir=None):
     config=validate_config(semantic_config);mode=config.get('workflow_mode','l1')
+    from .reference_release import overview
+    release=overview()  # Verify before constructing a paid target or judge client.
     if mode=='l1':
         from ..l1.pipeline import run_analysis as l1
         return l1(source_path,comparison_model,config,progress,cancelled,output_dir)
@@ -266,7 +275,10 @@ def run_analysis(source_path,comparison_model=None,semantic_config=None,progress
         if mode=='l3' and config.get('task_id','').startswith('H04'):config['_judge'].ensure_visual_configuration()
     progress=_role_progress(progress,'target')
     if mode=='l2':
-        from .l2 import run
+        if config.get('l2_method')=='numeric':
+            from .numeric_fingerprint import run
+        else:
+            from .l2 import run
         result=run(source_path,work,config,cancelled,progress)
     elif mode=='l3':
         task_id=config.get('task_id','H01');transport=config.get('transport_mode','artifact')
@@ -317,7 +329,7 @@ def run_analysis(source_path,comparison_model=None,semantic_config=None,progress
         result['trajectory']=analyze_trajectory(result['tool_events'])
     if 'checks' in result and mode!='diagnostics':result['score']=score_checks(result['checks'])
     if mode in {'l2','l3'}:_bind_subjects(result,config,source_path)
-    if mode=='l2':_group_comparisons(result)
+    if mode=='l2' and config.get('l2_method')!='numeric':_group_comparisons(result)
     result=_normalize_paths(result,out)
     report={'schema':'tokenclock-product-report/v1','workflow_mode':mode,'result':result,
             'summary':{'status':result.get('status','completed'),'scope':mode,'identity_status':'not_authenticated',
@@ -331,6 +343,9 @@ def run_analysis(source_path,comparison_model=None,semantic_config=None,progress
         return redact(v) if isinstance(v,str) else v
     from .fingerprints import compare as compare_fingerprints
     report['result']['fingerprints']=compare_fingerprints(report)
+    report['reference_release']={k:release[k] for k in ('release_id','manifest_sha256','data_version','verified_on')}
+    from .history_comparison import make_context
+    report['history_context']=make_context(report,config)
     from .fingerprint_summary import summarize
     report['result']['fingerprint_interpretation']=summarize(report['result']['fingerprints'])
     from .user_summary import summarize as user_summary

@@ -23,6 +23,8 @@ def run_analysis(source_path, comparison_model=None, semantic_config=None,
         notify(name,message,fraction)
 
     config=dict(semantic_config or {'mode':'local'})
+    from ..probes.reference_release import reference as verified_reference,overview
+    release=overview()  # Before any optional paid interpretation.
     max_mib=config.pop('max_mib',64)
     if type(max_mib) is not int or not 1<=max_mib<=256:
         raise ValueError('输入上限必须在1–256 MiB之间')
@@ -39,12 +41,9 @@ def run_analysis(source_path, comparison_model=None, semantic_config=None,
     from ..probes.process_reference import attach_l1
     report=attach_l1(observation,report)
     from .references import attach_reference
-    import json
-    from importlib.resources import files
-    catalog_resource=files('scripts.model_integrity.l1').joinpath('resources/behavior-reference-v1.json')
-    try:reference_config={'catalog':json.loads(catalog_resource.read_text(encoding='utf-8'))}
-    except (FileNotFoundError,ModuleNotFoundError):reference_config={}
+    reference_config={'catalog':verified_reference('behavior')}
     report=attach_reference(observation,report,reference_config)
+    report['reference_release']={k:release[k] for k in ('release_id','manifest_sha256','data_version','verified_on')}
     if report.get('process_profile'):
         from ..probes.fingerprints import compare
         from ..probes.fingerprint_summary import summarize

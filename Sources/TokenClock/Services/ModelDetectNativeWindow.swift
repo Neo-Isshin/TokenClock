@@ -21,6 +21,7 @@ final class ModelDetectNativeWindow: NSWindowController, NSWindowDelegate {
     required init?(coder: NSCoder) { fatalError("Use init(model:)") }
 
     override func loadWindow() {
+        // Normal retains its wider system-native layout; only the module's behavior is shared.
         let panel = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 900, height: 480),
                              styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
         panel.title = "Model Detect"
@@ -45,7 +46,7 @@ final class ModelDetectNativeWindow: NSWindowController, NSWindowDelegate {
         }
     }
 
-    func show(sourcePath: String? = nil, activate: Bool = true) {
+    func show(sourcePath: String? = nil, expectedModel: String? = nil, activate: Bool = true) {
         if hostingView == nil { loadWindow() }
         if model.phase == .running {
             focus(activate: activate)
@@ -55,10 +56,11 @@ final class ModelDetectNativeWindow: NSWindowController, NSWindowDelegate {
             model.newDetection()
             model.sourceURL = nil
             model.selectedSessionID = ""
+            model.comparisonModel = ""
             model.mode = .session
             model.filePurpose = "session"
             if let path = ModelDetectSessionSource.usablePath(sourcePath) {
-                model.prefillSource(URL(fileURLWithPath: path))
+                model.prefillSource(URL(fileURLWithPath: path), expectedModel: expectedModel)
             } else {
                 model.errorMessage = ModelDetectNativeText.text("会话日志不可读取，请重新选择文件。", "會話日誌無法讀取，請重新選擇檔案。", "The session log is unavailable. Choose the file again.")
             }
@@ -68,18 +70,19 @@ final class ModelDetectNativeWindow: NSWindowController, NSWindowDelegate {
     }
 
     /// A row with no exact log path must ask for a file, never construct a path from its model or ID.
-    func showSession(sourcePath: String?, activate: Bool = true) {
+    func showSession(sourcePath: String?, expectedModel: String? = nil, activate: Bool = true) {
         if model.phase == .running {
             show(activate: activate)
             return
         }
         if let path = ModelDetectSessionSource.usablePath(sourcePath) {
-            show(sourcePath: path, activate: activate)
+            show(sourcePath: path, expectedModel: expectedModel, activate: activate)
             return
         }
         model.newDetection()
         model.sourceURL = nil
         model.selectedSessionID = ""
+        model.comparisonModel = ""
         model.mode = .session
         model.filePurpose = "session"
         show(activate: activate)
@@ -128,7 +131,7 @@ final class ModelDetectNativeWindow: NSWindowController, NSWindowDelegate {
     }
 
     private func export(kind: String) {
-        guard ["report.json", "report.html", "observation.json", "evidence.zip"].contains(kind),
+        guard ["summary.html", "report.json", "report.html", "observation.json", "evidence.zip"].contains(kind),
               savePanel == nil, let window else { return }
         let panel = NSSavePanel()
         panel.nameFieldStringValue = "ModelDetect-" + kind

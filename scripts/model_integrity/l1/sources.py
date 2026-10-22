@@ -116,7 +116,12 @@ def project_opencode(path: Path, identifier: str = 'imported-opencode',
         raise ValueError('Unbound session-db arrays are not a native role-bound export')
     ref = source_ref(path)
     doc = _base(identifier, 'opencode_native_session_export', [ref])
+    from .model_fields import capture
+    def append_field(doc,kind,role,data,line=None,pointer=None,**bindings):
+        return _record(doc,kind,role,data,pointer,ref,**bindings)
     info = raw.get('info', {})
+    if isinstance(info.get('id'),str):doc['context']['session_id']=info['id']
+    capture(doc,info,None,append_field,scope='session_default',pointer='/info')
     payload_ref = None
     payloads = {}
     if tool_payload_path is not None:
@@ -147,6 +152,8 @@ def project_opencode(path: Path, identifier: str = 'imported-opencode',
         role = meta.get('role', 'unknown')
         role = role if role in ('user', 'assistant', 'system', 'tool', 'evaluator', 'child') else 'unknown'
         binding = {'generation_id': meta.get('id'), 'parent_id': meta.get('parentID')}
+        capture(doc,meta,None,append_field,scope='request' if role=='user' else 'response' if role=='assistant' else 'unknown',
+                owner='child' if role=='child' else 'main',turn=meta.get('parentID') if role=='assistant' else meta.get('id'),pointer=f'/messages/{index}/info')
         if role == 'user' and isinstance(meta.get('model'), dict):
             model = meta['model']
             if model.get('modelID'):

@@ -28,7 +28,8 @@ FEATURE_LABELS = {'selected_content':'选择的内容','selected_position':'选�
 
 
 def _reference():
-    return json.loads(files('scripts.model_integrity.probes').joinpath('resources/fingerprint-reference-v1.json').read_text())
+    from .reference_release import reference
+    return reference('fingerprint')
 
 
 def _label(value):
@@ -148,6 +149,34 @@ def _candidates(reference, labels, declared):
     return list(best.values())
 
 
+def _repeat_targets(result, provider, candidates, prior_tasks):
+    """One additional pair per family in this budget lineage, never endless retry."""
+    from .reference_readiness import conditions
+    by_task={c['task_id']:c for c in candidates};prior={x.split(':')[0] for x in prior_tasks}
+    grouped=defaultdict(list)
+    for sample in result.get('samples',[]):
+        if isinstance(sample,dict) and sample.get('task_id') in by_task:grouped[sample['task_id']].append(sample)
+    supported=set()
+    from .direction_guard import evaluate
+    for panel in result.get('fingerprints',{}).get('comparison_panels',[]):
+        if panel.get('dimension')=='behavior' and evaluate(panel)['status']=='repeat_supported':supported.add(panel.get('task_family'))
+    output=[]
+    for task_id,samples in sorted(grouped.items()):
+        task=get_task(task_id)
+        if task_id.split(':')[0] in prior or len(samples)<2:continue
+        if any(s.get('metadata',{}).get('completed')is not True or s.get('metadata',{}).get('truncated') or
+               s.get('metadata',{}).get('conditions')!=conditions(task,provider) or s.get('prompt_sha256')!=task['prompt_sha256'] for s in samples):continue
+        ids={s.get('record',{}).get('client_request_id') for s in samples}
+        if None in ids or len(ids)!=len(samples):continue
+        features=[s.get('extracted',{}).get('features',{}) for s in samples]
+        common=set.intersection(*(set(f) for f in features))
+        from .fingerprints import _known
+        varies=any(all(_known(f[name],name) for f in features) and len({digest(f[name]) for f in features})>1 for name in common)
+        if varies or task_id.split(':')[0] in supported:
+            output.append((task_id,'前两次回答有差别，再独立回答两次，确认这个现象是否重复出现。' if varies else '这道题已出现一致的接近方向，再独立回答两次，确认这个线索是否重复出现。',by_task[task_id]))
+    return output
+
+
 def recommend(report, config=None, *, reference=None):
     config = config or {}
     result = report.get('result', report)
@@ -170,6 +199,9 @@ def recommend(report, config=None, *, reference=None):
         output['stop_reasons'].append(reason)
         return output
 
+    if result.get('l2_method')=='numeric':
+        return stop('数字指纹结果已整理；不会自动追加调用。如需核对，可重新检测或选择其他方法。')
+
     if result.get('source_scope') == 'scripted_demo' or result.get('source', {}).get('kind') in {'scripted_demo', 'synthetic_fixture'}:
         return stop('当前是演示数据；请先配置真实送测对象，不依据演示结果追加付费检测。', 'needs_configuration')
     if pending or judge_pending:
@@ -179,9 +211,14 @@ def recommend(report, config=None, *, reference=None):
     if binding and provider.get('reasoning_effort','high')!='high':
         return stop('当前推理条件与题库的 high 参考不同；先明确比较条件，不能把现有差异参考直接用于此条件的推荐。', 'review_first')
     conflicts = [s for s in report.get('user_summary', {}).get('synthesis', {}).get('subjects', []) if s.get('source_conflicts')]
+    if any(f.get('code') in {'source.harness_model_difference','source.harness_multiple_models_in_turn',
+                            'source.comparison_target_difference','source.harness_unbound_models'} for f in result.get('facts',[])):
+        return stop('先查看已定位的型号字段与调用归属；新增行为题不能追溯证明旧会话来源。','review_first')
     if conflicts or any(f.get('code') in {'source.model_claim_difference', 'source.billing_claim_difference', 'source.binding_collision'} for f in result.get('facts', [])):
         return stop('先复核具体调用的来源声明或绑定冲突；增加行为题不能解释或抵消这类记录差异。', 'review_first')
     quality = result.get('assessment_quality') or {}
+    if any(s.get('metadata',{}).get('completed') is False or s.get('metadata',{}).get('truncated') or s.get('status') in {'failed','cancelled','incomplete','limited'} for s in result.get('samples',[]) if isinstance(s,dict)):
+        return stop('先检查未完成回答的原因；已有内容会保留，暂不推荐继续购买其他题目。','review_first')
     if quality.get('status') == 'no_usable_observations':
         return stop('先处理已有回答的解析失败或引用问题；重新购买目标回答通常不能补上这个缺口。', 'review_first')
     if result.get('status') in {'limited', 'unsupported', 'cancelled'} and (result.get('stop') or result.get('task_id')):
@@ -195,7 +232,7 @@ def recommend(report, config=None, *, reference=None):
     overlap=result.get('fingerprints',{}).get('reference_overlap',{})
     if not overlap.get('sample_identity_overlap'):
         for statement in result.get('fingerprint_interpretation',{}).get('statements',[]):
-            if statement.get('state')=='local_descriptive_direction' and statement.get('mode')=='strict' and statement.get('dimension')=='behavior':
+            if statement.get('state')=='local_descriptive_direction' and statement.get('mode')=='strict' and statement.get('dimension')=='behavior' and statement.get('direction_guard',{}).get('status')=='repeat_supported':
                 peers.update(m for m in statement.get('nearest_labels',[]) if m in MODEL_FAMILIES[family] and m!=label)
     labels=sorted(peers|{label}) if peers else list(MODEL_FAMILIES[family])
     output['focus_reference_labels']=labels
@@ -206,13 +243,14 @@ def recommend(report, config=None, *, reference=None):
     seen.update(t for t in config.get('_planning_history', []) if isinstance(t, str))
     seen_families = {task.split(':')[0] for task in seen}
     reference = reference if reference is not None else _reference()
-    candidates = [c for c in _candidates(reference, labels, label) if c['task_id'].split(':')[0] not in seen_families]
+    all_candidates=_candidates(reference, labels, label)
+    candidates = [c for c in all_candidates if c['task_id'].split(':')[0] not in seen_families]
     used_categories = {task[0] for task in seen if task and task[0] in DIMENSIONS}
     candidates.sort(key=lambda c: (c['task_id'][0] in used_categories, -c['reference_separation'], -c['reference_min_n'], c['task_id']))
     rejected_budget = 0
     selected_families = set()
 
-    def action(task_id, explanation, *, evidence=None):
+    def action(task_id, explanation, *, evidence=None, purpose='extend_behavior'):
         nonlocal rejected_budget
         task = get_task(task_id)
         count = 2 if task['layer'] == 'L2' else 1
@@ -232,10 +270,11 @@ def recommend(report, config=None, *, reference=None):
                  'provider': {'max_cost_usd': str(remaining) if remaining is not None else None},
                  'assessment': {'enabled': False, 'provider': {'max_cost_usd': str(judge_remaining) if judge_remaining is not None else None}}}
         if task['layer'] == 'L2':
-            patch.update(family=family, task_ids=[task_id])
+            patch.update(family=family, task_ids=[task_id],repeats=2)
         else:
             patch['task_id'] = task_id
-        output['actions'].append({'id': 'next-' + task_id.replace(':', '-'), 'title': task['title'],
+        output['actions'].append({'id': 'next-' + task_id.replace(':', '-'), 'title': ('再确认：' if purpose.startswith('repeat') else '')+task['title'],
+                                  'purpose':purpose,'expected_answer':explanation,
                                   'reason': explanation, 'subject_id': subject, 'workflow_mode': patch['workflow_mode'],
                                   'family': family, 'task_ids': [task_id] if count == 2 else None,
                                   'task_id': task_id if count == 1 else None, 'request_count': count,
@@ -243,6 +282,17 @@ def recommend(report, config=None, *, reference=None):
                                   'assessment_required': False, 'configuration_patch': patch,
                                   'reference_basis': evidence})
 
+    if binding:
+        repeats=_repeat_targets(result,provider,all_candidates,config.get('_planning_history',[]))
+        if repeats:
+            task_id,reason,basis=repeats[0]
+            action(task_id,reason,evidence=basis,purpose='repeat_behavior')
+            if output['actions']:selected_families.add(task_id.split(':')[0])
+        task_id=result.get('task_id')
+        if (task_id in {'H01','H02'} and result.get('status')=='completed' and task_id not in config.get('_planning_history',[])
+                and any(c.get('status')=='fail' for c in result.get('checks',[]))
+                and all(c.get('status')in{'pass','fail'} for c in result.get('checks',[]))):
+            action(task_id,'同一任务再做一次，确认未通过的项目是否再次出现；不会把单次失败直接当作型号问题。',purpose='repeat_delivery')
     for candidate in candidates:
         task_id = candidate['task_id']
         task_family = task_id.split(':')[0]
@@ -258,7 +308,8 @@ def recommend(report, config=None, *, reference=None):
 
     # Complementary deterministic delivery checks, not an automatic expensive
     # agent escalation. H03/visual remain manually available with their own quote.
-    if seen and len(output['actions']) < 3:
+    needs_delivery=any(c.get('status')=='fail' for c in result.get('checks',[]))
+    if seen and needs_delivery and not any(a['purpose']=='repeat_delivery' for a in output['actions']) and len(output['actions']) < 3:
         for task_id in ('H01', 'H02'):
             if task_id in seen_families:
                 continue

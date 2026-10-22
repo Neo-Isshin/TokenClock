@@ -68,7 +68,7 @@ def package(binary,runtime,output):
     app=out/'TokenClock Integration.app';contents=app/'Contents';(contents/'MacOS').mkdir(parents=True);(contents/'Resources').mkdir()
     shutil.copy2(stage/'TokenClock',contents/'MacOS/TokenClock');shutil.copytree(bundle,contents/'Resources'/bundle.name,symlinks=True)
     info={'CFBundleName':'TokenClock Integration','CFBundleDisplayName':'TokenClock Integration','CFBundleIdentifier':'com.tokenclock.model-detect.integration',
-          'CFBundleExecutable':'TokenClock','CFBundlePackageType':'APPL','CFBundleShortVersionString':'0.6.0','CFBundleVersion':'2026092902',
+          'CFBundleExecutable':'TokenClock','CFBundlePackageType':'APPL','CFBundleShortVersionString':'0.11.0','CFBundleVersion':'2026102101',
           'LSMinimumSystemVersion':'12.0','LSUIElement':True,'NSHighResolutionCapable':True,'NSAppTransportSecurity':{'NSAllowsLocalNetworking':True}}
     (contents/'Info.plist').write_bytes(plistlib.dumps(info))
     subprocess.run(['/usr/bin/codesign','--force','--sign','-',str(app)],check=True,capture_output=True)
@@ -78,7 +78,7 @@ def package(binary,runtime,output):
         'dependency_manifest_sha256':wm['dependency_manifest_sha256'],'architecture':arch,'universal':False,
         'minimum_macos_core':'12.0','minimum_macos_browser_stack':native_min,'installed':False,'published':False,'notarized':False,
         'runtime_inventory_after_signing':True,'sibling_resource_bundle_present':True,
-        'integration_version':'0.6.0','integration_build':'2026092902'}
+        'integration_version':'0.11.0','integration_build':'2026102101'}
     (out/'package-receipt.json').write_text(json.dumps(receipt,indent=2)+'\n')
     return receipt
 

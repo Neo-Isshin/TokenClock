@@ -7,6 +7,12 @@ import CryptoKit
 /// Small real filesystem fixtures only. No Python, model, browser, installer or
 /// dependency executable is launched by these cache tests.
 final class ModelIntegrityRuntimeCacheTests: XCTestCase {
+    func testDigestUsesTheStandardSHA256HexEncoding() throws {
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent("tc-digest-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: file) }
+        try Data("abc".utf8).write(to: file)
+        XCTAssertEqual(try ModelIntegrityRuntimeCache.digest(file), "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad")
+    }
     private struct Fixture {
         let root: URL
         let source: URL

@@ -16,6 +16,19 @@ final class ModelDetectPresentationTests: XCTestCase {
         XCTAssertEqual(p.cell("H04", 3).state, .notRun)
         XCTAssertEqual(p.issueCount, 0)
     }
+
+    func testHarnessDifferenceIsVisibleButChildFieldsAndModelChangesAreObservations() throws {
+        let p = try make(["facts":[
+            ["code":"source.harness_model_observed", "value":["model":"gpt-6-luna", "owner":"child", "scope":"child_request"]],
+            ["code":"source.harness_model_change", "value":["from":"gpt-6-astra", "to":"gpt-6-luna"]]
+        ]])
+        XCTAssertEqual(p.cell("S01", 1).state, .observed)
+        XCTAssertEqual(p.cell("T05", 1).state, .observed)
+        XCTAssertEqual(p.issueCount, 0)
+        let conflict = try make(["facts":[["code":"source.harness_model_difference", "value":["requested":["gpt-6-astra"], "reported":["gpt-6-luna"]]]]])
+        XCTAssertEqual(conflict.cell("S01", 1).state, .issue)
+        XCTAssertTrue(conflict.cell("S01", 1).notes[0].text.contains("gpt-6-luna"))
+    }
     func testL1MissingDataIsNotPassAndSupplierChangeIsNotModelConflict() throws {
         let p = try make(["facts": [["code": "source.provider_change"], ["code":"source.display_model", "value":"arbitrary"]], "unknowns": [["code":"source.unbound_model_claims"]]])
         XCTAssertEqual(p.cell("S01", 1).state, .limited)

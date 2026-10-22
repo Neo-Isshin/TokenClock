@@ -120,11 +120,13 @@ def brief_html(brief,escape):
     """One primary result, shared by the downloadable L1 and probe reports."""
     if not isinstance(brief,dict):return ''
     text=lambda value:escape(str(value or ''))
-    blocks=['<section class="result-brief"><h1>'+text(brief.get('title') or '暂时无法判断')+'</h1>',
-            '<p class="brief-description">'+text(brief.get('summary'))+'</p>']
+    display=brief.get('display') or {}
+    blocks=['<section class="result-brief"><h1>'+text(display.get('title') or brief.get('title') or '目前的信息还不够')+'</h1>',
+            '<p class="brief-description">'+text(display.get('summary') or brief.get('summary'))+'</p>']
+    if display.get('suggestion'):blocks.append('<p>'+text(display['suggestion'])+'</p>')
+    if display.get('note') or brief.get('caveat'):blocks.append('<p class="muted brief-caveat">'+text(display.get('note') or brief['caveat'])+'</p>')
     reasons=brief.get('reasons',[])
-    if isinstance(reasons,list) and reasons:blocks.append('<ul>'+''.join('<li>'+text(x)+'</li>'for x in reasons[:3])+'</ul>')
-    if brief.get('caveat'):blocks.append('<p class="muted brief-caveat">'+text(brief['caveat'])+'</p>')
+    if isinstance(reasons,list) and reasons:blocks.append('<details><summary>判断依据</summary><ul>'+''.join('<li>'+text(x)+'</li>'for x in reasons[:3])+'</ul></details>')
     return ''.join(blocks)+'</section>'
 
 

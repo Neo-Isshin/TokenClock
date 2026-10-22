@@ -5,6 +5,10 @@ import CryptoKit
 /// Running workers use immutable snapshots so an app/resource upgrade cannot
 /// replace a ZIP or interpreter underneath an already-running local task.
 enum ModelIntegrityRuntimeCache {
+    private static func hex<D: Sequence>(_ bytes: D) -> String where D.Element == UInt8 {
+        let alphabet = Array("0123456789abcdef".utf8)
+        return String(decoding: bytes.flatMap { [alphabet[Int($0 >> 4)], alphabet[Int($0 & 15)]] }, as: UTF8.self)
+    }
     struct Prepared { let worker: URL; let runtime: URL? }
     enum CacheError: Error, LocalizedError {
         case invalid(String)
@@ -16,7 +20,7 @@ enum ModelIntegrityRuntimeCache {
         defer { try? stream.close() }
         var hash = SHA256()
         while let data = try stream.read(upToCount: 1_048_576), !data.isEmpty { hash.update(data: data) }
-        return hash.finalize().map { String(format: "%02x", $0) }.joined()
+        return hex(hash.finalize())
     }
 
     static func privateDirectory(_ url: URL) throws {
@@ -42,6 +46,7 @@ enum ModelIntegrityRuntimeCache {
 
     private static func verifyDependencies(_ runtime: URL, manifestHash: String) throws {
         let manager = FileManager.default
+        let rootPath = runtime.resolvingSymlinksInPath().path
         let flags = try runtime.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
         guard flags.isDirectory == true, flags.isSymbolicLink != true else { throw CacheError.invalid("Invalid cached runtime directory") }
         let manifest = runtime.appendingPathComponent("runtime-manifest.json")
@@ -54,16 +59,18 @@ enum ModelIntegrityRuntimeCache {
                   !path.split(separator: "/").contains(".."), expected.insert(path).inserted,
                   let hash = row["sha256"] as? String, hash.count == 64 else { throw CacheError.invalid("Invalid runtime file binding") }
             let file = runtime.appendingPathComponent(path)
-            guard file.resolvingSymlinksInPath().path.hasPrefix(runtime.resolvingSymlinksInPath().path + "/"),
+            guard file.resolvingSymlinksInPath().path.hasPrefix(rootPath + "/"),
                   try digest(file) == hash else { throw CacheError.invalid("Runtime dependency verification failed") }
         }
         guard let entries = manager.enumerator(at: runtime, includingPropertiesForKeys: [.isSymbolicLinkKey, .isRegularFileKey]) else { throw CacheError.invalid("Cannot inspect runtime files") }
         for case let file as URL in entries {
             let info = try file.resourceValues(forKeys: [.isSymbolicLinkKey, .isRegularFileKey])
             if info.isSymbolicLink == true {
-                guard file.resolvingSymlinksInPath().path.hasPrefix(runtime.resolvingSymlinksInPath().path + "/") else { throw CacheError.invalid("Runtime link escapes its package") }
+                guard file.resolvingSymlinksInPath().path.hasPrefix(rootPath + "/") else { throw CacheError.invalid("Runtime link escapes its package") }
             } else if info.isRegularFile == true {
-                let relative = String(file.resolvingSymlinksInPath().path.dropFirst(runtime.resolvingSymlinksInPath().path.count + 1))
+                let resolved = file.resolvingSymlinksInPath().path
+                guard resolved.hasPrefix(rootPath + "/") else { throw CacheError.invalid("Runtime file escapes its package") }
+                let relative = String(resolved.dropFirst(rootPath.count + 1))
                 guard relative == "runtime-manifest.json" || expected.contains(relative) else { throw CacheError.invalid("Unrecorded runtime dependency file") }
             }
         }
@@ -84,7 +91,7 @@ enum ModelIntegrityRuntimeCache {
         let cache = state.appendingPathComponent("runtime-cache")
         try privateDirectory(cache)
         let workerHash = try digest(worker)
-        let manifestHash = SHA256.hash(data: metadata).map { String(format: "%02x", $0) }.joined()
+        let manifestHash = hex(SHA256.hash(data: metadata))
         let version = cache.appendingPathComponent("workers/" + expected + "-" + workerHash.prefix(16) + "-" + manifestHash.prefix(16))
         try installDirectory(version) { stage in
             let folder = stage.appendingPathComponent("model-integrity-worker")

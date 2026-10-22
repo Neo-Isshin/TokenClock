@@ -91,8 +91,20 @@ def preview(config,source_path=None):
         judge_live=reviewing and assessment.get('transport_mode','replay')=='live'
         if reviewing and assessment.get('transport_mode','replay') not in {'live','replay'}:raise ValueError('评审执行模式无效')
         plan=[];imported=[];task=None
-        if lane=='l2':
+        numeric=lane=='l2' and cfg.get('l2_method')=='numeric'
+        if numeric:
+            from ..probes.numeric_fingerprint import plan as numeric_plan,provider as numeric_provider,ensure_runtime
+            ensure_runtime();plan=numeric_plan(cfg)
+            if reviewing:raise ValueError('数字指纹在本地评分，无需模型辅助解析。')
             if mode=='artifact':
+                from .ingest import strict_loads
+                pack=strict_loads(text)
+                if pack.get('schema')!='tokenclock-numeric-answer-set/v1' or len(pack.get('samples',[]))!=3:raise ValueError('数字指纹回答包需要三份原题和回答。')
+                for cell,row in zip(plan,pack['samples']):
+                    if row.get('prompt')!=cell['task']['prompt'] or not isinstance(row.get('answer'),str):raise ValueError('回答包题面与冻结数字题不一致。')
+        if lane=='l2':
+            if numeric:pass
+            elif mode=='artifact':
                 from .ingest import strict_loads
                 pack=strict_loads(text)
                 if not isinstance(pack,dict) or pack.get('schema')!='tokenclock-l2-answer-set/v1' or not isinstance(pack.get('samples'),list) or not 1<=len(pack['samples'])<=10:
@@ -117,7 +129,7 @@ def preview(config,source_path=None):
             if task['layer']!='L3':raise ValueError('请选择重型任务')
             if mode=='demo' and task['id']!='H03':raise ValueError('此重型任务没有脚本演示')
         if lane in {'l2','l3'} and mode=='live':
-            p=_provider(cfg.get('provider'),'待测');quotes=[]
+            p=_provider(numeric_provider(cfg) if numeric else cfg.get('provider'),'待测');quotes=[]
             if lane=='l2':
                 count=min(len(plan),p.get('max_requests',len(plan)))
                 quotes=[quote_request(p,request_body(p,prompt=c['task']['prompt'],output_limit=c['task']['output_limit'])) for c in plan[:count]]
@@ -188,6 +200,8 @@ def preview(config,source_path=None):
         result['local_only']=not bool(result['roles'])
         if all(role['whole_run_upper_usd'] is not None for role in result['roles']):result['total_upper_usd']=str(sum((money(role['whole_run_upper_usd']) for role in result['roles']),Decimal(0)))
         result['total_budget_usd']=str(sum((money(role['budget_usd']) for role in result['roles']),Decimal(0)))
+        from ..probes.reference_readiness import readiness
+        result['reference_readiness']=readiness(cfg)
         result['valid']=not result['errors']
         result['configuration_sha256']=digest(cfg) # opaque; never an authorization token
     except (ValueError,TypeError,KeyError,OSError,UnicodeError,ProbeStop) as exc:

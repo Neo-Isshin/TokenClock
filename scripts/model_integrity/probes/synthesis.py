@@ -194,9 +194,13 @@ def synthesize(report,analysis_context=None):
             if abs(high-low)<1e-12:
                 add(subject,'observations',family+' · '+dimension+'在当前共同特征上的参考距离相同，没有形成偏离方向。',pointer,scope,group,'equal_reference_distance',imported=imported,extra=extra);continue
             text=family+' · '+dimension+'的当前观察在数值上更接近「'+' / '.join(nearest)+'」的已有参考。'
+            from .direction_guard import evaluate
+            guard=evaluate(panel)
+            extra['direction_guard']=guard
             if panel.get('origin')=='model_assessed':text+=' 其中字段由模型辅助解析，解释本身仍可能有误。'
             if scope=='contextual_reference_comparison':text+=' 条件或测量来源不完全一致，只作情境参考。'
             category='observations'
+            direction_kind='reference_distance_direction'
             if subject['_demo'] or panel.get('origin')=='scripted_demo':
                 text+=' 这是受控或演示输入，不作为真实型号的支持或反对证据。'
             elif subject['_generation_limited']:
@@ -206,12 +210,16 @@ def synthesize(report,analysis_context=None):
                 add(subject,'gaps','本报告含与参考重合的样本，且没有逐面板的重合定位，不能把这些方向当作新的验证。',pointer,'reference_reuse_observation',group,'reference_sample_overlap',imported=imported)
             elif reference not in values:
                 add(subject,'gaps','尚未将该对象的唯一申报型号绑定到这个参考候选集；不猜测型号别名。',pointer,'reference_coverage',group,'declared_model_not_in_panel',imported=imported)
+            elif guard['status']!='repeat_supported':
+                text+=' '+guard['reasons'][0]
+                direction_kind='reference_direction_needs_review'
+                add(subject,'gaps',guard['reasons'][0],pointer,'direction_admission',group,'reference_repeat_or_margin_missing',imported=imported)
             elif values[reference]>low+1e-12:
                 category='supporting';text+=' 这是支持相对申报偏离的局部弱线索。'
             elif values[reference]<high-1e-12 and len(nearest)==1:
                 category='counterevidence';text+=' 这是反对相对申报偏离的局部观察，不能认证型号。'
             else:text+=' 申报参考与其他候选并列最接近，未形成针对它们的区分方向。'
-            add(subject,category,text,pointer,scope,group,'reference_distance_direction',imported=imported,extra=extra)
+            add(subject,category,text,pointer,scope,group,direction_kind,imported=imported,extra=extra)
             if scope=='contextual_reference_comparison':
                 add(subject,'alternatives','提示、生成设置、上下文、提取方式或版本差异，也可能解释此处的参考偏离。',pointer,'comparison_alternative',group,'conditions_or_measurement_difference',imported=imported)
             if panel.get('origin')=='model_assessed':
@@ -276,9 +284,20 @@ def synthesize(report,analysis_context=None):
         if declared:default['_claims'].add(declared);default['claim_scope']='visible_request_declaration'
         for i,fact in enumerate(result.get('facts',[]) if isinstance(result.get('facts'),list) else []):
             if not isinstance(fact,dict):continue
-            code=fact.get('code');value=fact.get('value');pointer=rp+'/facts/'+str(i)
+            code=fact.get('code') if isinstance(fact.get('code'),str) else '';value=fact.get('value');pointer=rp+'/facts/'+str(i)
             value=value if isinstance(value,dict) else {};rid=_text(value.get('request_id'),200)
             group='source:call:'+rid if rid else 'l1:'+str(code)
+            if code.startswith('source.harness_') or code=='source.comparison_target_difference':
+                if code=='source.harness_model_observed':continue  # full field inventory is separate; do not crowd out differences
+                from ..l1.model_fields import describe
+                description=describe(code,value)
+                if description:
+                    add(default,'observations',description,pointer,'local_harness_declaration',
+                        'source:harness:'+str(fact.get('generation_id') or 'session'),code,imported=imported)
+                if code not in {'source.harness_model_observed','source.harness_model_consistent'}:
+                    add(default,'alternatives','用户切换、轮次覆盖设置、重试或别名也可能造成记录差异；这些字段不证明实际后端权重。',
+                        pointer,'harness_alternative','source:harness','harness_declaration_alternatives',imported=imported)
+                continue
             if code in {'source.model_claim_difference','source.billing_claim_difference','source.binding_collision'}:
                 wanted=_text(value.get('requested'),200);reported=_text(value.get('reported'),200)
                 text=('请求与响应的型号声明不同：'+wanted+' / '+reported+'。') if code=='source.model_claim_difference' and wanted and reported else {
@@ -290,6 +309,13 @@ def synthesize(report,analysis_context=None):
             elif code in {'process.test_exit_mismatch','process.unverified_completion_claim','process.latest_change_unverified','process.edit_outside_explicit_scope'}:
                 messages={'process.test_exit_mismatch':'检查退出码与返回内容存在差异。','process.unverified_completion_claim':'完成声明缺少对应的可见验证。','process.latest_change_unverified':'最近修改后没有看到对应复验。','process.edit_outside_explicit_scope':'可见写入超出了明确允许的路径。'}
                 add(default,'observations',messages[code]+' 这是当前过程记录的局部信号，不能直接识别型号。',pointer,'visible_process_observation','l1:process',str(code),imported=imported)
+        fields=result.get('model_declarations',{})
+        if isinstance(fields,dict) and fields.get('schema')=='tokenclock-visible-model-fields/v1' and type(fields.get('total')) is int and fields['total']>0:
+            add(default,'observations','已读取 '+str(fields['total'])+' 条结构化型号字段，原始位置已保留。',rp+'/model_declarations',
+                'local_harness_declaration','source:harness','visible_harness_model_fields',imported=imported)
+            if any(u.get('code')=='source.harness_response_missing' for u in result.get('unknowns',[]) if isinstance(u,dict)):
+                add(default,'gaps','主请求型号已记录，缺少对应的主响应型号声明。',rp+'/model_declarations',
+                    'capture_limitation','source:harness','missing_harness_response_model',imported=imported)
         diagnostics=result.get('diagnostics')
         if isinstance(diagnostics,dict):source_observations(diagnostics,rp+'/diagnostics',default,targets,request_map,imported)
         elif result.get('task_id')=='diagnostics':source_observations(result,rp,default,targets,request_map,imported)
