@@ -300,7 +300,7 @@ final class CodexGenerationReader {
         let cutoffSecond = String(ISO8601DateFormatter().string(from: now.addingTimeInterval(-600)).prefix(19))
         var live = Set<String>()
         for directory in ["sessions", "archived_sessions"] {
-            let path = URL(fileURLWithPath: home).appendingPathComponent(directory)
+            let path = URL(fileURLWithPath: home).appendingPathComponent(directory).resolvingSymlinksInPath()
             guard let enumerator = fm.enumerator(at: path, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]) else { continue }
             for case let file as URL in enumerator where file.pathExtension == "jsonl" {
                 guard let attrs = try? fm.attributesOfItem(atPath: file.path),

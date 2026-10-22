@@ -5,7 +5,7 @@ import XCTest
 ///   tokens = input_tokens + output_tokens + cache_creation_input_tokens
 ///   （cache_read_input_tokens 仅作为缓存命中诊断，不进入主用量）
 ///
-/// 通过 PathConfig.setClaudeCodePath(tmp) 把服务重定向到临时 fixture 目录，
+/// 通过构造参数把服务重定向到临时 fixture 目录，不修改共享偏好设置，
 /// 不读真实 ~/.claude、无需侵入式重构。期望的日期/小时 key 用 DateHelper（服务的依赖，
 /// 已由 DateHelperTests 覆盖）就地算出，断言与运行机器时区无关。其余 13 个 UsageService
 /// 照此模式展开。
@@ -17,11 +17,9 @@ final class ClaudeCodeUsageServiceTests: XCTestCase {
         super.setUp()
         tmpRoot = NSTemporaryDirectory() + "tc-claude-test-\(UUID().uuidString)/"
         try? FileManager.default.createDirectory(atPath: tmpRoot, withIntermediateDirectories: true)
-        PathConfig.setClaudeCodePath(tmpRoot)
     }
 
     override func tearDown() {
-        PathConfig.setClaudeCodePath("")                  // 还原默认（~/.claude）
         try? FileManager.default.removeItem(atPath: tmpRoot)
         super.tearDown()
     }
@@ -51,7 +49,7 @@ final class ClaudeCodeUsageServiceTests: XCTestCase {
             assistantLine(input: 10, output: 5, cacheRead: 0, timestamp: ts2),                         // 15
         ])
 
-        let svc = ClaudeCodeUsageService()
+        let svc = ClaudeCodeUsageService(claudeHome: tmpRoot, desktopHomes: [])
         svc.fullScan()
 
         let key = DateHelper.localDateKey(from: ts1)
@@ -68,7 +66,7 @@ final class ClaudeCodeUsageServiceTests: XCTestCase {
             assistantLine(input: 100, output: 0, cacheRead: 0, timestamp: ts1),
             assistantLine(input: 40, output: 0, cacheRead: 0, timestamp: ts2),
         ])
-        let svc = ClaudeCodeUsageService()
+        let svc = ClaudeCodeUsageService(claudeHome: tmpRoot, desktopHomes: [])
         svc.fullScan()
         XCTAssertEqual(svc.hourlyData[DateHelper.localHourKey(from: ts1)]?.tokens, 100)
         XCTAssertEqual(svc.hourlyData[DateHelper.localHourKey(from: ts2)]?.tokens, 40)
@@ -83,7 +81,7 @@ final class ClaudeCodeUsageServiceTests: XCTestCase {
         let realLine = assistantLine(input: 50, output: 0, cacheRead: 0, timestamp: ts)
 
         writeSession(project: "p1", session: "s1.jsonl", lines: [userLine, zeroLine, realLine])
-        let svc = ClaudeCodeUsageService()
+        let svc = ClaudeCodeUsageService(claudeHome: tmpRoot, desktopHomes: [])
         svc.fullScan()
 
         // 只 realLine 计入：user 被 type 过滤，zero 被 tokens>0 过滤
@@ -99,14 +97,14 @@ final class ClaudeCodeUsageServiceTests: XCTestCase {
             assistantLine(input: 100, output: 0, cacheRead: 0, timestamp: ts1),
             assistantLine(input: 200, output: 0, cacheRead: 0, timestamp: ts2),
         ])
-        let svc = ClaudeCodeUsageService()
+        let svc = ClaudeCodeUsageService(claudeHome: tmpRoot, desktopHomes: [])
         svc.fullScan()
         XCTAssertEqual(svc.dailyData[DateHelper.localDateKey(from: ts1)]?.tokens, 100)
         XCTAssertEqual(svc.dailyData[DateHelper.localDateKey(from: ts2)]?.tokens, 200)
     }
 
     func testEmptyProjectsDir_noCrash() {
-        let svc = ClaudeCodeUsageService()
+        let svc = ClaudeCodeUsageService(claudeHome: tmpRoot, desktopHomes: [])
         svc.fullScan()
         XCTAssertTrue(svc.dailyData.isEmpty)
     }

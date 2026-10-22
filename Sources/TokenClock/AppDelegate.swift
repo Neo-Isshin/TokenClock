@@ -18,6 +18,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var themePickerEventMonitor: Any?
     private var statusItem: NSStatusItem?
     private var isSwitchingEdition = false
+    private var isCheckingAppUpdate = false
+    private var isRestartingApp = false
     private var statusBarVisibility = StatusBarVisibilityState()
 
     // 全屏智能隐藏（仅 alwaysOnTop=OFF 时启用）：见下方 MARK 区
@@ -619,6 +621,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         menu.addItem(shareItem)
         menu.addItem(settingsItem)
         menu.addItem(.separator())
+        let updateItem = NSMenuItem(title: tr(isCheckingAppUpdate ? "menu.checkingUpdate" : "menu.checkUpdate"),
+                                   action: #selector(checkAppUpdate(_:)), keyEquivalent: "")
+        updateItem.target = self
+        updateItem.image = NSImage(systemSymbolName: "arrow.down.circle", accessibilityDescription: updateItem.title)
+        let restartItem = NSMenuItem(title: tr("menu.restart"), action: #selector(restartApp(_:)), keyEquivalent: "")
+        restartItem.target = self
+        restartItem.image = NSImage(systemSymbolName: "arrow.clockwise", accessibilityDescription: restartItem.title)
+        menu.addItem(updateItem)
+        menu.addItem(restartItem)
+        menu.addItem(.separator())
         menu.addItem(aboutItem)
         menu.addItem(quitItem)
 
@@ -626,6 +638,60 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     // MARK: - 菜单 Actions
+
+    @objc private func checkAppUpdate(_ sender: NSMenuItem) {
+        guard !isCheckingAppUpdate, !isRestartingApp else { return }
+        isCheckingAppUpdate = true
+        setupRightClickMenu()
+        ReleaseUpdateService.shared.checkNow { [weak self] result in
+            Task { @MainActor in
+                guard let self else { return }
+                self.isCheckingAppUpdate = false
+                self.setupRightClickMenu()
+                guard !self.isRestartingApp, !self.isSwitchingEdition else { return }
+                NSApp.activate(ignoringOtherApps: true)
+                let alert = NSAlert()
+                alert.window.level = NSWindow.Level(rawValue: NSWindow.Level.statusBar.rawValue + 1)
+                var url: URL?
+                switch result {
+                case .available(let version, let release):
+                    alert.messageText = L10n.shared.tr("update.available", version)
+                    alert.informativeText = L10n.shared.tr("update.openReleaseBody")
+                    url = release
+                case .current:
+                    alert.messageText = L10n.shared.tr("update.current")
+                    alert.informativeText = "TokenClock " + AppConfig.version
+                case .unavailable:
+                    alert.messageText = L10n.shared.tr("update.unavailable")
+                    alert.informativeText = L10n.shared.tr("update.unavailableBody")
+                    url = ReleaseUpdateService.releasesURL
+                }
+                if let url {
+                    alert.addButton(withTitle: L10n.shared.tr("update.openRelease"))
+                    alert.addButton(withTitle: L10n.shared.tr("edition.cancel"))
+                    if alert.runModal() == .alertFirstButtonReturn { NSWorkspace.shared.open(url) }
+                } else { alert.runModal() }
+            }
+        }
+    }
+
+    @objc private func restartApp(_ sender: NSMenuItem) {
+        guard !isRestartingApp, !isSwitchingEdition else { return }
+        do {
+            let plan = try MacAppRestart.plan(executable: ProcessInfo.processInfo.arguments[0],
+                pid: ProcessInfo.processInfo.processIdentifier, variant: LaunchAgentHelper.detectVariant(),
+                sourceArguments: Array(ProcessInfo.processInfo.arguments.dropFirst()))
+            try MacAppRestart.schedule(plan)
+            isRestartingApp = true
+            NSApp.terminate(nil)
+        } catch {
+            let alert = NSAlert()
+            alert.messageText = L10n.shared.tr("restart.failed")
+            alert.informativeText = L10n.shared.tr("restart.failedBody")
+            alert.window.level = NSWindow.Level(rawValue: NSWindow.Level.statusBar.rawValue + 1)
+            alert.runModal()
+        }
+    }
 
     @objc private func switchMacEdition(_ sender: NSMenuItem) {
         guard !isSwitchingEdition, let raw = sender.representedObject as? String,

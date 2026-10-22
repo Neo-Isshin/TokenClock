@@ -10,6 +10,13 @@ final class ReleaseUpdateService: @unchecked Sendable {
     private let installedVersion: String
     private let fetch: @Sendable () -> Data?
     private let lock = NSLock()
+    enum CheckResult: Equatable, Sendable {
+        case current
+        case available(version: String, url: URL)
+        case unavailable
+    }
+
+    static let releasesURL = URL(string: "https://github.com/Neo-Isshin/TokenClock/releases")!
 
     private struct Release: Decodable {
         let tag_name: String
@@ -50,6 +57,28 @@ final class ReleaseUpdateService: @unchecked Sendable {
     static func isNewer(_ candidate: String, than installed: String) -> Bool {
         guard let lhs = version(candidate), let rhs = version(installed) else { return false }
         return rhs.lexicographicallyPrecedes(lhs)
+    }
+
+    /// A user-initiated check bypasses the daily throttle. A failed or malformed
+    /// response is never represented as "up to date" and never changes the app.
+    func checkNow(completion: @escaping @Sendable (CheckResult) -> Void) {
+        DispatchQueue.global(qos: .utility).async { [self] in
+            guard let data = fetch(), data.count <= 1_048_576,
+                  let release = try? JSONDecoder().decode(Release.self, from: data),
+                  !release.draft, !release.prerelease,
+                  let parts = Self.version(release.tag_name), Self.version(installedVersion) != nil else {
+                completion(.unavailable); return
+            }
+            guard Self.isNewer(release.tag_name, than: installedVersion) else { completion(.current); return }
+            lock.lock()
+            if load().map({ Self.isNewer(release.tag_name, than: $0.tag) }) ?? true {
+                save(Notice(id: UUID(), tag: release.tag_name, createdAt: Date(), isRead: false))
+            }
+            lock.unlock()
+            let version = parts.map(String.init).joined(separator: ".")
+            completion(.available(version: version,
+                url: URL(string: "https://github.com/Neo-Isshin/TokenClock/releases/tag/" + release.tag_name)!))
+        }
     }
 
     /// Claim today's attempt before starting I/O, including failures. Historical

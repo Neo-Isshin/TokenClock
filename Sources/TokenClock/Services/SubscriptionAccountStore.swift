@@ -7,7 +7,7 @@ enum SubscriptionProvider: String, CaseIterable, Codable, Identifiable, Sendable
     var displayName: String {
         switch self {
         case .codex: return "Codex"
-        case .claude: return "Claude Code"
+        case .claude: return "Claude"
         case .antigravity: return "Antigravity"
         case .cursor: return "Cursor"
         case .grokBot: return "Grok Bot"
@@ -81,6 +81,20 @@ enum DialQuotaResolver {
         groups: [ProviderQuotaGroup]
     ) -> DialQuotaIndicator? {
         switch provider {
+        case .claude:
+            // Overall subscription windows win over model-specific weekly
+            // caps (Opus/Sonnet/OAuth apps/extra usage are separate buckets).
+            let buckets = groups.flatMap(\.buckets)
+            if let weekly = minimumRemaining(buckets.filter { $0.id == "claude:seven_day" }) {
+                let short = minimumRemaining(buckets.filter { $0.id == "claude:five_hour" })
+                var details = [DialQuotaDetail(labelKey: "quota.dial.weekly", remainingPercent: weekly)]
+                if let short { details.append(DialQuotaDetail(labelKey: "quota.dial.fiveHour", remainingPercent: short)) }
+                return DialQuotaIndicator(provider: provider, outerRemainingPercent: weekly, innerRemainingPercent: short, details: details)
+            }
+            // Retain legacy generic IDs, but never promote a known model cap
+            // into the overall allowance when the aggregate window is absent.
+            if buckets.contains(where: { isWeekly($0) && !$0.id.hasPrefix("claude:") }) { break }
+            return nil
         case .grokBot:
             // The API's current billing/rate-limit period is not necessarily a
             // week. Display its real remaining quota without relabeling it.

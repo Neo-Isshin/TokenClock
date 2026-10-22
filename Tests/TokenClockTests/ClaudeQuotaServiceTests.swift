@@ -68,7 +68,7 @@ final class ClaudeQuotaServiceTests: XCTestCase {
     #if os(macOS)
     func testBuildsCurrentClaudeCodeKeychainCandidates() {
         XCTAssertEqual(
-            ClaudeQuotaService.macOSKeychainServices(environment: [:], configuredClaudeHome: "/Users/neo/.claude"),
+            ClaudeQuotaService.macOSKeychainServices(environment: [:], configuredClaudeHome: "/Users/neo/.claude", defaultClaudeHome: "/Users/neo/.claude"),
             ["Claude Code-credentials", "Claude Code"]
         )
         let custom = ClaudeQuotaService.macOSKeychainServices(

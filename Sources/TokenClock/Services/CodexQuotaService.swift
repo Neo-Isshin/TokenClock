@@ -127,10 +127,11 @@ final class CodexQuotaService: @unchecked Sendable {
     }
 
     private let fileManager = FileManager.default
-    private let codexHome: String
+    private let overrideHome: String?
+    private var codexHome: String { overrideHome ?? PathConfig.codexHome() }
 
-    init(codexHome: String = PathConfig.codexHome()) {
-        self.codexHome = codexHome
+    init(codexHome: String? = nil) {
+        self.overrideHome = codexHome
     }
 
     func fetch() -> CodexQuotaSnapshot {
@@ -391,7 +392,7 @@ final class CodexQuotaService: @unchecked Sendable {
     }
 
     private func fetchFromRecentSessionLogs() -> CodexQuotaSnapshot? {
-        let root = URL(fileURLWithPath: codexHome + "/sessions", isDirectory: true)
+        let root = URL(fileURLWithPath: codexHome + "/sessions", isDirectory: true).resolvingSymlinksInPath()
         let keys: Set<URLResourceKey> = [.isRegularFileKey, .contentModificationDateKey, .fileSizeKey]
         guard let enumerator = fileManager.enumerator(
             at: root,

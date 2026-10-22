@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// 独立的订阅额度窗口。所有网络/本地服务读取都由用户打开窗口或点击刷新时触发。
+/// 独立订阅额度窗口。Claude 连接仅由用户主动触发；后台额度读取始终静默。
 struct SubscriptionQuotaWindowView: View {
     @ObservedObject var viewModel: ViewModel
     var onLayoutChange: (Bool) -> Void = { _ in }
@@ -214,7 +214,24 @@ struct SubscriptionQuotaWindowView: View {
     @ViewBuilder
     private func providerView(_ provider: SubscriptionProvider) -> some View {
         let title = "\(provider.emoji) \(provider.displayName)"
-        if provider == .grokBot, viewModel.grokBotAuthorizationVisible {
+        if provider == .claude, viewModel.claudeQuota.buckets.isEmpty {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    BrandIconView(name: provider.displayName, fallback: provider.emoji, size: 18)
+                    Text("Claude").font(.system(size: 13, weight: .bold, design: .rounded))
+                    Spacer()
+                    if providerIsLoading(provider) { ProgressView().controlSize(.small) }
+                }
+                Text(viewModel.claudeQuota.message ?? L10n.shared.tr("quota.claudeRecoveryHelp"))
+                    .font(.system(size: 11)).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Button { viewModel.connectClaude() } label: {
+                    Label(L10n.shared.tr("quota.claudeConnect"), systemImage: "person.crop.circle.badge.checkmark")
+                }.buttonStyle(.bordered).controlSize(.small)
+                Text(L10n.shared.tr("quota.claudeNoBackgroundPrompts"))
+                    .font(.system(size: 9.5)).foregroundStyle(.secondary)
+            }.sectionContainer()
+        } else if provider == .grokBot, viewModel.grokBotAuthorizationVisible {
             ZStack {
                 accountProviderSection(provider, title: title)
                     .saturation(0)
@@ -295,7 +312,7 @@ struct SubscriptionQuotaWindowView: View {
     private func hasQuotaData(_ provider: SubscriptionProvider) -> Bool {
         switch provider {
         case .codex: return !viewModel.codexQuota.buckets.isEmpty
-        case .claude: return !viewModel.claudeQuota.buckets.isEmpty
+        case .claude: return true // Connect must be reachable without App/CLI credentials.
         case .antigravity: return !viewModel.antigravityQuota.groups.isEmpty
         case .cursor: return !viewModel.cursorQuota.groups.isEmpty
         case .grokBot:
@@ -321,6 +338,10 @@ struct SubscriptionQuotaWindowView: View {
                 BrandIconView(name: provider.displayName, fallback: provider.emoji, size: 18)
                 Text(provider.displayName).font(.system(size: 13, weight: .bold, design: .rounded))
                 Spacer()
+                if provider == .claude {
+                    Button(L10n.shared.tr("quota.claudeConnect")) { viewModel.connectClaude() }
+                        .buttonStyle(.plain).font(.system(size: 10)).foregroundStyle(.secondary)
+                }
                 if accounts.count > 1 { metaChip(L10n.shared.tr("quota.accounts", accounts.count)) }
             }
             if accounts.isEmpty {

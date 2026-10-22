@@ -65,7 +65,7 @@ enum AppConfig {
         static let codexQuotaFallbackTailBytes = 2_097_152
         static let codexQuotaFallbackFileLimit = 32
         /// Claude Code 额度端点限制较严；只在面板打开时请求，并缓存 5 分钟。
-        static let claudeQuotaCacheSeconds: TimeInterval = 300
+        static let claudeQuotaCacheSeconds: TimeInterval = 180
         static let claudeQuotaTimeoutSeconds: TimeInterval = 8
         /// "活跃工具" 判定窗口（10 分钟内有调用算活跃）
         static let activeThresholdSeconds: TimeInterval = 600
