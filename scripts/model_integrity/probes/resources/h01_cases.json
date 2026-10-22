@@ -1,0 +1,128 @@
+{
+  "schema": "tokenclock-h01-settlement-cases/v1",
+  "cases": [
+    {
+      "id": "shared_three",
+      "people": [
+        "A",
+        "B",
+        "C"
+      ],
+      "expenses": [
+        {
+          "payer": "A",
+          "amount_cents": 1200,
+          "beneficiaries": [
+            "A",
+            "B",
+            "C"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cancelled",
+      "people": [
+        "A",
+        "B"
+      ],
+      "expenses": [
+        {
+          "payer": "A",
+          "amount_cents": 500,
+          "beneficiaries": [
+            "B"
+          ]
+        },
+        {
+          "payer": "B",
+          "amount_cents": 500,
+          "beneficiaries": [
+            "A"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "largest_first_trap",
+      "people": [
+        "A",
+        "B",
+        "C",
+        "D",
+        "E"
+      ],
+      "expenses": [
+        {
+          "payer": "A",
+          "amount_cents": 300,
+          "beneficiaries": [
+            "D"
+          ]
+        },
+        {
+          "payer": "A",
+          "amount_cents": 300,
+          "beneficiaries": [
+            "E"
+          ]
+        },
+        {
+          "payer": "B",
+          "amount_cents": 400,
+          "beneficiaries": [
+            "C"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "chain_netting",
+      "people": [
+        "A",
+        "B",
+        "C",
+        "D"
+      ],
+      "expenses": [
+        {
+          "payer": "A",
+          "amount_cents": 900,
+          "beneficiaries": [
+            "A",
+            "B",
+            "C"
+          ]
+        },
+        {
+          "payer": "B",
+          "amount_cents": 600,
+          "beneficiaries": [
+            "B",
+            "C",
+            "D"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "remainder",
+      "people": [
+        "A",
+        "B",
+        "C"
+      ],
+      "expenses": [
+        {
+          "payer": "A",
+          "amount_cents": 1,
+          "beneficiaries": [
+            "A",
+            "B",
+            "C"
+          ]
+        }
+      ]
+    }
+  ]
+}

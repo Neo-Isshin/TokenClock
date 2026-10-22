@@ -1,0 +1,42 @@
+{
+  "schema": "tokenclock-h01-interface/v1",
+  "task": "integer-cent expense settlement",
+  "new_program_interfaces": {
+    "function": {
+      "name": "settle",
+      "arguments": [
+        "people",
+        "expenses"
+      ],
+      "expense_fields": [
+        "payer",
+        "amount_cents",
+        "beneficiaries"
+      ],
+      "return": "list of [sender,recipient,integer_cents] or object with transfers plus optional reported_net"
+    },
+    "stdin_json": {
+      "input": {
+        "people": "array of names",
+        "expenses": "array of expenses"
+      },
+      "output": "same transfer format as function"
+    }
+  },
+  "remainder": "Any integer equal split allocating each remainder cent to a beneficiary is acceptable; total cents must be conserved. Historical programs retain their documented SHA-bound remainder policy.",
+  "optimality": "Minimize positive transfers among all valid transfers realizing the selected legal net balances; no preferred route.",
+  "new_interface_not_retroactive": true,
+  "automatic_detection": {
+    "function": "Unique undecorated, unshadowed top-level def settle(people, expenses), determined only by AST before one execution.",
+    "stdin_json": "A module docstring line TokenClock H01 interface: stdin_json/v1.",
+    "ambiguity": "Multiple definitions, shadowed functions or both interface declarations remain unmapped; never execute alternatives to select a winning score.",
+    "public_ledger": {
+      "version": "bounded_ast_public_ledger_declarations_v1",
+      "input": "Unique undecorated local Ledger; constructor defaults or people; add/add_expense parameter roles payer,amount,beneficiaries with local major-currency-to-cent conversion evidence. No optimizer options are changed.",
+      "output": "Declared list[Transfer] fields from_/to/cents or payer/payee/cents; or explicitly cent-denominated triples; major-currency triples need explicit local conversion syntax. Optional balance units are read independently.",
+      "scope": "Declarations are an interface interpretation, not a proof of semantic correctness. Exact source/program hashes and original AST spans are saved. Unmapped declarations remain unknown.",
+      "execution": "One chosen adapter runs only inside verified OS sandbox. No candidate code rewriting or alternative entry/unit score selection."
+    },
+    "python_blocks": "A unique block containing definitions may be selected when all other parseable blocks refer to its declared names and do not declare/read another stdin interface. Other cases remain ambiguous; ignored examples are never executed."
+  }
+}

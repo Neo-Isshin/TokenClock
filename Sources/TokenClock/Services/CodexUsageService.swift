@@ -845,8 +845,9 @@ final class CodexUsageService: @unchecked Sendable {
             Self.threadsHasColumn(db, "title") ? "NULLIF(TRIM(title), '')" : nil,
         ].compactMap { $0 }
         let displayTitle = titleColumns.isEmpty ? "''" : "COALESCE(\(titleColumns.joined(separator: ", ")), '')"
+        let sourcePathColumn = Self.threadsHasColumn(db, "rollout_path") ? "NULLIF(rollout_path, '')" : "NULL"
         let query = """
-        SELECT id, updated_at_ms, cwd, \(displayTitle)
+        SELECT id, updated_at_ms, cwd, \(displayTitle), \(sourcePathColumn)
         FROM threads
         WHERE updated_at_ms >= ?
         ORDER BY updated_at_ms DESC
@@ -871,6 +872,9 @@ final class CodexUsageService: @unchecked Sendable {
             let updatedAtMs = sqlite3_column_int64(stmt, 1)
             let cwdPtr = sqlite3_column_text(stmt, 2)
             let titlePtr = sqlite3_column_text(stmt, 3)
+            let sourcePtr = sqlite3_column_text(stmt, 4)
+            let indexedPath = sourcePtr.map { String(cString: $0) }
+            let sourceLogPath = indexedPath.flatMap { ($0 as NSString).isAbsolutePath ? $0 : nil }
 
             let updatedDate = Date(timeIntervalSince1970: Double(updatedAtMs) / 1000.0)
             let dateKey = DateHelper.dateKey(from: updatedDate)
@@ -909,7 +913,8 @@ final class CodexUsageService: @unchecked Sendable {
                 model: sessionModel(for: sessionId, in: sessionModels),
                 todayCost: PricingService.shared.cost(of: matchedRequests),
                 cacheReadTokens: sessionCacheRead,
-                modelBreakdown: modelBreakdown
+                modelBreakdown: modelBreakdown,
+                sourceLogPath: sourceLogPath
             ))
         }
 

@@ -72,6 +72,8 @@ struct DetailDropdownView: View {
     var onQuickContrast: (() -> Void)? = nil
     var onHistoryUsage: (() -> Void)? = nil
     var onShareUsage: (() -> Void)? = nil
+    var onModelDetect: (() -> Void)? = nil
+    var onModelDetectSession: ((SessionInfo) -> Void)? = nil
     var onSubscriptionQuota: (() -> Void)? = nil
     var unreadNotificationCount: Int = 0
     var onNotificationClick: (() -> Void)? = nil
@@ -137,6 +139,34 @@ struct DetailDropdownView: View {
                     .padding(.horizontal, 8)
             }
 
+            // 第一行是会打开独立窗口的主入口，视觉上比下方 toggle 更有层次。
+            HStack(spacing: 8) {
+                launcherCard(
+                    icon: "waveform.path.ecg.rectangle",
+                    titleLine1: L10n.shared.tr("detail.modelDetectLine1"),
+                    titleLine2: L10n.shared.tr("detail.modelDetectLine2"),
+                    hovered: modelDetectHovered,
+                    enabled: onModelDetect != nil,
+                    action: { onModelDetect?() }
+                )
+                .onHover { modelDetectHovered = $0 }
+                .help(L10n.shared.tr("detail.modelDetectHint"))
+                .accessibilityIdentifier("model-detect-launcher")
+
+                launcherCard(
+                    icon: "gauge.with.dots.needle.50percent",
+                    titleLine1: L10n.shared.tr("detail.subscriptionQuotaLine1"),
+                    titleLine2: L10n.shared.tr("detail.subscriptionQuotaLine2"),
+                    hovered: quotaHovered,
+                    enabled: true,
+                    action: { onSubscriptionQuota?() }
+                )
+                .onHover { quotaHovered = $0 }
+            }
+            .padding(.horizontal, 12)
+            .padding(.top, 7)
+            .padding(.bottom, 4)
+
             if isLoading {
                 // 首次数据读取中：显示加载提示（不展示 mock 占位工具，避免误导）
                 HStack(spacing: 6) {
@@ -147,32 +177,6 @@ struct DetailDropdownView: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                // 第一行是会打开独立窗口的主入口，视觉上比下方 toggle 更有层次。
-                HStack(spacing: 8) {
-                    launcherCard(
-                        icon: "waveform.path.ecg.rectangle",
-                        titleLine1: L10n.shared.tr("detail.modelDetectLine1"),
-                        titleLine2: L10n.shared.tr("detail.modelDetectLine2"),
-                        hovered: modelDetectHovered,
-                        enabled: false,
-                        action: {}
-                    )
-                    .onHover { modelDetectHovered = $0 }
-
-                    launcherCard(
-                        icon: "gauge.with.dots.needle.50percent",
-                        titleLine1: L10n.shared.tr("detail.subscriptionQuotaLine1"),
-                        titleLine2: L10n.shared.tr("detail.subscriptionQuotaLine2"),
-                        hovered: quotaHovered,
-                        enabled: true,
-                        action: { onSubscriptionQuota?() }
-                    )
-                    .onHover { quotaHovered = $0 }
-                }
-                .padding(.horizontal, 12)
-                .padding(.top, 7)
-                .padding(.bottom, 4)
-
                 // 第二行：按会话 / 按模型。
                 HStack(spacing: 2) {
                     ForEach([GroupingMode.session, GroupingMode.model], id: \.self) { mode in
@@ -285,7 +289,7 @@ struct DetailDropdownView: View {
                                     Divider()
                                         .background(theme.dropdownDividerColor)
                                 }
-                                ToolExpandableRow(tool: tool, theme: theme, textColorOverride: dropdownTextColorOverride, valueMode: valueMode, grandTotal: grandTotal, usageIncludesCache: usageIncludesCache)
+                                ToolExpandableRow(tool: tool, theme: theme, textColorOverride: dropdownTextColorOverride, valueMode: valueMode, grandTotal: grandTotal, usageIncludesCache: usageIncludesCache, onModelDetectSession: onModelDetectSession)
                             }
                         } else {
                             ForEach(Array(modelGroups.enumerated()), id: \.element.id) { index, group in
@@ -798,6 +802,7 @@ private struct ToolExpandableRow: View {
     var grandTotal: Int = 0
     /// 用量口径：true=token 展示包含缓存读
     var usageIncludesCache: Bool = false
+    var onModelDetectSession: ((SessionInfo) -> Void)? = nil
     @State private var isExpanded = false
 
     private var textColor: Color { textColorOverride ?? theme.dropdownTextColor }
@@ -861,7 +866,8 @@ private struct ToolExpandableRow: View {
                             textColorOverride: textColorOverride,
                             valueMode: valueMode,
                             grandTotal: grandTotal,
-                            usageIncludesCache: usageIncludesCache
+                            usageIncludesCache: usageIncludesCache,
+                            onModelDetect: onModelDetectSession
                         )
                     }
                 }
@@ -889,6 +895,7 @@ private struct SessionRow: View {
     var grandTotal: Int = 0
     /// 用量口径：true=token 展示包含缓存读
     var usageIncludesCache: Bool = false
+    var onModelDetect: ((SessionInfo) -> Void)? = nil
 
     private var textColor: Color { textColorOverride ?? theme.dropdownTextColor }
     private var subtextColor: Color { textColorOverride.map { $0.opacity(0.65) } ?? theme.dropdownSubtextColor }
@@ -966,6 +973,15 @@ private struct SessionRow: View {
                 ? textColor.opacity(0.04)
                 : Color.clear
         )
+        .contentShape(Rectangle())
+        .contextMenu {
+            if let onModelDetect {
+                Button { onModelDetect(session) } label: {
+                    Label(L10n.shared.tr(session.sourceLogPath == nil ? "modelDetect.sessionChooseLog" : "modelDetect.sessionOpen"),
+                          systemImage: "waveform.path.ecg.rectangle")
+                }
+            }
+        }
     }
 }
 

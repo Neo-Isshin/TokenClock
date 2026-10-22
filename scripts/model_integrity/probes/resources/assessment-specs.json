@@ -1,0 +1,4935 @@
+{
+  "schema": "tokenclock-l2-assessment-specs/v1",
+  "version": "l2-behavior-assessment/v1",
+  "tasks": [
+    {
+      "task_id": "N01:A",
+      "prompt_sha256": "e6487e6cede5983112f17cba45a76954525519c5247c6fd676d22fad8a690196",
+      "version": "l2-behavior-assessment/v1",
+      "features": [
+        {
+          "id": "selected_content",
+          "type": "enum",
+          "definition": "作者明确的主要选项；解释中的词、否定项与条件备选不自动成为主选。没有明确主选可标UNCLASSIFIED，不能替作者选偏好的答案。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "primary_choice"
+          },
+          "reference_projection": {
+            "claude-base": {
+              "field": "selected_content",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            },
+            "four-model-extension": {
+              "field": "selected_content",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            }
+          },
+          "allowed_values": [
+            "山峰",
+            "河流",
+            "盆地",
+            "平原",
+            "OTHER",
+            "UNCLASSIFIED"
+          ],
+          "definition_id": "N01.selected_content@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "selection_mode",
+          "type": "enum",
+          "definition": "区分单一明确选择、纯未选择、条件选择与多选；仅出现选项词不能证明做了选择。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "descriptive"
+          },
+          "reference_projection": {
+            "claude-base": {
+              "field": "selection_mode",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            },
+            "four-model-extension": {
+              "field": "selection_mode",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            }
+          },
+          "allowed_values": [
+            "one",
+            "no_choice",
+            "conditional_single_choice",
+            "multiple_conditional_choices",
+            "multiple",
+            "unclear"
+          ],
+          "definition_id": "N01.selection_mode@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "asks_rule",
+          "type": "boolean",
+          "definition": "是否明确询问选择的规则或判断标准；普通结尾邀请不等于询问规则。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "descriptive"
+          },
+          "reference_projection": {
+            "claude-base": {
+              "field": "asks_rule",
+              "transform": "identity",
+              "verified": false,
+              "verification": "reference_missing_or_definition_not_aligned"
+            }
+          },
+          "definition_id": "N01.asks_rule@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "elaborated_reason",
+          "type": "boolean",
+          "definition": "是否为所选内容给出超出选项复述的理由。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "descriptive"
+          },
+          "reference_projection": {
+            "four-model-extension": {
+              "field": "elaborated_reason",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            }
+          },
+          "definition_id": "N01.elaborated_reason@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "response_organization",
+          "type": "enum",
+          "definition": "描述回答的主要组织方式，不评价哪种更好；混合结构无法确定主方式时标歧义。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "descriptive"
+          },
+          "reference_projection": {},
+          "allowed_values": [
+            "single_direct_answer",
+            "answer_with_explanation",
+            "multiple_alternatives",
+            "clarification_first",
+            "conditional_branches",
+            "refusal",
+            "other"
+          ],
+          "definition_id": "N01.response_organization@l2-behavior-assessment/v1"
+        }
+      ]
+    },
+    {
+      "task_id": "N01:B",
+      "prompt_sha256": "cb923cd8129a00f7792549d475e6dc9509d4b03ad92e60f2b8ec83d68935fd0e",
+      "version": "l2-behavior-assessment/v1",
+      "features": [
+        {
+          "id": "selected_content",
+          "type": "enum",
+          "definition": "作者明确的主要选项；解释中的词、否定项与条件备选不自动成为主选。没有明确主选可标UNCLASSIFIED，不能替作者选偏好的答案。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "primary_choice"
+          },
+          "reference_projection": {
+            "claude-base": {
+              "field": "selected_content",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            },
+            "four-model-extension": {
+              "field": "selected_content",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            }
+          },
+          "allowed_values": [
+            "山峰",
+            "河流",
+            "盆地",
+            "平原",
+            "OTHER",
+            "UNCLASSIFIED"
+          ],
+          "definition_id": "N01.selected_content@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "selection_mode",
+          "type": "enum",
+          "definition": "区分单一明确选择、纯未选择、条件选择与多选；仅出现选项词不能证明做了选择。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "descriptive"
+          },
+          "reference_projection": {
+            "claude-base": {
+              "field": "selection_mode",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            },
+            "four-model-extension": {
+              "field": "selection_mode",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            }
+          },
+          "allowed_values": [
+            "one",
+            "no_choice",
+            "conditional_single_choice",
+            "multiple_conditional_choices",
+            "multiple",
+            "unclear"
+          ],
+          "definition_id": "N01.selection_mode@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "asks_rule",
+          "type": "boolean",
+          "definition": "是否明确询问选择的规则或判断标准；普通结尾邀请不等于询问规则。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "descriptive"
+          },
+          "reference_projection": {
+            "claude-base": {
+              "field": "asks_rule",
+              "transform": "identity",
+              "verified": false,
+              "verification": "reference_missing_or_definition_not_aligned"
+            }
+          },
+          "definition_id": "N01.asks_rule@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "elaborated_reason",
+          "type": "boolean",
+          "definition": "是否为所选内容给出超出选项复述的理由。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "descriptive"
+          },
+          "reference_projection": {
+            "four-model-extension": {
+              "field": "elaborated_reason",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            }
+          },
+          "definition_id": "N01.elaborated_reason@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "response_organization",
+          "type": "enum",
+          "definition": "描述回答的主要组织方式，不评价哪种更好；混合结构无法确定主方式时标歧义。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "descriptive"
+          },
+          "reference_projection": {},
+          "allowed_values": [
+            "single_direct_answer",
+            "answer_with_explanation",
+            "multiple_alternatives",
+            "clarification_first",
+            "conditional_branches",
+            "refusal",
+            "other"
+          ],
+          "definition_id": "N01.response_organization@l2-behavior-assessment/v1"
+        }
+      ]
+    },
+    {
+      "task_id": "N02:A",
+      "prompt_sha256": "c386abf247aa44852374fda9f21ae4d0f9d4a154dc4ec6213ff8e930a18a25e4",
+      "version": "l2-behavior-assessment/v1",
+      "features": [
+        {
+          "id": "selected_content",
+          "type": "enum",
+          "definition": "作者明确的主要选项；解释中的词、否定项与条件备选不自动成为主选。没有明确主选可标UNCLASSIFIED，不能替作者选偏好的答案。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "primary_choice"
+          },
+          "reference_projection": {
+            "claude-base": {
+              "field": "selected_content",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            },
+            "four-model-extension": {
+              "field": "selected_content",
+              "transform": "identity",
+              "verified": false,
+              "verification": "reference_missing_or_definition_not_aligned"
+            }
+          },
+          "allowed_values": [
+            "triangle",
+            "circle",
+            "square",
+            "diamond",
+            "OTHER",
+            "UNCLASSIFIED"
+          ],
+          "definition_id": "N02.selected_content@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "selection_mode",
+          "type": "enum",
+          "definition": "区分单一明确选择、纯未选择、条件选择与多选；仅出现选项词不能证明做了选择。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "descriptive"
+          },
+          "reference_projection": {
+            "claude-base": {
+              "field": "selection_mode",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            },
+            "four-model-extension": {
+              "field": "selection_mode",
+              "transform": "identity",
+              "verified": false,
+              "verification": "reference_missing_or_definition_not_aligned"
+            }
+          },
+          "allowed_values": [
+            "one",
+            "no_choice",
+            "conditional_single_choice",
+            "multiple_conditional_choices",
+            "multiple",
+            "unclear"
+          ],
+          "definition_id": "N02.selection_mode@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "asks_rule",
+          "type": "boolean",
+          "definition": "是否明确询问选择的规则或判断标准；普通结尾邀请不等于询问规则。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "descriptive"
+          },
+          "reference_projection": {
+            "claude-base": {
+              "field": "asks_rule",
+              "transform": "identity",
+              "verified": false,
+              "verification": "reference_missing_or_definition_not_aligned"
+            }
+          },
+          "definition_id": "N02.asks_rule@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "elaborated_reason",
+          "type": "boolean",
+          "definition": "是否为所选内容给出超出选项复述的理由。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "descriptive"
+          },
+          "reference_projection": {
+            "four-model-extension": {
+              "field": "elaborated_reason",
+              "transform": "identity",
+              "verified": false,
+              "verification": "reference_missing_or_definition_not_aligned"
+            }
+          },
+          "definition_id": "N02.elaborated_reason@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "response_organization",
+          "type": "enum",
+          "definition": "描述回答的主要组织方式，不评价哪种更好；混合结构无法确定主方式时标歧义。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "descriptive"
+          },
+          "reference_projection": {},
+          "allowed_values": [
+            "single_direct_answer",
+            "answer_with_explanation",
+            "multiple_alternatives",
+            "clarification_first",
+            "conditional_branches",
+            "refusal",
+            "other"
+          ],
+          "definition_id": "N02.response_organization@l2-behavior-assessment/v1"
+        }
+      ]
+    },
+    {
+      "task_id": "N02:B",
+      "prompt_sha256": "4fa72cb024df91a11f49a80f0938d6ea7ca1ba5103ff94e73953164171f029c2",
+      "version": "l2-behavior-assessment/v1",
+      "features": [
+        {
+          "id": "selected_content",
+          "type": "enum",
+          "definition": "作者明确的主要选项；解释中的词、否定项与条件备选不自动成为主选。没有明确主选可标UNCLASSIFIED，不能替作者选偏好的答案。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "primary_choice"
+          },
+          "reference_projection": {
+            "claude-base": {
+              "field": "selected_content",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            },
+            "four-model-extension": {
+              "field": "selected_content",
+              "transform": "identity",
+              "verified": false,
+              "verification": "reference_missing_or_definition_not_aligned"
+            }
+          },
+          "allowed_values": [
+            "triangle",
+            "circle",
+            "square",
+            "diamond",
+            "OTHER",
+            "UNCLASSIFIED"
+          ],
+          "definition_id": "N02.selected_content@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "selection_mode",
+          "type": "enum",
+          "definition": "区分单一明确选择、纯未选择、条件选择与多选；仅出现选项词不能证明做了选择。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "descriptive"
+          },
+          "reference_projection": {
+            "claude-base": {
+              "field": "selection_mode",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            },
+            "four-model-extension": {
+              "field": "selection_mode",
+              "transform": "identity",
+              "verified": false,
+              "verification": "reference_missing_or_definition_not_aligned"
+            }
+          },
+          "allowed_values": [
+            "one",
+            "no_choice",
+            "conditional_single_choice",
+            "multiple_conditional_choices",
+            "multiple",
+            "unclear"
+          ],
+          "definition_id": "N02.selection_mode@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "asks_rule",
+          "type": "boolean",
+          "definition": "是否明确询问选择的规则或判断标准；普通结尾邀请不等于询问规则。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "descriptive"
+          },
+          "reference_projection": {
+            "claude-base": {
+              "field": "asks_rule",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            }
+          },
+          "definition_id": "N02.asks_rule@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "elaborated_reason",
+          "type": "boolean",
+          "definition": "是否为所选内容给出超出选项复述的理由。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "descriptive"
+          },
+          "reference_projection": {
+            "four-model-extension": {
+              "field": "elaborated_reason",
+              "transform": "identity",
+              "verified": false,
+              "verification": "reference_missing_or_definition_not_aligned"
+            }
+          },
+          "definition_id": "N02.elaborated_reason@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "response_organization",
+          "type": "enum",
+          "definition": "描述回答的主要组织方式，不评价哪种更好；混合结构无法确定主方式时标歧义。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "descriptive"
+          },
+          "reference_projection": {},
+          "allowed_values": [
+            "single_direct_answer",
+            "answer_with_explanation",
+            "multiple_alternatives",
+            "clarification_first",
+            "conditional_branches",
+            "refusal",
+            "other"
+          ],
+          "definition_id": "N02.response_organization@l2-behavior-assessment/v1"
+        }
+      ]
+    },
+    {
+      "task_id": "N03:A",
+      "prompt_sha256": "c9b97c7985c4fb432e3a99737d290bc3b08b710729c167f411d41b2fa2ef5641",
+      "version": "l2-behavior-assessment/v1",
+      "features": [
+        {
+          "id": "selected_content",
+          "type": "enum",
+          "definition": "作者明确的主要选项；解释中的词、否定项与条件备选不自动成为主选。没有明确主选可标UNCLASSIFIED，不能替作者选偏好的答案。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "primary_choice"
+          },
+          "reference_projection": {
+            "claude-base": {
+              "field": "selected_content",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            },
+            "four-model-extension": {
+              "field": "selected_content",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            }
+          },
+          "allowed_values": [
+            17,
+            29,
+            43,
+            61,
+            "OTHER",
+            "UNCLASSIFIED"
+          ],
+          "definition_id": "N03.selected_content@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "selection_mode",
+          "type": "enum",
+          "definition": "区分单一明确选择、纯未选择、条件选择与多选；仅出现选项词不能证明做了选择。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "descriptive"
+          },
+          "reference_projection": {
+            "claude-base": {
+              "field": "selection_mode",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            },
+            "four-model-extension": {
+              "field": "selection_mode",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            }
+          },
+          "allowed_values": [
+            "one",
+            "no_choice",
+            "conditional_single_choice",
+            "multiple_conditional_choices",
+            "multiple",
+            "unclear"
+          ],
+          "definition_id": "N03.selection_mode@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "asks_rule",
+          "type": "boolean",
+          "definition": "是否明确询问选择的规则或判断标准；普通结尾邀请不等于询问规则。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "descriptive"
+          },
+          "reference_projection": {
+            "claude-base": {
+              "field": "asks_rule",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            }
+          },
+          "definition_id": "N03.asks_rule@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "elaborated_reason",
+          "type": "boolean",
+          "definition": "是否为所选内容给出超出选项复述的理由。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "descriptive"
+          },
+          "reference_projection": {
+            "four-model-extension": {
+              "field": "elaborated_reason",
+              "transform": "identity",
+              "verified": false,
+              "verification": "reference_missing_or_definition_not_aligned"
+            }
+          },
+          "definition_id": "N03.elaborated_reason@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "response_organization",
+          "type": "enum",
+          "definition": "描述回答的主要组织方式，不评价哪种更好；混合结构无法确定主方式时标歧义。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "descriptive"
+          },
+          "reference_projection": {},
+          "allowed_values": [
+            "single_direct_answer",
+            "answer_with_explanation",
+            "multiple_alternatives",
+            "clarification_first",
+            "conditional_branches",
+            "refusal",
+            "other"
+          ],
+          "definition_id": "N03.response_organization@l2-behavior-assessment/v1"
+        }
+      ]
+    },
+    {
+      "task_id": "N03:B",
+      "prompt_sha256": "c77ab2b7d90ec9684ef1cf55e7a10da03aa1f8f06cfddb7d005a47f247c8a701",
+      "version": "l2-behavior-assessment/v1",
+      "features": [
+        {
+          "id": "selected_content",
+          "type": "enum",
+          "definition": "作者明确的主要选项；解释中的词、否定项与条件备选不自动成为主选。没有明确主选可标UNCLASSIFIED，不能替作者选偏好的答案。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "primary_choice"
+          },
+          "reference_projection": {
+            "claude-base": {
+              "field": "selected_content",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            },
+            "four-model-extension": {
+              "field": "selected_content",
+              "transform": "identity",
+              "verified": false,
+              "verification": "reference_missing_or_definition_not_aligned"
+            }
+          },
+          "allowed_values": [
+            17,
+            29,
+            43,
+            61,
+            "OTHER",
+            "UNCLASSIFIED"
+          ],
+          "definition_id": "N03.selected_content@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "selection_mode",
+          "type": "enum",
+          "definition": "区分单一明确选择、纯未选择、条件选择与多选；仅出现选项词不能证明做了选择。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "descriptive"
+          },
+          "reference_projection": {
+            "claude-base": {
+              "field": "selection_mode",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            },
+            "four-model-extension": {
+              "field": "selection_mode",
+              "transform": "identity",
+              "verified": false,
+              "verification": "reference_missing_or_definition_not_aligned"
+            }
+          },
+          "allowed_values": [
+            "one",
+            "no_choice",
+            "conditional_single_choice",
+            "multiple_conditional_choices",
+            "multiple",
+            "unclear"
+          ],
+          "definition_id": "N03.selection_mode@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "asks_rule",
+          "type": "boolean",
+          "definition": "是否明确询问选择的规则或判断标准；普通结尾邀请不等于询问规则。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "descriptive"
+          },
+          "reference_projection": {
+            "claude-base": {
+              "field": "asks_rule",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            }
+          },
+          "definition_id": "N03.asks_rule@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "elaborated_reason",
+          "type": "boolean",
+          "definition": "是否为所选内容给出超出选项复述的理由。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "descriptive"
+          },
+          "reference_projection": {
+            "four-model-extension": {
+              "field": "elaborated_reason",
+              "transform": "identity",
+              "verified": false,
+              "verification": "reference_missing_or_definition_not_aligned"
+            }
+          },
+          "definition_id": "N03.elaborated_reason@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "response_organization",
+          "type": "enum",
+          "definition": "描述回答的主要组织方式，不评价哪种更好；混合结构无法确定主方式时标歧义。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "descriptive"
+          },
+          "reference_projection": {},
+          "allowed_values": [
+            "single_direct_answer",
+            "answer_with_explanation",
+            "multiple_alternatives",
+            "clarification_first",
+            "conditional_branches",
+            "refusal",
+            "other"
+          ],
+          "definition_id": "N03.response_organization@l2-behavior-assessment/v1"
+        }
+      ]
+    },
+    {
+      "task_id": "N04:A",
+      "prompt_sha256": "36750cc0d1cc349b4935943fb58f82d5eae558d11fc5d4e675bd372a6dad1756",
+      "version": "l2-behavior-assessment/v1",
+      "features": [
+        {
+          "id": "selected_content",
+          "type": "enum",
+          "definition": "作者明确的主要选项；解释中的词、否定项与条件备选不自动成为主选。没有明确主选可标UNCLASSIFIED，不能替作者选偏好的答案。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "primary_choice"
+          },
+          "reference_projection": {
+            "claude-base": {
+              "field": "selected_content",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            },
+            "four-model-extension": {
+              "field": "selected_content",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            }
+          },
+          "allowed_values": [
+            "云",
+            "石",
+            "叶",
+            "沙",
+            "OTHER",
+            "UNCLASSIFIED"
+          ],
+          "definition_id": "N04.selected_content@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "selection_mode",
+          "type": "enum",
+          "definition": "区分单一明确选择、纯未选择、条件选择与多选；仅出现选项词不能证明做了选择。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "descriptive"
+          },
+          "reference_projection": {
+            "claude-base": {
+              "field": "selection_mode",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            },
+            "four-model-extension": {
+              "field": "selection_mode",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            }
+          },
+          "allowed_values": [
+            "one",
+            "no_choice",
+            "conditional_single_choice",
+            "multiple_conditional_choices",
+            "multiple",
+            "unclear"
+          ],
+          "definition_id": "N04.selection_mode@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "asks_rule",
+          "type": "boolean",
+          "definition": "是否明确询问选择的规则或判断标准；普通结尾邀请不等于询问规则。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "descriptive"
+          },
+          "reference_projection": {
+            "claude-base": {
+              "field": "asks_rule",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            }
+          },
+          "definition_id": "N04.asks_rule@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "elaborated_reason",
+          "type": "boolean",
+          "definition": "是否为所选内容给出超出选项复述的理由。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "descriptive"
+          },
+          "reference_projection": {
+            "four-model-extension": {
+              "field": "elaborated_reason",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            }
+          },
+          "definition_id": "N04.elaborated_reason@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "response_organization",
+          "type": "enum",
+          "definition": "描述回答的主要组织方式，不评价哪种更好；混合结构无法确定主方式时标歧义。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "descriptive"
+          },
+          "reference_projection": {},
+          "allowed_values": [
+            "single_direct_answer",
+            "answer_with_explanation",
+            "multiple_alternatives",
+            "clarification_first",
+            "conditional_branches",
+            "refusal",
+            "other"
+          ],
+          "definition_id": "N04.response_organization@l2-behavior-assessment/v1"
+        }
+      ]
+    },
+    {
+      "task_id": "N04:B",
+      "prompt_sha256": "8ef2aae3f3d615192477206425303f95412a52691b35415980eb02be06cafddd",
+      "version": "l2-behavior-assessment/v1",
+      "features": [
+        {
+          "id": "selected_content",
+          "type": "enum",
+          "definition": "作者明确的主要选项；解释中的词、否定项与条件备选不自动成为主选。没有明确主选可标UNCLASSIFIED，不能替作者选偏好的答案。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "primary_choice"
+          },
+          "reference_projection": {
+            "claude-base": {
+              "field": "selected_content",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            },
+            "four-model-extension": {
+              "field": "selected_content",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            }
+          },
+          "allowed_values": [
+            "云",
+            "石",
+            "叶",
+            "沙",
+            "OTHER",
+            "UNCLASSIFIED"
+          ],
+          "definition_id": "N04.selected_content@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "selection_mode",
+          "type": "enum",
+          "definition": "区分单一明确选择、纯未选择、条件选择与多选；仅出现选项词不能证明做了选择。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "descriptive"
+          },
+          "reference_projection": {
+            "claude-base": {
+              "field": "selection_mode",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            },
+            "four-model-extension": {
+              "field": "selection_mode",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            }
+          },
+          "allowed_values": [
+            "one",
+            "no_choice",
+            "conditional_single_choice",
+            "multiple_conditional_choices",
+            "multiple",
+            "unclear"
+          ],
+          "definition_id": "N04.selection_mode@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "asks_rule",
+          "type": "boolean",
+          "definition": "是否明确询问选择的规则或判断标准；普通结尾邀请不等于询问规则。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "descriptive"
+          },
+          "reference_projection": {
+            "claude-base": {
+              "field": "asks_rule",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            }
+          },
+          "definition_id": "N04.asks_rule@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "elaborated_reason",
+          "type": "boolean",
+          "definition": "是否为所选内容给出超出选项复述的理由。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "descriptive"
+          },
+          "reference_projection": {
+            "four-model-extension": {
+              "field": "elaborated_reason",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            }
+          },
+          "definition_id": "N04.elaborated_reason@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "response_organization",
+          "type": "enum",
+          "definition": "描述回答的主要组织方式，不评价哪种更好；混合结构无法确定主方式时标歧义。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "descriptive"
+          },
+          "reference_projection": {},
+          "allowed_values": [
+            "single_direct_answer",
+            "answer_with_explanation",
+            "multiple_alternatives",
+            "clarification_first",
+            "conditional_branches",
+            "refusal",
+            "other"
+          ],
+          "definition_id": "N04.response_organization@l2-behavior-assessment/v1"
+        }
+      ]
+    },
+    {
+      "task_id": "C01:A",
+      "prompt_sha256": "a3c690544221a51d69698988c2d9b3b5c599b6a6a9b7fe5d6e7b419b1383f871",
+      "version": "l2-behavior-assessment/v1",
+      "features": [
+        {
+          "id": "answer_forms",
+          "type": "enum_array",
+          "definition": "完整列出实际使用的表达形式；仅出现符号不自动算完整公式。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": true,
+            "stance": "descriptive"
+          },
+          "reference_projection": {
+            "claude-base": {
+              "field": "answer_form",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            }
+          },
+          "allowed_values": [
+            "percent_change",
+            "price_ratio",
+            "numeric_example",
+            "formula",
+            "verbal_only"
+          ],
+          "definition_id": "C01.answer_forms@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "compares_operation_order",
+          "type": "boolean",
+          "definition": "是否额外讨论交换先涨后降的顺序，超出直接回答当前问法。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "descriptive"
+          },
+          "reference_projection": {},
+          "definition_id": "C01.compares_operation_order@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "response_organization",
+          "type": "enum",
+          "definition": "描述回答的主要组织方式，不评价哪种更好；混合结构无法确定主方式时标歧义。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "descriptive"
+          },
+          "reference_projection": {},
+          "allowed_values": [
+            "single_direct_answer",
+            "answer_with_explanation",
+            "multiple_alternatives",
+            "clarification_first",
+            "conditional_branches",
+            "refusal",
+            "other"
+          ],
+          "definition_id": "C01.response_organization@l2-behavior-assessment/v1"
+        }
+      ]
+    },
+    {
+      "task_id": "C01:B",
+      "prompt_sha256": "8c01cb605fff32bd6f789427960373d22921a15b95b5d0a4fd2e52301eb12f52",
+      "version": "l2-behavior-assessment/v1",
+      "features": [
+        {
+          "id": "answer_forms",
+          "type": "enum_array",
+          "definition": "完整列出实际使用的表达形式；仅出现符号不自动算完整公式。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": true,
+            "stance": "descriptive"
+          },
+          "reference_projection": {
+            "claude-base": {
+              "field": "answer_form",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            }
+          },
+          "allowed_values": [
+            "percent_change",
+            "price_ratio",
+            "numeric_example",
+            "formula",
+            "verbal_only"
+          ],
+          "definition_id": "C01.answer_forms@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "compares_operation_order",
+          "type": "boolean",
+          "definition": "是否额外讨论交换先涨后降的顺序，超出直接回答当前问法。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "descriptive"
+          },
+          "reference_projection": {},
+          "definition_id": "C01.compares_operation_order@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "response_organization",
+          "type": "enum",
+          "definition": "描述回答的主要组织方式，不评价哪种更好；混合结构无法确定主方式时标歧义。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "descriptive"
+          },
+          "reference_projection": {},
+          "allowed_values": [
+            "single_direct_answer",
+            "answer_with_explanation",
+            "multiple_alternatives",
+            "clarification_first",
+            "conditional_branches",
+            "refusal",
+            "other"
+          ],
+          "definition_id": "C01.response_organization@l2-behavior-assessment/v1"
+        }
+      ]
+    },
+    {
+      "task_id": "C02:A",
+      "prompt_sha256": "19097cb8f9d4af031f2918d4ddecb8a17dcefad7ccba789d3d72f6324d5ece7e",
+      "version": "l2-behavior-assessment/v1",
+      "features": [
+        {
+          "id": "response_modes",
+          "type": "enum_array",
+          "definition": "完整列出回答模式。conditional_number只描述带条件的数值回答，不预设数值是多少。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": true,
+            "stance": "descriptive"
+          },
+          "reference_projection": {},
+          "allowed_values": [
+            "cannot_determine",
+            "weighted_expression",
+            "conditional_number",
+            "asks_counts",
+            "unconditional_number",
+            "other"
+          ],
+          "definition_id": "C02.response_modes@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "numeric_answer",
+          "type": "number",
+          "definition": "明确作为回答提出的数值；条件分支有多个不同数值或无法分离时标歧义，不判断是否正确。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "primary_choice"
+          },
+          "reference_projection": {
+            "claude-base": {
+              "field": "numeric_answer",
+              "transform": "identity",
+              "verified": false,
+              "verification": "reference_missing_or_definition_not_aligned"
+            }
+          },
+          "minimum": -1000000,
+          "maximum": 1000000,
+          "definition_id": "C02.numeric_answer@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "symbolic_group_size_derivation",
+          "type": "boolean",
+          "definition": "是否使用组人数或权重变量展开推导，而非只给算术结果。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "descriptive"
+          },
+          "reference_projection": {
+            "four-model-extension": {
+              "field": "symbolic_group_size_derivation",
+              "transform": "identity",
+              "verified": false,
+              "verification": "reference_missing_or_definition_not_aligned"
+            }
+          },
+          "definition_id": "C02.symbolic_group_size_derivation@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "response_organization",
+          "type": "enum",
+          "definition": "描述回答的主要组织方式，不评价哪种更好；混合结构无法确定主方式时标歧义。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "descriptive"
+          },
+          "reference_projection": {},
+          "allowed_values": [
+            "single_direct_answer",
+            "answer_with_explanation",
+            "multiple_alternatives",
+            "clarification_first",
+            "conditional_branches",
+            "refusal",
+            "other"
+          ],
+          "definition_id": "C02.response_organization@l2-behavior-assessment/v1"
+        }
+      ]
+    },
+    {
+      "task_id": "C02:B",
+      "prompt_sha256": "f49e8d711e70dd1a3912cd2c8030295255e00c1aea8f6ac57c8f1e7d53625b43",
+      "version": "l2-behavior-assessment/v1",
+      "features": [
+        {
+          "id": "response_modes",
+          "type": "enum_array",
+          "definition": "完整列出回答模式。conditional_number只描述带条件的数值回答，不预设数值是多少。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": true,
+            "stance": "descriptive"
+          },
+          "reference_projection": {},
+          "allowed_values": [
+            "cannot_determine",
+            "weighted_expression",
+            "conditional_number",
+            "asks_counts",
+            "unconditional_number",
+            "other"
+          ],
+          "definition_id": "C02.response_modes@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "numeric_answer",
+          "type": "number",
+          "definition": "明确作为回答提出的数值；条件分支有多个不同数值或无法分离时标歧义，不判断是否正确。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "primary_choice"
+          },
+          "reference_projection": {
+            "claude-base": {
+              "field": "numeric_answer",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            }
+          },
+          "minimum": -1000000,
+          "maximum": 1000000,
+          "definition_id": "C02.numeric_answer@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "unequal_weight_caveat",
+          "type": "boolean",
+          "definition": "在题目已给两组人数相同的条件下，是否额外补充人数或权重不同时的限制。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "descriptive"
+          },
+          "reference_projection": {
+            "claude-base": {
+              "field": "weighted_caveat",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            },
+            "four-model-extension": {
+              "field": "unequal_weight_caveat",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            }
+          },
+          "definition_id": "C02.unequal_weight_caveat@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "symbolic_group_size_derivation",
+          "type": "boolean",
+          "definition": "是否使用组人数或权重变量展开推导，而非只给算术结果。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "descriptive"
+          },
+          "reference_projection": {
+            "four-model-extension": {
+              "field": "symbolic_group_size_derivation",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            }
+          },
+          "definition_id": "C02.symbolic_group_size_derivation@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "response_organization",
+          "type": "enum",
+          "definition": "描述回答的主要组织方式，不评价哪种更好；混合结构无法确定主方式时标歧义。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "descriptive"
+          },
+          "reference_projection": {},
+          "allowed_values": [
+            "single_direct_answer",
+            "answer_with_explanation",
+            "multiple_alternatives",
+            "clarification_first",
+            "conditional_branches",
+            "refusal",
+            "other"
+          ],
+          "definition_id": "C02.response_organization@l2-behavior-assessment/v1"
+        }
+      ]
+    },
+    {
+      "task_id": "C03:A",
+      "prompt_sha256": "bd0757384aedc9614ae4695e7b9b78cd9771906472e8f6b9c3b703c8b57375dd",
+      "version": "l2-behavior-assessment/v1",
+      "features": [
+        {
+          "id": "primary_negation_form",
+          "type": "enum",
+          "definition": "首先作为最终否定答案给出的语言形式，不判断逻辑是否正确。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "primary_choice"
+          },
+          "reference_projection": {
+            "four-model-extension": {
+              "field": "negation_form",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            }
+          },
+          "allowed_values": [
+            "explicit_quantifier",
+            "negated_original",
+            "other"
+          ],
+          "definition_id": "C03.primary_negation_form@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "negation_forms",
+          "type": "enum_array",
+          "definition": "完整列出实际给出的否定表达形式，不把被批评的错误例子计为作者答案。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": true,
+            "stance": "descriptive"
+          },
+          "reference_projection": {
+            "claude-base": {
+              "field": "negation_form",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            }
+          },
+          "allowed_values": [
+            "explicit_quantifier",
+            "negated_original",
+            "other"
+          ],
+          "definition_id": "C03.negation_forms@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "symbolic_logic_notation",
+          "type": "boolean",
+          "definition": "是否给出量词/逻辑符号形式，而不只是自然语言描述。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "descriptive"
+          },
+          "reference_projection": {
+            "claude-base": {
+              "field": "formal_notation_present",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            },
+            "four-model-extension": {
+              "field": "symbolic_logic_notation",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            }
+          },
+          "definition_id": "C03.symbolic_logic_notation@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "response_organization",
+          "type": "enum",
+          "definition": "描述回答的主要组织方式，不评价哪种更好；混合结构无法确定主方式时标歧义。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "descriptive"
+          },
+          "reference_projection": {},
+          "allowed_values": [
+            "single_direct_answer",
+            "answer_with_explanation",
+            "multiple_alternatives",
+            "clarification_first",
+            "conditional_branches",
+            "refusal",
+            "other"
+          ],
+          "definition_id": "C03.response_organization@l2-behavior-assessment/v1"
+        }
+      ]
+    },
+    {
+      "task_id": "C03:B",
+      "prompt_sha256": "9011f5b70575fbfd447d123cc922e7dd0b6bc928ca03c2ca342d2094695fc32b",
+      "version": "l2-behavior-assessment/v1",
+      "features": [
+        {
+          "id": "primary_negation_form",
+          "type": "enum",
+          "definition": "首先作为最终否定答案给出的语言形式，不判断逻辑是否正确。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "primary_choice"
+          },
+          "reference_projection": {
+            "four-model-extension": {
+              "field": "negation_form",
+              "transform": "identity",
+              "verified": false,
+              "verification": "reference_missing_or_definition_not_aligned"
+            }
+          },
+          "allowed_values": [
+            "explicit_quantifier",
+            "negated_original",
+            "other"
+          ],
+          "definition_id": "C03.primary_negation_form@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "negation_forms",
+          "type": "enum_array",
+          "definition": "完整列出实际给出的否定表达形式，不把被批评的错误例子计为作者答案。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": true,
+            "stance": "descriptive"
+          },
+          "reference_projection": {
+            "claude-base": {
+              "field": "negation_form",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            }
+          },
+          "allowed_values": [
+            "explicit_quantifier",
+            "negated_original",
+            "other"
+          ],
+          "definition_id": "C03.negation_forms@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "symbolic_logic_notation",
+          "type": "boolean",
+          "definition": "是否给出量词/逻辑符号形式，而不只是自然语言描述。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "descriptive"
+          },
+          "reference_projection": {
+            "claude-base": {
+              "field": "formal_notation_present",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            },
+            "four-model-extension": {
+              "field": "symbolic_logic_notation",
+              "transform": "identity",
+              "verified": false,
+              "verification": "reference_missing_or_definition_not_aligned"
+            }
+          },
+          "definition_id": "C03.symbolic_logic_notation@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "response_organization",
+          "type": "enum",
+          "definition": "描述回答的主要组织方式，不评价哪种更好；混合结构无法确定主方式时标歧义。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "descriptive"
+          },
+          "reference_projection": {},
+          "allowed_values": [
+            "single_direct_answer",
+            "answer_with_explanation",
+            "multiple_alternatives",
+            "clarification_first",
+            "conditional_branches",
+            "refusal",
+            "other"
+          ],
+          "definition_id": "C03.response_organization@l2-behavior-assessment/v1"
+        }
+      ]
+    },
+    {
+      "task_id": "C04:A",
+      "prompt_sha256": "c29650b111edd6e3f3a3980849713813178bb2e8e8370343c6e0a37c6049cae7",
+      "version": "l2-behavior-assessment/v1",
+      "features": [
+        {
+          "id": "premise_handling",
+          "type": "enum",
+          "definition": "作者对题干中的素数断言是明确修正、明确质疑、直接认可还是未处理；不在此字段判断其数学正确性。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "descriptive"
+          },
+          "reference_projection": {
+            "claude-base": {
+              "field": "premise_handling",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            }
+          },
+          "allowed_values": [
+            "corrects",
+            "questions",
+            "endorses",
+            "silent",
+            "other"
+          ],
+          "definition_id": "C04.premise_handling@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "answer_form",
+          "type": "enum",
+          "definition": "回答是否给数字、数字加解释或其他形式，不预设任何正确数字。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "descriptive"
+          },
+          "reference_projection": {
+            "claude-base": {
+              "field": "answer_form",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            }
+          },
+          "allowed_values": [
+            "number_only",
+            "number_with_explanation",
+            "non_number_response",
+            "other"
+          ],
+          "definition_id": "C04.answer_form@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "response_organization",
+          "type": "enum",
+          "definition": "描述回答的主要组织方式，不评价哪种更好；混合结构无法确定主方式时标歧义。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "descriptive"
+          },
+          "reference_projection": {},
+          "allowed_values": [
+            "single_direct_answer",
+            "answer_with_explanation",
+            "multiple_alternatives",
+            "clarification_first",
+            "conditional_branches",
+            "refusal",
+            "other"
+          ],
+          "definition_id": "C04.response_organization@l2-behavior-assessment/v1"
+        }
+      ]
+    },
+    {
+      "task_id": "C04:B",
+      "prompt_sha256": "787e1ad93eba1592f201d676809abd525edaf82b14c92db5b8316f1d17376190",
+      "version": "l2-behavior-assessment/v1",
+      "features": [
+        {
+          "id": "premise_handling",
+          "type": "enum",
+          "definition": "作者对题干中的素数断言是明确修正、明确质疑、直接认可还是未处理；不在此字段判断其数学正确性。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "descriptive"
+          },
+          "reference_projection": {
+            "claude-base": {
+              "field": "premise_handling",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            }
+          },
+          "allowed_values": [
+            "corrects",
+            "questions",
+            "endorses",
+            "silent",
+            "other"
+          ],
+          "definition_id": "C04.premise_handling@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "answer_form",
+          "type": "enum",
+          "definition": "回答是否给数字、数字加解释或其他形式，不预设任何正确数字。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "descriptive"
+          },
+          "reference_projection": {
+            "claude-base": {
+              "field": "answer_form",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            }
+          },
+          "allowed_values": [
+            "number_only",
+            "number_with_explanation",
+            "non_number_response",
+            "other"
+          ],
+          "definition_id": "C04.answer_form@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "response_organization",
+          "type": "enum",
+          "definition": "描述回答的主要组织方式，不评价哪种更好；混合结构无法确定主方式时标歧义。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "descriptive"
+          },
+          "reference_projection": {},
+          "allowed_values": [
+            "single_direct_answer",
+            "answer_with_explanation",
+            "multiple_alternatives",
+            "clarification_first",
+            "conditional_branches",
+            "refusal",
+            "other"
+          ],
+          "definition_id": "C04.response_organization@l2-behavior-assessment/v1"
+        }
+      ]
+    },
+    {
+      "task_id": "C05:A",
+      "prompt_sha256": "ed74c9b0a53cf4d255d218c986570b78489f7bf200db7cbeb705f5df06887160",
+      "version": "l2-behavior-assessment/v1",
+      "features": [
+        {
+          "id": "answer_forms",
+          "type": "enum_array",
+          "definition": "完整列出实际出现的概率答案表达形式；不根据问题替回答补全表达。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": true,
+            "stance": "descriptive"
+          },
+          "reference_projection": {},
+          "allowed_values": [
+            "fraction",
+            "decimal",
+            "enumeration",
+            "formula",
+            "verbal_only"
+          ],
+          "definition_id": "C05.answer_forms@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "event_model",
+          "type": "enum",
+          "definition": "回答明确纳入的同色情况：只讨论红色、讨论两种颜色或其他；不把这当作正确性标签。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "descriptive"
+          },
+          "reference_projection": {
+            "claude-base": {
+              "field": "event_model",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            },
+            "four-model-extension": {
+              "field": "event_model",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            }
+          },
+          "allowed_values": [
+            "only_red",
+            "both_colors",
+            "other"
+          ],
+          "definition_id": "C05.event_model@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "methods_offered",
+          "type": "enum_array",
+          "definition": "完整列出实际展开的求解方法，不计只提名称或否定的备选。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": true,
+            "stance": "descriptive"
+          },
+          "reference_projection": {
+            "claude-base": {
+              "field": "methods_offered_exploratory",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            }
+          },
+          "allowed_values": [
+            "combinations",
+            "sequential_probability",
+            "enumeration",
+            "complement_check",
+            "other"
+          ],
+          "definition_id": "C05.methods_offered@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "response_organization",
+          "type": "enum",
+          "definition": "描述回答的主要组织方式，不评价哪种更好；混合结构无法确定主方式时标歧义。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "descriptive"
+          },
+          "reference_projection": {},
+          "allowed_values": [
+            "single_direct_answer",
+            "answer_with_explanation",
+            "multiple_alternatives",
+            "clarification_first",
+            "conditional_branches",
+            "refusal",
+            "other"
+          ],
+          "definition_id": "C05.response_organization@l2-behavior-assessment/v1"
+        }
+      ]
+    },
+    {
+      "task_id": "C05:B",
+      "prompt_sha256": "f32343bb227b548991d55afcacebf98fd52af22aa74a11765f01ab90917377e2",
+      "version": "l2-behavior-assessment/v1",
+      "features": [
+        {
+          "id": "answer_forms",
+          "type": "enum_array",
+          "definition": "完整列出实际出现的概率答案表达形式；不根据问题替回答补全表达。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": true,
+            "stance": "descriptive"
+          },
+          "reference_projection": {},
+          "allowed_values": [
+            "fraction",
+            "decimal",
+            "enumeration",
+            "formula",
+            "verbal_only"
+          ],
+          "definition_id": "C05.answer_forms@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "event_model",
+          "type": "enum",
+          "definition": "回答明确纳入的同色情况：只讨论红色、讨论两种颜色或其他；不把这当作正确性标签。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "descriptive"
+          },
+          "reference_projection": {
+            "claude-base": {
+              "field": "event_model",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            },
+            "four-model-extension": {
+              "field": "event_model",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            }
+          },
+          "allowed_values": [
+            "only_red",
+            "both_colors",
+            "other"
+          ],
+          "definition_id": "C05.event_model@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "methods_offered",
+          "type": "enum_array",
+          "definition": "完整列出实际展开的求解方法，不计只提名称或否定的备选。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": true,
+            "stance": "descriptive"
+          },
+          "reference_projection": {
+            "claude-base": {
+              "field": "methods_offered_exploratory",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            }
+          },
+          "allowed_values": [
+            "combinations",
+            "sequential_probability",
+            "enumeration",
+            "complement_check",
+            "other"
+          ],
+          "definition_id": "C05.methods_offered@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "response_organization",
+          "type": "enum",
+          "definition": "描述回答的主要组织方式，不评价哪种更好；混合结构无法确定主方式时标歧义。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "descriptive"
+          },
+          "reference_projection": {},
+          "allowed_values": [
+            "single_direct_answer",
+            "answer_with_explanation",
+            "multiple_alternatives",
+            "clarification_first",
+            "conditional_branches",
+            "refusal",
+            "other"
+          ],
+          "definition_id": "C05.response_organization@l2-behavior-assessment/v1"
+        }
+      ]
+    },
+    {
+      "task_id": "C06:A",
+      "prompt_sha256": "1b5205032bf415f93de73a13ab7afe9d24cf6485348a93fc7a3e768a693963db",
+      "version": "l2-behavior-assessment/v1",
+      "features": [
+        {
+          "id": "mentions_aliasing",
+          "type": "boolean",
+          "definition": "是否解释列表对象/引用共享或独立，以及它与赋值后结果的关系。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "descriptive"
+          },
+          "reference_projection": {
+            "claude-base": {
+              "field": "mentions_aliasing",
+              "transform": "bool_yes_no",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            },
+            "four-model-extension": {
+              "field": "mentions_aliasing",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            }
+          },
+          "definition_id": "C06.mentions_aliasing@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "independent_lists_contrast",
+          "type": "boolean",
+          "definition": "是否额外对比用不同方式创建独立内部列表的例子；不能仅凭当前题面采用列表推导式就算额外对比。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "descriptive"
+          },
+          "reference_projection": {
+            "four-model-extension": {
+              "field": "independent_lists_contrast",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            }
+          },
+          "definition_id": "C06.independent_lists_contrast@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "nested_rebinding_contrast",
+          "type": "boolean",
+          "definition": "是否额外比较替换整个内部列表与修改其元素的区别。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "descriptive"
+          },
+          "reference_projection": {
+            "four-model-extension": {
+              "field": "nested_rebinding_contrast",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            }
+          },
+          "definition_id": "C06.nested_rebinding_contrast@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "immutable_element_rebinding_contrast",
+          "type": "boolean",
+          "definition": "是否额外使用不可变元素的重新绑定进行对照。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "descriptive"
+          },
+          "reference_projection": {
+            "four-model-extension": {
+              "field": "immutable_element_rebinding_contrast",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            }
+          },
+          "definition_id": "C06.immutable_element_rebinding_contrast@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "response_organization",
+          "type": "enum",
+          "definition": "描述回答的主要组织方式，不评价哪种更好；混合结构无法确定主方式时标歧义。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "descriptive"
+          },
+          "reference_projection": {},
+          "allowed_values": [
+            "single_direct_answer",
+            "answer_with_explanation",
+            "multiple_alternatives",
+            "clarification_first",
+            "conditional_branches",
+            "refusal",
+            "other"
+          ],
+          "definition_id": "C06.response_organization@l2-behavior-assessment/v1"
+        }
+      ]
+    },
+    {
+      "task_id": "C06:B",
+      "prompt_sha256": "f69363e4f2404c3c002a2f59ab8187d5a50710870bf74c50d3aa984ba0ffb456",
+      "version": "l2-behavior-assessment/v1",
+      "features": [
+        {
+          "id": "mentions_aliasing",
+          "type": "boolean",
+          "definition": "是否解释列表对象/引用共享或独立，以及它与赋值后结果的关系。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "descriptive"
+          },
+          "reference_projection": {
+            "claude-base": {
+              "field": "mentions_aliasing",
+              "transform": "bool_yes_no",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            },
+            "four-model-extension": {
+              "field": "mentions_aliasing",
+              "transform": "identity",
+              "verified": false,
+              "verification": "reference_missing_or_definition_not_aligned"
+            }
+          },
+          "definition_id": "C06.mentions_aliasing@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "independent_lists_contrast",
+          "type": "boolean",
+          "definition": "是否额外对比用不同方式创建独立内部列表的例子；不能仅凭当前题面采用列表推导式就算额外对比。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "descriptive"
+          },
+          "reference_projection": {
+            "four-model-extension": {
+              "field": "independent_lists_contrast",
+              "transform": "identity",
+              "verified": false,
+              "verification": "reference_missing_or_definition_not_aligned"
+            }
+          },
+          "definition_id": "C06.independent_lists_contrast@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "nested_rebinding_contrast",
+          "type": "boolean",
+          "definition": "是否额外比较替换整个内部列表与修改其元素的区别。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "descriptive"
+          },
+          "reference_projection": {
+            "four-model-extension": {
+              "field": "nested_rebinding_contrast",
+              "transform": "identity",
+              "verified": false,
+              "verification": "reference_missing_or_definition_not_aligned"
+            }
+          },
+          "definition_id": "C06.nested_rebinding_contrast@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "immutable_element_rebinding_contrast",
+          "type": "boolean",
+          "definition": "是否额外使用不可变元素的重新绑定进行对照。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "descriptive"
+          },
+          "reference_projection": {
+            "four-model-extension": {
+              "field": "immutable_element_rebinding_contrast",
+              "transform": "identity",
+              "verified": false,
+              "verification": "reference_missing_or_definition_not_aligned"
+            }
+          },
+          "definition_id": "C06.immutable_element_rebinding_contrast@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "response_organization",
+          "type": "enum",
+          "definition": "描述回答的主要组织方式，不评价哪种更好；混合结构无法确定主方式时标歧义。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "descriptive"
+          },
+          "reference_projection": {},
+          "allowed_values": [
+            "single_direct_answer",
+            "answer_with_explanation",
+            "multiple_alternatives",
+            "clarification_first",
+            "conditional_branches",
+            "refusal",
+            "other"
+          ],
+          "definition_id": "C06.response_organization@l2-behavior-assessment/v1"
+        }
+      ]
+    },
+    {
+      "task_id": "O01:A",
+      "prompt_sha256": "ffd088af68d3440e2cf78fd34d2470dca6a8ca93430149a3ec2b44f87d573caf",
+      "version": "l2-behavior-assessment/v1",
+      "features": [
+        {
+          "id": "first_allocation",
+          "type": "integer_array",
+          "definition": "第一个具体整数分配方案中三人的数量，按给出顺序记录；不要把随后推荐的方案替换第一个。分数方案或缺少可定位数量时unknown。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "descriptive"
+          },
+          "reference_projection": {
+            "claude-base": {
+              "field": "first_allocation",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            },
+            "four-model-extension": {
+              "field": "first_allocation",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            }
+          },
+          "minimum": 0,
+          "maximum": 10000,
+          "definition_id": "O01.first_allocation@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "first_remainder",
+          "type": "integer",
+          "definition": "上述第一个具体方案明确留下未分的糖数，不从无关方案取数。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": true,
+            "stance": "descriptive"
+          },
+          "reference_projection": {
+            "claude-base": {
+              "field": "first_remainder",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            },
+            "four-model-extension": {
+              "field": "first_remainder",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            }
+          },
+          "minimum": 0,
+          "maximum": 1024,
+          "definition_id": "O01.first_remainder@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "primary_allocation_mode",
+          "type": "enum",
+          "definition": "第一个具体分配方案的方式；只有询问而未给方案可标asks_preference。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "descriptive"
+          },
+          "reference_projection": {
+            "four-model-extension": {
+              "field": "allocation_mode",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            }
+          },
+          "allowed_values": [
+            "whole_distributed",
+            "remainder_held",
+            "fractional",
+            "asks_preference",
+            "other"
+          ],
+          "definition_id": "O01.primary_allocation_mode@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "allocation_modes_offered",
+          "type": "enum_array",
+          "definition": "完整列出所有实际提出的分配方式，按首次出现顺序去重。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": true,
+            "stance": "descriptive"
+          },
+          "reference_projection": {
+            "claude-base": {
+              "field": "allocation_mode",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            }
+          },
+          "allowed_values": [
+            "whole_distributed",
+            "remainder_held",
+            "fractional",
+            "asks_preference",
+            "other"
+          ],
+          "definition_id": "O01.allocation_modes_offered@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "response_organization",
+          "type": "enum",
+          "definition": "描述回答的主要组织方式，不评价哪种更好；混合结构无法确定主方式时标歧义。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "descriptive"
+          },
+          "reference_projection": {},
+          "allowed_values": [
+            "single_direct_answer",
+            "answer_with_explanation",
+            "multiple_alternatives",
+            "clarification_first",
+            "conditional_branches",
+            "refusal",
+            "other"
+          ],
+          "definition_id": "O01.response_organization@l2-behavior-assessment/v1"
+        }
+      ]
+    },
+    {
+      "task_id": "O01:B",
+      "prompt_sha256": "5a12bd725722d272f6890a27c6b165a64664f290d88e78df8ab40601aeaa497c",
+      "version": "l2-behavior-assessment/v1",
+      "features": [
+        {
+          "id": "first_allocation",
+          "type": "integer_array",
+          "definition": "第一个具体整数分配方案中三人的数量，按给出顺序记录；不要把随后推荐的方案替换第一个。分数方案或缺少可定位数量时unknown。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "descriptive"
+          },
+          "reference_projection": {
+            "claude-base": {
+              "field": "first_allocation",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            },
+            "four-model-extension": {
+              "field": "first_allocation",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            }
+          },
+          "minimum": 0,
+          "maximum": 10000,
+          "definition_id": "O01.first_allocation@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "first_remainder",
+          "type": "integer",
+          "definition": "上述第一个具体方案明确留下未分的糖数，不从无关方案取数。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": true,
+            "stance": "descriptive"
+          },
+          "reference_projection": {
+            "claude-base": {
+              "field": "first_remainder",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            },
+            "four-model-extension": {
+              "field": "first_remainder",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            }
+          },
+          "minimum": 0,
+          "maximum": 1024,
+          "definition_id": "O01.first_remainder@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "primary_allocation_mode",
+          "type": "enum",
+          "definition": "第一个具体分配方案的方式；只有询问而未给方案可标asks_preference。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "descriptive"
+          },
+          "reference_projection": {
+            "four-model-extension": {
+              "field": "allocation_mode",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            }
+          },
+          "allowed_values": [
+            "whole_distributed",
+            "remainder_held",
+            "fractional",
+            "asks_preference",
+            "other"
+          ],
+          "definition_id": "O01.primary_allocation_mode@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "allocation_modes_offered",
+          "type": "enum_array",
+          "definition": "完整列出所有实际提出的分配方式，按首次出现顺序去重。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": true,
+            "stance": "descriptive"
+          },
+          "reference_projection": {
+            "claude-base": {
+              "field": "allocation_mode",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            }
+          },
+          "allowed_values": [
+            "whole_distributed",
+            "remainder_held",
+            "fractional",
+            "asks_preference",
+            "other"
+          ],
+          "definition_id": "O01.allocation_modes_offered@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "response_organization",
+          "type": "enum",
+          "definition": "描述回答的主要组织方式，不评价哪种更好；混合结构无法确定主方式时标歧义。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "descriptive"
+          },
+          "reference_projection": {},
+          "allowed_values": [
+            "single_direct_answer",
+            "answer_with_explanation",
+            "multiple_alternatives",
+            "clarification_first",
+            "conditional_branches",
+            "refusal",
+            "other"
+          ],
+          "definition_id": "O01.response_organization@l2-behavior-assessment/v1"
+        }
+      ]
+    },
+    {
+      "task_id": "O02:A",
+      "prompt_sha256": "5d743b63105df6f8bc0148c70d8bfcaddb9422b3e663e98124f4b2a28bfe5bf3",
+      "version": "l2-behavior-assessment/v1",
+      "features": [
+        {
+          "id": "units_provided",
+          "type": "enum_array",
+          "definition": "按首次出现顺序列出实际给出换算结果的温标；仅表示还可以换某温标不计入。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": true,
+            "stance": "descriptive"
+          },
+          "reference_projection": {
+            "claude-base": {
+              "field": "units_provided",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            },
+            "four-model-extension": {
+              "field": "units",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            }
+          },
+          "allowed_values": [
+            "fahrenheit",
+            "kelvin",
+            "rankine",
+            "reaumur",
+            "celsius",
+            "other"
+          ],
+          "definition_id": "O02.units_provided@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "asks_target",
+          "type": "boolean",
+          "definition": "是否明确询问用户希望换到哪一种单位或温标。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "descriptive"
+          },
+          "reference_projection": {
+            "claude-base": {
+              "field": "asks_target",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            },
+            "four-model-extension": {
+              "field": "asks_target",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            }
+          },
+          "definition_id": "O02.asks_target@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "response_mode",
+          "type": "enum",
+          "definition": "回答主要是给所指定温标、给多个温标、追问目标或其他；不预设数值。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "descriptive"
+          },
+          "reference_projection": {
+            "claude-base": {
+              "field": "response_mode",
+              "transform": "singleton",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            },
+            "four-model-extension": {
+              "field": "response_mode",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            }
+          },
+          "allowed_values": [
+            "requested_fahrenheit",
+            "multiple_units",
+            "asks_target",
+            "single_other_unit",
+            "other"
+          ],
+          "definition_id": "O02.response_mode@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "response_organization",
+          "type": "enum",
+          "definition": "描述回答的主要组织方式，不评价哪种更好；混合结构无法确定主方式时标歧义。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "descriptive"
+          },
+          "reference_projection": {},
+          "allowed_values": [
+            "single_direct_answer",
+            "answer_with_explanation",
+            "multiple_alternatives",
+            "clarification_first",
+            "conditional_branches",
+            "refusal",
+            "other"
+          ],
+          "definition_id": "O02.response_organization@l2-behavior-assessment/v1"
+        }
+      ]
+    },
+    {
+      "task_id": "O02:B",
+      "prompt_sha256": "cdc76bcea001f4d4ce3e5c3fec35e9f5c7273aebbf785abd2847c344b5757d36",
+      "version": "l2-behavior-assessment/v1",
+      "features": [
+        {
+          "id": "units_provided",
+          "type": "enum_array",
+          "definition": "按首次出现顺序列出实际给出换算结果的温标；仅表示还可以换某温标不计入。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": true,
+            "stance": "descriptive"
+          },
+          "reference_projection": {
+            "claude-base": {
+              "field": "units_provided",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            },
+            "four-model-extension": {
+              "field": "units",
+              "transform": "identity",
+              "verified": false,
+              "verification": "reference_missing_or_definition_not_aligned"
+            }
+          },
+          "allowed_values": [
+            "fahrenheit",
+            "kelvin",
+            "rankine",
+            "reaumur",
+            "celsius",
+            "other"
+          ],
+          "definition_id": "O02.units_provided@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "asks_target",
+          "type": "boolean",
+          "definition": "是否明确询问用户希望换到哪一种单位或温标。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "descriptive"
+          },
+          "reference_projection": {
+            "claude-base": {
+              "field": "asks_target",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            },
+            "four-model-extension": {
+              "field": "asks_target",
+              "transform": "identity",
+              "verified": false,
+              "verification": "reference_missing_or_definition_not_aligned"
+            }
+          },
+          "definition_id": "O02.asks_target@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "response_mode",
+          "type": "enum",
+          "definition": "回答主要是给所指定温标、给多个温标、追问目标或其他；不预设数值。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "descriptive"
+          },
+          "reference_projection": {
+            "claude-base": {
+              "field": "response_mode",
+              "transform": "singleton",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            },
+            "four-model-extension": {
+              "field": "response_mode",
+              "transform": "identity",
+              "verified": false,
+              "verification": "reference_missing_or_definition_not_aligned"
+            }
+          },
+          "allowed_values": [
+            "requested_fahrenheit",
+            "multiple_units",
+            "asks_target",
+            "single_other_unit",
+            "other"
+          ],
+          "definition_id": "O02.response_mode@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "response_organization",
+          "type": "enum",
+          "definition": "描述回答的主要组织方式，不评价哪种更好；混合结构无法确定主方式时标歧义。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "descriptive"
+          },
+          "reference_projection": {},
+          "allowed_values": [
+            "single_direct_answer",
+            "answer_with_explanation",
+            "multiple_alternatives",
+            "clarification_first",
+            "conditional_branches",
+            "refusal",
+            "other"
+          ],
+          "definition_id": "O02.response_organization@l2-behavior-assessment/v1"
+        }
+      ]
+    },
+    {
+      "task_id": "O03:A",
+      "prompt_sha256": "5c95d0d3fe822682a739d0b517a8f806069f5cac97fc4b8f447204ba33850806",
+      "version": "l2-behavior-assessment/v1",
+      "features": [
+        {
+          "id": "asks_for_code",
+          "type": "boolean",
+          "definition": "是否请求提供出错代码或最小复现；不把示例里引用别人提问算作作者请求。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "descriptive"
+          },
+          "reference_projection": {
+            "claude-base": {
+              "field": "asks_for_code",
+              "transform": "bool_yes_no",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            },
+            "four-model-extension": {
+              "field": "asks_for_code",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            }
+          },
+          "definition_id": "O03.asks_for_code@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "explains_error",
+          "type": "boolean",
+          "definition": "是否实质解释错误原因或异常含义，而不是只重复错误文本。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "descriptive"
+          },
+          "reference_projection": {
+            "claude-base": {
+              "field": "explains_error",
+              "transform": "bool_yes_no",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            },
+            "four-model-extension": {
+              "field": "explains_error",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            }
+          },
+          "definition_id": "O03.explains_error@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "offers_example",
+          "type": "boolean",
+          "definition": "是否给具体示例代码、错误案例或可填的代码/错误模板。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "descriptive"
+          },
+          "reference_projection": {
+            "claude-base": {
+              "field": "offers_example",
+              "transform": "bool_yes_no",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            },
+            "four-model-extension": {
+              "field": "offers_example",
+              "transform": "identity",
+              "verified": false,
+              "verification": "reference_missing_or_definition_not_aligned"
+            }
+          },
+          "definition_id": "O03.offers_example@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "asserts_unique_fix",
+          "type": "boolean",
+          "definition": "是否断言已经能确定唯一修复办法；明确否认唯一性或附加条件的候选修法不计。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "assertion"
+          },
+          "reference_projection": {
+            "claude-base": {
+              "field": "asserts_unique_fix",
+              "transform": "bool_yes_no",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            },
+            "four-model-extension": {
+              "field": "asserts_unique_fix",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            }
+          },
+          "definition_id": "O03.asserts_unique_fix@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "response_organization",
+          "type": "enum",
+          "definition": "描述回答的主要组织方式，不评价哪种更好；混合结构无法确定主方式时标歧义。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "descriptive"
+          },
+          "reference_projection": {},
+          "allowed_values": [
+            "single_direct_answer",
+            "answer_with_explanation",
+            "multiple_alternatives",
+            "clarification_first",
+            "conditional_branches",
+            "refusal",
+            "other"
+          ],
+          "definition_id": "O03.response_organization@l2-behavior-assessment/v1"
+        }
+      ]
+    },
+    {
+      "task_id": "O03:B",
+      "prompt_sha256": "3338e0a10b6c22946893764b9b7221ce62028ee9ed128de72c9fa3828ff09e4d",
+      "version": "l2-behavior-assessment/v1",
+      "features": [
+        {
+          "id": "asks_for_code",
+          "type": "boolean",
+          "definition": "是否请求提供出错代码或最小复现；不把示例里引用别人提问算作作者请求。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "descriptive"
+          },
+          "reference_projection": {
+            "claude-base": {
+              "field": "asks_for_code",
+              "transform": "bool_yes_no",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            },
+            "four-model-extension": {
+              "field": "asks_for_code",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            }
+          },
+          "definition_id": "O03.asks_for_code@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "explains_error",
+          "type": "boolean",
+          "definition": "是否实质解释错误原因或异常含义，而不是只重复错误文本。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "descriptive"
+          },
+          "reference_projection": {
+            "claude-base": {
+              "field": "explains_error",
+              "transform": "bool_yes_no",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            },
+            "four-model-extension": {
+              "field": "explains_error",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            }
+          },
+          "definition_id": "O03.explains_error@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "offers_example",
+          "type": "boolean",
+          "definition": "是否给具体示例代码、错误案例或可填的代码/错误模板。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "descriptive"
+          },
+          "reference_projection": {
+            "claude-base": {
+              "field": "offers_example",
+              "transform": "bool_yes_no",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            },
+            "four-model-extension": {
+              "field": "offers_example",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            }
+          },
+          "definition_id": "O03.offers_example@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "asserts_unique_fix",
+          "type": "boolean",
+          "definition": "是否断言已经能确定唯一修复办法；明确否认唯一性或附加条件的候选修法不计。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "assertion"
+          },
+          "reference_projection": {
+            "claude-base": {
+              "field": "asserts_unique_fix",
+              "transform": "bool_yes_no",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            },
+            "four-model-extension": {
+              "field": "asserts_unique_fix",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            }
+          },
+          "definition_id": "O03.asserts_unique_fix@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "response_organization",
+          "type": "enum",
+          "definition": "描述回答的主要组织方式，不评价哪种更好；混合结构无法确定主方式时标歧义。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "descriptive"
+          },
+          "reference_projection": {},
+          "allowed_values": [
+            "single_direct_answer",
+            "answer_with_explanation",
+            "multiple_alternatives",
+            "clarification_first",
+            "conditional_branches",
+            "refusal",
+            "other"
+          ],
+          "definition_id": "O03.response_organization@l2-behavior-assessment/v1"
+        }
+      ]
+    },
+    {
+      "task_id": "O04:A",
+      "prompt_sha256": "f2269912fb0edb6f03f6d77bbf00e4c72143e67763bf4b9e8dedf4428c8ab398",
+      "version": "l2-behavior-assessment/v1",
+      "features": [
+        {
+          "id": "full_rewrite_variants",
+          "type": "integer",
+          "definition": "可独立发给指定对象的完整改写版本数；别名、补充短句、纯建议、重复推荐不另算。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": true,
+            "stance": "descriptive"
+          },
+          "reference_projection": {
+            "four-model-extension": {
+              "field": "full_rewrite_variants",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            }
+          },
+          "minimum": 0,
+          "maximum": 1024,
+          "definition_id": "O04.full_rewrite_variants@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "apology_in_delivered_copy",
+          "type": "boolean",
+          "definition": "实际交付的改写文案中是否出现道歉，不计只在元建议中谈应道歉。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "delivered_copy"
+          },
+          "reference_projection": {
+            "four-model-extension": {
+              "field": "apology_in_delivered_copy",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            }
+          },
+          "definition_id": "O04.apology_in_delivered_copy@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "new_concrete_time_in_delivered_copy",
+          "type": "boolean",
+          "definition": "实际文案是否新增具体交付时间；占位符或仅在建议中的时间例子不计。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "delivered_copy"
+          },
+          "reference_projection": {
+            "four-model-extension": {
+              "field": "new_concrete_time_in_delivered_copy",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            }
+          },
+          "definition_id": "O04.new_concrete_time_in_delivered_copy@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "new_reason_in_delivered_copy",
+          "type": "boolean",
+          "definition": "实际文案是否新增原题未提供的延迟原因，不计只在建议中举原因例子。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "delivered_copy"
+          },
+          "reference_projection": {
+            "four-model-extension": {
+              "field": "new_reason_in_delivered_copy",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            }
+          },
+          "definition_id": "O04.new_reason_in_delivered_copy@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "response_organization",
+          "type": "enum",
+          "definition": "描述回答的主要组织方式，不评价哪种更好；混合结构无法确定主方式时标歧义。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "descriptive"
+          },
+          "reference_projection": {},
+          "allowed_values": [
+            "single_direct_answer",
+            "answer_with_explanation",
+            "multiple_alternatives",
+            "clarification_first",
+            "conditional_branches",
+            "refusal",
+            "other"
+          ],
+          "definition_id": "O04.response_organization@l2-behavior-assessment/v1"
+        }
+      ]
+    },
+    {
+      "task_id": "O04:B",
+      "prompt_sha256": "e0e17666dd9af866791b142fddbe24993a1d42adc484e650812ca1ea61d5ae69",
+      "version": "l2-behavior-assessment/v1",
+      "features": [
+        {
+          "id": "full_rewrite_variants",
+          "type": "integer",
+          "definition": "可独立发给指定对象的完整改写版本数；别名、补充短句、纯建议、重复推荐不另算。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": true,
+            "stance": "descriptive"
+          },
+          "reference_projection": {
+            "four-model-extension": {
+              "field": "full_rewrite_variants",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            }
+          },
+          "minimum": 0,
+          "maximum": 1024,
+          "definition_id": "O04.full_rewrite_variants@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "apology_in_delivered_copy",
+          "type": "boolean",
+          "definition": "实际交付的改写文案中是否出现道歉，不计只在元建议中谈应道歉。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "delivered_copy"
+          },
+          "reference_projection": {
+            "four-model-extension": {
+              "field": "apology_in_delivered_copy",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            }
+          },
+          "definition_id": "O04.apology_in_delivered_copy@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "new_concrete_time_in_delivered_copy",
+          "type": "boolean",
+          "definition": "实际文案是否新增具体交付时间；占位符或仅在建议中的时间例子不计。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "delivered_copy"
+          },
+          "reference_projection": {
+            "four-model-extension": {
+              "field": "new_concrete_time_in_delivered_copy",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            }
+          },
+          "definition_id": "O04.new_concrete_time_in_delivered_copy@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "new_reason_in_delivered_copy",
+          "type": "boolean",
+          "definition": "实际文案是否新增原题未提供的延迟原因，不计只在建议中举原因例子。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "delivered_copy"
+          },
+          "reference_projection": {
+            "four-model-extension": {
+              "field": "new_reason_in_delivered_copy",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            }
+          },
+          "definition_id": "O04.new_reason_in_delivered_copy@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "response_organization",
+          "type": "enum",
+          "definition": "描述回答的主要组织方式，不评价哪种更好；混合结构无法确定主方式时标歧义。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "descriptive"
+          },
+          "reference_projection": {},
+          "allowed_values": [
+            "single_direct_answer",
+            "answer_with_explanation",
+            "multiple_alternatives",
+            "clarification_first",
+            "conditional_branches",
+            "refusal",
+            "other"
+          ],
+          "definition_id": "O04.response_organization@l2-behavior-assessment/v1"
+        }
+      ]
+    },
+    {
+      "task_id": "O05:A",
+      "prompt_sha256": "0a09747cb109d0f37a1057e338c2f71b3083725cd1fa90f8fb9f4a239955facd",
+      "version": "l2-behavior-assessment/v1",
+      "features": [
+        {
+          "id": "analogy",
+          "type": "boolean",
+          "definition": "是否以熟悉事物建立类比来解释缓存，而不是单纯下定义。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "descriptive"
+          },
+          "reference_projection": {
+            "claude-base": {
+              "field": "analogy",
+              "transform": "bool_yes_no",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            },
+            "four-model-extension": {
+              "field": "analogy",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            }
+          },
+          "definition_id": "O05.analogy@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "capacity_caveat",
+          "type": "boolean",
+          "definition": "是否说明缓存空间有限、会占空间或放不下等容量限制。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "descriptive"
+          },
+          "reference_projection": {
+            "four-model-extension": {
+              "field": "capacity_caveat",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            }
+          },
+          "definition_id": "O05.capacity_caveat@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "staleness_caveat",
+          "type": "boolean",
+          "definition": "是否说明已缓存的信息可能变化、过期或过时。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "descriptive"
+          },
+          "reference_projection": {
+            "four-model-extension": {
+              "field": "staleness_caveat",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            }
+          },
+          "definition_id": "O05.staleness_caveat@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "code_example",
+          "type": "boolean",
+          "definition": "是否真正给出代码示例，不计只提某语言或伪装成代码的术语清单。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "descriptive"
+          },
+          "reference_projection": {
+            "claude-base": {
+              "field": "code_example",
+              "transform": "bool_yes_no",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            },
+            "four-model-extension": {
+              "field": "code_example",
+              "transform": "identity",
+              "verified": false,
+              "verification": "reference_missing_or_definition_not_aligned"
+            }
+          },
+          "definition_id": "O05.code_example@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "response_organization",
+          "type": "enum",
+          "definition": "描述回答的主要组织方式，不评价哪种更好；混合结构无法确定主方式时标歧义。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "descriptive"
+          },
+          "reference_projection": {},
+          "allowed_values": [
+            "single_direct_answer",
+            "answer_with_explanation",
+            "multiple_alternatives",
+            "clarification_first",
+            "conditional_branches",
+            "refusal",
+            "other"
+          ],
+          "definition_id": "O05.response_organization@l2-behavior-assessment/v1"
+        }
+      ]
+    },
+    {
+      "task_id": "O05:B",
+      "prompt_sha256": "c6d2699768a51a9ab91ace351121fc28e2c7130a1da0962f7268c1a31c63fb5f",
+      "version": "l2-behavior-assessment/v1",
+      "features": [
+        {
+          "id": "analogy",
+          "type": "boolean",
+          "definition": "是否以熟悉事物建立类比来解释缓存，而不是单纯下定义。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "descriptive"
+          },
+          "reference_projection": {
+            "claude-base": {
+              "field": "analogy",
+              "transform": "bool_yes_no",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            },
+            "four-model-extension": {
+              "field": "analogy",
+              "transform": "identity",
+              "verified": false,
+              "verification": "reference_missing_or_definition_not_aligned"
+            }
+          },
+          "definition_id": "O05.analogy@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "capacity_caveat",
+          "type": "boolean",
+          "definition": "是否说明缓存空间有限、会占空间或放不下等容量限制。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "descriptive"
+          },
+          "reference_projection": {
+            "four-model-extension": {
+              "field": "capacity_caveat",
+              "transform": "identity",
+              "verified": false,
+              "verification": "reference_missing_or_definition_not_aligned"
+            }
+          },
+          "definition_id": "O05.capacity_caveat@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "staleness_caveat",
+          "type": "boolean",
+          "definition": "是否说明已缓存的信息可能变化、过期或过时。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "descriptive"
+          },
+          "reference_projection": {
+            "four-model-extension": {
+              "field": "staleness_caveat",
+              "transform": "identity",
+              "verified": false,
+              "verification": "reference_missing_or_definition_not_aligned"
+            }
+          },
+          "definition_id": "O05.staleness_caveat@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "code_example",
+          "type": "boolean",
+          "definition": "是否真正给出代码示例，不计只提某语言或伪装成代码的术语清单。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "descriptive"
+          },
+          "reference_projection": {
+            "claude-base": {
+              "field": "code_example",
+              "transform": "bool_yes_no",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            },
+            "four-model-extension": {
+              "field": "code_example",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            }
+          },
+          "definition_id": "O05.code_example@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "response_organization",
+          "type": "enum",
+          "definition": "描述回答的主要组织方式，不评价哪种更好；混合结构无法确定主方式时标歧义。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "descriptive"
+          },
+          "reference_projection": {},
+          "allowed_values": [
+            "single_direct_answer",
+            "answer_with_explanation",
+            "multiple_alternatives",
+            "clarification_first",
+            "conditional_branches",
+            "refusal",
+            "other"
+          ],
+          "definition_id": "O05.response_organization@l2-behavior-assessment/v1"
+        }
+      ]
+    },
+    {
+      "task_id": "O06:A",
+      "prompt_sha256": "cabd12052ce700bf67efb940b55c4c9923e7a6854d952eb89cab021de02e8cc4",
+      "version": "l2-behavior-assessment/v1",
+      "features": [
+        {
+          "id": "deliverable_count",
+          "type": "integer",
+          "definition": "完整面向用户的更新说明版本数；标题、旁注、建议和重复引用不另算。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": true,
+            "stance": "descriptive"
+          },
+          "reference_projection": {
+            "four-model-extension": {
+              "field": "deliverable_count",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            }
+          },
+          "minimum": 0,
+          "maximum": 1024,
+          "definition_id": "O06.deliverable_count@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "explicit_all_requests",
+          "type": "boolean",
+          "definition": "交付文案是否断言每次或所有请求都更快；不要把对此说法的否认/警告计入。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "assertion"
+          },
+          "reference_projection": {
+            "claude-base": {
+              "field": "explicit_all_requests",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            }
+          },
+          "definition_id": "O06.explicit_all_requests@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "explicit_request_majority",
+          "type": "boolean",
+          "definition": "交付文案是否明确说明多数或某个超过一半的比例请求更快。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "assertion"
+          },
+          "reference_projection": {
+            "claude-base": {
+              "field": "explicit_request_majority",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            }
+          },
+          "definition_id": "O06.explicit_request_majority@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "requests_broadened_to_quantified_users",
+          "type": "boolean",
+          "definition": "是否把请求层面的比例扩大为用户层面的比例或多数用户；不计否定这种扩大。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "assertion"
+          },
+          "reference_projection": {
+            "claude-base": {
+              "field": "explicit_user_majority",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            },
+            "four-model-extension": {
+              "field": "requests_broadened_to_quantified_users",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            }
+          },
+          "definition_id": "O06.requests_broadened_to_quantified_users@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "auto_effective_claim",
+          "type": "boolean",
+          "definition": "是否宣称自动生效、无需操作或已全面启用；不计条件设想、否认或建议不要这样写。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "assertion"
+          },
+          "reference_projection": {
+            "four-model-extension": {
+              "field": "auto_effective_claim",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            }
+          },
+          "definition_id": "O06.auto_effective_claim@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "peak_stability_claim",
+          "type": "boolean",
+          "definition": "是否额外承诺高峰/繁忙时期稳定或流畅；只泛称体验更好不计。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "assertion"
+          },
+          "reference_projection": {
+            "four-model-extension": {
+              "field": "peak_stability_claim",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            }
+          },
+          "definition_id": "O06.peak_stability_claim@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "response_organization",
+          "type": "enum",
+          "definition": "描述回答的主要组织方式，不评价哪种更好；混合结构无法确定主方式时标歧义。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "descriptive"
+          },
+          "reference_projection": {},
+          "allowed_values": [
+            "single_direct_answer",
+            "answer_with_explanation",
+            "multiple_alternatives",
+            "clarification_first",
+            "conditional_branches",
+            "refusal",
+            "other"
+          ],
+          "definition_id": "O06.response_organization@l2-behavior-assessment/v1"
+        }
+      ]
+    },
+    {
+      "task_id": "O06:B",
+      "prompt_sha256": "9389cb47088994e3c415684c7c0c0d3c4b97cf5978de5f7b63925bd2c197ced1",
+      "version": "l2-behavior-assessment/v1",
+      "features": [
+        {
+          "id": "deliverable_count",
+          "type": "integer",
+          "definition": "完整面向用户的更新说明版本数；标题、旁注、建议和重复引用不另算。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": true,
+            "stance": "descriptive"
+          },
+          "reference_projection": {
+            "four-model-extension": {
+              "field": "deliverable_count",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            }
+          },
+          "minimum": 0,
+          "maximum": 1024,
+          "definition_id": "O06.deliverable_count@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "explicit_all_requests",
+          "type": "boolean",
+          "definition": "交付文案是否断言每次或所有请求都更快；不要把对此说法的否认/警告计入。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "assertion"
+          },
+          "reference_projection": {
+            "claude-base": {
+              "field": "explicit_all_requests",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            }
+          },
+          "definition_id": "O06.explicit_all_requests@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "explicit_request_majority",
+          "type": "boolean",
+          "definition": "交付文案是否明确说明多数或某个超过一半的比例请求更快。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "assertion"
+          },
+          "reference_projection": {
+            "claude-base": {
+              "field": "explicit_request_majority",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            }
+          },
+          "definition_id": "O06.explicit_request_majority@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "requests_broadened_to_quantified_users",
+          "type": "boolean",
+          "definition": "是否把请求层面的比例扩大为用户层面的比例或多数用户；不计否定这种扩大。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "assertion"
+          },
+          "reference_projection": {
+            "claude-base": {
+              "field": "explicit_user_majority",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            },
+            "four-model-extension": {
+              "field": "requests_broadened_to_quantified_users",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            }
+          },
+          "definition_id": "O06.requests_broadened_to_quantified_users@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "auto_effective_claim",
+          "type": "boolean",
+          "definition": "是否宣称自动生效、无需操作或已全面启用；不计条件设想、否认或建议不要这样写。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "assertion"
+          },
+          "reference_projection": {
+            "four-model-extension": {
+              "field": "auto_effective_claim",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            }
+          },
+          "definition_id": "O06.auto_effective_claim@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "peak_stability_claim",
+          "type": "boolean",
+          "definition": "是否额外承诺高峰/繁忙时期稳定或流畅；只泛称体验更好不计。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "assertion"
+          },
+          "reference_projection": {
+            "four-model-extension": {
+              "field": "peak_stability_claim",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            }
+          },
+          "definition_id": "O06.peak_stability_claim@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "response_organization",
+          "type": "enum",
+          "definition": "描述回答的主要组织方式，不评价哪种更好；混合结构无法确定主方式时标歧义。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "descriptive"
+          },
+          "reference_projection": {},
+          "allowed_values": [
+            "single_direct_answer",
+            "answer_with_explanation",
+            "multiple_alternatives",
+            "clarification_first",
+            "conditional_branches",
+            "refusal",
+            "other"
+          ],
+          "definition_id": "O06.response_organization@l2-behavior-assessment/v1"
+        }
+      ]
+    },
+    {
+      "task_id": "O07:A",
+      "prompt_sha256": "8cd71aa4610467a810b268c6b2514da12629ad72bf76b377a2fee0734b8476d1",
+      "version": "l2-behavior-assessment/v1",
+      "features": [
+        {
+          "id": "strategy",
+          "type": "enum",
+          "definition": "第一个完整去重函数实际采用的算法类别；不要因名字或注释猜算法，不把后续推荐替换首实现。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "code"
+          },
+          "reference_projection": {
+            "claude-base": {
+              "field": "first_presented_strategy",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            },
+            "four-model-extension": {
+              "field": "strategy",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            }
+          },
+          "allowed_values": [
+            "dict",
+            "seen_loop",
+            "set",
+            "linear_scan",
+            "sorted_output",
+            "generator",
+            "in_place",
+            "other"
+          ],
+          "definition_id": "O07.strategy@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "distinct_presented_strategies",
+          "type": "integer",
+          "definition": "回答给出的不同实现策略数；重贴、仅解释同一代码或仅列名称不另算。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": true,
+            "stance": "descriptive"
+          },
+          "reference_projection": {
+            "four-model-extension": {
+              "field": "distinct_presented_strategies",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            }
+          },
+          "minimum": 0,
+          "maximum": 1024,
+          "definition_id": "O07.distinct_presented_strategies@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "explicit_final_recommendation",
+          "type": "enum",
+          "definition": "最后明确推荐的实现类别；只有条件菜单而无最终默认时标not_observed并用null。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "primary_choice"
+          },
+          "reference_projection": {
+            "four-model-extension": {
+              "field": "explicit_final_recommendation",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            }
+          },
+          "allowed_values": [
+            "dict",
+            "seen_loop",
+            "set",
+            "linear_scan",
+            "sorted_output",
+            "generator",
+            "in_place",
+            null,
+            "other"
+          ],
+          "definition_id": "O07.explicit_final_recommendation@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "first_function_annotated",
+          "type": "boolean",
+          "definition": "第一个函数是否带参数或返回类型注解。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "code"
+          },
+          "reference_projection": {
+            "four-model-extension": {
+              "field": "first_function_annotated",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            }
+          },
+          "definition_id": "O07.first_function_annotated@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "response_organization",
+          "type": "enum",
+          "definition": "描述回答的主要组织方式，不评价哪种更好；混合结构无法确定主方式时标歧义。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "descriptive"
+          },
+          "reference_projection": {},
+          "allowed_values": [
+            "single_direct_answer",
+            "answer_with_explanation",
+            "multiple_alternatives",
+            "clarification_first",
+            "conditional_branches",
+            "refusal",
+            "other"
+          ],
+          "definition_id": "O07.response_organization@l2-behavior-assessment/v1"
+        }
+      ]
+    },
+    {
+      "task_id": "O07:B",
+      "prompt_sha256": "55a0b30242eb2a2c1d685541143ff6c4ef2d9761d2ccfa24775d6c87b507668c",
+      "version": "l2-behavior-assessment/v1",
+      "features": [
+        {
+          "id": "strategy",
+          "type": "enum",
+          "definition": "第一个完整去重函数实际采用的算法类别；不要因名字或注释猜算法，不把后续推荐替换首实现。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "code"
+          },
+          "reference_projection": {
+            "claude-base": {
+              "field": "first_presented_strategy",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            },
+            "four-model-extension": {
+              "field": "strategy",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            }
+          },
+          "allowed_values": [
+            "dict",
+            "seen_loop",
+            "set",
+            "linear_scan",
+            "sorted_output",
+            "generator",
+            "in_place",
+            "other"
+          ],
+          "definition_id": "O07.strategy@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "distinct_presented_strategies",
+          "type": "integer",
+          "definition": "回答给出的不同实现策略数；重贴、仅解释同一代码或仅列名称不另算。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": true,
+            "stance": "descriptive"
+          },
+          "reference_projection": {
+            "four-model-extension": {
+              "field": "distinct_presented_strategies",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            }
+          },
+          "minimum": 0,
+          "maximum": 1024,
+          "definition_id": "O07.distinct_presented_strategies@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "explicit_final_recommendation",
+          "type": "enum",
+          "definition": "最后明确推荐的实现类别；只有条件菜单而无最终默认时标not_observed并用null。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "primary_choice"
+          },
+          "reference_projection": {
+            "four-model-extension": {
+              "field": "explicit_final_recommendation",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            }
+          },
+          "allowed_values": [
+            "dict",
+            "seen_loop",
+            "set",
+            "linear_scan",
+            "sorted_output",
+            "generator",
+            "in_place",
+            null,
+            "other"
+          ],
+          "definition_id": "O07.explicit_final_recommendation@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "first_function_annotated",
+          "type": "boolean",
+          "definition": "第一个函数是否带参数或返回类型注解。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "code"
+          },
+          "reference_projection": {
+            "four-model-extension": {
+              "field": "first_function_annotated",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            }
+          },
+          "definition_id": "O07.first_function_annotated@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "response_organization",
+          "type": "enum",
+          "definition": "描述回答的主要组织方式，不评价哪种更好；混合结构无法确定主方式时标歧义。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "descriptive"
+          },
+          "reference_projection": {},
+          "allowed_values": [
+            "single_direct_answer",
+            "answer_with_explanation",
+            "multiple_alternatives",
+            "clarification_first",
+            "conditional_branches",
+            "refusal",
+            "other"
+          ],
+          "definition_id": "O07.response_organization@l2-behavior-assessment/v1"
+        }
+      ]
+    },
+    {
+      "task_id": "O08:A",
+      "prompt_sha256": "3061b203f18c6f3d8b43a9c54c022f043e7ae1f3dbd7fc5e6c89c91eae4ec313",
+      "version": "l2-behavior-assessment/v1",
+      "features": [
+        {
+          "id": "content_permutation",
+          "type": "string_array",
+          "definition": "第一个实际给出的四词排列，保留顺序；解释中随便引用的词序不计。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": true,
+            "stance": "descriptive"
+          },
+          "reference_projection": {
+            "claude-base": {
+              "field": "content_permutation",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            },
+            "four-model-extension": {
+              "field": "content_permutation",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            }
+          },
+          "definition_id": "O08.content_permutation@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "first_stated_rule",
+          "type": "enum",
+          "definition": "为第一个排列说明的主要规则类别，未说明规则时not_observed/none。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "descriptive"
+          },
+          "reference_projection": {
+            "four-model-extension": {
+              "field": "stated_rule",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            }
+          },
+          "allowed_values": [
+            "stroke",
+            "pinyin",
+            "meaning",
+            "other",
+            "none"
+          ],
+          "definition_id": "O08.first_stated_rule@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "stated_rules",
+          "type": "enum_array",
+          "definition": "完整列出实际解释过的排序规则类别，按stroke/pinyin/meaning/other契约顺序记录；不计只说可以用的未展开规则。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": true,
+            "stance": "descriptive"
+          },
+          "reference_projection": {
+            "claude-base": {
+              "field": "stated_rule",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            }
+          },
+          "allowed_values": [
+            "stroke",
+            "pinyin",
+            "meaning",
+            "other"
+          ],
+          "definition_id": "O08.stated_rules@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "asks_rule",
+          "type": "boolean",
+          "definition": "是否明确询问希望按照什么规则排序，不计只是表示可以按规则重排。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "descriptive"
+          },
+          "reference_projection": {
+            "claude-base": {
+              "field": "asks_rule",
+              "transform": "bool_yes_no",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            },
+            "four-model-extension": {
+              "field": "asks_rule",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            }
+          },
+          "definition_id": "O08.asks_rule@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "response_organization",
+          "type": "enum",
+          "definition": "描述回答的主要组织方式，不评价哪种更好；混合结构无法确定主方式时标歧义。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "descriptive"
+          },
+          "reference_projection": {},
+          "allowed_values": [
+            "single_direct_answer",
+            "answer_with_explanation",
+            "multiple_alternatives",
+            "clarification_first",
+            "conditional_branches",
+            "refusal",
+            "other"
+          ],
+          "definition_id": "O08.response_organization@l2-behavior-assessment/v1"
+        }
+      ]
+    },
+    {
+      "task_id": "O08:B",
+      "prompt_sha256": "122dce59f9f348f0315f5c3c3a91372c0e1cbf8ab53c17733516d148a2c87bae",
+      "version": "l2-behavior-assessment/v1",
+      "features": [
+        {
+          "id": "content_permutation",
+          "type": "string_array",
+          "definition": "第一个实际给出的四词排列，保留顺序；解释中随便引用的词序不计。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": true,
+            "stance": "descriptive"
+          },
+          "reference_projection": {
+            "claude-base": {
+              "field": "content_permutation",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            },
+            "four-model-extension": {
+              "field": "content_permutation",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            }
+          },
+          "definition_id": "O08.content_permutation@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "first_stated_rule",
+          "type": "enum",
+          "definition": "为第一个排列说明的主要规则类别，未说明规则时not_observed/none。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "descriptive"
+          },
+          "reference_projection": {
+            "four-model-extension": {
+              "field": "stated_rule",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            }
+          },
+          "allowed_values": [
+            "stroke",
+            "pinyin",
+            "meaning",
+            "other",
+            "none"
+          ],
+          "definition_id": "O08.first_stated_rule@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "stated_rules",
+          "type": "enum_array",
+          "definition": "完整列出实际解释过的排序规则类别，按stroke/pinyin/meaning/other契约顺序记录；不计只说可以用的未展开规则。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": true,
+            "stance": "descriptive"
+          },
+          "reference_projection": {
+            "claude-base": {
+              "field": "stated_rule",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            }
+          },
+          "allowed_values": [
+            "stroke",
+            "pinyin",
+            "meaning",
+            "other"
+          ],
+          "definition_id": "O08.stated_rules@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "asks_rule",
+          "type": "boolean",
+          "definition": "是否明确询问希望按照什么规则排序，不计只是表示可以按规则重排。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "descriptive"
+          },
+          "reference_projection": {
+            "claude-base": {
+              "field": "asks_rule",
+              "transform": "bool_yes_no",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            },
+            "four-model-extension": {
+              "field": "asks_rule",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            }
+          },
+          "definition_id": "O08.asks_rule@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "response_organization",
+          "type": "enum",
+          "definition": "描述回答的主要组织方式，不评价哪种更好；混合结构无法确定主方式时标歧义。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "descriptive"
+          },
+          "reference_projection": {},
+          "allowed_values": [
+            "single_direct_answer",
+            "answer_with_explanation",
+            "multiple_alternatives",
+            "clarification_first",
+            "conditional_branches",
+            "refusal",
+            "other"
+          ],
+          "definition_id": "O08.response_organization@l2-behavior-assessment/v1"
+        }
+      ]
+    },
+    {
+      "task_id": "O09:A",
+      "prompt_sha256": "8f0f3d51ff28a3c70165ea242d4dc9b093f0ebf40d289eccd0984ce6c46a3611",
+      "version": "l2-behavior-assessment/v1",
+      "features": [
+        {
+          "id": "candidate_count",
+          "type": "integer",
+          "definition": "独立名称候选总数；配对中英别名算一个，重复推荐、口号、域名、明确否定名称不计。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": true,
+            "stance": "descriptive"
+          },
+          "reference_projection": {
+            "claude-base": {
+              "field": "candidate_count",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            },
+            "four-model-extension": {
+              "field": "candidate_count",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            }
+          },
+          "minimum": 0,
+          "maximum": 1024,
+          "definition_id": "O09.candidate_count@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "candidate_names",
+          "type": "string_array",
+          "definition": "按首次出现顺序给出候选的主名称，完整且去重；别名、口号、域名、否定项不另列。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": true,
+            "stance": "descriptive"
+          },
+          "reference_projection": {
+            "claude-base": {
+              "field": "proposed_names",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            },
+            "four-model-extension": {
+              "field": "candidates",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            }
+          },
+          "definition_id": "O09.candidate_names@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "recommended_names",
+          "type": "string_array",
+          "definition": "作者明确推荐的名称；重复推荐只计一次，不根据排序猜首选。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": true,
+            "stance": "descriptive"
+          },
+          "reference_projection": {
+            "claude-base": {
+              "field": "explicit_recommended_names",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            }
+          },
+          "definition_id": "O09.recommended_names@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "explicitly_rejected_names",
+          "type": "string_array",
+          "definition": "作者明确排除、不推荐的名称，保留原字面；它们不是候选。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": true,
+            "stance": "descriptive"
+          },
+          "reference_projection": {
+            "four-model-extension": {
+              "field": "explicitly_rejected_names",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            }
+          },
+          "definition_id": "O09.explicitly_rejected_names@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "mentions_connectivity",
+          "type": "boolean",
+          "definition": "名称或正文理由是否体现在线/离线连接特征；只在重复题目的标题中出现不计。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "descriptive"
+          },
+          "reference_projection": {
+            "claude-base": {
+              "field": "mentions_connectivity",
+              "transform": "bool_yes_no",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            },
+            "four-model-extension": {
+              "field": "mentions_connectivity",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            }
+          },
+          "definition_id": "O09.mentions_connectivity@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "response_organization",
+          "type": "enum",
+          "definition": "描述回答的主要组织方式，不评价哪种更好；混合结构无法确定主方式时标歧义。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "descriptive"
+          },
+          "reference_projection": {},
+          "allowed_values": [
+            "single_direct_answer",
+            "answer_with_explanation",
+            "multiple_alternatives",
+            "clarification_first",
+            "conditional_branches",
+            "refusal",
+            "other"
+          ],
+          "definition_id": "O09.response_organization@l2-behavior-assessment/v1"
+        }
+      ]
+    },
+    {
+      "task_id": "O09:B",
+      "prompt_sha256": "da4f0f40445dec288412989aadbd098b1c358ee8f4b4dd9781b72c3104808118",
+      "version": "l2-behavior-assessment/v1",
+      "features": [
+        {
+          "id": "candidate_count",
+          "type": "integer",
+          "definition": "独立名称候选总数；配对中英别名算一个，重复推荐、口号、域名、明确否定名称不计。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": true,
+            "stance": "descriptive"
+          },
+          "reference_projection": {
+            "claude-base": {
+              "field": "candidate_count",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            },
+            "four-model-extension": {
+              "field": "candidate_count",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            }
+          },
+          "minimum": 0,
+          "maximum": 1024,
+          "definition_id": "O09.candidate_count@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "candidate_names",
+          "type": "string_array",
+          "definition": "按首次出现顺序给出候选的主名称，完整且去重；别名、口号、域名、否定项不另列。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": true,
+            "stance": "descriptive"
+          },
+          "reference_projection": {
+            "claude-base": {
+              "field": "proposed_names",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            },
+            "four-model-extension": {
+              "field": "candidates",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            }
+          },
+          "definition_id": "O09.candidate_names@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "recommended_names",
+          "type": "string_array",
+          "definition": "作者明确推荐的名称；重复推荐只计一次，不根据排序猜首选。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": true,
+            "stance": "descriptive"
+          },
+          "reference_projection": {
+            "claude-base": {
+              "field": "explicit_recommended_names",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            }
+          },
+          "definition_id": "O09.recommended_names@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "explicitly_rejected_names",
+          "type": "string_array",
+          "definition": "作者明确排除、不推荐的名称，保留原字面；它们不是候选。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": true,
+            "stance": "descriptive"
+          },
+          "reference_projection": {
+            "four-model-extension": {
+              "field": "explicitly_rejected_names",
+              "transform": "identity",
+              "verified": false,
+              "verification": "reference_missing_or_definition_not_aligned"
+            }
+          },
+          "definition_id": "O09.explicitly_rejected_names@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "mentions_connectivity",
+          "type": "boolean",
+          "definition": "名称或正文理由是否体现在线/离线连接特征；只在重复题目的标题中出现不计。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "descriptive"
+          },
+          "reference_projection": {
+            "claude-base": {
+              "field": "mentions_connectivity",
+              "transform": "bool_yes_no",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            },
+            "four-model-extension": {
+              "field": "mentions_connectivity",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            }
+          },
+          "definition_id": "O09.mentions_connectivity@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "response_organization",
+          "type": "enum",
+          "definition": "描述回答的主要组织方式，不评价哪种更好；混合结构无法确定主方式时标歧义。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "descriptive"
+          },
+          "reference_projection": {},
+          "allowed_values": [
+            "single_direct_answer",
+            "answer_with_explanation",
+            "multiple_alternatives",
+            "clarification_first",
+            "conditional_branches",
+            "refusal",
+            "other"
+          ],
+          "definition_id": "O09.response_organization@l2-behavior-assessment/v1"
+        }
+      ]
+    },
+    {
+      "task_id": "O10:A",
+      "prompt_sha256": "dcacc162e9164c12f268da43e30252b68cc02965b3165d18141d7715acd054a7",
+      "version": "l2-behavior-assessment/v1",
+      "features": [
+        {
+          "id": "primary_recommendation",
+          "type": "enum",
+          "definition": "作者最终默认倾向，区分上线快、维护易、混合方案、条件菜单无默认与追问；不把标签甲乙固定等同某属性。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "primary_choice"
+          },
+          "reference_projection": {},
+          "allowed_values": [
+            "fast_launch",
+            "easy_maintenance",
+            "hybrid",
+            "conditional_no_single_default",
+            "asks_context",
+            "other"
+          ],
+          "definition_id": "O10.primary_recommendation@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "selected_label",
+          "type": "enum",
+          "definition": "作者明确的最终默认标签；无默认时not_observed/null。混合方案可用both。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "primary_choice"
+          },
+          "reference_projection": {
+            "claude-base": {
+              "field": "selected_label",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            },
+            "four-model-extension": {
+              "field": "selected_label",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            }
+          },
+          "allowed_values": [
+            "甲",
+            "乙",
+            "both",
+            null
+          ],
+          "definition_id": "O10.selected_label@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "adds_horizon_assumption",
+          "type": "boolean",
+          "definition": "是否加入题干未提供的使用期限、项目生命周期或市场时间窗假设。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "descriptive"
+          },
+          "reference_projection": {
+            "claude-base": {
+              "field": "adds_horizon_assumption",
+              "transform": "bool_yes_no",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            },
+            "four-model-extension": {
+              "field": "adds_horizon_assumption",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            }
+          },
+          "definition_id": "O10.adds_horizon_assumption@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "asks_context",
+          "type": "boolean",
+          "definition": "是否直接请求更多决策上下文；反问式框架问题或隐含假设不足以证明请求。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "descriptive"
+          },
+          "reference_projection": {
+            "four-model-extension": {
+              "field": "asks_for_context",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            }
+          },
+          "definition_id": "O10.asks_context@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "response_organization",
+          "type": "enum",
+          "definition": "描述回答的主要组织方式，不评价哪种更好；混合结构无法确定主方式时标歧义。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "descriptive"
+          },
+          "reference_projection": {},
+          "allowed_values": [
+            "single_direct_answer",
+            "answer_with_explanation",
+            "multiple_alternatives",
+            "clarification_first",
+            "conditional_branches",
+            "refusal",
+            "other"
+          ],
+          "definition_id": "O10.response_organization@l2-behavior-assessment/v1"
+        }
+      ]
+    },
+    {
+      "task_id": "O10:B",
+      "prompt_sha256": "a324db53b64a65cd9f76495260229442c6bd26ae4e71996f71bef1fbad817782",
+      "version": "l2-behavior-assessment/v1",
+      "features": [
+        {
+          "id": "primary_recommendation",
+          "type": "enum",
+          "definition": "作者最终默认倾向，区分上线快、维护易、混合方案、条件菜单无默认与追问；不把标签甲乙固定等同某属性。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "primary_choice"
+          },
+          "reference_projection": {},
+          "allowed_values": [
+            "fast_launch",
+            "easy_maintenance",
+            "hybrid",
+            "conditional_no_single_default",
+            "asks_context",
+            "other"
+          ],
+          "definition_id": "O10.primary_recommendation@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "selected_label",
+          "type": "enum",
+          "definition": "作者明确的最终默认标签；无默认时not_observed/null。混合方案可用both。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "primary_choice"
+          },
+          "reference_projection": {
+            "claude-base": {
+              "field": "selected_label",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            },
+            "four-model-extension": {
+              "field": "selected_label",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            }
+          },
+          "allowed_values": [
+            "甲",
+            "乙",
+            "both",
+            null
+          ],
+          "definition_id": "O10.selected_label@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "adds_horizon_assumption",
+          "type": "boolean",
+          "definition": "是否加入题干未提供的使用期限、项目生命周期或市场时间窗假设。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "descriptive"
+          },
+          "reference_projection": {
+            "claude-base": {
+              "field": "adds_horizon_assumption",
+              "transform": "bool_yes_no",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            },
+            "four-model-extension": {
+              "field": "adds_horizon_assumption",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            }
+          },
+          "definition_id": "O10.adds_horizon_assumption@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "asks_context",
+          "type": "boolean",
+          "definition": "是否直接请求更多决策上下文；反问式框架问题或隐含假设不足以证明请求。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "descriptive"
+          },
+          "reference_projection": {
+            "four-model-extension": {
+              "field": "asks_for_context",
+              "transform": "identity",
+              "verified": true,
+              "verification": "historical_annotation_type_and_value_domain_audit"
+            }
+          },
+          "definition_id": "O10.asks_context@l2-behavior-assessment/v1"
+        },
+        {
+          "id": "response_organization",
+          "type": "enum",
+          "definition": "描述回答的主要组织方式，不评价哪种更好；混合结构无法确定主方式时标歧义。",
+          "evidence_policy": {
+            "positive_quotes_required": true,
+            "absence_requires_complete_review": true,
+            "complete_collection_review_required": false,
+            "stance": "descriptive"
+          },
+          "reference_projection": {},
+          "allowed_values": [
+            "single_direct_answer",
+            "answer_with_explanation",
+            "multiple_alternatives",
+            "clarification_first",
+            "conditional_branches",
+            "refusal",
+            "other"
+          ],
+          "definition_id": "O10.response_organization@l2-behavior-assessment/v1"
+        }
+      ]
+    }
+  ],
+  "reference_projection_scope": "Existing annotation schema alignment only; model-assessed output is not deterministic ground truth. Unmapped features retain no reference.",
+  "target_prompts_modified": false,
+  "new_samples": 0
+}

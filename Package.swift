@@ -11,6 +11,7 @@ let linuxSources = [
     "Services/AntigravityUsageService.swift",
     "Services/AppPaths.swift",
     "Services/ClaudeCodeUsageService.swift",
+    "Services/ClaudeDesktopData.swift",
     "Services/ClaudeQuotaService.swift",
     "Services/CodexQuotaService.swift",
     "Services/ClineUsageService.swift",
@@ -84,6 +85,13 @@ let package = Package(
                 "Models/ClockSize.swift",
                 "Models/CustomThemeConfig.swift",
                 "Services/LaunchAgentHelper.swift",
+                "Services/ModelIntegrityLauncher.swift",
+                "Services/ModelIntegrityRuntimeCache.swift",
+                "Services/ModelDetectWindow.swift",
+                "Services/ModelDetectNativeClient.swift",
+                "Services/ModelDetectNativeModel.swift",
+                "Services/ModelDetectNativeWindow.swift",
+                "Resources/model-integrity-worker",
                 "Services/PathConfig.swift",
                 "Services/PathDetector.swift",
                 "Services/UsageAPIServer.swift",
@@ -97,6 +105,7 @@ let package = Package(
             resources: [
                 .copy("Resources/glass_disc.png"),
                 .copy("Resources/pricing-snapshot.json"),
+                .copy("Resources/macos-variant-switch.sh"),
                 .copy("Resources/BrandIcons"),
             ],
             swiftSettings: [.unsafeFlags(["-parse-as-library"])]
@@ -149,6 +158,13 @@ let package = Package(
                 "Models/ClockSize.swift",
                 "Models/CustomThemeConfig.swift",
                 "Services/LaunchAgentHelper.swift",
+                "Services/ModelIntegrityLauncher.swift",
+                "Services/ModelIntegrityRuntimeCache.swift",
+                "Services/ModelDetectWindow.swift",
+                "Services/ModelDetectNativeClient.swift",
+                "Services/ModelDetectNativeModel.swift",
+                "Services/ModelDetectNativeWindow.swift",
+                "Resources/model-integrity-worker",
                 "Services/UsageAPIServer.swift",
             ],
             resources: [
@@ -183,8 +199,8 @@ let package = Package(
             resources: [
                 .copy("Resources/glass_disc.png"),
                 .copy("Resources/pricing-snapshot.json"),
-                .copy("Resources/macos-variant-switch.sh"),
                 .copy("Resources/BrandIcons"),
+                .copy("Resources/model-integrity-worker"),
             ],
             swiftSettings: [.unsafeFlags(["-parse-as-library"])]
         ),

@@ -80,6 +80,8 @@ for variant in glass normal; do
   tar -xzf "$ASSETS_DIR/TokenClock-$variant-universal.tar.gz" -C "$out" \
     || die "$variant tarball cannot be extracted"
   [ -x "$out/TokenClock" ] || die "$variant tarball has no executable TokenClock"
+  [ -d "$out/TokenClock_TokenClock.bundle" ] \
+    || die "$variant tarball has no sibling TokenClock_TokenClock.bundle"
   if command -v lipo >/dev/null 2>&1; then
     archs="$(lipo -archs "$out/TokenClock" 2>/dev/null || true)"
     echo "$archs" | grep -qw arm64 || die "$variant binary is missing arm64"

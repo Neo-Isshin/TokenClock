@@ -51,6 +51,87 @@ sha256_file() {
   fi
 }
 
+# BEGIN RESOURCE_BUNDLE_FUNCTIONS
+# Content-address resource entries independently, then sort only fixed-width
+# hex hashes. Names/targets containing spaces or newlines remain unambiguous;
+# no Python, GNU sort -z, directory mtimes, or symlink target traversal is used.
+resource_hash_stream() {
+  if command -v sha256sum >/dev/null 2>&1; then sha256sum | cut -d' ' -f1
+  else shasum -a 256 | cut -d' ' -f1
+  fi
+}
+
+resource_bundle_hash() {
+  local resource_root="$1" resource_entry resource_relative resource_executable
+  [ -d "$resource_root" ] && [ ! -L "$resource_root" ] || return 1
+  resource_root="$(cd "$resource_root" && pwd -P)" || return 1
+  find "$resource_root" -mindepth 1 -print0 | while IFS= read -r -d '' resource_entry; do
+    resource_relative="${resource_entry#"$resource_root"/}"
+    if [ -L "$resource_entry" ]; then
+      { printf 'link\0%s\0' "$resource_relative"; readlink "$resource_entry"; } | resource_hash_stream || return 1
+    elif [ -f "$resource_entry" ]; then
+      resource_executable=0; [ ! -x "$resource_entry" ] || resource_executable=1
+      { printf 'file\0%s\0%s\0' "$resource_relative" "$resource_executable"; cat "$resource_entry"; } | resource_hash_stream || return 1
+    elif [ -d "$resource_entry" ]; then
+      printf 'directory\0%s\0' "$resource_relative" | resource_hash_stream || return 1
+    else
+      printf 'Unsupported resource entry: %s\n' "$resource_entry" >&2
+      return 1
+    fi
+  done | LC_ALL=C sort | resource_hash_stream
+}
+
+deploy_resource_bundle() {
+  local resource_source="$1" resource_destination="$2" resource_parent
+  local resource_new_hash resource_old_hash resource_stage resource_stage_hash
+  RESOURCE_BUNDLE_CHANGED=0
+  resource_new_hash="$(resource_bundle_hash "$resource_source")" || return 1
+  if [ -d "$resource_destination" ] && [ ! -L "$resource_destination" ]; then
+    resource_old_hash="$(resource_bundle_hash "$resource_destination")" || return 1
+    [ "$resource_new_hash" != "$resource_old_hash" ] || return 0
+  fi
+  resource_parent="$(dirname "$resource_destination")"
+  mkdir -p "$resource_parent" || return 1
+  resource_stage="$(mktemp -d "$resource_parent/.tokenclock-resources.XXXXXX")" || return 1
+  if ! cp -R "$resource_source" "$resource_stage/bundle"; then
+    rm -rf "$resource_stage"
+    return 1
+  fi
+  resource_stage_hash="$(resource_bundle_hash "$resource_stage/bundle")" || {
+    rm -rf "$resource_stage"; return 1;
+  }
+  if [ "$resource_stage_hash" != "$resource_new_hash" ]; then
+    printf 'Resource copy changed during staging; previous bundle retained.\n' >&2
+    rm -rf "$resource_stage"
+    return 1
+  fi
+  # Preserve the previous directory until the complete staged bundle is active.
+  # A worker already running uses its verified immutable cache, not this path.
+  if [ -e "$resource_destination" ] || [ -L "$resource_destination" ]; then
+    if ! mv "$resource_destination" "$resource_stage/previous"; then
+      rm -rf "$resource_stage"
+      return 1
+    fi
+  fi
+  if ! mv "$resource_stage/bundle" "$resource_destination"; then
+    if [ -e "$resource_stage/previous" ] || [ -L "$resource_stage/previous" ]; then
+      if ! mv "$resource_stage/previous" "$resource_destination"; then
+        printf 'Resource activation failed; previous bundle preserved at %s\n' "$resource_stage/previous" >&2
+        return 1
+      fi
+    fi
+    rm -rf "$resource_stage"
+    return 1
+  fi
+  RESOURCE_BUNDLE_CHANGED=1
+  DEPLOYED_ANYTHING=1
+  if ! rm -rf "$resource_stage"; then
+    printf 'Resources activated; old staging cleanup remains at %s\n' "$resource_stage" >&2
+  fi
+  return 0
+}
+# END RESOURCE_BUNDLE_FUNCTIONS
+
 # Color output: only colorize on a TTY (curl|bash and other pipes strip it, avoiding escape codes polluting logs).
 if [ -t 1 ]; then
   C_GREEN=$'\033[1;32m'; C_YELLOW=$'\033[1;33m'; C_RED=$'\033[1;31m'; C_CYAN=$'\033[1;36m'; C_RESET=$'\033[0m'
@@ -398,17 +479,18 @@ for entry in "${BUILT_BINS[@]}"; do
     say "  · [$variant] binary unchanged, skipping"
   fi
 
-  # Resource bundle: if present next to the build artifact, deploy it beside the binary (so the
-  # runtime Bundle.module mainPath resolves; otherwise switching to the .glass theme on a non-dev
-  # machine fatalError's because the bundle is missing). Count as deployed when missing → triggers restart.
+  # Resources live beside the standalone binary. Changes in worker code or
+  # references also require the ordinary CLI update/restart path, even when the
+  # Swift executable itself did not change.
   bundle_src="$(dirname "$bin_path")/TokenClock_TokenClock.bundle"
   if [ -d "$bundle_src" ]; then
     dest_bundle="$HOME_DIR/$variant/TokenClock_TokenClock.bundle"
-    bundle_missing=0; [ -d "$dest_bundle" ] || bundle_missing=1
-    rm -rf "$dest_bundle"
-    cp -R "$bundle_src" "$dest_bundle"
-    say "  ✓ $dest_bundle (resources)"
-    [ "$bundle_missing" -eq 1 ] && DEPLOYED_ANYTHING=1
+    deploy_resource_bundle "$bundle_src" "$dest_bundle" || die "Failed to deploy [$variant] resources; previous bundle was retained or its recovery path was printed."
+    if [ "$RESOURCE_BUNDLE_CHANGED" -eq 1 ]; then
+      say "  ✓ $dest_bundle (resources changed)"
+    else
+      say "  · [$variant] resources unchanged, skipping"
+    fi
   fi
 done
 

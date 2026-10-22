@@ -14,6 +14,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var subscriptionQuotaWindow: NSWindow?
     private var subscriptionAccountEditorWindow: NSWindow?
     private var aboutWindow: NSWindow?
+    private var modelDetectWindow: ModelDetectNativeWindow?
     private var themePickerPanel: NSPanel?
     private var themePickerEventMonitor: Any?
     private var statusItem: NSStatusItem?
@@ -33,6 +34,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     private func setup() {
+        // An isolated development/native smoke entry never starts usage/history scans.
+        if Self.isModelDetectOnly(arguments: ProcessInfo.processInfo.arguments) {
+            NSApp.setActivationPolicy(.regular)
+            setupStatusBarItem()
+            showModelDetect()
+            return
+        }
         // A release installed by the one-liner is launched as a standalone Mach-O,
         // not from an .app bundle. macOS can therefore leave NSApplication in the
         // prohibited activation policy: nonactivating clock panels still work, but
@@ -79,6 +87,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             onSubscriptionQuota: { [weak self] in self?.showSubscriptionQuotaWindow() },
             onHistoryUsage: { [weak self] in self?.showUsageOverviewWindow() },
             onShareUsage: { [weak self] in self?.showUsageShareWindow() },
+            onModelDetect: { [weak self] in self?.showModelDetect() },
+            onModelDetectSession: { [weak self] session in self?.showModelDetectSession(session) },
             onNotificationClick: { [weak self] in self?.toggleNotificationCenter() }
         )
         let detailContentView = NSHostingView(rootView: detailView)
@@ -201,6 +211,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         viewModel.visibleTools.filter { $0.todayTokens > 0 }.count
     }
 
+    nonisolated static func isModelDetectOnly(arguments: [String]) -> Bool {
+        arguments.dropFirst().contains("--model-detect-only")
+    }
+
+    nonisolated func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        guard Self.isModelDetectOnly(arguments: ProcessInfo.processInfo.arguments) else { return true }
+        Task { @MainActor in showModelDetect() }
+        return false
+    }
+
     /// 从 UserDefaults 读取 API 服务器端口，越界或缺省时回退到 AppConfig 默认值
     private static func resolveAPIServerPort() -> UInt16 {
         let raw = UserDefaults.standard.integer(forKey: SettingsKey.apiServerPort.rawValue)
@@ -310,6 +330,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             NSApp.activate(ignoringOtherApps: true)
             // Raise once, without changing the user's persistent window level.
             panel?.orderFrontRegardless()
+            if panel == nil { showModelDetect() }
         } else {
             statusBarVisibility.setHidden(true)
             // Close transient picker tracking before hiding the app. NSApp.hide
@@ -331,6 +352,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     nonisolated func applicationWillTerminate(_ notification: Notification) {
+        ModelIntegrityLauncher.shared.stop()
         // AppKit delivers this callback on the main thread. A detached MainActor Task can be
         // discarded as the process exits, which previously lost the final window position.
         MainActor.assumeIsolated {
@@ -521,6 +543,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let shareItem = NSMenuItem(title: tr("menu.shareUsage"),
                                    action: #selector(openUsageShare(_:)), keyEquivalent: "")
         shareItem.image = NSImage(systemSymbolName: "square.and.arrow.up", accessibilityDescription: shareItem.title)
+        let modelDetectItem = NSMenuItem(title: tr("menu.sessionAssessment"),
+                                         action: #selector(openModelDetect(_:)), keyEquivalent: "")
+        modelDetectItem.image = NSImage(systemSymbolName: "waveform.path.ecg.rectangle", accessibilityDescription: modelDetectItem.title)
 
         let launchItem = NSMenuItem(title: tr("menu.launchAtLogin"),
                                     action: #selector(toggleLaunchAtLogin(_:)), keyEquivalent: "")
@@ -573,6 +598,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             title: tr("menu.general"), symbol: "gearshape", submenu: generalMenu
         ))
         menu.addItem(.separator())
+        menu.addItem(modelDetectItem)
         menu.addItem(shareItem)
         menu.addItem(settingsItem)
         menu.addItem(.separator())
@@ -962,6 +988,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         overviewWindow?.title = L10n.shared.tr("overview.title")
         shareWindow?.title = L10n.shared.tr("share.title")
         subscriptionQuotaWindow?.title = L10n.shared.tr("quota.windowTitle")
+        modelDetectWindow?.refreshLocalization()
     }
 
     @objc private func openSettings(_ sender: NSMenuItem) {
@@ -974,6 +1001,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     @objc private func openUsageShare(_ sender: NSMenuItem) {
         showUsageShareWindow()
+    }
+
+    @objc private func openModelDetect(_ sender: NSMenuItem) {
+        showModelDetect()
+    }
+
+    func showModelDetect(sourcePath: String? = nil) {
+        if NSApp.isHidden { NSApp.unhideWithoutActivation() }
+        if modelDetectWindow == nil { modelDetectWindow = ModelDetectNativeWindow() }
+        modelDetectWindow?.show(sourcePath: sourcePath)
+    }
+
+    private func showModelDetectSession(_ session: SessionInfo) {
+        if NSApp.isHidden { NSApp.unhideWithoutActivation() }
+        if modelDetectWindow == nil { modelDetectWindow = ModelDetectNativeWindow() }
+        modelDetectWindow?.showSession(sourcePath: session.sourceLogPath)
     }
 
     @objc private func copyAPIEndpoint(_ sender: NSMenuItem) {
@@ -1483,6 +1526,8 @@ private struct DropdownPanelView: View {
     let onSubscriptionQuota: () -> Void
     let onHistoryUsage: () -> Void
     let onShareUsage: () -> Void
+    let onModelDetect: () -> Void
+    let onModelDetectSession: (SessionInfo) -> Void
     let onNotificationClick: () -> Void
 
     var body: some View {
@@ -1504,6 +1549,8 @@ private struct DropdownPanelView: View {
                 onQuickContrast: { viewModel.cycleQuickContrast() },
                 onHistoryUsage: onHistoryUsage,
                 onShareUsage: onShareUsage,
+                onModelDetect: onModelDetect,
+                onModelDetectSession: onModelDetectSession,
                 onSubscriptionQuota: onSubscriptionQuota,
                 unreadNotificationCount: viewModel.unreadNotificationCount,
                 onNotificationClick: onNotificationClick
