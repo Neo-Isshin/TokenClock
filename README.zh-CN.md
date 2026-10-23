@@ -61,7 +61,7 @@ TokenClock 是一个置顶显示在桌面的小时钟。除了时间，它还会
 复制到终端运行：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Neo-Isshin/TokenClock/main/cli/install.sh | bash
+curl -fsSL https://www.ailyre.com/tokenclock/install.sh | bash
 ```
 
 安装器会自动选择正确版本、校验下载文件、启动 TokenClock，并安装一个轻量的 `tokenclock` 管理命令。
@@ -82,7 +82,7 @@ Linux 缺少 FUSE 2 时会自动切换到解包运行模式，无需使用 `sudo
 复制到 PowerShell 运行：
 
 ```powershell
-& ([scriptblock]::Create((irm https://raw.githubusercontent.com/Neo-Isshin/TokenClock/windows-port/cli/install.ps1)))
+& ([scriptblock]::Create((irm https://www.ailyre.com/tokenclock/install.ps1)))
 ```
 
 TokenClock 会安装到当前用户的 `%LOCALAPPDATA%\Programs\TokenClock`，下载后自动校验文件。默认不会创建快捷方式，也不会启用开机自启。
@@ -94,13 +94,13 @@ Windows 可能会对尚未签名的首个版本显示信誉提示。继续前请
 
 ```powershell
 # 安装后不立即启动，并创建开始菜单快捷方式
-& ([scriptblock]::Create((irm https://raw.githubusercontent.com/Neo-Isshin/TokenClock/windows-port/cli/install.ps1))) -NoStart -StartMenuShortcut
+& ([scriptblock]::Create((irm https://www.ailyre.com/tokenclock/install.ps1))) -NoStart -StartMenuShortcut
 
 # 查看当前安装状态
-& ([scriptblock]::Create((irm https://raw.githubusercontent.com/Neo-Isshin/TokenClock/windows-port/cli/install.ps1))) -Action Check
+& ([scriptblock]::Create((irm https://www.ailyre.com/tokenclock/install.ps1))) -Action Check
 
 # 卸载程序，但保留个人设置
-& ([scriptblock]::Create((irm https://raw.githubusercontent.com/Neo-Isshin/TokenClock/windows-port/cli/install.ps1))) -Action Uninstall
+& ([scriptblock]::Create((irm https://www.ailyre.com/tokenclock/install.ps1))) -Action Uninstall
 ```
 
 </details>

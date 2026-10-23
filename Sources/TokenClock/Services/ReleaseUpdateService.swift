@@ -16,7 +16,13 @@ final class ReleaseUpdateService: @unchecked Sendable {
         case unavailable
     }
 
-    static let releasesURL = URL(string: "https://github.com/Neo-Isshin/TokenClock/releases")!
+    static let distributionRoot = "https://www.ailyre.com/tokenclock"
+    static let releasesURL = URL(string: distributionRoot + "/releases/")!
+    static let latestMetadataURL = URL(string: distributionRoot + "/releases/latest.json")!
+
+    static func releaseURL(tag: String) -> URL {
+        URL(string: distributionRoot + "/releases/" + tag + "/")!
+    }
 
     private struct Release: Decodable {
         let tag_name: String
@@ -32,8 +38,8 @@ final class ReleaseUpdateService: @unchecked Sendable {
 
     init(defaults: UserDefaults = .standard, installedVersion: String = AppConfig.version,
          fetch: @escaping @Sendable () -> Data? = {
-             BillingHTTP.read(URL(string: "https://api.github.com/repos/Neo-Isshin/TokenClock/releases/latest")!,
-                              headers: ["Accept": "application/vnd.github+json",
+             BillingHTTP.read(ReleaseUpdateService.latestMetadataURL,
+                              headers: ["Accept": "application/json",
                                         "User-Agent": "TokenClock/" + AppConfig.version])
          }) {
         self.defaults = defaults
@@ -77,7 +83,7 @@ final class ReleaseUpdateService: @unchecked Sendable {
             lock.unlock()
             let version = parts.map(String.init).joined(separator: ".")
             completion(.available(version: version,
-                url: URL(string: "https://github.com/Neo-Isshin/TokenClock/releases/tag/" + release.tag_name)!))
+                url: Self.releaseURL(tag: release.tag_name)))
         }
     }
 
@@ -114,12 +120,12 @@ final class ReleaseUpdateService: @unchecked Sendable {
         var notification = TokenClockNotification(
             id: notice.id, kind: .system,
             title: BillingText.choose("TokenClock \(version) available", "TokenClock \(version) 可更新", "TokenClock \(version) 可更新"),
-            message: BillingText.choose("Current: \(installedVersion). Click to view the GitHub release.",
-                                        "当前版本：\(installedVersion)。点击查看 GitHub 发布页。",
-                                        "目前版本：\(installedVersion)。點擊查看 GitHub 發布頁。"),
+            message: BillingText.choose("Current: \(installedVersion). Click to view the release.",
+                                        "当前版本：\(installedVersion)。点击查看发布页。",
+                                        "目前版本：\(installedVersion)。點擊查看發布頁。"),
             createdAt: notice.createdAt, isRead: notice.isRead)
         // Never trust an arbitrary URL supplied in remote metadata or persisted data.
-        notification.releaseURL = URL(string: "https://github.com/Neo-Isshin/TokenClock/releases/tag/" + notice.tag)
+        notification.releaseURL = Self.releaseURL(tag: notice.tag)
         return [notification]
     }
 

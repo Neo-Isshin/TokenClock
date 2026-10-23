@@ -61,7 +61,7 @@ Click the clock for session and model details. Right-click it to change the face
 Paste this into Terminal:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Neo-Isshin/TokenClock/main/cli/install.sh | bash
+curl -fsSL https://www.ailyre.com/tokenclock/install.sh | bash
 ```
 
 The installer chooses the right edition, verifies downloaded builds, starts TokenClock, and installs the small `tokenclock` helper command.
@@ -82,7 +82,7 @@ On Linux, the installer automatically uses extraction mode when FUSE 2 is unavai
 Paste this into PowerShell:
 
 ```powershell
-& ([scriptblock]::Create((irm https://raw.githubusercontent.com/Neo-Isshin/TokenClock/windows-port/cli/install.ps1)))
+& ([scriptblock]::Create((irm https://www.ailyre.com/tokenclock/install.ps1)))
 ```
 
 TokenClock installs for the current user under `%LOCALAPPDATA%\Programs\TokenClock`. It verifies the release checksum and does not enable autostart or create shortcuts unless you ask it to.
@@ -94,13 +94,13 @@ Windows may show a reputation warning for an unsigned first release. Check that 
 
 ```powershell
 # Install without starting, and add a Start Menu shortcut
-& ([scriptblock]::Create((irm https://raw.githubusercontent.com/Neo-Isshin/TokenClock/windows-port/cli/install.ps1))) -NoStart -StartMenuShortcut
+& ([scriptblock]::Create((irm https://www.ailyre.com/tokenclock/install.ps1))) -NoStart -StartMenuShortcut
 
 # Check the current installation
-& ([scriptblock]::Create((irm https://raw.githubusercontent.com/Neo-Isshin/TokenClock/windows-port/cli/install.ps1))) -Action Check
+& ([scriptblock]::Create((irm https://www.ailyre.com/tokenclock/install.ps1))) -Action Check
 
 # Uninstall while keeping your settings
-& ([scriptblock]::Create((irm https://raw.githubusercontent.com/Neo-Isshin/TokenClock/windows-port/cli/install.ps1))) -Action Uninstall
+& ([scriptblock]::Create((irm https://www.ailyre.com/tokenclock/install.ps1))) -Action Uninstall
 ```
 
 </details>

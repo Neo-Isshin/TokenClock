@@ -15,7 +15,7 @@
 #   ./cli/install.sh --build-from-source  # skip the prebuilt download, force a local swift build
 #
 # One-liner:
-#   curl -fsSL https://raw.githubusercontent.com/Neo-Isshin/TokenClock/main/cli/install.sh | bash
+#   curl -fsSL https://www.ailyre.com/tokenclock/install.sh | bash
 #
 # Environment variables to override defaults:
 #   TOKENCLOCK_REPO     git repository URL            (default: repo origin)
@@ -26,13 +26,14 @@
 set -uo pipefail
 export LC_ALL=C      # kept for portability: bash 3.2 in a UTF-8 locale can fold a multibyte character directly after $var into the variable name; the C locale parses by byte and avoids that. ASCII-only strings are unaffected either way.
 
-DEFAULT_REPO="https://github.com/Neo-Isshin/TokenClock.git"
+DEFAULT_REPO="https://gitea.nxc8335.cloud/nxc8335/tokenclock.git"
 REPO_URL="${TOKENCLOCK_REPO:-$DEFAULT_REPO}"
 HOME_DIR="${TOKENCLOCK_HOME:-$HOME/.tokenclock}"
 BIN_DIR="${TOKENCLOCK_BIN_DIR:-$HOME/.local/bin}"
 BUILD_DIR="${TOKENCLOCK_BUILD:-$HOME_DIR/src}"
 # Update source (cmd_update fetches this URL; the tokenclock wrapper defaults to the same value)
-INSTALL_URL="${TOKENCLOCK_INSTALL_URL:-https://raw.githubusercontent.com/Neo-Isshin/TokenClock/main/cli/install.sh}"
+INSTALL_URL="${TOKENCLOCK_INSTALL_URL:-https://www.ailyre.com/tokenclock/install.sh}"
+SOURCE_BASE="${TOKENCLOCK_SOURCE_BASE:-https://www.ailyre.com/tokenclock/sources}"
 
 CONFIG="release"
 VARIANT=""          # "" = auto-select by platform / macOS version
@@ -198,8 +199,6 @@ case "$KERNEL" in
       pkg-config --exists sqlite3 || die "SQLite development files are required (Ubuntu/Debian: sudo apt install libsqlite3-dev)."
       say "  Linux $(uname -r) · normal GTK3 build · source build"
     fi
-    [ "$INSTALL_URL" != "https://raw.githubusercontent.com/Neo-Isshin/TokenClock/main/cli/install.sh" ] \
-      || INSTALL_URL="https://raw.githubusercontent.com/Neo-Isshin/TokenClock/normal/cli/install.sh"
     ;;
   *)
     die "Unsupported platform: $KERNEL (TokenClock supports macOS and Linux)."
@@ -248,18 +247,18 @@ fi
 
 if [ "$PLATFORM" = linux ]; then
   VARIANTS=(normal)
-  BRANCHES=(normal)
+  BRANCHES=(codex/linux-theme-parity)
   PRIMARY_VARIANT=normal
 elif [ -z "$VARIANT" ]; then
   if [ "$OS_MAJOR" -ge 26 ]; then
     # macOS 26+: pull both variants (Liquid Glass + normal)
     VARIANTS=(glass normal)
-    BRANCHES=(main normal)
+    BRANCHES=(codex/migrate-main-20261011 codex/migrate-normal-20261011)
     PRIMARY_VARIANT=glass    # default / first-launch variant
   elif [ "$OS_MAJOR" -ge 12 ]; then
     # macOS 12-25: normal only (classic opaque build, Monterey+)
     VARIANTS=(normal)
-    BRANCHES=(normal)
+    BRANCHES=(codex/migrate-normal-20261011)
     PRIMARY_VARIANT=normal
   else
     die "macOS 12 or later is required (current major version $OS_MAJOR)."
@@ -267,8 +266,8 @@ elif [ -z "$VARIANT" ]; then
 else
   # When --glass / --normal is given explicitly, install only that one
   case "$VARIANT" in
-    glass)  VARIANTS=(glass);  BRANCHES=(main);   PRIMARY_VARIANT=glass ;;
-    normal) VARIANTS=(normal); BRANCHES=(normal); PRIMARY_VARIANT=normal ;;
+    glass)  VARIANTS=(glass);  BRANCHES=(codex/migrate-main-20261011);   PRIMARY_VARIANT=glass ;;
+    normal) VARIANTS=(normal); BRANCHES=(codex/migrate-normal-20261011); PRIMARY_VARIANT=normal ;;
   esac
 fi
 VARIANT_LABELS=""
@@ -285,6 +284,31 @@ say "  Variants: $VARIANT_LABELS · build: $CONFIG"
 # The prebuilt-download path (default) never clones, avoiding a hard dependency on git / the Xcode license.
 ensure_source() {
   local variant="$1" branch="$2" subdir="$BUILD_DIR/$branch"
+  # Public source exports contain only committed files. Gitea itself remains sign-in-only.
+  # An explicit TOKENCLOCK_REPO keeps the existing Git-based source workflow.
+  if [ "$REPO_URL" = "$DEFAULT_REPO" ]; then
+    local channel="$variant" tmp expect got previous
+    [ "$PLATFORM" != linux ] || channel=linux
+    tmp="$(mktemp -d)" || die "Cannot stage source download"
+    DOWNLOAD_TMPDIRS+=("$tmp")
+    step "Downloading source [$channel]"
+    curl -fL --retry 3 --connect-timeout 15 -o "$tmp/source.tar.gz" "$SOURCE_BASE/$channel.tar.gz" \
+      || die "Source download failed"
+    curl -fL --retry 3 --connect-timeout 15 -o "$tmp/source.sha256" "$SOURCE_BASE/$channel.tar.gz.sha256" \
+      || die "Source checksum download failed"
+    expect="$(awk 'NF {print $1; exit}' "$tmp/source.sha256")"
+    got="$(sha256_file "$tmp/source.tar.gz")"
+    [ "$got" = "$expect" ] || die "Source checksum mismatch"
+    tar -xzf "$tmp/source.tar.gz" -C "$tmp" || die "Source archive extraction failed"
+    [ -f "$tmp/TokenClock/Package.swift" ] || die "Source archive has no Package.swift"
+    mkdir -p "$(dirname "$subdir")"
+    if [ -e "$subdir" ]; then
+      previous="$(mktemp -d "$subdir.previous.XXXXXX")" || die "Cannot preserve previous source"
+      mv "$subdir" "$previous/source" || die "Cannot preserve previous source"
+    fi
+    mv "$tmp/TokenClock" "$subdir" || die "Cannot activate source"
+    return
+  fi
   step "Fetching source [$variant] ($REPO_URL · $branch)"
   if [ -d "$subdir/.git" ]; then
     git -C "$subdir" fetch --depth 1 origin "$branch" >/dev/null 2>&1 || die "git fetch [$variant] failed (check your network or TOKENCLOCK_REPO)"
@@ -300,7 +324,7 @@ ensure_source() {
 }
 
 # ── 4. Obtain the binary (prefer the prebuilt download; fall back to building from source on failure / --build-from-source) ──
-# Prebuilt assets come from the GitHub release (universal: arm64+x86_64); no Xcode, no compilation.
+# Prebuilt assets come from the public VPS (universal: arm64+x86_64); no Xcode, no compilation.
 # Each independently maintained channel may publish a patch without relabelling the unchanged
 # binaries from the other platforms. TOKENCLOCK_RELEASE_TAG remains a global testing override.
 release_tag_for_variant() {
@@ -316,7 +340,7 @@ release_tag_for_variant() {
 }
 release_base_for_tag() {
   local tag="$1"
-  echo "${TOKENCLOCK_RELEASE_BASE:-https://github.com/Neo-Isshin/TokenClock/releases/download/$tag}"
+  echo "${TOKENCLOCK_RELEASE_BASE:-https://www.ailyre.com/tokenclock/releases/download/$tag}"
 }
 
 # variant → tarball filename / expected SHA256 (bash 3.2 has no associative arrays, so use case)

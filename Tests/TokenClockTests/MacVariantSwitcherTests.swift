@@ -104,10 +104,11 @@ final class MacVariantSwitcherTests: XCTestCase {
                             "browser_download_url": url, "digest": digest]]
             ])
         }
-        let url = "https://github.com/Neo-Isshin/TokenClock/releases/download/v1.5.12/TokenClock-normal-universal.tar.gz"
+        let url = "https://www.ailyre.com/tokenclock/releases/download/v1.5.12/TokenClock-normal-universal.tar.gz"
         let digest = "sha256:" + String(repeating: "a", count: 64)
         XCTAssertEqual(try MacVariantSwitcher.decodeAsset(metadata(url: url, digest: digest), variant: .normal, version: "1.5.12").size, 400)
         XCTAssertThrowsError(try MacVariantSwitcher.decodeAsset(metadata(url: "https://example.com/package", digest: digest), variant: .normal, version: "1.5.12"))
+        XCTAssertThrowsError(try MacVariantSwitcher.decodeAsset(metadata(url: "https://github.com/Neo-Isshin/TokenClock/releases/download/v1.5.12/TokenClock-normal-universal.tar.gz", digest: digest), variant: .normal, version: "1.5.12"))
         XCTAssertThrowsError(try MacVariantSwitcher.decodeAsset(metadata(url: url, digest: "sha256:bad"), variant: .normal, version: "1.5.12"))
         XCTAssertThrowsError(try MacVariantSwitcher.decodeAsset(metadata(url: url, digest: digest, draft: true), variant: .normal, version: "1.5.12"))
     }

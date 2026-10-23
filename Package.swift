@@ -201,6 +201,7 @@ let package = Package(
                 .copy("Resources/pricing-snapshot.json"),
                 .copy("Resources/BrandIcons"),
                 .copy("Resources/model-integrity-worker"),
+                .copy("Resources/macos-variant-switch.sh"),
             ],
             swiftSettings: [.unsafeFlags(["-parse-as-library"])]
         ),
