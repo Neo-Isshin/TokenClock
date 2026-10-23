@@ -199,7 +199,7 @@ TokenClock 通过读取各工具在本地写入的 **JSONL / SQLite 用量文件
 
 ```bash
 # 一行安装（推荐）：
-curl -fsSL https://raw.githubusercontent.com/Neo-Isshin/TokenClock/main/cli/install.sh | bash
+curl -fsSL https://www.ailyre.com/tokenclock/install.sh | bash
 
 # 已克隆本仓库时也可直接运行：
 ./cli/install.sh
@@ -247,7 +247,7 @@ Linux 使用独立的路径 catalog，不会导入 macOS 的 `~/Library/Applicat
 
 ```bash
 # 同一条通用安装命令 —— 在 x86_64 Linux 上自动下载预编译 AppImage
-curl -fsSL https://raw.githubusercontent.com/Neo-Isshin/TokenClock/main/cli/install.sh | bash
+curl -fsSL https://www.ailyre.com/tokenclock/install.sh | bash
 ```
 
 AppImage 运行期需要 `libfuse2`（多数桌面发行版自带；缺失时：`sudo apt install libfuse2`，Ubuntu 24.04+ 为 `libfuse2t64`）。
@@ -256,7 +256,7 @@ AppImage 运行期需要 `libfuse2`（多数桌面发行版自带；缺失时：
 
 ```bash
 sudo apt install git pkg-config libcurl4 libgtk-3-dev libsqlite3-dev   # Ubuntu/Debian 构建依赖
-curl -fsSL https://raw.githubusercontent.com/Neo-Isshin/TokenClock/main/cli/install.sh | bash -s -- --build-from-source
+curl -fsSL https://www.ailyre.com/tokenclock/install.sh | bash -s -- --build-from-source
 ```
 
 也可以使用可复现的容器构建：

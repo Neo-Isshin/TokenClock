@@ -25,8 +25,8 @@ final class ReleaseUpdateService: @unchecked Sendable {
 
     init(defaults: UserDefaults = .standard, installedVersion: String = AppConfig.version,
          fetch: @escaping @Sendable () -> Data? = {
-             BillingHTTP.read(URL(string: "https://api.github.com/repos/Neo-Isshin/TokenClock/releases/latest")!,
-                              headers: ["Accept": "application/vnd.github+json",
+             BillingHTTP.read(URL(string: "https://www.ailyre.com/tokenclock/releases/latest.json")!,
+                              headers: ["Accept": "application/json",
                                         "User-Agent": "TokenClock/" + AppConfig.version])
          }) {
         self.defaults = defaults
@@ -85,12 +85,12 @@ final class ReleaseUpdateService: @unchecked Sendable {
         var notification = TokenClockNotification(
             id: notice.id, kind: .system,
             title: BillingText.choose("TokenClock \(version) available", "TokenClock \(version) 可更新", "TokenClock \(version) 可更新"),
-            message: BillingText.choose("Current: \(installedVersion). Click to view the GitHub release.",
-                                        "当前版本：\(installedVersion)。点击查看 GitHub 发布页。",
-                                        "目前版本：\(installedVersion)。點擊查看 GitHub 發布頁。"),
+            message: BillingText.choose("Current: \(installedVersion). Click to view the release.",
+                                        "当前版本：\(installedVersion)。点击查看发布页。",
+                                        "目前版本：\(installedVersion)。點擊查看發布頁。"),
             createdAt: notice.createdAt, isRead: notice.isRead)
         // Never trust an arbitrary URL supplied in remote metadata or persisted data.
-        notification.releaseURL = URL(string: "https://github.com/Neo-Isshin/TokenClock/releases/tag/" + notice.tag)
+        notification.releaseURL = URL(string: "https://www.ailyre.com/tokenclock/releases/" + notice.tag + "/")
         return [notification]
     }
 

@@ -200,7 +200,7 @@ Auto-detects your platform and version (**Linux / macOS 12+ / macOS 26+**) → i
 
 ```bash
 # one-line install (recommended):
-curl -fsSL https://raw.githubusercontent.com/Neo-Isshin/TokenClock/main/cli/install.sh | bash
+curl -fsSL https://www.ailyre.com/tokenclock/install.sh | bash
 
 # or, if you've cloned this repo:
 ./cli/install.sh
@@ -248,7 +248,7 @@ Known limitations:
 
 ```bash
 # the same universal one-liner — on x86_64 Linux it fetches the prebuilt AppImage
-curl -fsSL https://raw.githubusercontent.com/Neo-Isshin/TokenClock/main/cli/install.sh | bash
+curl -fsSL https://www.ailyre.com/tokenclock/install.sh | bash
 ```
 
 The AppImage needs `libfuse2` at runtime (present on most desktop distros; if missing: `sudo apt install libfuse2`, or `libfuse2t64` on Ubuntu 24.04+).
@@ -257,7 +257,7 @@ The AppImage needs `libfuse2` at runtime (present on most desktop distros; if mi
 
 ```bash
 sudo apt install git pkg-config libcurl4 libgtk-3-dev libsqlite3-dev   # Ubuntu/Debian build deps
-curl -fsSL https://raw.githubusercontent.com/Neo-Isshin/TokenClock/main/cli/install.sh | bash -s -- --build-from-source
+curl -fsSL https://www.ailyre.com/tokenclock/install.sh | bash -s -- --build-from-source
 ```
 
 Or use the reproducible container build:

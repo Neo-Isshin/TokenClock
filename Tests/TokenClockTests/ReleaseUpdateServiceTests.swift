@@ -46,7 +46,7 @@ final class ReleaseUpdateServiceTests: XCTestCase {
         check(checker)
         let first = try XCTUnwrap(checker.notifications().first)
         XCTAssertFalse(first.isRead)
-        XCTAssertEqual(first.releaseURL?.absoluteString, "https://github.com/Neo-Isshin/TokenClock/releases/tag/v1.5.11")
+        XCTAssertEqual(first.releaseURL?.absoluteString, "https://www.ailyre.com/tokenclock/releases/v1.5.11/")
         XCTAssertNil(first.route)
         checker.markRead()
         let relaunched = service(#"{"tag_name":"1.5.11","draft":false,"prerelease":false}"#)
