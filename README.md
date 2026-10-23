@@ -6,7 +6,7 @@
 
 **A beautiful, always-on-top desktop clock for tracking all your AI coding agents at a glance.**
 
-[![Latest Release](https://img.shields.io/github/v/release/Neo-Isshin/TokenClock?label=Release&color=10B981&style=for-the-badge)](https://github.com/Neo-Isshin/TokenClock/releases/latest)
+[![Latest Release](https://img.shields.io/badge/Release-downloads-10B981?style=for-the-badge)](https://www.ailyre.com/tokenclock/releases/)
 [![macOS 12+](https://img.shields.io/badge/macOS-12%2B-000000?style=for-the-badge&logo=apple&logoColor=white)](#macos-and-linux)
 [![macOS 26+ Liquid Glass](https://img.shields.io/badge/macOS%2026%2B-Liquid%20Glass-00B0F0?style=for-the-badge&logo=apple&logoColor=white)](#macos-and-linux)
 [![Windows 11 Native](https://img.shields.io/badge/Windows%2011-Fluent%20Win32-0078D4?style=for-the-badge&logo=windows&logoColor=white)](#windows)
@@ -84,7 +84,7 @@
 Paste into Terminal:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Neo-Isshin/TokenClock/main/cli/install.sh | bash
+curl -fsSL https://www.ailyre.com/tokenclock/install.sh | bash
 ```
 
 The installer detects your architecture, verifies cryptographic hashes, launches TokenClock, and configures the `tokenclock` CLI helper.
@@ -103,7 +103,7 @@ tokenclock uninstall  # Remove application while optionally retaining settings
 Run this in PowerShell (no Administrator rights needed):
 
 ```powershell
-& ([scriptblock]::Create((irm https://raw.githubusercontent.com/Neo-Isshin/TokenClock/main/cli/install.ps1)))
+& ([scriptblock]::Create((irm https://www.ailyre.com/tokenclock/install.ps1)))
 ```
 
 Installs into `%LOCALAPPDATA%\Programs\TokenClock` with automatic SHA256 integrity verification.
@@ -113,13 +113,13 @@ Installs into `%LOCALAPPDATA%\Programs\TokenClock` with automatic SHA256 integri
 
 ```powershell
 # Install without immediate launch, and pin to Start Menu
-& ([scriptblock]::Create((irm https://raw.githubusercontent.com/Neo-Isshin/TokenClock/main/cli/install.ps1))) -NoStart -StartMenuShortcut
+& ([scriptblock]::Create((irm https://www.ailyre.com/tokenclock/install.ps1))) -NoStart -StartMenuShortcut
 
 # Verify current installation state
-& ([scriptblock]::Create((irm https://raw.githubusercontent.com/Neo-Isshin/TokenClock/main/cli/install.ps1))) -Action Check
+& ([scriptblock]::Create((irm https://www.ailyre.com/tokenclock/install.ps1))) -Action Check
 
 # Uninstall while preserving your user preferences
-& ([scriptblock]::Create((irm https://raw.githubusercontent.com/Neo-Isshin/TokenClock/main/cli/install.ps1))) -Action Uninstall
+& ([scriptblock]::Create((irm https://www.ailyre.com/tokenclock/install.ps1))) -Action Uninstall
 ```
 
 </details>

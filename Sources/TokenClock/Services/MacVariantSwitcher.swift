@@ -43,7 +43,7 @@ enum MacVariantSwitcher {
     static func decodeAsset(_ data: Data, variant: LaunchAgentHelper.Variant, version: String) throws -> Asset {
         let release = try JSONDecoder().decode(Release.self, from: data)
         let name = "TokenClock-\(variant.rawValue)-universal.tar.gz"
-        let expected = "https://github.com/Neo-Isshin/TokenClock/releases/download/v\(version)/\(name)"
+        let expected = ReleaseUpdateService.distributionRoot + "/releases/download/v\(version)/\(name)"
         guard release.tag_name == "v\(version)", !release.draft, !release.prerelease,
               let asset = release.assets.first(where: { $0.name == name }),
               asset.browser_download_url.absoluteString == expected,
@@ -67,7 +67,7 @@ enum MacVariantSwitcher {
         guard supported(target) else { throw Failure("This macOS version does not support the selected edition.") }
         guard needsInstallation(target) else { return }
         let tag = "v\(AppConfig.version)"
-        let api = URL(string: "https://api.github.com/repos/Neo-Isshin/TokenClock/releases/tags/\(tag)")!
+        let api = URL(string: ReleaseUpdateService.distributionRoot + "/releases/\(tag).json")!
         var request = URLRequest(url: api, timeoutInterval: 20)
         request.setValue("TokenClock/\(AppConfig.version)", forHTTPHeaderField: "User-Agent")
         let (metadata, response) = try await URLSession.shared.data(for: request)

@@ -6,7 +6,7 @@
 
 **一眼看清所有 AI 编程工具消耗的极简桌面时钟。**
 
-[![Latest Release](https://img.shields.io/github/v/release/Neo-Isshin/TokenClock?label=Release&color=10B981&style=for-the-badge)](https://github.com/Neo-Isshin/TokenClock/releases/latest)
+[![Latest Release](https://img.shields.io/badge/Release-downloads-10B981?style=for-the-badge)](https://www.ailyre.com/tokenclock/releases/)
 [![macOS 12+](https://img.shields.io/badge/macOS-12%2B-000000?style=for-the-badge&logo=apple&logoColor=white)](#macos-与-linux)
 [![macOS 26+ Liquid Glass](https://img.shields.io/badge/macOS%2026%2B-Liquid%20Glass-00B0F0?style=for-the-badge&logo=apple&logoColor=white)](#macos-与-linux)
 [![Windows 11 Native](https://img.shields.io/badge/Windows%2011-Fluent%20Win32-0078D4?style=for-the-badge&logo=windows&logoColor=white)](#windows)
@@ -84,7 +84,7 @@
 打开终端（Terminal），直接运行官方一键脚本：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Neo-Isshin/TokenClock/main/cli/install.sh | bash
+curl -fsSL https://www.ailyre.com/tokenclock/install.sh | bash
 ```
 
 安装器会自动识别当前系统架构、校验 Release 构件哈希、启动 TokenClock，并注册 `tokenclock` CLI 管理命令。
@@ -103,7 +103,7 @@ tokenclock uninstall  # 卸载程序（可保留个人设置）
 在 PowerShell 中执行以下安装命令（无需管理员权限）：
 
 ```powershell
-& ([scriptblock]::Create((irm https://raw.githubusercontent.com/Neo-Isshin/TokenClock/main/cli/install.ps1)))
+& ([scriptblock]::Create((irm https://www.ailyre.com/tokenclock/install.ps1)))
 ```
 
 程序将安全部署至 `%LOCALAPPDATA%\Programs\TokenClock` 并自动校验 SHA256。
@@ -113,13 +113,13 @@ tokenclock uninstall  # 卸载程序（可保留个人设置）
 
 ```powershell
 # 安装时不立即启动，并在开始菜单创建快捷方式
-& ([scriptblock]::Create((irm https://raw.githubusercontent.com/Neo-Isshin/TokenClock/main/cli/install.ps1))) -NoStart -StartMenuShortcut
+& ([scriptblock]::Create((irm https://www.ailyre.com/tokenclock/install.ps1))) -NoStart -StartMenuShortcut
 
 # 检查当前安装与文件完整性
-& ([scriptblock]::Create((irm https://raw.githubusercontent.com/Neo-Isshin/TokenClock/main/cli/install.ps1))) -Action Check
+& ([scriptblock]::Create((irm https://www.ailyre.com/tokenclock/install.ps1))) -Action Check
 
 # 卸载 TokenClock，但保留你的偏好设置
-& ([scriptblock]::Create((irm https://raw.githubusercontent.com/Neo-Isshin/TokenClock/main/cli/install.ps1))) -Action Uninstall
+& ([scriptblock]::Create((irm https://www.ailyre.com/tokenclock/install.ps1))) -Action Uninstall
 ```
 
 </details>

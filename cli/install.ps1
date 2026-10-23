@@ -1,10 +1,10 @@
 # TokenClock Windows per-user installer.
 #
 # One-liner:
-#   & ([scriptblock]::Create((irm https://raw.githubusercontent.com/Neo-Isshin/TokenClock/windows-port/cli/install.ps1)))
+#   & ([scriptblock]::Create((irm https://www.ailyre.com/tokenclock/install.ps1)))
 #
 # Passing options through a one-liner:
-#   & ([scriptblock]::Create((irm https://raw.githubusercontent.com/Neo-Isshin/TokenClock/windows-port/cli/install.ps1))) -NoStart -StartMenuShortcut
+#   & ([scriptblock]::Create((irm https://www.ailyre.com/tokenclock/install.ps1))) -NoStart -StartMenuShortcut
 
 [CmdletBinding(SupportsShouldProcess = $true)]
 param(
@@ -152,27 +152,17 @@ function Get-AssetDownloadUrl($Asset) {
 }
 
 function Get-Release {
-    $headers = @{ 'User-Agent' = 'TokenClock-Windows-Installer'; 'Accept' = 'application/vnd.github+json' }
+    $headers = @{ 'User-Agent' = 'TokenClock-Windows-Installer'; 'Accept' = 'application/json' }
     if ($Version -eq 'latest') {
-        # The repository's newest macOS/Linux release may precede its Windows asset upload.
-        # Pick the newest stable release that already contains both the ZIP and its checksum.
-        for ($page = 1; $page -le 10; $page++) {
-            # Windows PowerShell 5.1 can preserve a top-level JSON array as one pipeline object
-            # when Invoke-RestMethod is called directly inside @(...). Assign first so foreach
-            # consistently receives individual release objects on both 5.1 and PowerShell 7.
-            $response = Invoke-RestMethod "https://api.github.com/repos/$repo/releases?per_page=100&page=$page" -Headers $headers
-            $releases = @($response)
-            foreach ($release in $releases) {
-                if (-not $release.draft -and -not $release.prerelease -and (Test-ReleaseHasWindowsAssets $release)) {
-                    return $release
-                }
-            }
-            if ($releases.Count -lt 100) { break }
+        # Keep the Windows channel independent of macOS/Linux package publication.
+        $release = Invoke-RestMethod 'https://www.ailyre.com/tokenclock/releases/latest-windows.json' -Headers $headers
+        if (-not $release.draft -and -not $release.prerelease -and (Test-ReleaseHasWindowsAssets $release)) {
+            return $release
         }
         throw "No stable TokenClock release contains both $assetName and $checksumAssetName."
     }
     $encoded = [Uri]::EscapeDataString($Version)
-    return Invoke-RestMethod "https://api.github.com/repos/$repo/releases/tags/$encoded" -Headers $headers
+    return Invoke-RestMethod "https://www.ailyre.com/tokenclock/releases/$encoded.json" -Headers $headers
 }
 
 function Read-ExpectedHash([string] $Path) {
@@ -255,13 +245,13 @@ try {
         Write-Host "Fetching TokenClock release metadata ($Version)..."
         $release = Get-Release
         if ($null -eq $release -or [string]::IsNullOrWhiteSpace([string] $release.tag_name)) {
-            throw 'GitHub returned release metadata without a tag name. Retry shortly or specify -Version v1.5.12.'
+            throw 'The release server returned metadata without a tag name. Retry shortly or specify -Version v1.5.12.'
         }
         $releaseTag = [string] $release.tag_name
         $zipAsset = $release.assets | Where-Object name -eq $assetName | Select-Object -First 1
         $shaAsset = $release.assets | Where-Object name -eq $checksumAssetName | Select-Object -First 1
         # A workflow and a local release may replace an asset under the same public filename.
-        # Include the GitHub asset id so CDNs cannot serve bytes from the previous asset object.
+        # Include the asset revision when supplied by the release server.
         $zipUrl = Get-AssetDownloadUrl $zipAsset
         $shaUrl = Get-AssetDownloadUrl $shaAsset
         if (-not $zipUrl) { throw "Release '$releaseTag' has no $assetName asset." }

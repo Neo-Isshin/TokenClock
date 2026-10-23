@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # Validate and optionally publish a TokenClock release made entirely on the project's own machines.
-# This script never compiles in GitHub Actions and never commits, tags, or pushes source code.
+# This script never uses GitHub and never commits, tags, or pushes source code.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-REPO="${TOKENCLOCK_GH_REPO:-Neo-Isshin/TokenClock}"
+PUBLISH_HOST="${TOKENCLOCK_PUBLISH_HOST:-vps-1T}"
 VERSION=""
 ASSETS_DIR=""
 PUBLISH=0
@@ -22,7 +22,7 @@ usage() {
 Usage: scripts/release.sh vX.Y.Z --assets-dir DIR [--publish]
 
 Without --publish, validates the six locally built release assets and source pins.
-With --publish, uploads those exact files to an existing or new GitHub release, then
+With --publish, uploads those exact files to the public VPS release directory, then
 downloads them again and verifies every byte. Source commits and tags remain manual.
 EOF
 }
@@ -119,24 +119,28 @@ grep -q "normal) echo \"$normal_sha\"" "$ROOT/cli/install.sh" \
 say "Local validation passed: six assets, checksums, architectures, signatures, and source pins"
 [ "$PUBLISH" -eq 1 ] || { say "Validation only; add --publish after source and tag are pushed."; exit 0; }
 
-command -v gh >/dev/null 2>&1 || die "GitHub CLI is required for --publish"
-gh auth status >/dev/null 2>&1 || die "GitHub CLI is not signed in"
 git -C "$ROOT" rev-parse -q --verify "refs/tags/$VERSION" >/dev/null \
   || die "local tag $VERSION does not exist; create and review it first"
-git -C "$ROOT" ls-remote --exit-code origin "refs/tags/$VERSION" >/dev/null \
+git -C "$ROOT" ls-remote --exit-code gitea "refs/tags/$VERSION" >/dev/null \
   || die "remote tag $VERSION does not exist; push the reviewed tag first"
 
-if ! gh release view "$VERSION" --repo "$REPO" >/dev/null 2>&1; then
-  gh release create "$VERSION" --repo "$REPO" --title "$VERSION" --generate-notes
-fi
-upload_args=()
-for name in $FILES; do upload_args+=("$ASSETS_DIR/$name"); done
-gh release upload "$VERSION" --repo "$REPO" --clobber "${upload_args[@]}"
+python3 -B "$ROOT/scripts/publish-release.py" --version "$VERSION" \
+  --assets-dir "$ASSETS_DIR" --output "$TMP_DIR/site" --repo "$ROOT" \
+  --source-ref glass=main --source-ref normal=normal \
+  --source-ref windows=windows-port --source-ref linux=codex/linux-theme-parity
+
+remote_stage="$(ssh -o BatchMode=yes "$PUBLISH_HOST" 'mktemp -d /home/debian/tokenclock-release.XXXXXX')"
+case "$remote_stage" in /home/debian/tokenclock-release.*) ;; *) die "Invalid VPS staging directory" ;; esac
+rsync -a "$TMP_DIR/site/" "$PUBLISH_HOST:$remote_stage/site/"
+# Activate payloads first; metadata/latest pointers must never advertise a partial upload.
+ssh -o BatchMode=yes "$PUBLISH_HOST" \
+  "sudo install -d -m 755 /var/www/tokenclock && sudo rsync -a --exclude='latest*.json' --exclude='index.html' '$remote_stage/site/' /var/www/tokenclock/ && sudo rsync -a '$remote_stage/site/' /var/www/tokenclock/ && sudo chmod -R a+rX /var/www/tokenclock"
 
 VERIFY_DIR="$TMP_DIR/downloaded"
 mkdir -p "$VERIFY_DIR"
 for name in $FILES; do
-  gh release download "$VERSION" --repo "$REPO" --dir "$VERIFY_DIR" --pattern "$name" --clobber
+  curl -fL --retry 3 --connect-timeout 15 \
+    "https://www.ailyre.com/tokenclock/releases/download/$VERSION/$name" -o "$VERIFY_DIR/$name"
   [ "$(sha256_file "$ASSETS_DIR/$name")" = "$(sha256_file "$VERIFY_DIR/$name")" ] \
     || die "uploaded asset differs after download: $name"
 done
