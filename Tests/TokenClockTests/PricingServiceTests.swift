@@ -3,6 +3,25 @@ import XCTest
 
 /// PricingService 计费数学与三层查询逻辑
 final class PricingServiceTests: XCTestCase {
+    func testOctoberCatalogAdditionsAndExistingEffortAliases() throws {
+        let argon = try XCTUnwrap(PricingService.shared.price(forModel: "gemini-4-argon"))
+        XCTAssertEqual(argon, ModelPrice(input: 2, output: 10, cacheRead: 0.1, priorityMultiplier: 1.8))
+        for suffix in ["low", "medium", "high"] {
+            XCTAssertEqual(PricingService.shared.price(forModel: "gemini-4-argon-" + suffix), argon)
+        }
+        let haiku = try XCTUnwrap(PricingService.shared.price(forModel: "claude-haiku-5-5"))
+        XCTAssertEqual(haiku.longContextThreshold, 100_000)
+        XCTAssertEqual(haiku.longCacheRead, 0.05)
+        let buckets = ModelBuckets(input: 100, output: 100, cacheRead: 100, cacheWrite: 100)
+        for (context, expected) in [(100_000, 0.0000735), (100_001, 0.0003675)] {
+            let cost = PricingService.shared.cost(of: [ModelUsageRequest(
+                model: "claude-haiku-5-5", buckets: buckets, contextInputTokens: context)])
+            XCTAssertEqual(cost.value, expected, accuracy: 0.000000001)
+        }
+        XCTAssertEqual(PricingService.shared.price(forModel: "gemini-robotics-er-2-preview")?.output, 5)
+        XCTAssertEqual(PricingService.shared.price(forModel: "gpt-rosalind-discovery")?.cacheRead, 0.5)
+    }
+
     func testUnprefixedGLM52UsesFirstPartyInsteadOfResellerPrice() throws {
         let firstParty = try XCTUnwrap(PricingService.shared.price(forModel: "zai/glm-5.2"))
         XCTAssertEqual(PricingService.shared.price(forModel: "glm-5.2"), firstParty)

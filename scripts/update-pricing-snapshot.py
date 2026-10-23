@@ -100,6 +100,9 @@ OFFICIAL_OVERRIDES = {
                     "pm": 2.0, "p": "openai"},
 
     # Anthropic: platform.claude.com/docs/en/about-claude/pricing (5-minute cache writes)
+    "claude-haiku-5-5": {"in": 0.1, "out": 0.5, "cr": 0.01, "cw": 0.125, "lt": 100_000,
+                         "lin": 0.5, "lout": 2.5, "lcr": 0.05, "lcw": 0.625, "p": "anthropic"},
+    "claude-sonnet-5-5": {"in": 2.0, "out": 10.0, "cr": 0.1, "cw": 2.5, "p": "anthropic"},
     "claude-fable-5-1": {"in": 10.0, "out": 50.0, "cr": 0.25, "cw": 12.5, "p": "anthropic"},
     "claude-fable-5": {"in": 10.0, "out": 50.0, "cr": 1.0, "cw": 12.5, "p": "anthropic"},
     "claude-mythos-5": {"in": 10.0, "out": 50.0, "cr": 1.0, "cw": 12.5, "p": "anthropic"},
@@ -108,10 +111,18 @@ OFFICIAL_OVERRIDES = {
     "claude-sonnet-5": {"in": 2.0, "out": 10.0, "cr": 0.2, "cw": 2.5, "p": "anthropic"},
 
     # Google AI for Developers: ai.google.dev/gemini-api/docs/pricing
+    # Argon introductory Standard rates through 2026-11-30; from 2026-12-01:
+    # in=4, out=20, cr=0.2. Priority is 1.8x. Keep the existing November review date.
+    "gemini-4-argon": {"in": 2.0, "out": 10.0, "cr": 0.1, "pm": 1.8, "p": "vertex_ai-language-models"},
+    # Robotics introductory rates through 2026-12-31; in=2, out=10, cr=0.2 thereafter.
+    "gemini-robotics-er-2-preview": {"in": 1.0, "out": 5.0, "cr": 0.1, "p": "vertex_ai-language-models"},
     "gemini-3.5-flash": {"in": 1.5, "out": 9.0, "cr": 0.15, "p": "vertex_ai-language-models"},
     "gemini-3.5-flash-lite": {"in": 0.3, "out": 2.5, "cr": 0.03, "p": "vertex_ai-language-models"},
     "gemini-2.5-pro": {"in": 1.25, "out": 10.0, "cr": 0.125, "lt": 200_000,
                        "lin": 2.5, "lout": 15.0, "lcr": 0.25, "p": "gemini"},
+
+    # OpenAI API pricing: developers.openai.com/api/docs/pricing#life-sciences-models
+    "gpt-rosalind-discovery": {"in": 5.0, "out": 25.0, "cr": 0.5, "p": "openai"},
 
     # xAI: docs.x.ai/developers/models/grok-4.6
     "xai/grok-4.6": {"in": 2.0, "out": 6.0, "cr": 0.5, "lt": 200_000,
@@ -300,7 +311,7 @@ def main() -> int:
     for must in (
         "claude-sonnet-5", "claude-fable-5-1", "gpt-5.6-sol", "gpt-6-astra",
         "gpt-6-sol", "gpt-6-luna", "claude-opus-5-5",
-        "gemini-3.5-flash", "xai/grok-4.6",
+        "gemini-3.5-flash", "gemini-4-argon", "claude-haiku-5-5", "xai/grok-4.6",
         "deepseek-v4-pro", "moonshot/kimi-k3", "minimax/MiniMax-M2.7",
         "zai/glm-5.1", "dashscope/qwen3.8-max",
     ):
