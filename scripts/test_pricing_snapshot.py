@@ -17,6 +17,30 @@ def feed():
             for i in range(120)}
 
 class SnapshotTests(unittest.TestCase):
+    def test_october_models_have_official_fallback_rates_when_feed_lags(self):
+        models = pricing.validated_models(feed(), {})
+        argon = models["gemini-4-argon"]
+        self.assertEqual((argon["in"], argon["out"], argon["cr"], argon["pm"]), (2, 10, 0.1, 1.8))
+        haiku = models["claude-haiku-5-5"]
+        self.assertEqual((haiku["in"], haiku["out"], haiku["cr"], haiku["cw"]), (0.1, 0.5, 0.01, 0.125))
+        self.assertEqual((haiku["lt"], haiku["lin"], haiku["lout"], haiku["lcr"], haiku["lcw"]),
+                         (100_000, 0.5, 2.5, 0.05, 0.625))
+        self.assertEqual(models["claude-sonnet-5-5"]["cr"], 0.1)
+        self.assertEqual(models["gemini-robotics-er-2-preview"]["out"], 5)
+        self.assertEqual(models["gpt-rosalind-discovery"]["out"], 25)
+
+    def test_argon_published_rates_can_replace_introductory_defaults(self):
+        changed = feed()
+        changed["gemini-4-argon"] = {
+            "litellm_provider": "gemini", "mode": "chat",
+            "input_cost_per_token": 0.000004, "output_cost_per_token": 0.000020,
+            "cache_read_input_token_cost": 0.0000002,
+            "input_cost_per_token_priority": 0.0000072, "output_cost_per_token_priority": 0.000036,
+        }
+        previous = {"models": pricing.validated_models(feed(), {})}
+        argon = pricing.validated_models(changed, previous)["gemini-4-argon"]
+        self.assertEqual((argon["in"], argon["out"], argon["cr"], argon["pm"]), (4, 20, 0.2, 1.8))
+
     def test_retains_historical_rows_and_applies_official_rates(self):
         result = pricing.validated_models(feed(), {"models": {"retired": {"in": 1, "out": 2}}})
         self.assertIn("retired", result)
