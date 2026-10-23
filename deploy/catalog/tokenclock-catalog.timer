@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily TokenClock pricing catalog update
+
+[Timer]
+OnCalendar=*-*-* 03:17:00 UTC
+Persistent=true
+Unit=tokenclock-catalog.service
+
+[Install]
+WantedBy=timers.target

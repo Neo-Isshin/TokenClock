@@ -3,6 +3,17 @@ import XCTest
 
 /// PricingService 计费数学与三层查询逻辑
 final class PricingServiceTests: XCTestCase {
+    func testLiveVPSCatalogRefreshWhenEnabled() async throws {
+        guard ProcessInfo.processInfo.environment["TOKENCLOCK_TEST_LIVE_CATALOG"] == "1" else {
+            throw XCTSkip("Opt in to read the public catalog endpoint and refresh its local cache")
+        }
+        try await PricingService.shared.refresh()
+        XCTAssertGreaterThanOrEqual(PricingService.shared.catalogSummary.count, 323)
+        XCTAssertNotNil(PricingService.shared.lastRefresh)
+        XCTAssertEqual(PricingService.shared.price(forModel: "gemini-4-argon")?.input, 2)
+        XCTAssertNotNil(PricingService.shared.price(forModel: "claude-haiku-5-5"))
+    }
+
     func testOctoberCatalogAdditionsAndExistingEffortAliases() throws {
         let argon = try XCTUnwrap(PricingService.shared.price(forModel: "gemini-4-argon"))
         XCTAssertEqual(argon, ModelPrice(input: 2, output: 10, cacheRead: 0.1, priorityMultiplier: 1.8))

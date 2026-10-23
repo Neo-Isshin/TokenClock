@@ -218,7 +218,7 @@ enum CostFormat {
 ///
 /// - 内置快照：Resources/pricing-snapshot.json，随发版更新。
 /// - 刷新缓存：Application Support/TokenClock/pricing-catalog.json，内容格式与快照一致，
-///   拉取自 TokenClock 自有 GitHub 仓库的共享目录（与内置格式同构，坏数据不会替换缓存）。
+///   拉取自 TokenClock 自有 VPS 的共享目录（与内置格式同构，坏数据不会替换缓存）。
 /// - 自定义价格：UserDefaults JSON，优先级最高，覆盖代理/自定义模型（如 glm-5.3）。
 ///
 /// 目录查询发生在后台扫描线程，价格编辑/刷新发生在主线程 —— 用锁保护可变状态。
@@ -230,9 +230,9 @@ final class PricingService: @unchecked Sendable {
     /// 目录刷新后广播（ViewModel 收到后增量重扫，30 秒内的下一轮扫描也会自然重算）
     static let catalogUpdatedNotification = Notification.Name("PricingCatalogUpdated")
 
-    /// 四个平台共享的刷新源。统一发布线以 main 为价格目录的单一事实来源。
+    /// 四个平台共享的 VPS 刷新源；无需 Git 托管账号或登录。
     private static let refreshURL = URL(string:
-        "https://raw.githubusercontent.com/Neo-Isshin/TokenClock/main/Sources/TokenClock/Resources/pricing-snapshot.json")!
+        "https://www.ailyre.com/tokenclock/pricing-catalog.json")!
 
     private var catalog: [String: ModelPrice] = [:]
     /// 带路由前缀的 key（如 dashscope/glm-5.2）→ 后缀索引；后缀唯一才收录，歧义即弃用
@@ -504,7 +504,7 @@ final class PricingService: @unchecked Sendable {
         let currentRevision = currentCatalogRevision()
 
         let stamp = Date()
-        // Never replace a newer bundled catalog with an older GitHub snapshot.
+        // Never replace a newer bundled catalog with an older remote snapshot.
         // ISO-8601 UTC revisions sort chronologically in their string form.
         if let remoteRevision, let currentRevision, remoteRevision <= currentRevision {
             recordRefresh(stamp)

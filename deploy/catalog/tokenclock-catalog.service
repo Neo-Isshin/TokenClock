@@ -1,0 +1,18 @@
+[Unit]
+Description=Publish validated TokenClock pricing catalog
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=tokenclock-catalog
+Group=tokenclock-catalog
+WorkingDirectory=/opt/tokenclock-catalog
+ExecStart=/usr/bin/python3 -B /opt/tokenclock-catalog/publish-pricing-catalog.py --output /var/lib/tokenclock-catalog/pricing-catalog.json
+TimeoutStartSec=180
+UMask=0022
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/tokenclock-catalog
