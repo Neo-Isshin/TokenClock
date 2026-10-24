@@ -333,9 +333,9 @@ release_tag_for_variant() {
     return
   fi
   case "$1" in
-    glass)  echo "v1.5.12" ;;
-    normal) echo "v1.5.12" ;;
-    linux)  echo "v1.5.12" ;;
+    glass)  echo "v1.5.13" ;;
+    normal) echo "v1.5.13" ;;
+    linux)  echo "v1.5.13" ;;
   esac
 }
 release_base_for_tag() {
