@@ -160,4 +160,18 @@ final class ReleaseUpdateServiceTests: XCTestCase {
         let cli = try String(contentsOf: root.appendingPathComponent("cli/tokenclock"), encoding: .utf8)
         XCTAssertTrue(cli.contains("CLI_VERSION=\"\(AppConfig.version)\""), "Bump AppConfig.version with every release")
     }
+
+    func testLiveSelfHostedReleaseWhenEnabled() throws {
+        guard ProcessInfo.processInfo.environment["TOKENCLOCK_TEST_LIVE_RELEASE"] == "1" else {
+            throw XCTSkip("Opt in to verify the public release endpoint")
+        }
+        let checker = ReleaseUpdateService(defaults: defaults, installedVersion: "0.0.0")
+        let done = expectation(description: "Self-hosted release check")
+        checker.checkNow { result in
+            XCTAssertEqual(result, .available(version: AppConfig.version,
+                url: ReleaseUpdateService.releaseURL(tag: "v" + AppConfig.version)))
+            done.fulfill()
+        }
+        wait(for: [done], timeout: 30)
+    }
 }
