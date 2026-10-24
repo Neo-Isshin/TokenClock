@@ -8,6 +8,7 @@ PUBLISH_HOST="${TOKENCLOCK_PUBLISH_HOST:-vps-1T}"
 VERSION=""
 ASSETS_DIR=""
 PUBLISH=0
+WITHOUT_WINDOWS=0
 
 say() { printf '%s\n' "$*"; }
 die() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
@@ -19,11 +20,12 @@ sha256_file() {
 
 usage() {
   cat <<'EOF'
-Usage: scripts/release.sh vX.Y.Z --assets-dir DIR [--publish]
+Usage: scripts/release.sh vX.Y.Z --assets-dir DIR [--publish] [--without-windows]
 
 Without --publish, validates the six locally built release assets and source pins.
 With --publish, uploads those exact files to the public VPS release directory, then
 downloads them again and verifies every byte. Source commits and tags remain manual.
+--without-windows publishes macOS/Linux only, preserving the existing Windows channel.
 EOF
 }
 
@@ -31,6 +33,7 @@ while [ "$#" -gt 0 ]; do
   case "$1" in
     --assets-dir) shift; [ "$#" -gt 0 ] || die "--assets-dir needs a directory"; ASSETS_DIR="$1" ;;
     --publish) PUBLISH=1 ;;
+    --without-windows) WITHOUT_WINDOWS=1 ;;
     -h|--help) usage; exit 0 ;;
     -*) die "unknown option: $1" ;;
     *) [ -z "$VERSION" ] || die "only one version may be supplied"; VERSION="$1" ;;
@@ -46,11 +49,15 @@ ASSETS_DIR="$(cd "$ASSETS_DIR" 2>/dev/null && pwd)" || die "asset directory does
 FILES="
 TokenClock-glass-universal.tar.gz
 TokenClock-normal-universal.tar.gz
-TokenClock-windows-x86_64.zip
-TokenClock-windows-x86_64.zip.sha256
 TokenClock-x86_64.AppImage
 TokenClock-x86_64.AppImage.sha256
 "
+if [ "$WITHOUT_WINDOWS" -eq 0 ]; then
+  FILES="$FILES
+TokenClock-windows-x86_64.zip
+TokenClock-windows-x86_64.zip.sha256
+"
+fi
 
 say "Validating local assets for $VERSION"
 for name in $FILES; do
@@ -63,14 +70,18 @@ verify_sidecar() {
   actual="$(sha256_file "$payload")"
   [ "$expected" = "$actual" ] || die "sidecar mismatch: $(basename "$payload")"
 }
-verify_sidecar "$ASSETS_DIR/TokenClock-windows-x86_64.zip" "$ASSETS_DIR/TokenClock-windows-x86_64.zip.sha256"
+if [ "$WITHOUT_WINDOWS" -eq 0 ]; then
+  verify_sidecar "$ASSETS_DIR/TokenClock-windows-x86_64.zip" "$ASSETS_DIR/TokenClock-windows-x86_64.zip.sha256"
+fi
 verify_sidecar "$ASSETS_DIR/TokenClock-x86_64.AppImage" "$ASSETS_DIR/TokenClock-x86_64.AppImage.sha256"
 
 command -v tar >/dev/null 2>&1 || die "tar is required"
-command -v unzip >/dev/null 2>&1 || die "unzip is required"
-unzip -tq "$ASSETS_DIR/TokenClock-windows-x86_64.zip" >/dev/null || die "Windows zip integrity check failed"
-unzip -Z1 "$ASSETS_DIR/TokenClock-windows-x86_64.zip" | grep -E '(^|/)TokenClock\.exe$' >/dev/null \
-  || die "Windows zip does not contain TokenClock.exe"
+if [ "$WITHOUT_WINDOWS" -eq 0 ]; then
+  command -v unzip >/dev/null 2>&1 || die "unzip is required"
+  unzip -tq "$ASSETS_DIR/TokenClock-windows-x86_64.zip" >/dev/null || die "Windows zip integrity check failed"
+  unzip -Z1 "$ASSETS_DIR/TokenClock-windows-x86_64.zip" | grep -E '(^|/)TokenClock\.exe$' >/dev/null \
+    || die "Windows zip does not contain TokenClock.exe"
+fi
 
 TMP_DIR="$(mktemp -d -t tokenclock-release.XXXXXX)" || die "cannot create validation directory"
 trap 'rm -rf "$TMP_DIR"' EXIT
@@ -102,8 +113,10 @@ grep -q "normal) echo \"$VERSION\"" "$ROOT/cli/install.sh" || die "Normal instal
 grep -q "linux)  echo \"$VERSION\"" "$ROOT/cli/install.sh" || die "Linux installer tag is not $VERSION"
 grep -q "private let version = \"$VERSION\"" "$ROOT/Sources/TokenClock/Views/AboutView.swift" \
   || die "macOS About version is not $VERSION"
-grep -q "\"$VERSION\"" "$ROOT/Sources/TokenClock/Windows/WindowsApp.swift" \
-  || die "Windows About version is not $VERSION"
+if [ "$WITHOUT_WINDOWS" -eq 0 ]; then
+  grep -q "\"$VERSION\"" "$ROOT/Sources/TokenClock/Windows/WindowsApp.swift" \
+    || die "Windows About version is not $VERSION"
+fi
 grep -q "\"$VERSION\"" "$ROOT/Sources/TokenClock/Linux/LinuxApp.swift" \
   || die "Linux About version is not $VERSION"
 bash -n "$ROOT/cli/install.sh"
@@ -116,7 +129,7 @@ grep -q "glass)  echo \"$glass_sha\"" "$ROOT/cli/install.sh" \
 grep -q "normal) echo \"$normal_sha\"" "$ROOT/cli/install.sh" \
   || die "Normal tarball SHA is not pinned in cli/install.sh"
 
-say "Local validation passed: six assets, checksums, architectures, signatures, and source pins"
+say "Local validation passed: selected assets, checksums, architectures, signatures, and source pins"
 [ "$PUBLISH" -eq 1 ] || { say "Validation only; add --publish after source and tag are pushed."; exit 0; }
 
 git -C "$ROOT" rev-parse -q --verify "refs/tags/$VERSION" >/dev/null \
@@ -124,10 +137,12 @@ git -C "$ROOT" rev-parse -q --verify "refs/tags/$VERSION" >/dev/null \
 git -C "$ROOT" ls-remote --exit-code gitea "refs/tags/$VERSION" >/dev/null \
   || die "remote tag $VERSION does not exist; push the reviewed tag first"
 
+publisher_args=()
+[ "$WITHOUT_WINDOWS" -eq 0 ] || publisher_args+=(--without-windows)
 python3 -B "$ROOT/scripts/publish-release.py" --version "$VERSION" \
   --assets-dir "$ASSETS_DIR" --output "$TMP_DIR/site" --repo "$ROOT" \
   --source-ref glass=main --source-ref normal=normal \
-  --source-ref windows=windows-port --source-ref linux=codex/linux-theme-parity
+  --source-ref windows=windows-port --source-ref linux=codex/linux-theme-parity "${publisher_args[@]}"
 
 remote_stage="$(ssh -o BatchMode=yes "$PUBLISH_HOST" 'mktemp -d /home/debian/tokenclock-release.XXXXXX')"
 case "$remote_stage" in /home/debian/tokenclock-release.*) ;; *) die "Invalid VPS staging directory" ;; esac
