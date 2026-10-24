@@ -49,18 +49,19 @@ def atomic_write(path, body):
             temporary.unlink(missing_ok=True)
 
 
-def publish(version, assets_dir, output, repo, source_refs=()):
+def publish(version, assets_dir, output, repo, source_refs=(), without_windows=False):
     version_key(version)
     assets_dir, output, repo = Path(assets_dir), Path(output), Path(repo)
     assets = []
-    for name in FILES:
+    files = tuple(name for name in FILES if not (without_windows and "windows" in name))
+    for name in files:
         source = assets_dir / name
         if not source.is_file() or source.stat().st_size == 0:
             raise ValueError(f"Missing asset: {name}")
         assets.append({"name": name, "size": source.stat().st_size,
                        "digest": "sha256:" + digest(source),
                        "browser_download_url": f"{BASE_URL}/releases/download/{version}/{name}"})
-    for name in FILES:
+    for name in files:
         if name.endswith(".sha256"):
             if (assets_dir / name).read_text().split()[0].lower() != digest(assets_dir / name[:-7]):
                 raise ValueError(f"Checksum mismatch: {name}")
@@ -82,10 +83,12 @@ def publish(version, assets_dir, output, repo, source_refs=()):
     atomic_write(output / "releases" / f"{version}.json", metadata)
     links = "\n".join(f'<li><a href="{html.escape(a["browser_download_url"])}">'
                       f'{html.escape(a["name"])}</a><br><small>{a["digest"]}</small></li>' for a in assets)
+    windows_note = ('<p>Windows build pending. The Windows installer continues to provide '
+                    'the previous verified build.</p>' if without_windows else '')
     page = (f'<!doctype html><html lang="en"><meta charset="utf-8">'
             f'<meta name="viewport" content="width=device-width,initial-scale=1">'
             f'<title>TokenClock {version}</title><body><h1>TokenClock {version}</h1>'
-            f'<p>Official downloads · SHA-256 verified packages</p><ul>{links}</ul>'
+            f'<p>Official downloads · SHA-256 verified packages</p>{windows_note}<ul>{links}</ul>'
             f'<p><a href="{BASE_URL}/install.sh">macOS / Linux installer</a> · '
             f'<a href="{BASE_URL}/install.ps1">Windows installer</a></p></body></html>')
     atomic_write(output / "releases" / version / "index.html", page.encode())
@@ -105,7 +108,8 @@ def publish(version, assets_dir, output, repo, source_refs=()):
     latest = output / "releases" / "latest.json"
     if not latest.exists() or version_key(json.loads(latest.read_bytes())["tag_name"]) <= version_key(version):
         atomic_write(latest, metadata)
-        atomic_write(output / "releases" / "latest-windows.json", metadata)
+        if not without_windows:
+            atomic_write(output / "releases" / "latest-windows.json", metadata)
         atomic_write(output / "releases" / "index.html", page.encode())
     print(f"Staged {version}: {len(assets)} assets; committed source only")
     return release
@@ -118,9 +122,11 @@ def main():
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--repo", type=Path, default=Path(__file__).resolve().parent.parent)
     parser.add_argument("--source-ref", action="append", default=[], metavar="CHANNEL=REF")
+    parser.add_argument("--without-windows", action="store_true",
+                        help="Publish macOS/Linux only; do not change the Windows latest pointer")
     args = parser.parse_args()
     publish(args.version, args.assets_dir, args.output, args.repo,
-            [value.split("=", 1) for value in args.source_ref])
+            [value.split("=", 1) for value in args.source_ref], args.without_windows)
 
 
 if __name__ == "__main__":

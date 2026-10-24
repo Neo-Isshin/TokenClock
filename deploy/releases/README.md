@@ -16,6 +16,12 @@ to `vps-1T`, activates assets before latest pointers, and re-downloads all six a
 to verify their hashes. The SSH host can be overridden with `TOKENCLOCK_PUBLISH_HOST`.
 Public source exports allow source installation without exposing a Gitea login.
 
+When the Windows build host is offline, add `--without-windows`. Only the two macOS
+archives and Linux AppImage/checksum are published; `latest-windows.json` stays on
+the last verified Windows version. Do not copy an older Windows ZIP into the new
+release. Once Windows is rebuilt and tested, rerun the normal six-asset publication
+using the saved, unchanged macOS/Linux packages from that same release.
+
 Install the Nginx snippet beside the existing catalog snippet; back up the server
 configuration and run `nginx -t` before reloading. Never publish a whole worktree,
 build directory, credentials, or the pricing publisher's state directory.

@@ -37,8 +37,8 @@ class ReleasePublisherTests(unittest.TestCase):
             if name.endswith(".sha256"):
                 (self.assets / name).write_text(publisher.digest(self.assets / name[:-7]) + "  " + name[:-7])
 
-    def publish(self, version="v1.5.12", refs=()):
-        return publisher.publish(version, self.assets, self.site, self.repo, refs)
+    def publish(self, version="v1.5.12", refs=(), without_windows=False):
+        return publisher.publish(version, self.assets, self.site, self.repo, refs, without_windows)
 
     def test_assets_metadata_and_installer_use_exact_reviewed_bytes(self):
         release = self.publish(refs=[("glass", "HEAD")])
@@ -80,6 +80,23 @@ class ReleasePublisherTests(unittest.TestCase):
         for version in ("../escape", "v1.5.12-rc.1", "v01.5.12", "1.5.12"):
             with self.assertRaises(ValueError):
                 self.publish(version)
+
+    def test_deferred_windows_preserves_its_previous_release(self):
+        self.publish("v1.5.12")
+        windows_before = (self.site / "releases/latest-windows.json").read_bytes()
+        for name in publisher.FILES:
+            if "windows" in name:
+                (self.assets / name).unlink()
+        release = self.publish("v1.5.13", without_windows=True)
+        self.assertEqual(len(release["assets"]), 4)
+        self.assertFalse(any("windows" in item["name"] for item in release["assets"]))
+        self.assertEqual((self.site / "releases/latest-windows.json").read_bytes(), windows_before)
+        self.assertEqual(json.loads((self.site / "releases/latest.json").read_text())["tag_name"], "v1.5.13")
+        self.assertIn("Windows build pending", (self.site / "releases/v1.5.13/index.html").read_text())
+
+    def test_deferred_windows_does_not_create_a_fake_windows_release(self):
+        self.publish("v1.5.13", without_windows=True)
+        self.assertFalse((self.site / "releases/latest-windows.json").exists())
 
 
 if __name__ == "__main__":
