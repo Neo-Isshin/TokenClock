@@ -108,7 +108,8 @@ struct ClockContentView: View {
                     Spacer()
                     if quotaIndicators.count == 1, let indicator = quotaIndicators.first {
                         quotaRing(
-                            provider: indicator.provider,
+                            palette: .cool,
+                            slot: 0,
                             outerRemaining: indicator.outerRemainingPercent,
                             innerRemaining: indicator.innerRemainingPercent,
                             size: 35 * s,
@@ -120,7 +121,8 @@ struct ClockContentView: View {
                         VStack(alignment: .trailing, spacing: 5 * s) {
                             ForEach(quotaIndicators) { indicator in
                                 quotaRing(
-                                    provider: indicator.provider,
+                                    palette: indicator.id == quotaIndicators.first?.id ? .cool : .warm,
+                                    slot: indicator.id == quotaIndicators.first?.id ? 0 : 1,
                                     outerRemaining: indicator.outerRemainingPercent,
                                     innerRemaining: indicator.innerRemainingPercent,
                                     size: 29 * s,
@@ -232,7 +234,8 @@ struct ClockContentView: View {
     }
 
     private func quotaRing(
-        provider: SubscriptionProvider,
+        palette: GlassQuotaRingPalette,
+        slot: Int,
         outerRemaining: Double,
         innerRemaining: Double?,
         size: CGFloat,
@@ -244,15 +247,9 @@ struct ClockContentView: View {
         let scale = size / 30
         let innerInset = 5.25 * scale
         let innerLineWidth = 1.7 * scale
-        let accent = provider.glassDialQuotaColor(contrastColor: viewModel.effectiveDialPrimary)
-        let outerGradient = AngularGradient(
-            colors: [accent.opacity(0.72), accent.opacity(0.90), accent.opacity(0.78)],
-            center: .center,
-            startAngle: .degrees(-90),
-            endAngle: .degrees(270)
-        )
+        let accent = palette.innerColor(contrastColor: NSColor(viewModel.effectiveDialPrimary))
         let innerGradient = AngularGradient(
-            colors: [accent.opacity(0.36), accent.opacity(0.56), accent.opacity(0.42)],
+            colors: [accent.opacity(0.60), accent.opacity(0.76), accent.opacity(0.66)],
             center: .center,
             startAngle: .degrees(-90),
             endAngle: .degrees(270)
@@ -263,15 +260,10 @@ struct ClockContentView: View {
                 .fill(viewModel.effectiveDialPrimary.opacity(0.025))
             Circle()
                 .strokeBorder(viewModel.effectiveDialPrimary.opacity(0.12), lineWidth: lineWidth)
-            Circle()
-                .trim(from: 0, to: outer / 100)
-                .stroke(
-                    outerGradient,
-                    style: StrokeStyle(lineWidth: lineWidth, lineCap: .round)
-                )
-                .rotationEffect(.degrees(-90))
-                .padding(lineWidth / 2)
-                .shadow(color: accent.opacity(0.07), radius: 0.8 * scale, y: 0.3 * scale)
+                .padding(lineWidth * 1.4 / 4.5 / 2)
+            GlassQuotaRingView(remaining: outer, lineWidth: lineWidth, palette: palette, slot: slot,
+                               contrastColor: viewModel.effectiveDialPrimary)
+                .allowsHitTesting(false)
             if let inner {
                 Circle()
                     .inset(by: innerInset)
@@ -292,7 +284,7 @@ struct ClockContentView: View {
                 Text("%")
                     .font(.system(size: fontSize, weight: .regular, design: .rounded))
             }
-            .foregroundColor(quotaPercentColor(outer))
+            .foregroundColor(viewModel.effectiveDialPrimary)
             .lineLimit(1)
             .minimumScaleFactor(0.75)
         }
@@ -355,12 +347,6 @@ struct ClockContentView: View {
             + ringSize / 2
         let ringLeft = diameter - trailing - ringSize
         return CGPoint(x: max(43 * s, ringLeft - 47 * s), y: ringCenterY)
-    }
-
-    private func quotaPercentColor(_ remaining: Double) -> Color {
-        if remaining <= 15 { return .red }
-        if remaining <= 35 { return .orange }
-        return viewModel.effectiveDialPrimary.opacity(0.88)
     }
 
     /// VoiceOver 朗读摘要：时间 + 今日 token + 消息数（已随语言本地化）。
