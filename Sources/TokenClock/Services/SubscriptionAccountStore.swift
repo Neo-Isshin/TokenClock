@@ -36,6 +36,7 @@ struct DialQuotaIndicator: Identifiable, Equatable, Sendable {
     let provider: SubscriptionProvider
     let outerRemainingPercent: Double
     let innerRemainingPercent: Double?
+    var thirdRemainingPercent: Double? = nil
     let details: [DialQuotaDetail]
     var accountName: String? = nil
     var id: SubscriptionProvider { provider }
@@ -133,29 +134,29 @@ enum DialQuotaResolver {
     }
 
     private static func antigravity(groups: [ProviderQuotaGroup]) -> DialQuotaIndicator? {
-        let geminiBuckets = groups.filter { $0.name.lowercased().contains("gemini") }.flatMap(\.buckets)
-        let otherBuckets = groups.filter {
-            let name = $0.name.lowercased()
-            return name.contains("claude") || name.contains("gpt")
-        }.flatMap(\.buckets)
-        guard let geminiWeekly = minimumRemaining(geminiBuckets.filter(isWeekly)) else { return nil }
-        let otherWeekly = minimumRemaining(otherBuckets.filter(isWeekly))
-        var details = [
-            DialQuotaDetail(labelKey: "quota.dial.geminiWeekly", remainingPercent: geminiWeekly),
+        let families: [(AntigravityQuotaFamilies.Family, String, String)] = [
+            (.gemini, "quota.dial.geminiWeekly", "quota.dial.geminiFiveHour"),
+            (.claudeGPT, "quota.dial.claudeGPTWeekly", "quota.dial.claudeGPTFiveHour"),
+            (.argon, "quota.dial.geminiArgonWeekly", "quota.dial.geminiArgonFiveHour"),
         ]
-        if let value = minimumRemaining(geminiBuckets.filter(isFiveHour)) {
-            details.append(DialQuotaDetail(labelKey: "quota.dial.geminiFiveHour", remainingPercent: value))
+        var weeklies: [Double] = [], details: [DialQuotaDetail] = []
+        for (family, weeklyKey, shortKey) in families {
+            let buckets = groups.flatMap { group in
+                group.buckets.filter { $0.usedPercent.isFinite && AntigravityQuotaFamilies.matches(family, group: group.name, bucket: $0) }
+            }
+            if let weekly = minimumRemaining(buckets.filter(isWeekly)) {
+                weeklies.append(weekly)
+                details.append(DialQuotaDetail(labelKey: weeklyKey, remainingPercent: weekly))
+            }
+            if let short = minimumRemaining(buckets.filter(isFiveHour)) {
+                details.append(DialQuotaDetail(labelKey: shortKey, remainingPercent: short))
+            }
         }
-        if let otherWeekly {
-            details.append(DialQuotaDetail(labelKey: "quota.dial.claudeGPTWeekly", remainingPercent: otherWeekly))
-        }
-        if let value = minimumRemaining(otherBuckets.filter(isFiveHour)) {
-            details.append(DialQuotaDetail(labelKey: "quota.dial.claudeGPTFiveHour", remainingPercent: value))
-        }
+        guard let primary = weeklies.first else { return nil }
         return DialQuotaIndicator(
-            provider: .antigravity,
-            outerRemainingPercent: geminiWeekly,
-            innerRemainingPercent: otherWeekly,
+            provider: .antigravity, outerRemainingPercent: primary,
+            innerRemainingPercent: weeklies.count > 1 ? weeklies[1] : nil,
+            thirdRemainingPercent: weeklies.count > 2 ? weeklies[2] : nil,
             details: details
         )
     }

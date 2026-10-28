@@ -8,6 +8,8 @@ struct StatusSummaryQuotaReset: Identifiable, Equatable, Sendable {
     var id: String { labelKey + "|" + String(windowMinutes) + "|" + (resetsAt.map { String($0.timeIntervalSince1970) } ?? "unknown") }
 
     var title: String {
+        if labelKey == "quota.dial.geminiArgonWeekly" { return L10n.shared.tr("status.resetArgonWeekly") }
+        if labelKey == "quota.dial.geminiArgonFiveHour" { return "Argon 5h" }
         guard labelKey == "quota.dial.currentPeriod" else { return L10n.shared.tr(labelKey) }
         if windowMinutes == 10_080 { return L10n.shared.tr("quota.dial.weekly") }
         if windowMinutes > 0 {
@@ -58,11 +60,14 @@ enum StatusSummaryQuotaResets {
             }
             return all.filter { weekly ? isWeekly($0.bucket) : isFiveHour($0.bucket) }
         case "quota.dial.geminiWeekly", "quota.dial.geminiFiveHour":
-            return all.filter { $0.group.lowercased().contains("gemini")
+            return all.filter { AntigravityQuotaFamilies.matches(.gemini, group: $0.group, bucket: $0.bucket)
                 && (key == "quota.dial.geminiWeekly" ? isWeekly($0.bucket) : isFiveHour($0.bucket)) }
         case "quota.dial.claudeGPTWeekly", "quota.dial.claudeGPTFiveHour":
-            return all.filter { ($0.group.lowercased().contains("claude") || $0.group.lowercased().contains("gpt"))
+            return all.filter { AntigravityQuotaFamilies.matches(.claudeGPT, group: $0.group, bucket: $0.bucket)
                 && (key == "quota.dial.claudeGPTWeekly" ? isWeekly($0.bucket) : isFiveHour($0.bucket)) }
+        case "quota.dial.geminiArgonWeekly", "quota.dial.geminiArgonFiveHour":
+            return all.filter { AntigravityQuotaFamilies.matches(.argon, group: $0.group, bucket: $0.bucket)
+                && (key == "quota.dial.geminiArgonWeekly" ? isWeekly($0.bucket) : isFiveHour($0.bucket)) }
         case "quota.dial.cursorModels": return all.filter { $0.bucket.name.lowercased().contains("cursor") }
         case "quota.dial.otherModels": return all.filter { $0.bucket.name.lowercased().contains("other") }
         case "quota.dial.currentPeriod": return all

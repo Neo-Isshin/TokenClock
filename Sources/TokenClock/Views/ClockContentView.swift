@@ -26,6 +26,7 @@ struct ClockContentView: View {
         let d = viewModel.clockSize.diameter
         let s = viewModel.clockSize.scale
         let quotaIndicators = viewModel.dialQuotaIndicators
+        let quotaLayout = ClockQuotaLayout(diameter: d, count: quotaIndicators.count, scale: s)
 
         // 外层：流动柔光在底，圆形玻璃盘体在上。
         // `.clear` 玻璃会透出 / 折射底层柔光，呈现晶莹剔透 + 微微流动的质感，
@@ -112,26 +113,28 @@ struct ClockContentView: View {
                             slot: 0,
                             outerRemaining: indicator.outerRemainingPercent,
                             innerRemaining: indicator.innerRemainingPercent,
-                            size: 35 * s,
+                            thirdRemaining: indicator.thirdRemainingPercent,
+                            size: quotaLayout.ringSize,
                             lineWidth: 3 * s,
                             fontSize: 8.5 * s
                         )
-                            .padding(.trailing, 36 * s)
+                            .padding(.trailing, quotaLayout.trailing)
                     } else if quotaIndicators.count == 2 {
-                        VStack(alignment: .trailing, spacing: 5 * s) {
+                        VStack(alignment: .trailing, spacing: quotaLayout.spacing) {
                             ForEach(quotaIndicators) { indicator in
                                 quotaRing(
                                     palette: indicator.id == quotaIndicators.first?.id ? .cool : .warm,
                                     slot: indicator.id == quotaIndicators.first?.id ? 0 : 1,
                                     outerRemaining: indicator.outerRemainingPercent,
                                     innerRemaining: indicator.innerRemainingPercent,
-                                    size: 29 * s,
+                                    thirdRemaining: indicator.thirdRemainingPercent,
+                                    size: quotaLayout.ringSize,
                                     lineWidth: 2.5 * s,
                                     fontSize: 7.2 * s
                                 )
                             }
                         }
-                        .padding(.trailing, 28 * s)
+                        .padding(.trailing, quotaLayout.trailing)
                     }
                 }
 
@@ -238,14 +241,18 @@ struct ClockContentView: View {
         slot: Int,
         outerRemaining: Double,
         innerRemaining: Double?,
+        thirdRemaining: Double?,
         size: CGFloat,
         lineWidth: CGFloat,
         fontSize: CGFloat
     ) -> some View {
         let outer = min(100, max(0, outerRemaining))
         let inner = innerRemaining.map { min(100, max(0, $0)) }
+        let third = thirdRemaining.map { min(100, max(0, $0)) }
         let scale = size / 30
-        let innerInset = 5.25 * scale
+        let outerRadius = GlassQuotaRingGeometry(diameter: size, lineWidth: lineWidth, remaining: outer).radius
+        let innerInset = third == nil ? 5.25 * scale : size / 2 - outerRadius * 0.76
+        let thirdInset = size / 2 - outerRadius * 0.55
         let innerLineWidth = 1.7 * scale
         let accent = palette.innerColor(contrastColor: NSColor(viewModel.effectiveDialPrimary))
         let innerGradient = AngularGradient(
@@ -278,12 +285,21 @@ struct ClockContentView: View {
                     .rotationEffect(.degrees(-90))
                     .shadow(color: accent.opacity(0.04), radius: 0.6 * scale)
             }
+            if let third {
+                Circle().inset(by: thirdInset)
+                    .stroke(viewModel.effectiveDialPrimary.opacity(0.07), lineWidth: 1.25 * scale)
+                Circle().inset(by: thirdInset)
+                    .trim(from: 0, to: third / 100)
+                    .stroke(accent.opacity(0.55), style: StrokeStyle(lineWidth: 1.25 * scale, lineCap: .round))
+                    .rotationEffect(.degrees(-90))
+            }
             HStack(spacing: 0) {
                 Text(String(format: "%.0f", outer))
                     .font(.system(size: fontSize, weight: .bold, design: .rounded))
                 Text("%")
                     .font(.system(size: fontSize, weight: .regular, design: .rounded))
             }
+            .frame(width: third == nil ? nil : max(12, (outerRadius * 0.55 - 1.25 * scale) * 2))
             .foregroundColor(viewModel.effectiveDialPrimary)
             .lineLimit(1)
             .minimumScaleFactor(0.75)
@@ -297,18 +313,12 @@ struct ClockContentView: View {
         scale s: CGFloat
     ) -> [ClockTooltipRegion] {
         guard indicators.count == 1 || indicators.count == 2 else { return [] }
-        let ringSize = (indicators.count == 1 ? 35 : 29) * s
-        let trailing = (indicators.count == 1 ? 36 : 28) * s
-        let spacing = 5 * s
-        let totalHeight = ringSize * CGFloat(indicators.count)
-            + spacing * CGFloat(max(0, indicators.count - 1))
-        let top = (diameter - totalHeight) / 2
-        let x = diameter - trailing - ringSize
+        let layout = ClockQuotaLayout(diameter: diameter, count: indicators.count, scale: s)
         return indicators.enumerated().map { index, indicator in
-            let swiftUITop = top + CGFloat(index) * (ringSize + spacing)
-            let appKitY = diameter - swiftUITop - ringSize
+            let frame = layout.frame(at: index)
+            let appKitY = diameter - frame.maxY
             return ClockTooltipRegion(
-                rect: NSRect(x: x, y: appKitY, width: ringSize, height: ringSize)
+                rect: NSRect(x: frame.minX, y: appKitY, width: frame.width, height: frame.height)
                     .insetBy(dx: -3 * s, dy: -3 * s),
                 text: quotaTooltipText(for: indicator)
             )
@@ -333,20 +343,12 @@ struct ClockContentView: View {
         scale s: CGFloat
     ) -> CGPoint {
         let indicatorCount = indicators.count
-        let ringSize = (indicatorCount == 1 ? 35 : 29) * s
-        let trailing = (indicatorCount == 1 ? 36 : 28) * s
-        let spacing = 5 * s
-        let totalHeight = ringSize * CGFloat(indicatorCount)
-            + spacing * CGFloat(max(0, indicatorCount - 1))
-        let clusterTop = (diameter - totalHeight) / 2
+        let layout = ClockQuotaLayout(diameter: diameter, count: indicatorCount, scale: s)
         guard let index = indicators.firstIndex(where: {
             quotaTooltipText(for: $0) == label
         }) else { return CGPoint(x: diameter / 2, y: diameter / 2) }
-        let ringCenterY = clusterTop
-            + CGFloat(index) * (ringSize + spacing)
-            + ringSize / 2
-        let ringLeft = diameter - trailing - ringSize
-        return CGPoint(x: max(43 * s, ringLeft - 47 * s), y: ringCenterY)
+        let frame = layout.frame(at: index)
+        return CGPoint(x: max(43 * s, frame.minX - 47 * s), y: frame.midY)
     }
 
     /// VoiceOver 朗读摘要：时间 + 今日 token + 消息数（已随语言本地化）。

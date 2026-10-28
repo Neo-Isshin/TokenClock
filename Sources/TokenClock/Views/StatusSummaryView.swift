@@ -381,11 +381,19 @@ struct StatusSummaryContent: View {
                     .stroke(color.opacity(0.4), style: StrokeStyle(lineWidth: 2, lineCap: .round))
                     .rotationEffect(.degrees(-90))
             }
+            if let third = indicator.thirdRemainingPercent {
+                Circle().inset(by: 12).stroke(.primary.opacity(0.06), lineWidth: 1.3)
+                Circle().inset(by: 12).trim(from: 0, to: third / 100)
+                    .stroke(color.opacity(0.65), style: StrokeStyle(lineWidth: 1.3, lineCap: .round))
+                    .rotationEffect(.degrees(-90))
+            }
             HStack(spacing: 0) {
                 Text(String(format: "%.0f", indicator.outerRemainingPercent)).fontWeight(.bold)
                 Text("%")
             }
             .font(.system(size: 10, design: .rounded)).monospacedDigit()
+            .frame(width: indicator.thirdRemainingPercent == nil ? nil : 17)
+            .lineLimit(1).minimumScaleFactor(0.65)
         }
         .padding(3).frame(width: 48, height: 48)
     }
