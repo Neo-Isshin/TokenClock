@@ -80,6 +80,7 @@ struct StatusSummaryQuotaSchedule {
 struct StatusSummaryQuota: Identifiable, Equatable {
     let indicator: DialQuotaIndicator
     let isShared: Bool
+    var resets: [StatusSummaryQuotaReset] = []
     var id: SubscriptionProvider { indicator.id }
     var provider: SubscriptionProvider { indicator.provider }
     var subscriptionName: String? { isShared ? "X Subscription" : nil }
@@ -120,7 +121,8 @@ enum StatusSummaryQuotas {
                     activeID: activeIDs[provider], records: records, liveGroups: groups, now: now) else { return nil }
                 indicator = resolved
             }
-            return StatusSummaryQuota(indicator: indicator, isShared: sharedGroup != nil)
+            return StatusSummaryQuota(indicator: indicator, isShared: sharedGroup != nil,
+                resets: StatusSummaryQuotaResets.rows(for: indicator, groups: sharedGroup.map { [$0] } ?? groups, now: now))
         }
     }
 }

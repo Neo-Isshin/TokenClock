@@ -218,6 +218,10 @@ final class L10n: @unchecked Sendable {
         "status.timeline.expiry": [.zhHans: "订阅到期", .zhHant: "訂閱到期", .en: "expires"],
         "status.timeline.date": [.zhHans: "订阅日期", .zhHant: "訂閱日期", .en: "subscription date"],
 
+        "status.nextQuotaReset": [.zhHans: "下次重置", .zhHant: "下次重置", .en: "Next reset"],
+        "status.quotaResetUnknown": [.zhHans: "尚未提供重置时间", .zhHant: "尚未提供重置時間", .en: "Reset time not reported"],
+        "status.quotaPeriod": [.zhHans: "周期", .zhHant: "週期", .en: "Period"],
+
         // MARK: About
         "about.license":         [.zhHans: "许可证：MIT",           .zhHant: "許可證：MIT",            .en: "License: MIT"],
         "about.contact":         [.zhHans: "联系方式",              .zhHant: "聯絡方式",              .en: "Contact"],

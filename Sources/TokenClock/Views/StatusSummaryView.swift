@@ -253,7 +253,7 @@ struct StatusSummaryContent: View {
                     .buttonStyle(.plain).font(.system(size: 10)).foregroundStyle(.secondary)
             } else {
                 ScrollView(.horizontal) {
-                    HStack(spacing: 14) {
+                    HStack(alignment: .top, spacing: 14) {
                         ForEach(quotas) { indicator in
                             Button(action: onQuota) {
                                 VStack(spacing: 3) {
@@ -263,8 +263,19 @@ struct StatusSummaryContent: View {
                                             fallback: indicator.subscriptionName == nil ? indicator.provider.emoji : "𝕏", size: 11)
                                         Text(indicator.displayName).font(.system(size: 9)).lineLimit(1)
                                     }
+                                    Text(L10n.shared.tr("status.nextQuotaReset"))
+                                        .font(.system(size: 8)).foregroundStyle(.tertiary)
+                                    ForEach(indicator.resets) { reset in
+                                        HStack(spacing: 3) {
+                                            Text(reset.title).lineLimit(1).minimumScaleFactor(0.8)
+                                            Spacer(minLength: 0)
+                                            Text(quotaResetDate(reset.resetsAt)).monospacedDigit().fixedSize()
+                                        }
+                                        .font(.system(size: 8)).foregroundStyle(.secondary)
+                                        .help(resetHelp(reset))
+                                    }
                                 }
-                                .frame(width: 75)
+                                .frame(width: 124)
                                 .contentShape(Rectangle())
                             }
                             .buttonStyle(.plain)
@@ -275,12 +286,29 @@ struct StatusSummaryContent: View {
                     }
                     .padding(.vertical, 2)
                 }
-                .scrollIndicators(.hidden)
+                .scrollIndicators(.automatic)
             }
             timelineView
         }
         .padding(10)
         .background(.primary.opacity(0.025), in: RoundedRectangle(cornerRadius: 15))
+    }
+
+    private func quotaResetDate(_ date: Date?) -> String {
+        guard let date else { return "—" }
+        let formatter = DateFormatter(); formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.calendar = Calendar(identifier: .gregorian); formatter.dateFormat = "MM/dd HH:mm"
+        return formatter.string(from: date)
+    }
+
+    private func resetHelp(_ reset: StatusSummaryQuotaReset) -> String {
+        let date: String
+        if let value = reset.resetsAt {
+            let formatter = DateFormatter(); formatter.locale = Locale(identifier: L10n.shared.language.rawValue)
+            formatter.dateStyle = .full; formatter.timeStyle = .long
+            date = formatter.string(from: value)
+        } else { date = L10n.shared.tr("status.quotaResetUnknown") }
+        return L10n.shared.tr(reset.labelKey) + " · " + date + (reset.source.isEmpty ? "" : "\n" + reset.source)
     }
 
     private var comparisonHelp: String {
