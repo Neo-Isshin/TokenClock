@@ -75,7 +75,7 @@ final class GlassQuotaRingTests: XCTestCase {
         XCTAssertFalse(source.contains("quotaPercentColor"))
         XCTAssertTrue(source.contains("palette.innerColor(contrastColor: NSColor(viewModel.effectiveDialPrimary))"))
         XCTAssertTrue(source.contains("contrastColor: viewModel.effectiveDialPrimary"))
-        let number = try XCTUnwrap(source.range(of: "Text(String(format: \"%.0f\", outer))"))
+        let number = try XCTUnwrap(source.range(of: "Text(centerLabel.text)"))
         let suffix = String(source[number.lowerBound...].prefix(650))
         XCTAssertTrue(suffix.contains(".foregroundColor(viewModel.effectiveDialPrimary)"))
         XCTAssertTrue(suffix.contains("weight: .bold"))

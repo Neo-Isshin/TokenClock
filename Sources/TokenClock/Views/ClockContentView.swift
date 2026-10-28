@@ -116,7 +116,7 @@ struct ClockContentView: View {
                             thirdRemaining: indicator.thirdRemainingPercent,
                             size: quotaLayout.ringSize,
                             lineWidth: 3 * s,
-                            fontSize: 8.5 * s
+                            fontSize: 10.5 * s
                         )
                             .padding(.trailing, quotaLayout.trailing)
                     } else if quotaIndicators.count == 2 {
@@ -130,7 +130,7 @@ struct ClockContentView: View {
                                     thirdRemaining: indicator.thirdRemainingPercent,
                                     size: quotaLayout.ringSize,
                                     lineWidth: 2.5 * s,
-                                    fontSize: 7.2 * s
+                                    fontSize: 9.2 * s
                                 )
                             }
                         }
@@ -247,6 +247,7 @@ struct ClockContentView: View {
         fontSize: CGFloat
     ) -> some View {
         let outer = min(100, max(0, outerRemaining))
+        let centerLabel = QuotaCenterLabel(remaining: outer)
         let inner = innerRemaining.map { min(100, max(0, $0)) }
         let third = thirdRemaining.map { min(100, max(0, $0)) }
         let scale = size / 30
@@ -293,13 +294,15 @@ struct ClockContentView: View {
                     .stroke(accent.opacity(0.55), style: StrokeStyle(lineWidth: 1.25 * scale, lineCap: .round))
                     .rotationEffect(.degrees(-90))
             }
-            HStack(spacing: 0) {
-                Text(String(format: "%.0f", outer))
+            HStack(alignment: .firstTextBaseline, spacing: 0) {
+                Text(centerLabel.text)
                     .font(.system(size: fontSize, weight: .bold, design: .rounded))
-                Text("%")
-                    .font(.system(size: fontSize, weight: .regular, design: .rounded))
+                if centerLabel.showsPercent {
+                    Text("%")
+                        .font(.system(size: fontSize * 0.7, weight: .regular, design: .rounded))
+                }
             }
-            .frame(width: third == nil ? nil : max(12, (outerRadius * 0.55 - 1.25 * scale) * 2))
+            .frame(width: third == nil ? nil : max(14, outerRadius * 0.55 * 2))
             .foregroundColor(viewModel.effectiveDialPrimary)
             .lineLimit(1)
             .minimumScaleFactor(0.75)

@@ -370,6 +370,7 @@ struct StatusSummaryContent: View {
 
     private func summaryRing(_ indicator: DialQuotaIndicator) -> some View {
         let color = indicator.provider == .zhipu ? Color.primary : indicator.provider.dialQuotaColor
+        let centerLabel = QuotaCenterLabel(remaining: indicator.outerRemainingPercent)
         return ZStack {
             Circle().stroke(.primary.opacity(0.08), lineWidth: 4)
             Circle().trim(from: 0, to: indicator.outerRemainingPercent / 100)
@@ -382,20 +383,27 @@ struct StatusSummaryContent: View {
                     .rotationEffect(.degrees(-90))
             }
             if let third = indicator.thirdRemainingPercent {
-                Circle().inset(by: 12).stroke(.primary.opacity(0.06), lineWidth: 1.3)
-                Circle().inset(by: 12).trim(from: 0, to: third / 100)
+                Circle().inset(by: 11).stroke(.primary.opacity(0.06), lineWidth: 1.3)
+                Circle().inset(by: 11).trim(from: 0, to: third / 100)
                     .stroke(color.opacity(0.65), style: StrokeStyle(lineWidth: 1.3, lineCap: .round))
                     .rotationEffect(.degrees(-90))
             }
-            HStack(spacing: 0) {
-                Text(String(format: "%.0f", indicator.outerRemainingPercent)).fontWeight(.bold)
-                Text("%")
+            HStack(alignment: .firstTextBaseline, spacing: 0) {
+                Text(centerLabel.text)
+                    .font(.system(size: 12, weight: .bold, design: .rounded))
+                if centerLabel.showsPercent {
+                    Text("%")
+                        .font(.system(size: 8, weight: .regular, design: .rounded))
+                }
             }
-            .font(.system(size: 10, design: .rounded)).monospacedDigit()
-            .frame(width: indicator.thirdRemainingPercent == nil ? nil : 17)
-            .lineLimit(1).minimumScaleFactor(0.65)
+            .monospacedDigit()
+            .frame(width: indicator.thirdRemainingPercent == nil ? nil : 20)
+            .lineLimit(1).minimumScaleFactor(0.6)
         }
         .padding(3).frame(width: 48, height: 48)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text(L10n.shared.tr("quota.dialAccessibility", indicator.provider.displayName,
+                                              Int(indicator.outerRemainingPercent.rounded()))))
     }
 
     private var usageTable: some View {
