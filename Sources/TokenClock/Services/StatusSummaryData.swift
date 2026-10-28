@@ -43,17 +43,24 @@ struct StatusSummaryHourlyData: Equatable, Sendable {
 @MainActor
 final class StatusSummaryHistory: ObservableObject {
     @Published private(set) var data = StatusSummaryHourlyData.empty(day: "")
+    @Published private(set) var comparison = StatusSummaryComparisonData()
     private var task: Task<Void, Never>?
 
     func reload(day: String, tools: Set<String>) {
         task?.cancel()
-        if data.day != day { data = .empty(day: day) }
+        if data.day != day { data = .empty(day: day); comparison = .init() }
         task = Task { [weak self] in
             let next = await Task.detached(priority: .utility) {
-                StatusSummaryHourlyData.build(HourlyHistoryStore.shared.query(day: day), day: day, tools: tools)
+                let current = HourlyHistoryStore.shared.query(day: day)
+                let previousDay = StatusSummaryComparisonData.previousDay(day) ?? ""
+                let previous = HourlyHistoryStore.shared.query(day: previousDay)
+                let daily = HistoryStore.shared.query(from: previousDay, through: previousDay)
+                return (StatusSummaryHourlyData.build(current, day: day, tools: tools),
+                        StatusSummaryComparisonData.build(day: day, today: current, yesterday: previous, daily: daily))
             }.value
             guard !Task.isCancelled else { return }
-            self?.data = next
+            self?.data = next.0
+            self?.comparison = next.1
         }
     }
 

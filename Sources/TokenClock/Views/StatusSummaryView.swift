@@ -17,6 +17,15 @@ struct StatusSummarySnapshot {
 
     var totalTokens: Int { UsageAggregator.totalTokens(tools, includingCacheRead: includesCache) }
     var totalMessages: Int { UsageAggregator.totalMessages(tools) }
+    var cacheReadTokens: Int {
+        tools.filter { $0.measurementUnit == .tokens && $0.measurementScope == .today }
+            .reduce(0) { $0 + $1.todayCacheReadTokens }
+    }
+    var cacheShare: Double? {
+        let fresh = UsageAggregator.totalTokens(tools)
+        guard fresh > 0 || cacheReadTokens > 0 else { return nil }
+        return TokenAccounting.cacheReadShare(freshTokens: fresh, cacheRead: cacheReadTokens)
+    }
     func tokens(for tool: ToolUsage) -> Int {
         tool.todayTokens + (includesCache ? tool.todayCacheReadTokens : 0)
     }
@@ -55,6 +64,9 @@ struct StatusSummaryView: View {
             tokens: viewModel.totalTokensFormatted, cost: viewModel.totalCostFormatted,
             isLoading: viewModel.isInitialLoading, side: side,
             hourly: history.data.day == day ? history.data : .empty(day: day),
+            comparison: history.comparison.compare(to: snapshot.tools, includesCache: snapshot.includesCache),
+            timeline: StatusSummaryTimeline.events(quotas: viewModel.statusSummaryQuotaIndicators,
+                records: viewModel.subscriptionAccounts, activeIDs: viewModel.activeSubscriptionAccountIDs),
             quotas: viewModel.statusSummaryQuotaIndicators, isQuotaLoading: viewModel.statusSummaryQuotaLoading,
             harnessSpeeds: Dictionary(uniqueKeysWithValues: snapshot.rankedTools.map { ($0.name, speedStore.summary(provider: $0.name)) }),
             onHistory: onHistory, onQuota: onQuota, onShare: onShare
@@ -80,6 +92,8 @@ struct StatusSummaryContent: View {
     var isLoading = false
     var side: CGFloat = 600
     var hourly = StatusSummaryHourlyData.empty(day: "")
+    var comparison = StatusSummaryComparison(completedHours: 0)
+    var timeline: [StatusSummaryTimelineEvent] = []
     var quotas: [StatusSummaryQuota] = []
     var isQuotaLoading = false
     var harnessSpeeds: [String: GenerationSpeed] = [:]
@@ -87,6 +101,7 @@ struct StatusSummaryContent: View {
     let onQuota: () -> Void
     let onShare: () -> Void
     @State private var showsModels = false
+    @State private var showsTimeline = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -146,8 +161,15 @@ struct StatusSummaryContent: View {
     private var tokenCard: some View {
         VStack(alignment: .leading, spacing: 7) {
             HStack(alignment: .firstTextBaseline) {
-                Label(L10n.shared.tr("clock.todayTokens"), systemImage: "chart.bar.fill")
-                    .font(.system(size: 12, weight: .medium)).foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 3) {
+                    Label(L10n.shared.tr("clock.todayTokens"), systemImage: "chart.bar.fill")
+                        .font(.system(size: 12, weight: .medium)).foregroundStyle(.secondary)
+                    Text(comparisonCaption + " " + deltaText(comparison.tokenDelta, money: false)
+                         + (comparison.isPartial ? " · " + L10n.shared.tr("status.comparisonPartial") : ""))
+                        .font(.system(size: 9, weight: .medium))
+                        .foregroundStyle(comparison.tokenDelta == nil ? Color.secondary : .teal)
+                        .help(comparisonHelp)
+                }
                 Spacer()
                 Text(tokens).font(.system(size: 29, weight: .semibold, design: .rounded))
                     .monospacedDigit().lineLimit(1).minimumScaleFactor(0.6)
@@ -155,9 +177,16 @@ struct StatusSummaryContent: View {
             HStack {
                 Label(isLoading ? "—" : "\(snapshot.totalMessages)", systemImage: "bubble.left.and.bubble.right")
                 Spacer()
-                Text("\(L10n.shared.tr("detail.cost"))  \(cost)")
+                Label(L10n.shared.tr("status.cacheReads") + " " + (isLoading ? "—" : TokenFormat.compact(snapshot.cacheReadTokens))
+                      + " · " + (isLoading ? "—" : (snapshot.cacheShare.map { String(format: "%.1f%%", $0 * 100) } ?? "—")),
+                      systemImage: "arrow.triangle.2.circlepath")
+                    .foregroundStyle(.teal).help(L10n.shared.tr("status.cacheShareHelp"))
+                Spacer()
+                Text("\(L10n.shared.tr("detail.cost"))  \(cost)"
+                     + (comparison.costDelta.map { " · " + deltaText($0, money: true) } ?? ""))
+                    .help(comparisonHelp)
             }
-            .font(.system(size: 10)).foregroundStyle(.secondary)
+            .font(.system(size: 10)).foregroundStyle(.secondary).lineLimit(1).minimumScaleFactor(0.75)
             hourlyChart
         }
         .padding(12)
@@ -248,9 +277,67 @@ struct StatusSummaryContent: View {
                 }
                 .scrollIndicators(.hidden)
             }
+            timelineView
         }
         .padding(10)
         .background(.primary.opacity(0.025), in: RoundedRectangle(cornerRadius: 15))
+    }
+
+    private var comparisonHelp: String {
+        guard !isLoading, comparison.tokenDelta != nil else { return L10n.shared.tr("status.comparisonUnavailable") }
+        return L10n.shared.tr("status.comparisonBasis", comparison.completedHours, comparison.sourceCount)
+            + (comparison.costDelta == nil ? "\n" + L10n.shared.tr("status.comparisonCostUnavailable") : "")
+    }
+
+    private var comparisonCaption: String {
+        L10n.shared.tr("status.comparedYesterday")
+            + (comparison.tokenDelta == nil ? "" : String(format: " (%02d:00)", comparison.completedHours))
+    }
+
+    private func deltaText(_ delta: StatusSummaryDelta?, money: Bool) -> String {
+        guard !isLoading, let delta else { return "—" }
+        if let percent = delta.percent { return abs(percent) < 0.05 ? "0.0%" : String(format: "%+.1f%%", percent) }
+        if delta.current == 0 { return L10n.shared.tr("status.comparisonUnchanged") }
+        let value = money ? CostFormat.estimate(CostEstimate(value: delta.current)) : TokenFormat.compact(Int(delta.current))
+        return L10n.shared.tr("status.comparisonNew", value)
+    }
+
+    private var timelineView: some View {
+        DisclosureGroup(isExpanded: $showsTimeline) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 7) {
+                    ForEach(timeline) { event in
+                        HStack(spacing: 6) {
+                            Circle().fill(event.kind == .reset ? Color.cyan : .orange).frame(width: 4, height: 4)
+                            Text(event.name + " · " + L10n.shared.tr(event.titleKey)).lineLimit(1)
+                            Spacer(minLength: 8)
+                            Text(timelineDate(event)).monospacedDigit().foregroundStyle(.secondary)
+                        }
+                        .font(.system(size: 10))
+                        .help(event.accountName + "\n" + event.detail)
+                    }
+                }
+                .padding(.vertical, 3)
+            }
+            .frame(maxHeight: 64)
+        } label: {
+            HStack {
+                Text(L10n.shared.tr("status.timelineTitle"))
+                Spacer(minLength: 6)
+                if let next = timeline.first {
+                    Text(next.name + " · " + L10n.shared.tr(next.titleKey) + " · " + timelineDate(next)).lineLimit(1)
+                } else { Text(L10n.shared.tr("status.timelineEmpty")) }
+            }
+            .font(.system(size: 9)).foregroundStyle(.secondary)
+        }
+        .disabled(timeline.isEmpty)
+    }
+
+    private func timelineDate(_ event: StatusSummaryTimelineEvent) -> String {
+        let formatter = DateFormatter(); formatter.locale = Locale(identifier: L10n.shared.language.rawValue)
+        formatter.dateStyle = .short
+        formatter.timeStyle = event.dateOnly ? .none : .short
+        return formatter.string(from: event.date)
     }
 
     private func summaryRing(_ indicator: DialQuotaIndicator) -> some View {

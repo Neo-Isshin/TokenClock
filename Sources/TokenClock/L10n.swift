@@ -202,6 +202,22 @@ final class L10n: @unchecked Sendable {
         "status.modelList": [.zhHans: "模型", .zhHant: "模型", .en: "Models"],
         "detail.generationSpeedAsOf": [.zhHans: "最近有效采样：%@（停产后保留）", .zhHant: "最近有效採樣：%@（停產後保留）", .en: "Last valid sample: %@ (retained while idle)"],
 
+        "status.comparedYesterday": [.zhHans: "较昨日同期", .zhHant: "較昨日同期", .en: "vs. yesterday"],
+        "status.comparisonPartial": [.zhHans: "部分来源", .zhHant: "部分來源", .en: "partial sources"],
+        "status.comparisonUnavailable": [.zhHans: "暂无可比小时记录；仅比较两天均能与日总量核对的来源，且不计入未结束的小时。", .zhHant: "暫無可比小時紀錄；僅比較兩天均能與日總量核對的來源，且不計入未結束的小時。", .en: "No comparable hourly history. Sources must reconcile with both daily totals; the unfinished hour is excluded."],
+        "status.comparisonBasis": [.zhHans: "截至本机时间 %02d:00，比较 %d 个来源的相同时段。未覆盖来源不计入对比。", .zhHant: "截至本機時間 %02d:00，比較 %d 個來源的相同時段。未涵蓋來源不計入比較。", .en: "Through %02d:00 local time, comparing the same hours for %d sources. Uncovered sources are excluded."],
+        "status.comparisonCostUnavailable": [.zhHans: "缺少完整、可核对的金额记录，暂不展示金额涨跌。", .zhHant: "缺少完整、可核對的金額紀錄，暫不顯示金額漲跌。", .en: "Comparable complete pricing records are unavailable; no cost change is shown."],
+        "status.comparisonUnchanged": [.zhHans: "持平", .zhHant: "持平", .en: "unchanged"],
+        "status.comparisonNew": [.zhHans: "新增 %@", .zhHant: "新增 %@", .en: "new %@"],
+        "status.cacheReads": [.zhHans: "缓存读", .zhHant: "快取讀取", .en: "Cache reads"],
+        "status.cacheShareHelp": [.zhHans: "已记录的缓存读取 Token 及其占比：缓存读 ÷（非缓存 Token + 缓存读）。不受包含缓存开关影响；不是输入命中率，也不推算节省金额。", .zhHant: "已記錄的快取讀取 Token 及其占比：快取讀取 ÷（非快取 Token + 快取讀取）。不受包含快取開關影響；不是輸入命中率，也不推算節省金額。", .en: "Recorded cache-read tokens and their share: cache reads / (fresh tokens + cache reads), independent of the include-cache switch. Not an input hit rate or estimated money saved."],
+        "status.timelineTitle": [.zhHans: "额度时间线", .zhHant: "額度時間線", .en: "Quota timeline"],
+        "status.timelineEmpty": [.zhHans: "暂无已确认时间", .zhHant: "暫無已確認時間", .en: "No confirmed dates"],
+        "status.timeline.reset": [.zhHans: "额度重置", .zhHant: "額度重置", .en: "quota resets"],
+        "status.timeline.renewal": [.zhHans: "订阅续费", .zhHant: "訂閱續費", .en: "renews"],
+        "status.timeline.expiry": [.zhHans: "订阅到期", .zhHant: "訂閱到期", .en: "expires"],
+        "status.timeline.date": [.zhHans: "订阅日期", .zhHant: "訂閱日期", .en: "subscription date"],
+
         // MARK: About
         "about.license":         [.zhHans: "许可证：MIT",           .zhHant: "許可證：MIT",            .en: "License: MIT"],
         "about.contact":         [.zhHans: "联系方式",              .zhHant: "聯絡方式",              .en: "Contact"],
