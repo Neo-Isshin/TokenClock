@@ -19,6 +19,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var themePickerEventMonitor: Any?
     private var statusItem: NSStatusItem?
     private var statusSummaryPopover: NSPopover?
+    private let statusBarClickCoordinator = StatusBarClickCoordinator()
     private let statusSummaryHiddenWindows = StatusSummaryHiddenWindows()
     private var isOpeningStatusSummary = false
     private var isSwitchingEdition = false
@@ -292,16 +293,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private func updateStatusBarItemPresentation() {
         guard let button = statusItem?.button else { return }
         let actionLabel = L10n.shared.tr("status.summary")
-        button.toolTip = actionLabel
+        button.toolTip = L10n.shared.tr("status.interactionHint")
         button.setAccessibilityLabel("TokenClock — \(actionLabel)")
+        button.setAccessibilityHelp(L10n.shared.tr("status.interactionHint"))
     }
 
     @objc private func statusBarClicked(_ sender: NSStatusBarButton) {
         let event = NSApp.currentEvent
         if event?.type == .rightMouseUp || event?.modifierFlags.contains(.control) == true {
+            statusBarClickCoordinator.cancel()
             showStatusBarMenu(sender)
         } else {
-            toggleStatusSummary(sender)
+            let clickCount = event?.type == .leftMouseUp ? (event?.clickCount ?? 1) : 1
+            statusBarClickCoordinator.click(count: clickCount,
+                single: { [weak self, weak sender] in
+                    guard let sender else { return }
+                    self?.toggleStatusSummary(sender)
+                },
+                double: { [weak self] in self?.handleStatusBarDoubleClick(sender) })
+        }
+    }
+
+    private func handleStatusBarDoubleClick(_ sender: Any?) {
+        // A fully covered clock is still logically visible. Bring it forward
+        // once before allowing the next double click to hide it.
+        if !statusBarVisibility.isHidden, let panel, !panel.occlusionState.contains(.visible) {
+            statusSummaryPopover?.performClose(nil)
+            isHiddenForFullscreen = false
+            NSApp.activate(ignoringOtherApps: true)
+            panel.orderFrontRegardless()
+        } else {
+            toggleStatusBarVisibility(sender)
         }
     }
 
@@ -320,7 +342,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             isOpeningStatusSummary = false
         }
         let available = button.window?.screen?.visibleFrame.size ?? NSSize(width: 800, height: 800)
-        let side = min(500, max(320, min(available.width - 40, available.height - 80)))
+        let side = min(600, max(320, min(available.width - 40, available.height - 80)))
         let popover = statusSummaryPopover ?? NSPopover()
         popover.behavior = .transient
         popover.animates = true
@@ -390,6 +412,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     @objc private func handleApplicationDidHide(_ notification: Notification) {
+        statusBarClickCoordinator.cancel()
         statusSummaryPopover?.performClose(nil)
         statusBarVisibility.setHidden(true)
         updateStatusBarItemPresentation()
@@ -411,6 +434,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             panel?.savePosition()
             notificationPanel?.hide()
             statusSummaryPopover?.close()
+            statusBarClickCoordinator.cancel()
             if let statusItem {
                 NSStatusBar.system.removeStatusItem(statusItem)
                 self.statusItem = nil

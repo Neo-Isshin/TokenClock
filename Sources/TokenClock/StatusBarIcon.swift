@@ -105,3 +105,29 @@ final class StatusSummaryHiddenWindows {
         for window in previous { window.orderFront(nil) }
     }
 }
+
+/// Delay only the single action until the system's double-click interval has
+/// elapsed, so a double click never flashes the summary before toggling the dial.
+@MainActor
+final class StatusBarClickCoordinator {
+    private var pending: Task<Void, Never>?
+    private let interval: TimeInterval
+
+    init(interval: TimeInterval = NSEvent.doubleClickInterval) { self.interval = interval }
+
+    func click(count: Int, single: @escaping @MainActor () -> Void, double: () -> Void) {
+        cancel()
+        if count > 0 && count.isMultiple(of: 2) {
+            double()
+        } else {
+            let delay = UInt64(max(0, interval) * 1_000_000_000)
+            pending = Task {
+                do { try await Task.sleep(nanoseconds: delay) } catch { return }
+                guard !Task.isCancelled else { return }
+                single()
+            }
+        }
+    }
+
+    func cancel() { pending?.cancel(); pending = nil }
+}

@@ -158,7 +158,7 @@ final class L10n: @unchecked Sendable {
         "menu.settings":         [.zhHans: "⚙️ 设置",              .zhHant: "⚙️ 設定",              .en: "⚙️ Settings"],
         "menu.launchAtLogin":    [.zhHans: "开机自启",              .zhHant: "開機自啟",              .en: "Launch at Login"],
         "menu.dialTextColor":    [.zhHans: "文字颜色",             .zhHant: "文字顏色",              .en: "Text Color"],
-        "detail.generationSpeedHelp": [.zhHans: "近10分钟已完成响应的平均生成速度，每3分钟更新；仅统计有效计时，含思考输出，不含输入、缓存或工具执行。Codex 由响应计时估算；— 表示数据不足。", .zhHant: "近10分鐘已完成回應的平均生成速度，每3分鐘更新；僅統計有效計時，含思考輸出，不含輸入、快取或工具執行。Codex 由回應計時估算；— 表示資料不足。", .en: "Average generation speed for completed responses in the last 10 minutes, refreshed every 3 minutes. Valid timings only; includes reasoning output, excludes input/cache/tool execution. Codex uses estimated response timings; — means insufficient data."],
+        "detail.generationSpeedHelp": [.zhHans: "最近一次有效采样前10分钟内已完成响应的平均生成速度，每3分钟检查；停产时保留该值，空闲时间不计入。含思考输出，不含输入、缓存和可识别的工具等待。Codex 由请求计时估算；归属不清时不计算。", .zhHant: "最近一次有效採樣前10分鐘內已完成回應的平均生成速度，每3分鐘檢查；停產時保留該值，閒置時間不計入。含思考輸出，不含輸入、快取和可辨識的工具等待。Codex 由請求計時估算；歸屬不清時不計算。", .en: "Generation speed over the 10 minutes ending at the last valid sample, checked every 3 minutes. Retained while idle; idle time is not counted. Includes reasoning; excludes input, cache, and identifiable tool waits. Codex uses estimated request timings; ambiguous attribution is omitted."],
         "menu.dialTextTheme":    [.zhHans: "跟随主题",             .zhHant: "跟隨主題",              .en: "Follow Theme"],
         "menu.dialTextWhite":    [.zhHans: "白色",                 .zhHant: "白色",                  .en: "White"],
         "menu.dialTextBlack":    [.zhHans: "黑色",                 .zhHant: "黑色",                  .en: "Black"],
@@ -193,6 +193,14 @@ final class L10n: @unchecked Sendable {
         "status.share":           [.zhHans: "分享用量", .zhHant: "分享用量", .en: "Share usage"],
         "status.cacheIncluded":   [.zhHans: "Token 用量包含缓存读 · 与表盘口径一致", .zhHant: "Token 用量包含快取讀取 · 與錶盤口徑一致", .en: "Cache reads included · Same basis as the dial"],
         "status.cacheExcluded":   [.zhHans: "Token 用量不含缓存读 · 与表盘口径一致", .zhHant: "Token 用量不含快取讀取 · 與錶盤口徑一致", .en: "Cache reads excluded · Same basis as the dial"],
+
+        "status.interactionHint": [.zhHans: "单击：今日总结\n双击：显示／隐藏表盘，显示时临时置顶\n右键：更多选项", .zhHant: "單擊：今日總結\n雙擊：顯示／隱藏錶盤，顯示時暫時置頂\n右鍵：更多選項", .en: "Click: today's summary\nDouble-click: show/hide the dial; raise once when showing\nRight-click: more options"],
+        "status.partialHourly": [.zhHans: "仅已记录部分", .zhHant: "僅已記錄部分", .en: "Recorded data only"],
+        "status.noHourlyRecord": [.zhHans: "无已保存的小时记录", .zhHant: "無已儲存的小時紀錄", .en: "No saved hourly record"],
+        "status.noReadableQuota": [.zhHans: "暂无可读取额度 · 打开订阅面板", .zhHant: "暫無可讀取額度 · 開啟訂閱面板", .en: "No readable quota · Open subscriptions"],
+        "status.harnesses": [.zhHans: "Harness 工具", .zhHant: "Harness 工具", .en: "Harnesses"],
+        "status.modelList": [.zhHans: "模型", .zhHant: "模型", .en: "Models"],
+        "detail.generationSpeedAsOf": [.zhHans: "最近有效采样：%@（停产后保留）", .zhHant: "最近有效採樣：%@（停產後保留）", .en: "Last valid sample: %@ (retained while idle)"],
 
         // MARK: About
         "about.license":         [.zhHans: "许可证：MIT",           .zhHant: "許可證：MIT",            .en: "License: MIT"],

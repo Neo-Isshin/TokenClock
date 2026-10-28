@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// A menu-bar overview of existing usage snapshots; opening it performs no I/O.
+/// A menu-bar overview of existing usage snapshots.
 struct StatusSummarySnapshot {
     let tools: [ToolUsage]
     let includesCache: Bool
@@ -25,7 +25,9 @@ struct StatusSummarySnapshot {
 @MainActor
 struct StatusSummaryView: View {
     @ObservedObject var viewModel: ViewModel
-    var side: CGFloat = 500
+    @ObservedObject private var speedStore = GenerationSpeedStore.shared
+    @StateObject private var history = StatusSummaryHistory()
+    var side: CGFloat = 600
     let onHistory: () -> Void
     let onQuota: () -> Void
     let onShare: () -> Void
@@ -41,14 +43,29 @@ struct StatusSummaryView: View {
                 return left == right ? $0.name < $1.name : left > right
             }
     }
+    private var day: String { DateHelper.dateKey(from: Date()) }
+    private var hourlyTools: Set<String> {
+        Set(snapshot.tools.filter { $0.measurementUnit == .tokens && $0.measurementScope == .today }.map(\.name))
+    }
+    private var hourlyKey: String { day + "|" + hourlyTools.sorted().joined(separator: "|") }
 
     var body: some View {
         StatusSummaryContent(
             snapshot: snapshot, models: models, date: viewModel.dateString,
             tokens: viewModel.totalTokensFormatted, cost: viewModel.totalCostFormatted,
             isLoading: viewModel.isInitialLoading, side: side,
+            hourly: history.data.day == day ? history.data : .empty(day: day),
+            quotas: viewModel.statusSummaryQuotaIndicators, isQuotaLoading: viewModel.statusSummaryQuotaLoading,
+            harnessSpeeds: Dictionary(uniqueKeysWithValues: snapshot.rankedTools.map { ($0.name, speedStore.summary(provider: $0.name)) }),
             onHistory: onHistory, onQuota: onQuota, onShare: onShare
         )
+        .task(id: hourlyKey) { history.reload(day: day, tools: hourlyTools) }
+        .onReceive(NotificationCenter.default.publisher(for: HourlyHistoryStore.updated)
+            .debounce(for: .milliseconds(250), scheduler: RunLoop.main)) { _ in
+            history.reload(day: day, tools: hourlyTools)
+        }
+        .onAppear { viewModel.refreshStatusSummaryQuotasIfNeeded() }
+        .onDisappear { history.cancel() }
     }
 }
 
@@ -61,13 +78,18 @@ struct StatusSummaryContent: View {
     let tokens: String
     let cost: String
     var isLoading = false
-    var side: CGFloat = 500
+    var side: CGFloat = 600
+    var hourly = StatusSummaryHourlyData.empty(day: "")
+    var quotas: [StatusSummaryQuota] = []
+    var isQuotaLoading = false
+    var harnessSpeeds: [String: GenerationSpeed] = [:]
     let onHistory: () -> Void
     let onQuota: () -> Void
     let onShare: () -> Void
+    @State private var showsModels = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 12) {
             HStack {
                 HStack(spacing: 10) {
                     Image(systemName: "chart.bar.xaxis")
@@ -88,16 +110,8 @@ struct StatusSummaryContent: View {
                     .frame(maxWidth: 125, alignment: .trailing)
             }
 
-            HStack(spacing: 10) {
-                tokenCard.frame(maxWidth: .infinity)
-                VStack(spacing: 8) {
-                    metric("detail.messages", value: isLoading ? "—" : "\(snapshot.totalMessages)",
-                           icon: "bubble.left.and.bubble.right.fill", color: .indigo)
-                    metric("detail.cost", value: cost, icon: "dollarsign.circle.fill", color: .orange)
-                }
-                .frame(width: side * 0.32)
-            }
-            .frame(height: 134)
+            tokenCard
+            quotaStrip
 
             if isLoading {
                 ProgressView(L10n.shared.tr("detail.loading"))
@@ -107,15 +121,7 @@ struct StatusSummaryContent: View {
                     .font(.system(size: 12)).foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                HStack(alignment: .top, spacing: 10) {
-                    detailCard("status.tools", color: .teal) {
-                        ForEach(snapshot.rankedTools) { tool in toolRow(tool) }
-                    }
-                    detailCard("status.models", color: .purple) {
-                        ForEach(models.prefix(5)) { model in modelRow(model) }
-                    }
-                }
-                .frame(maxHeight: .infinity)
+                usageTable
             }
 
             VStack(spacing: 9) {
@@ -130,7 +136,7 @@ struct StatusSummaryContent: View {
                     .font(.system(size: 9)).foregroundStyle(.secondary)
             }
         }
-        .padding(20)
+        .padding(16)
         .frame(width: side, height: side)
         .glassEffect(.regular, in: .rect(cornerRadius: 24, style: .continuous))
         .padding(6)
@@ -138,26 +144,24 @@ struct StatusSummaryContent: View {
     }
 
     private var tokenCard: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Label(L10n.shared.tr("clock.todayTokens"), systemImage: "sparkle")
-                .font(.system(size: 11, weight: .medium)).foregroundStyle(.secondary)
-            Text(tokens).font(.system(size: 43, weight: .semibold, design: .rounded))
-                .monospacedDigit().lineLimit(1).minimumScaleFactor(0.6)
-            GeometryReader { geometry in
-                let tools = isLoading ? [] : snapshot.rankedTools.filter { snapshot.tokens(for: $0) > 0 }
-                let width = max(0, geometry.size.width - CGFloat(max(0, tools.count - 1)) * 3)
-                HStack(spacing: 3) {
-                    ForEach(tools) { tool in
-                        Capsule().fill(toolColor(tool.name).gradient)
-                            .frame(width: width * Double(snapshot.tokens(for: tool)) / Double(max(1, snapshot.totalTokens)))
-                    }
-                }
+        VStack(alignment: .leading, spacing: 7) {
+            HStack(alignment: .firstTextBaseline) {
+                Label(L10n.shared.tr("clock.todayTokens"), systemImage: "chart.bar.fill")
+                    .font(.system(size: 12, weight: .medium)).foregroundStyle(.secondary)
+                Spacer()
+                Text(tokens).font(.system(size: 29, weight: .semibold, design: .rounded))
+                    .monospacedDigit().lineLimit(1).minimumScaleFactor(0.6)
             }
-            .frame(height: 5)
-            .accessibilityHidden(true)
+            HStack {
+                Label(isLoading ? "—" : "\(snapshot.totalMessages)", systemImage: "bubble.left.and.bubble.right")
+                Spacer()
+                Text("\(L10n.shared.tr("detail.cost"))  \(cost)")
+            }
+            .font(.system(size: 10)).foregroundStyle(.secondary)
+            hourlyChart
         }
-        .padding(16)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .background {
             RoundedRectangle(cornerRadius: 18)
                 .fill(LinearGradient(colors: [.cyan.opacity(0.17), .blue.opacity(0.08), .purple.opacity(0.12)],
@@ -166,95 +170,162 @@ struct StatusSummaryContent: View {
         .overlay { RoundedRectangle(cornerRadius: 18).strokeBorder(.cyan.opacity(0.15), lineWidth: 0.7) }
     }
 
-    private func metric(_ title: String, value: String, icon: String, color: Color) -> some View {
-        HStack(spacing: 9) {
-            Image(systemName: icon).font(.system(size: 16)).foregroundStyle(color.gradient)
-            VStack(alignment: .leading, spacing: 3) {
-                Text(L10n.shared.tr(title)).font(.system(size: 10)).foregroundStyle(.secondary)
-                Text(value).font(.system(size: 18, weight: .semibold, design: .rounded))
-                    .monospacedDigit().lineLimit(1).minimumScaleFactor(0.65)
-            }
-            Spacer(minLength: 0)
-        }
-        .padding(.horizontal, 12)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(color.opacity(0.08), in: RoundedRectangle(cornerRadius: 15))
-        .overlay { RoundedRectangle(cornerRadius: 15).strokeBorder(color.opacity(0.1), lineWidth: 0.5) }
-    }
-
-    private func detailCard<Content: View>(_ title: String, color: Color, @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 6) {
-                Circle().fill(color.gradient).frame(width: 6, height: 6)
-                Text(L10n.shared.tr(title)).font(.system(size: 11, weight: .semibold))
-            }
-            ScrollView {
-                VStack(spacing: 13, content: content)
-                    .padding(.trailing, 3)
-                    .frame(maxWidth: .infinity, alignment: .topLeading)
-            }
-            .scrollIndicators(.automatic)
-        }
-        .padding(12)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(color.opacity(0.035), in: RoundedRectangle(cornerRadius: 17))
-        .overlay { RoundedRectangle(cornerRadius: 17).strokeBorder(color.opacity(0.09), lineWidth: 0.5) }
-    }
-
-    private func toolRow(_ tool: ToolUsage) -> some View {
-        VStack(spacing: 6) {
-            HStack(spacing: 6) {
-                BrandIconView(name: tool.name, fallback: tool.emoji, size: 14)
-                Text(tool.name).fontWeight(.medium).lineLimit(1).truncationMode(.middle)
-                Spacer(minLength: 4)
-                Text(TokenFormat.compact(snapshot.tokens(for: tool)))
-                    .fontWeight(.semibold).monospacedDigit().layoutPriority(1)
-            }
-            .font(.system(size: 11))
+    private var hourlyChart: some View {
+        let values = hourly.hours.map { $0.displayedTokens(includingCache: snapshot.includesCache) }
+        let maximum = max(1, values.max() ?? 0)
+        let partial = values.reduce(0, +) != snapshot.totalTokens
+            || (snapshot.includesCache && hourly.hours.contains { !$0.cacheIsExact })
+        return VStack(spacing: 3) {
             HStack {
-                Text("\(tool.todayMessages) \(L10n.shared.tr("detail.messages"))")
+                Text(HourlyOverviewLabels.title)
                 Spacer()
-                Text(tool.formattedCost)
+                if partial {
+                    Label(L10n.shared.tr("status.partialHourly"), systemImage: "info.circle")
+                        .help(HourlyOverviewLabels.partial)
+                }
             }
             .font(.system(size: 9)).foregroundStyle(.secondary)
             GeometryReader { geometry in
-                let share = min(1, max(0, Double(snapshot.tokens(for: tool)) / Double(max(1, snapshot.totalTokens))))
-                Capsule().fill(.primary.opacity(0.05))
-                Capsule().fill(toolColor(tool.name).opacity(0.65).gradient)
-                    .frame(width: geometry.size.width * share)
+                HStack(alignment: .bottom, spacing: 4) {
+                    ForEach(hourly.hours) { hour in
+                        let value = hour.displayedTokens(includingCache: snapshot.includesCache)
+                        let label = HourlyOverviewLabels.label(hourly.day + String(format: "-%02d", hour.hour))
+                        RoundedRectangle(cornerRadius: 2)
+                            .fill(hour.hasRecords ? Color.cyan.opacity(0.75).gradient : Color.primary.opacity(0.07).gradient)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: value > 0 ? max(2, geometry.size.height * Double(value) / Double(maximum)) : 1)
+                            .frame(height: geometry.size.height, alignment: .bottom)
+                            .contentShape(Rectangle())
+                            .help(label + " · " + (hour.hasRecords ? "\(TokenFormat.compact(value)) tokens" : L10n.shared.tr("status.noHourlyRecord")))
+                            .accessibilityLabel(label + ": " + (hour.hasRecords ? "\(value) tokens" : L10n.shared.tr("status.noHourlyRecord")))
+                    }
+                }
             }
-            .frame(height: 3)
-        }
-        .accessibilityElement(children: .combine)
-    }
-
-    private func modelRow(_ model: ModelGroup) -> some View {
-        VStack(alignment: .leading, spacing: 5) {
-            HStack(spacing: 6) {
-                BrandIconView(name: model.name, fallback: model.emoji, size: 14)
-                Text(model.name).font(.system(size: 11, weight: .medium)).lineLimit(1).truncationMode(.middle)
-            }
+            .frame(height: 53)
             HStack {
-                Text(TokenFormat.compact(model.totalTokens + (snapshot.includesCache ? model.totalCacheReadTokens : 0)))
-                    .font(.system(size: 11, weight: .semibold, design: .rounded)).monospacedDigit()
-                Spacer(minLength: 4)
-                Text(model.formattedCost).font(.system(size: 9)).foregroundStyle(.secondary)
+                ForEach([0, 6, 12, 18, 23], id: \.self) { hour in
+                    if hour > 0 { Spacer() }
+                    Text(String(format: "%02d", hour))
+                }
             }
+            .font(.system(size: 8)).monospacedDigit().foregroundStyle(.secondary)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .accessibilityElement(children: .combine)
     }
 
-    private func toolColor(_ name: String) -> Color {
-        let key = name.lowercased()
-        if key.contains("codex") { return .cyan }
-        if key.contains("claude") { return .orange }
-        if key.contains("grok") { return .indigo }
-        if key.contains("cursor") { return .blue }
-        if key.contains("zcode") || key.contains("qwen") { return .mint }
-        if key.contains("gemini") { return .purple }
-        if key.contains("antigravity") { return .pink }
-        return .teal
+    private var quotaStrip: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text(L10n.shared.tr("detail.subscriptionQuota")).font(.system(size: 11, weight: .semibold))
+                if isQuotaLoading { ProgressView().controlSize(.mini) }
+                Spacer()
+            }
+            if quotas.isEmpty {
+                Button(L10n.shared.tr(isQuotaLoading ? "quota.loadingAll" : "status.noReadableQuota"), action: onQuota)
+                    .buttonStyle(.plain).font(.system(size: 10)).foregroundStyle(.secondary)
+            } else {
+                ScrollView(.horizontal) {
+                    HStack(spacing: 14) {
+                        ForEach(quotas) { indicator in
+                            Button(action: onQuota) {
+                                VStack(spacing: 3) {
+                                    summaryRing(indicator.indicator)
+                                    HStack(spacing: 3) {
+                                        BrandIconView(name: indicator.displayName,
+                                            fallback: indicator.subscriptionName == nil ? indicator.provider.emoji : "𝕏", size: 11)
+                                        Text(indicator.displayName).font(.system(size: 9)).lineLimit(1)
+                                    }
+                                }
+                                .frame(width: 75)
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .help(([indicator.displayName, indicator.accountName].compactMap { $0 }
+                                + indicator.details.map { L10n.shared.tr($0.labelKey) + " " + String(format: "%.0f%%", $0.remainingPercent) })
+                                .joined(separator: "\n"))
+                        }
+                    }
+                    .padding(.vertical, 2)
+                }
+                .scrollIndicators(.hidden)
+            }
+        }
+        .padding(10)
+        .background(.primary.opacity(0.025), in: RoundedRectangle(cornerRadius: 15))
+    }
+
+    private func summaryRing(_ indicator: DialQuotaIndicator) -> some View {
+        let color = indicator.provider == .zhipu ? Color.primary : indicator.provider.dialQuotaColor
+        return ZStack {
+            Circle().stroke(.primary.opacity(0.08), lineWidth: 4)
+            Circle().trim(from: 0, to: indicator.outerRemainingPercent / 100)
+                .stroke(color.opacity(0.75).gradient, style: StrokeStyle(lineWidth: 4, lineCap: .round))
+                .rotationEffect(.degrees(-90))
+            if let inner = indicator.innerRemainingPercent {
+                Circle().inset(by: 7).stroke(.primary.opacity(0.06), lineWidth: 2)
+                Circle().inset(by: 7).trim(from: 0, to: inner / 100)
+                    .stroke(color.opacity(0.4), style: StrokeStyle(lineWidth: 2, lineCap: .round))
+                    .rotationEffect(.degrees(-90))
+            }
+            HStack(spacing: 0) {
+                Text(String(format: "%.0f", indicator.outerRemainingPercent)).fontWeight(.bold)
+                Text("%")
+            }
+            .font(.system(size: 10, design: .rounded)).monospacedDigit()
+        }
+        .padding(3).frame(width: 48, height: 48)
+    }
+
+    private var usageTable: some View {
+        VStack(spacing: 8) {
+            Picker("", selection: $showsModels) {
+                Text(L10n.shared.tr("status.harnesses")).tag(false)
+                Text(L10n.shared.tr("status.modelList")).tag(true)
+            }
+            .pickerStyle(.segmented).labelsHidden()
+            HStack(spacing: 12) {
+                Text(showsModels ? L10n.shared.tr("detail.model") : "Harness").frame(maxWidth: .infinity, alignment: .leading)
+                Text("Tokens").frame(width: 68, alignment: .trailing)
+                Text(L10n.shared.tr("detail.cost")).frame(width: 64, alignment: .trailing)
+                Text("t/s").frame(width: 40, alignment: .trailing).help(L10n.shared.tr("detail.generationSpeedHelp"))
+            }
+            .font(.system(size: 9)).foregroundStyle(.secondary)
+            ScrollView {
+                VStack(spacing: 10) {
+                    if showsModels {
+                        ForEach(models) { model in
+                            usageRow(name: model.name, emoji: model.emoji,
+                                tokens: model.totalTokens + (snapshot.includesCache ? model.totalCacheReadTokens : 0),
+                                cost: model.formattedCost, speed: model.generationSpeed)
+                        }
+                    } else {
+                        ForEach(snapshot.rankedTools) { tool in
+                            usageRow(name: tool.name, emoji: tool.emoji, tokens: snapshot.tokens(for: tool),
+                                cost: tool.formattedCost, speed: harnessSpeeds[tool.name] ?? GenerationSpeed())
+                        }
+                    }
+                }
+                .padding(.trailing, 3)
+            }
+            .scrollIndicators(.automatic)
+        }
+        .padding(10)
+        .frame(maxHeight: .infinity)
+        .background(.purple.opacity(0.035), in: RoundedRectangle(cornerRadius: 16))
+    }
+
+    private func usageRow(name: String, emoji: String, tokens: Int, cost: String, speed: GenerationSpeed) -> some View {
+        HStack(spacing: 12) {
+            HStack(spacing: 6) {
+                BrandIconView(name: name, fallback: emoji, size: 14)
+                Text(name).lineLimit(1).truncationMode(.middle)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            Text(TokenFormat.compact(tokens)).frame(width: 68, alignment: .trailing)
+            Text(cost).frame(width: 64, alignment: .trailing).foregroundStyle(.secondary)
+            Text(speed.formatted).frame(width: 40, alignment: .trailing).help(speed.helpText)
+        }
+        .font(.system(size: 11)).monospacedDigit()
+        .accessibilityElement(children: .combine)
     }
 
     private func action(_ title: String, icon: String, color: Color, perform: @escaping () -> Void) -> some View {

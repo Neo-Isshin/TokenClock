@@ -32,6 +32,7 @@ struct GenerationSpeed: Hashable {
     var generationSeconds = 0.0
     var sampleCount = 0
     var estimated = false
+    var lastCompletedAt: Date?
 
     var tokensPerSecond: Double? {
         guard outputTokens > 0, generationSeconds > 0, generationSeconds.isFinite else { return nil }
@@ -49,6 +50,16 @@ struct GenerationSpeed: Hashable {
         generationSeconds += sample.seconds
         sampleCount += 1
         estimated = estimated || sample.estimated
+        lastCompletedAt = max(lastCompletedAt ?? sample.completedAt, sample.completedAt)
+    }
+
+    var helpText: String {
+        let base = L10n.shared.tr("detail.generationSpeedHelp")
+        guard let lastCompletedAt else { return base }
+        let formatter = DateFormatter()
+        formatter.dateStyle = .short
+        formatter.timeStyle = .medium
+        return base + "\n" + L10n.shared.tr("detail.generationSpeedAsOf", formatter.string(from: lastCompletedAt))
     }
 }
 
@@ -87,6 +98,7 @@ final class GenerationSpeedStore: GenerationSpeedObservable, @unchecked Sendable
     private let scanLock = NSLock()
     private var samples: [String: [GenerationSample]] = [:]
     private var codex = CodexGenerationReader()
+    private var sourceHomes: [String: String] = [:]
     private let scheduleLock = NSLock()
     private var schedule = GenerationSpeedRefreshSchedule()
     #if canImport(Combine)
@@ -112,12 +124,22 @@ final class GenerationSpeedStore: GenerationSpeedObservable, @unchecked Sendable
         defer { ProcessInfo.processInfo.endActivity(activity) }
         #endif
         scanLock.lock(); defer { scanLock.unlock() }
-        replace(provider: "Codex", with: enabledTools.contains("Codex") ? codex.scan(home: PathConfig.codexHome(), now: now) : [])
+        if enabledTools.contains("Codex") {
+            let home = PathConfig.codexHome()
+            resetIfSourceChanged(provider: "Codex", home: home)
+            replace(provider: "Codex", with: codex.scan(home: home, now: now), now: now)
+        }
+        else { clear(provider: "Codex") }
         #if !os(Linux)
-        replace(provider: "ZCode", with: enabledTools.contains("ZCode") ? Self.zcodeSamples(home: PathConfig.zcodeHome(), now: now) : [])
+        if enabledTools.contains("ZCode") {
+            let home = PathConfig.zcodeHome()
+            resetIfSourceChanged(provider: "ZCode", home: home)
+            replace(provider: "ZCode", with: Self.zcodeSamples(home: home, now: now), now: now)
+        }
+        else { clear(provider: "ZCode") }
         #endif
-        // Publish even when the ledger is unchanged: samples can expire from
-        // the rolling window without any new token usage.
+        // Idle scans retain the last completed generation window; wall-clock
+        // time without output is never added to its denominator.
         publishRefresh()
     }
     private func publishRefresh() {
@@ -125,26 +147,54 @@ final class GenerationSpeedStore: GenerationSpeedObservable, @unchecked Sendable
         DispatchQueue.main.async { [weak self] in self?.objectWillChange.send() }
         #endif
     }
-    func replace(provider: String, with values: [GenerationSample]) {
+    private func resetIfSourceChanged(provider: String, home: String) {
+        if let previous = sourceHomes[provider], previous != home { clear(provider: provider) }
+        sourceHomes[provider] = home
+    }
+    func replace(provider: String, with values: [GenerationSample], now: Date = Date()) {
         lock.lock(); defer { lock.unlock() }
-        samples[provider] = values.filter(\.valid)
+        var byID = Dictionary((samples[provider] ?? []).map { ($0.id, $0) }, uniquingKeysWith: { _, new in new })
+        for value in values where value.valid && value.completedAt <= now { byID[value.id] = value }
+        let groups = Dictionary(grouping: byID.values, by: \.model)
+        samples[provider] = groups.values.flatMap { group -> [GenerationSample] in
+            guard let latest = group.map(\.completedAt).max() else { return [] }
+            return group.filter { $0.completedAt >= latest.addingTimeInterval(-600) }
+        }
+    }
+    func clear(provider: String) {
+        lock.lock(); defer { lock.unlock() }
+        samples.removeValue(forKey: provider)
     }
     func summary(model: String, providers: Set<String>, now: Date = Date()) -> GenerationSpeed {
         lock.lock(); let snapshot = samples; lock.unlock()
         return Self.summarize(snapshot, model: model, providers: providers, now: now)
     }
+    /// Average request speed across this harness's most recent valid ten-minute
+    /// window. Sum generated tokens and generation time, never average model rates.
+    func summary(provider: String, now: Date = Date()) -> GenerationSpeed {
+        lock.lock(); let snapshot = samples[provider] ?? []; lock.unlock()
+        let candidates = snapshot.filter { $0.valid && $0.completedAt <= now }
+        guard let latest = candidates.map(\.completedAt).max() else { return GenerationSpeed() }
+        var result = GenerationSpeed(), seen = Set<String>()
+        for sample in candidates where sample.completedAt >= latest.addingTimeInterval(-600) {
+            if seen.insert(sample.id).inserted { result.include(sample) }
+        }
+        return result
+    }
     static func summarize(_ data: [String: [GenerationSample]], model: String, providers: Set<String>, now: Date) -> GenerationSpeed {
         var result = GenerationSpeed()
         var seen = Set<String>()
-        let cutoff = now.addingTimeInterval(-600)
-        let canonicalModel = ModelNormalizer.normalize(model.lowercased())
-        for provider in providers.sorted() {
-            for sample in data[provider] ?? [] where sample.valid
-                && ModelNormalizer.normalize(sample.model.lowercased()) == canonicalModel
-                && sample.completedAt >= cutoff && sample.completedAt <= now {
+        guard let canonicalModel = ModelNormalizer.normalize(model.lowercased()) else { return result }
+        let candidates = providers.sorted().flatMap { provider in
+            (data[provider] ?? []).filter { $0.valid && $0.completedAt <= now
+                && ModelNormalizer.normalize($0.model.lowercased()) == canonicalModel }
+                .map { (provider, $0) }
+        }
+        guard let latest = candidates.map({ $0.1.completedAt }).max() else { return result }
+        let cutoff = latest.addingTimeInterval(-600)
+        for (provider, sample) in candidates where sample.completedAt >= cutoff {
                 guard seen.insert(provider + ":" + sample.id).inserted else { continue }
                 result.include(sample)
-            }
         }
         return result
     }

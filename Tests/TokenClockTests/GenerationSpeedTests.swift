@@ -30,7 +30,7 @@ final class GenerationSpeedTests: XCTestCase {
         let data = ["Codex": [
             sample("a", output: 100, seconds: 2),
             sample("b", output: 900, seconds: 9, estimated: true),
-            sample("expired", output: 90000, seconds: 1, ago: 600.001),
+            sample("expired", output: 90000, seconds: 1, ago: 602),
             sample("future", output: 90000, seconds: 1, ago: -1),
             sample("other-model", output: 500, seconds: 1, model: "gpt-6.1-sol")
         ]]
@@ -39,7 +39,8 @@ final class GenerationSpeedTests: XCTestCase {
         XCTAssertEqual(speed.sampleCount, 2)
         XCTAssertTrue(speed.estimated)
         XCTAssertEqual(speed.formatted, "90.9")
-        XCTAssertNil(GenerationSpeedStore.summarize(data, model: "gpt-6-astra", providers: ["Codex"], now: now.addingTimeInterval(602)).tokensPerSecond)
+        let accepted = data.mapValues { $0.filter { $0.id != "future" } }
+        XCTAssertEqual(GenerationSpeedStore.summarize(accepted, model: "gpt-6-astra", providers: ["Codex"], now: now.addingTimeInterval(602)).tokensPerSecond!, 1000.0 / 11, accuracy: 0.000001)
     }
     func testDuplicateReplayInvalidSamplesAndDisabledProvidersDoNotInflateSpeed() {
         let a = sample("request-a", output: 100, seconds: 2)
@@ -71,8 +72,8 @@ final class GenerationSpeedTests: XCTestCase {
         XCTAssertEqual(after.contributions[0].generationSpeed.formatted, "50.0")
         let expired = UsageAggregator.groupedByModel([tool], unknownLabel: "Unknown",
             generationSpeedStore: store, now: now.addingTimeInterval(601))[0]
-        XCTAssertNotEqual(after, expired)
-        XCTAssertEqual(expired.generationSpeed.formatted, "—")
+        XCTAssertEqual(after, expired)
+        XCTAssertEqual(expired.generationSpeed.formatted, "50.0")
     }
     #if canImport(Combine)
     func testRefreshNotifiesViewsEvenWithoutNewUsageOnMainThread() {

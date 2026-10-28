@@ -156,6 +156,25 @@ final class ViewModel: ObservableObject {
         }
     }
 
+    /// The summary lists all readable current subscriptions, independently of
+    /// the dial's two-provider selection. Shared X aliases remain deduplicated.
+    var statusSummaryQuotaIndicators: [StatusSummaryQuota] {
+        StatusSummaryQuotas.indicators(records: subscriptionAccounts, activeIDs: activeSubscriptionAccountIDs,
+            freshGroups: Dictionary(uniqueKeysWithValues: SubscriptionProvider.allCases.map { ($0, freshQuotaGroups(for: $0)) }))
+    }
+
+    var statusSummaryQuotaLoading: Bool {
+        SubscriptionProvider.allCases.contains { quotaStatus(for: $0) == .loading }
+    }
+
+    private var statusSummaryQuotaSchedule = StatusSummaryQuotaSchedule()
+    func refreshStatusSummaryQuotasIfNeeded(now: Date = Date()) {
+        guard statusSummaryQuotaSchedule.shouldRefresh(now: now) else { return }
+        // Reuse the quota panel's silent, read-only fetches; no new polling timer.
+        refreshSubscriptionQuotas(providers: Set(SubscriptionProvider.allCases).subtracting([.grokBot]))
+        refreshGrokBotQuota(silentCLI: true)
+    }
+
     func isDialAccountSelected(_ account: SubscriptionAccountRecord) -> Bool {
         dialQuotaProviders.contains(account.provider)
             && (DialQuotaAccountSelection.selectedID(for: account.provider) ?? activeSubscriptionAccountIDs[account.provider]) == account.id
@@ -635,14 +654,21 @@ final class ViewModel: ObservableObject {
         }
     }
 
-    private func refreshGrokBotQuota() {
+    private func refreshGrokBotQuota(silentCLI: Bool = false) {
         guard grokBotQuota.status != .loading else { return }
         grokBotQuotaTask?.cancel()
         grokBotQuota = .loading(previous: grokBotQuota)
         grokBotNativeAccessState = GrokBotNativeCredentialStore.shared.accessState
         let service = grokBotQuotaService
         grokBotQuotaTask = Task { [weak self] in
-            let result = await Task.detached(priority: .utility) { service.fetch() }.value
+            let result = await Task.detached(priority: .utility) {
+                guard silentCLI else { return service.fetch() }
+                let environment = StatusSummaryQuotaCredentials.environment(ProcessInfo.processInfo.environment) {
+                    ClaudeSilentKeychain.read(service: "cursor-access-token", account: "cursor-user")
+                        .flatMap { String(data: $0, encoding: .utf8) }
+                }
+                return GrokBotQuotaService(environment: environment).fetch()
+            }.value
             guard !Task.isCancelled else { return }
             if ProcessInfo.processInfo.environment["TC_QUOTA_DIAGNOSTICS"] == "1" {
                 print("[GrokBotQuota] status=\(result.status.rawValue) message=\(result.message ?? "none")")
