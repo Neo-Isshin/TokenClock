@@ -18,6 +18,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var themePickerPanel: NSPanel?
     private var themePickerEventMonitor: Any?
     private var statusItem: NSStatusItem?
+    private var statusSummaryPopover: NSPopover?
+    private let statusSummaryHiddenWindows = StatusSummaryHiddenWindows()
+    private var isOpeningStatusSummary = false
     private var isSwitchingEdition = false
     private var isCheckingAppUpdate = false
     private var isRestartingApp = false
@@ -256,7 +259,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         viewModel.markNotificationsRead()
     }
 
-    // MARK: - macOS menu-bar visibility toggle
+    // MARK: - macOS menu-bar summary and visibility menu
 
     private func setupStatusBarItem() {
         guard statusItem == nil else { return }
@@ -288,8 +291,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     private func updateStatusBarItemPresentation() {
         guard let button = statusItem?.button else { return }
-        let actionKey = statusBarVisibility.isHidden ? "status.show" : "status.hide"
-        let actionLabel = L10n.shared.tr(actionKey)
+        let actionLabel = L10n.shared.tr("status.summary")
         button.toolTip = actionLabel
         button.setAccessibilityLabel("TokenClock — \(actionLabel)")
     }
@@ -299,11 +301,52 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         if event?.type == .rightMouseUp || event?.modifierFlags.contains(.control) == true {
             showStatusBarMenu(sender)
         } else {
-            toggleStatusBarVisibility(sender)
+            toggleStatusSummary(sender)
         }
     }
 
+    private func toggleStatusSummary(_ button: NSStatusBarButton) {
+        guard let viewModel else { showModelDetect(); return }
+        if statusSummaryPopover?.isShown == true {
+            statusSummaryPopover?.performClose(nil)
+            return
+        }
+        if NSApp.isHidden {
+            // Unhide the process so AppKit can present the popover, while keeping
+            // the clock and other hidden windows out of the way until Show.
+            isOpeningStatusSummary = true
+            NSApp.unhideWithoutActivation()
+            statusSummaryHiddenWindows.hide(NSApp.windows, excluding: button.window)
+            isOpeningStatusSummary = false
+        }
+        let available = button.window?.screen?.visibleFrame.size ?? NSSize(width: 800, height: 800)
+        let side = min(500, max(320, min(available.width - 40, available.height - 80)))
+        let popover = statusSummaryPopover ?? NSPopover()
+        popover.behavior = .transient
+        popover.animates = true
+        popover.contentViewController = NSHostingController(rootView: StatusSummaryView(
+            viewModel: viewModel, side: side,
+            onHistory: { [weak self] in
+                self?.statusSummaryPopover?.performClose(nil)
+                self?.showUsageOverviewWindow()
+            },
+            onQuota: { [weak self] in
+                self?.statusSummaryPopover?.performClose(nil)
+                self?.showSubscriptionQuotaWindow()
+            },
+            onShare: { [weak self] in
+                self?.statusSummaryPopover?.performClose(nil)
+                self?.showUsageShareWindow()
+            }
+        ))
+        popover.contentSize = NSSize(width: side + 12, height: side + 12)
+        statusSummaryPopover = popover
+        popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+        popover.contentViewController?.view.window?.makeKey()
+    }
+
     private func showStatusBarMenu(_ button: NSStatusBarButton) {
+        statusSummaryPopover?.performClose(nil)
         let menu = (panel?.menu?.copy() as? NSMenu) ?? NSMenu()
         let toggle = NSMenuItem(
             title: L10n.shared.tr(statusBarVisibility.isHidden ? "status.show" : "status.hide"),
@@ -326,9 +369,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     @objc private func toggleStatusBarVisibility(_ sender: Any?) {
+        statusSummaryPopover?.performClose(nil)
         if statusBarVisibility.isHidden {
             statusBarVisibility.setHidden(false)
             NSApp.unhideWithoutActivation()
+            statusSummaryHiddenWindows.restore()
             isHiddenForFullscreen = false
             NSApp.activate(ignoringOtherApps: true)
             // Raise once, without changing the user's persistent window level.
@@ -345,11 +390,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     @objc private func handleApplicationDidHide(_ notification: Notification) {
+        statusSummaryPopover?.performClose(nil)
         statusBarVisibility.setHidden(true)
         updateStatusBarItemPresentation()
     }
 
     @objc private func handleApplicationDidUnhide(_ notification: Notification) {
+        guard !isOpeningStatusSummary else { return }
+        statusSummaryHiddenWindows.restore()
         statusBarVisibility.setHidden(false)
         updateStatusBarItemPresentation()
     }
@@ -362,6 +410,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             UsageAPIServer.shared.stop()
             panel?.savePosition()
             notificationPanel?.hide()
+            statusSummaryPopover?.close()
             if let statusItem {
                 NSStatusBar.system.removeStatusItem(statusItem)
                 self.statusItem = nil

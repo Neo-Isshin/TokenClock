@@ -186,6 +186,14 @@ final class L10n: @unchecked Sendable {
         "status.hide":            [.zhHans: "隐藏 TokenClock",       .zhHant: "隱藏 TokenClock",       .en: "Hide TokenClock"],
         "status.show":            [.zhHans: "显示 TokenClock",       .zhHant: "顯示 TokenClock",       .en: "Show TokenClock"],
 
+        "status.summary":         [.zhHans: "今日总结", .zhHant: "今日總結", .en: "Today at a glance"],
+        "status.tools":           [.zhHans: "工具用量", .zhHant: "工具用量", .en: "By tool"],
+        "status.models":          [.zhHans: "主要模型", .zhHant: "主要模型", .en: "Top models"],
+        "status.empty":           [.zhHans: "今日暂无用量记录", .zhHant: "今日尚無用量紀錄", .en: "No usage recorded today"],
+        "status.share":           [.zhHans: "分享用量", .zhHant: "分享用量", .en: "Share usage"],
+        "status.cacheIncluded":   [.zhHans: "Token 用量包含缓存读 · 与表盘口径一致", .zhHant: "Token 用量包含快取讀取 · 與錶盤口徑一致", .en: "Cache reads included · Same basis as the dial"],
+        "status.cacheExcluded":   [.zhHans: "Token 用量不含缓存读 · 与表盘口径一致", .zhHant: "Token 用量不含快取讀取 · 與錶盤口徑一致", .en: "Cache reads excluded · Same basis as the dial"],
+
         // MARK: About
         "about.license":         [.zhHans: "许可证：MIT",           .zhHant: "許可證：MIT",            .en: "License: MIT"],
         "about.contact":         [.zhHans: "联系方式",              .zhHant: "聯絡方式",              .en: "Contact"],

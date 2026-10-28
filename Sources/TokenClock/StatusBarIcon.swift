@@ -85,3 +85,23 @@ struct StatusBarVisibilityState: Equatable {
         isHidden = hidden
     }
 }
+
+/// Keep application windows hidden while the menu-bar summary is used on its
+/// own. Weak references avoid retaining windows that have since been closed.
+@MainActor
+final class StatusSummaryHiddenWindows {
+    private let windows = NSHashTable<NSWindow>.weakObjects()
+
+    func hide(_ candidates: [NSWindow], excluding statusWindow: NSWindow?) {
+        for window in candidates where window !== statusWindow && window.isVisible {
+            windows.add(window)
+            window.orderOut(nil)
+        }
+    }
+
+    func restore() {
+        let previous = windows.allObjects
+        windows.removeAllObjects()
+        for window in previous { window.orderFront(nil) }
+    }
+}
