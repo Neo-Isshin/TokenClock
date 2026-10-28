@@ -194,7 +194,7 @@ final class L10n: @unchecked Sendable {
         "status.cacheIncluded":   [.zhHans: "Token 用量包含缓存读 · 与表盘口径一致", .zhHant: "Token 用量包含快取讀取 · 與錶盤口徑一致", .en: "Cache reads included · Same basis as the dial"],
         "status.cacheExcluded":   [.zhHans: "Token 用量不含缓存读 · 与表盘口径一致", .zhHant: "Token 用量不含快取讀取 · 與錶盤口徑一致", .en: "Cache reads excluded · Same basis as the dial"],
 
-        "status.interactionHint": [.zhHans: "单击：今日总结\n双击：显示／隐藏表盘，显示时临时置顶\n右键：更多选项", .zhHant: "單擊：今日總結\n雙擊：顯示／隱藏錶盤，顯示時暫時置頂\n右鍵：更多選項", .en: "Click: today's summary\nDouble-click: show/hide the dial; raise once when showing\nRight-click: more options"],
+        "status.interactionHint": [.zhHans: "单击：今日总结\n双击：隐藏或圆盘遮挡达到85%时临时置顶显示，否则隐藏\n右键：更多选项", .zhHant: "單擊：今日總結\n雙擊：隱藏或圓盤遮擋達到85%時暫時置頂顯示，否則隱藏\n右鍵：更多選項", .en: "Click: today's summary\nDouble-click: raise/show if hidden or at least 85% of the dial is covered; otherwise hide\nRight-click: more options"],
         "status.partialHourly": [.zhHans: "仅已记录部分", .zhHant: "僅已記錄部分", .en: "Recorded data only"],
         "status.noHourlyRecord": [.zhHans: "无已保存的小时记录", .zhHant: "無已儲存的小時紀錄", .en: "No saved hourly record"],
         "status.noReadableQuota": [.zhHans: "暂无可读取额度 · 打开订阅面板", .zhHant: "暫無可讀取額度 · 開啟訂閱面板", .en: "No readable quota · Open subscriptions"],

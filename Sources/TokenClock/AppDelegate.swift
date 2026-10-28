@@ -315,16 +315,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     private func handleStatusBarDoubleClick(_ sender: Any?) {
-        // A fully covered clock is still logically visible. Bring it forward
-        // once before allowing the next double click to hide it.
-        if !statusBarVisibility.isHidden, let panel, !panel.occlusionState.contains(.visible) {
-            statusSummaryPopover?.performClose(nil)
-            isHiddenForFullscreen = false
-            NSApp.activate(ignoringOtherApps: true)
-            panel.orderFrontRegardless()
-        } else {
-            toggleStatusBarVisibility(sender)
-        }
+        guard let panel else { toggleStatusBarVisibility(sender); return }
+        statusSummaryPopover?.performClose(nil)
+        let hidden = statusBarVisibility.isHidden || !panel.isVisible
+        let coverage = hidden ? nil : dialCoveredFraction(panel)
+        if DialOcclusion.shouldShow(hidden: hidden, coveredFraction: coverage) {
+            showStatusBarClock()
+        } else { hideStatusBarClock() }
+    }
+
+    private func dialCoveredFraction(_ panel: NSWindow) -> Double? {
+        guard let primaryTop = NSScreen.screens.first?.frame.maxY,
+              let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] else { return nil }
+        let dial = DialOcclusion.cgRect(from: DialOcclusion.dialBounds(in: panel.frame, diameter: viewModel.clockSize.diameter), primaryTop: primaryTop)
+        // Front-to-back; windows behind the dial never contribute coverage.
+        return DialOcclusion.coveredFraction(dial: dial, windowNumber: panel.windowNumber, windows: windows)
     }
 
     private func toggleStatusSummary(_ button: NSStatusBarButton) {
@@ -391,23 +396,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     @objc private func toggleStatusBarVisibility(_ sender: Any?) {
+        if statusBarVisibility.isHidden { showStatusBarClock() }
+        else { hideStatusBarClock() }
+    }
+
+    private func showStatusBarClock() {
         statusSummaryPopover?.performClose(nil)
-        if statusBarVisibility.isHidden {
-            statusBarVisibility.setHidden(false)
-            NSApp.unhideWithoutActivation()
-            statusSummaryHiddenWindows.restore()
-            isHiddenForFullscreen = false
-            NSApp.activate(ignoringOtherApps: true)
-            // Raise once, without changing the user's persistent window level.
-            panel?.orderFrontRegardless()
-            if panel == nil { showModelDetect() }
-        } else {
-            statusBarVisibility.setHidden(true)
-            // Close transient picker tracking before hiding the app. NSApp.hide
-            // then hides every TokenClock window while preserving its state.
-            hideThemePicker()
-            NSApp.hide(nil)
-        }
+        statusBarVisibility.setHidden(false)
+        NSApp.unhideWithoutActivation()
+        statusSummaryHiddenWindows.restore()
+        isHiddenForFullscreen = false
+        NSApp.activate(ignoringOtherApps: true)
+        // Raise once, without changing the user's persistent window level.
+        panel?.orderFrontRegardless()
+        if panel == nil { showModelDetect() }
+        updateStatusBarItemPresentation()
+    }
+
+    private func hideStatusBarClock() {
+        statusSummaryPopover?.performClose(nil)
+        statusBarVisibility.setHidden(true)
+        hideThemePicker()
+        NSApp.hide(nil)
         updateStatusBarItemPresentation()
     }
 
