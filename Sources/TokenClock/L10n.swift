@@ -196,6 +196,9 @@ final class L10n: @unchecked Sendable {
 
         "status.interactionHint": [.zhHans: "单击：今日总结\n双击：隐藏或圆盘遮挡达到85%时临时置顶显示，否则隐藏\n右键：更多选项", .zhHant: "單擊：今日總結\n雙擊：隱藏或圓盤遮擋達到85%時暫時置頂顯示，否則隱藏\n右鍵：更多選項", .en: "Click: today's summary\nDouble-click: raise/show if hidden or at least 85% of the dial is covered; otherwise hide\nRight-click: more options"],
         "status.partialHourly": [.zhHans: "仅已记录部分", .zhHant: "僅已記錄部分", .en: "Recorded data only"],
+        "status.recentHours": [.zhHans: "近 6 小时", .zhHant: "近 6 小時", .en: "Last 6 hours"],
+        "status.expandHourly": [.zhHans: "展开今日 24 小时", .zhHant: "展開今日 24 小時", .en: "Show today's 24 hours"],
+        "status.collapseHourly": [.zhHans: "收起为近 6 小时", .zhHant: "收起為近 6 小時", .en: "Collapse to last 6 hours"],
         "status.noHourlyRecord": [.zhHans: "无已保存的小时记录", .zhHant: "無已儲存的小時紀錄", .en: "No saved hourly record"],
         "status.noReadableQuota": [.zhHans: "暂无可读取额度 · 打开订阅面板", .zhHant: "暫無可讀取額度 · 開啟訂閱面板", .en: "No readable quota · Open subscriptions"],
         "status.harnesses": [.zhHans: "Harness 工具", .zhHant: "Harness 工具", .en: "Harnesses"],

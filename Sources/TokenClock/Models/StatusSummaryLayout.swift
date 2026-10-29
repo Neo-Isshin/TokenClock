@@ -3,9 +3,9 @@ import Foundation
 struct StatusSummaryLayout {
     let side: CGFloat
     var isCompact: Bool { side < 480 }
-    var padding: CGFloat { isCompact ? 12 : 16 }
-    var sectionPadding: CGFloat { isCompact ? 8 : 10 }
-    var spacing: CGFloat { isCompact ? 8 : 12 }
+    var padding: CGFloat { isCompact ? 10 : 12 }
+    var sectionPadding: CGFloat { isCompact ? 7 : 8 }
+    var spacing: CGFloat { isCompact ? 6 : 8 }
 
     /// Sizes are logical points. Keep the glass's outer padding, popover arrow
     /// and screen margins inside the clicked screen's usable bounds.

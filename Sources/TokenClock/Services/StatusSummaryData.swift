@@ -37,18 +37,38 @@ struct StatusSummaryHourlyData: Equatable, Sendable {
         }
         return result
     }
+
+    func chartHours(expanded: Bool, currentHour: Int, previous: Self) -> [StatusSummaryChartHour] {
+        if expanded { return hours.map { StatusSummaryChartHour(day: day, usage: $0) } }
+        let end = min(23, max(0, currentHour))
+        let previousDay = StatusSummaryComparisonData.previousDay(day) ?? ""
+        return (end - 5...end).map { index in
+            let date = index < 0 ? previousDay : day
+            let hour = index < 0 ? index + 24 : index
+            let source = index < 0 ? (previous.day == previousDay ? previous.hours : []) : hours
+            return StatusSummaryChartHour(day: date,
+                usage: source.first { $0.hour == hour } ?? StatusSummaryHour(hour: hour))
+        }
+    }
+}
+
+struct StatusSummaryChartHour: Identifiable, Equatable {
+    let day: String
+    let usage: StatusSummaryHour
+    var id: String { day + String(format: "-%02d", usage.hour) }
 }
 
 #if canImport(Combine)
 @MainActor
 final class StatusSummaryHistory: ObservableObject {
     @Published private(set) var data = StatusSummaryHourlyData.empty(day: "")
+    @Published private(set) var previousData = StatusSummaryHourlyData.empty(day: "")
     @Published private(set) var comparison = StatusSummaryComparisonData()
     private var task: Task<Void, Never>?
 
     func reload(day: String, tools: Set<String>) {
         task?.cancel()
-        if data.day != day { data = .empty(day: day); comparison = .init() }
+        if data.day != day { data = .empty(day: day); previousData = .empty(day: ""); comparison = .init() }
         task = Task { [weak self] in
             let next = await Task.detached(priority: .utility) {
                 let current = HourlyHistoryStore.shared.query(day: day)
@@ -56,11 +76,13 @@ final class StatusSummaryHistory: ObservableObject {
                 let previous = HourlyHistoryStore.shared.query(day: previousDay)
                 let daily = HistoryStore.shared.query(from: previousDay, through: previousDay)
                 return (StatusSummaryHourlyData.build(current, day: day, tools: tools),
-                        StatusSummaryComparisonData.build(day: day, today: current, yesterday: previous, daily: daily))
+                        StatusSummaryComparisonData.build(day: day, today: current, yesterday: previous, daily: daily),
+                        StatusSummaryHourlyData.build(previous, day: previousDay, tools: tools))
             }.value
             guard !Task.isCancelled else { return }
             self?.data = next.0
             self?.comparison = next.1
+            self?.previousData = next.2
         }
     }
 

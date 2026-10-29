@@ -64,6 +64,7 @@ struct StatusSummaryView: View {
             tokens: viewModel.totalTokensFormatted, cost: viewModel.totalCostFormatted,
             isLoading: viewModel.isInitialLoading, side: side,
             hourly: history.data.day == day ? history.data : .empty(day: day),
+            previousHourly: history.previousData,
             comparison: history.comparison.compare(to: snapshot.tools, includesCache: snapshot.includesCache),
             timeline: StatusSummaryTimeline.events(quotas: viewModel.statusSummaryQuotaIndicators,
                 records: viewModel.subscriptionAccounts, activeIDs: viewModel.activeSubscriptionAccountIDs),
@@ -92,6 +93,7 @@ struct StatusSummaryContent: View {
     var isLoading = false
     var side: CGFloat = 600
     var hourly = StatusSummaryHourlyData.empty(day: "")
+    var previousHourly = StatusSummaryHourlyData.empty(day: "")
     var comparison = StatusSummaryComparison(completedHours: 0)
     var timeline: [StatusSummaryTimelineEvent] = []
     var quotas: [StatusSummaryQuota] = []
@@ -102,6 +104,7 @@ struct StatusSummaryContent: View {
     let onShare: () -> Void
     @State private var showsModels = false
     @State private var showsTimeline = false
+    @State private var showsFullDay = false
     private var layout: StatusSummaryLayout { StatusSummaryLayout(side: side) }
 
     var body: some View {
@@ -111,7 +114,7 @@ struct StatusSummaryContent: View {
                     Image(systemName: "chart.bar.xaxis")
                         .font(.system(size: layout.isCompact ? 16 : 18, weight: .medium))
                         .foregroundStyle(.cyan.gradient)
-                        .frame(width: layout.isCompact ? 30 : 38, height: layout.isCompact ? 30 : 38)
+                        .frame(width: layout.isCompact ? 28 : 32, height: layout.isCompact ? 28 : 32)
                         .background(.cyan.opacity(0.09), in: RoundedRectangle(cornerRadius: 13))
                     VStack(alignment: .leading, spacing: 3) {
                         Text("TOKENCLOCK").font(.system(size: 9, weight: .semibold)).tracking(1.8)
@@ -149,7 +152,7 @@ struct StatusSummaryContent: View {
             .scrollIndicators(.automatic)
             .accessibilityIdentifier("summary-content-scroll")
 
-            VStack(spacing: 9) {
+            VStack(spacing: 6) {
                 GlassEffectContainer(spacing: 10) {
                     if layout.isCompact {
                         VStack(spacing: 8) {
@@ -180,7 +183,7 @@ struct StatusSummaryContent: View {
     }
 
     private var tokenCard: some View {
-        VStack(alignment: .leading, spacing: 7) {
+        VStack(alignment: .leading, spacing: 5) {
             HStack(alignment: .firstTextBaseline) {
                 VStack(alignment: .leading, spacing: 3) {
                     Label(L10n.shared.tr("clock.todayTokens"), systemImage: "chart.bar.fill")
@@ -199,7 +202,7 @@ struct StatusSummaryContent: View {
                 .font(.system(size: 10)).foregroundStyle(.secondary).lineLimit(1).minimumScaleFactor(0.75)
             hourlyChart
         }
-        .padding(12)
+        .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background {
             RoundedRectangle(cornerRadius: 18)
@@ -236,45 +239,75 @@ struct StatusSummaryContent: View {
     }
 
     private var hourlyChart: some View {
-        let values = hourly.hours.map { $0.displayedTokens(includingCache: snapshot.includesCache) }
-        let maximum = max(1, values.max() ?? 0)
-        let partial = values.reduce(0, +) != snapshot.totalTokens
-            || (snapshot.includesCache && hourly.hours.contains { !$0.cacheIsExact })
-        return VStack(spacing: 3) {
-            HStack {
-                Text(HourlyOverviewLabels.title)
-                Spacer()
-                if partial {
-                    Label(L10n.shared.tr("status.partialHourly"), systemImage: "info.circle")
-                        .help(HourlyOverviewLabels.partial)
+        let hours = hourly.chartHours(expanded: showsFullDay, currentHour: Calendar.current.component(.hour, from: Date()),
+                                     previous: previousHourly)
+        let maximum = max(1, hours.map { $0.usage.displayedTokens(includingCache: snapshot.includesCache) }.max() ?? 0)
+        let partial = hourly.hours.reduce(0) { $0 + $1.displayedTokens(includingCache: snapshot.includesCache) } != snapshot.totalTokens
+            || (snapshot.includesCache && hours.contains { !$0.usage.cacheIsExact })
+        let toggleTitle = L10n.shared.tr(showsFullDay ? "status.collapseHourly" : "status.expandHourly")
+        return Button {
+            withAnimation(.easeInOut(duration: 0.18)) { showsFullDay.toggle() }
+        } label: {
+            VStack(spacing: 3) {
+                HStack(spacing: 6) {
+                    Text(showsFullDay ? HourlyOverviewLabels.title + " · 24h" : L10n.shared.tr("status.recentHours"))
+                    Spacer(minLength: 0)
+                    if partial {
+                        if layout.isCompact {
+                            Image(systemName: "info.circle").help(HourlyOverviewLabels.partial)
+                        } else {
+                            Label(L10n.shared.tr("status.partialHourly"), systemImage: "info.circle")
+                                .help(HourlyOverviewLabels.partial)
+                        }
+                    }
+                    Text(showsFullDay ? "6h" : "24h").monospacedDigit()
+                    Image(systemName: showsFullDay ? "chevron.up" : "chevron.down")
+                        .font(.system(size: 8, weight: .semibold))
                 }
-            }
-            .font(.system(size: 9)).foregroundStyle(.secondary)
-            GeometryReader { geometry in
-                HStack(alignment: .bottom, spacing: 4) {
-                    ForEach(hourly.hours) { hour in
-                        let value = hour.displayedTokens(includingCache: snapshot.includesCache)
-                        let label = HourlyOverviewLabels.label(hourly.day + String(format: "-%02d", hour.hour))
-                        RoundedRectangle(cornerRadius: 2)
-                            .fill(hour.hasRecords ? Color.cyan.opacity(0.75).gradient : Color.primary.opacity(0.07).gradient)
-                            .frame(maxWidth: .infinity)
-                            .frame(height: value > 0 ? max(2, geometry.size.height * Double(value) / Double(maximum)) : 1)
-                            .frame(height: geometry.size.height, alignment: .bottom)
-                            .contentShape(Rectangle())
-                            .help(label + " · " + (hour.hasRecords ? "\(TokenFormat.compact(value)) tokens" : L10n.shared.tr("status.noHourlyRecord")))
-                            .accessibilityLabel(label + ": " + (hour.hasRecords ? "\(value) tokens" : L10n.shared.tr("status.noHourlyRecord")))
+                .font(.system(size: 9)).foregroundStyle(.secondary)
+                GeometryReader { geometry in
+                    HStack(alignment: .bottom, spacing: 4) {
+                        ForEach(hours) { hour in
+                            chartBar(hour, maximum: maximum, height: geometry.size.height)
+                        }
                     }
                 }
-            }
-            .frame(height: 53)
-            HStack {
-                ForEach([0, 6, 12, 18, 23], id: \.self) { hour in
-                    if hour > 0 { Spacer() }
-                    Text(String(format: "%02d", hour))
+                .frame(height: showsFullDay ? 53 : 26)
+                HStack(spacing: 4) {
+                    if showsFullDay {
+                        ForEach([0, 6, 12, 18, 23], id: \.self) { hour in
+                            if hour > 0 { Spacer() }
+                            Text(String(format: "%02d", hour))
+                        }
+                    } else {
+                        ForEach(hours) { hour in
+                            Text(String(format: "%02d:00", hour.usage.hour)).frame(maxWidth: .infinity)
+                        }
+                    }
                 }
+                .font(.system(size: 8)).monospacedDigit().foregroundStyle(.secondary)
             }
-            .font(.system(size: 8)).monospacedDigit().foregroundStyle(.secondary)
+            .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
+        .help(toggleTitle)
+        .accessibilityLabel(toggleTitle)
+        .accessibilityValue(showsFullDay ? "24h" : "6h")
+        .accessibilityIdentifier("summary-hourly-toggle")
+    }
+
+    private func chartBar(_ bucket: StatusSummaryChartHour, maximum: Int, height: CGFloat) -> some View {
+        let hour = bucket.usage
+        let value = hour.displayedTokens(includingCache: snapshot.includesCache)
+        let label = HourlyOverviewLabels.label(bucket.id)
+        return RoundedRectangle(cornerRadius: 2)
+            .fill(hour.hasRecords ? Color.cyan.opacity(0.75).gradient : Color.primary.opacity(0.07).gradient)
+            .frame(width: showsFullDay ? nil : 14)
+            .frame(height: value > 0 ? max(2, height * Double(value) / Double(maximum)) : 1)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+            .contentShape(Rectangle())
+            .help(label + " · " + (hour.hasRecords ? "\(TokenFormat.compact(value)) tokens" : L10n.shared.tr("status.noHourlyRecord")))
+            .accessibilityLabel(label + ": " + (hour.hasRecords ? "\(value) tokens" : L10n.shared.tr("status.noHourlyRecord")))
     }
 
     private var quotaStrip: some View {
@@ -453,7 +486,7 @@ struct StatusSummaryContent: View {
     }
 
     private var usageTable: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: 6) {
             Picker("", selection: $showsModels) {
                 Text(L10n.shared.tr("status.harnesses")).tag(false)
                 Text(L10n.shared.tr("status.modelList")).tag(true)
@@ -468,7 +501,7 @@ struct StatusSummaryContent: View {
                 }
                 .font(.system(size: 9)).foregroundStyle(.secondary)
             }
-            VStack(spacing: 10) {
+            VStack(spacing: 6) {
                 if showsModels {
                     ForEach(models) { model in
                         usageRow(name: model.name, emoji: model.emoji,
