@@ -102,6 +102,7 @@ struct StatusSummaryContent: View {
     let onShare: () -> Void
     @State private var showsModels = false
     @State private var showsTimeline = false
+    @State private var quotaContentHeight: CGFloat = 96
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -125,19 +126,26 @@ struct StatusSummaryContent: View {
                     .frame(maxWidth: 125, alignment: .trailing)
             }
 
-            tokenCard
-            quotaStrip
+            ScrollView {
+                VStack(alignment: .leading, spacing: 12) {
+                    tokenCard
+                    quotaStrip
 
-            if isLoading {
-                ProgressView(L10n.shared.tr("detail.loading"))
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if snapshot.rankedTools.isEmpty {
-                Text(L10n.shared.tr("status.empty"))
-                    .font(.system(size: 12)).foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else {
-                usageTable
+                    if isLoading {
+                        ProgressView(L10n.shared.tr("detail.loading"))
+                            .frame(maxWidth: .infinity, minHeight: 120)
+                    } else if snapshot.rankedTools.isEmpty {
+                        Text(L10n.shared.tr("status.empty"))
+                            .font(.system(size: 12)).foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, minHeight: 120)
+                    } else {
+                        usageTable
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .topLeading)
             }
+            .scrollIndicators(.automatic)
+            .accessibilityIdentifier("summary-content-scroll")
 
             VStack(spacing: 9) {
                 GlassEffectContainer(spacing: 10) {
@@ -285,7 +293,12 @@ struct StatusSummaryContent: View {
                         }
                     }
                     .padding(.vertical, 2)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { height in
+                        quotaContentHeight = height + 16 // Allow space for non-overlay scrollers.
+                    }
                 }
+                .frame(height: quotaContentHeight)
                 .scrollIndicators(.automatic)
             }
             timelineView
@@ -420,27 +433,24 @@ struct StatusSummaryContent: View {
                 Text("t/s").frame(width: 40, alignment: .trailing).help(L10n.shared.tr("detail.generationSpeedHelp"))
             }
             .font(.system(size: 9)).foregroundStyle(.secondary)
-            ScrollView {
-                VStack(spacing: 10) {
-                    if showsModels {
-                        ForEach(models) { model in
-                            usageRow(name: model.name, emoji: model.emoji,
-                                tokens: model.totalTokens + (snapshot.includesCache ? model.totalCacheReadTokens : 0),
-                                cost: model.formattedCost, speed: model.generationSpeed)
-                        }
-                    } else {
-                        ForEach(snapshot.rankedTools) { tool in
-                            usageRow(name: tool.name, emoji: tool.emoji, tokens: snapshot.tokens(for: tool),
-                                cost: tool.formattedCost, speed: harnessSpeeds[tool.name] ?? GenerationSpeed())
-                        }
+            VStack(spacing: 10) {
+                if showsModels {
+                    ForEach(models) { model in
+                        usageRow(name: model.name, emoji: model.emoji,
+                            tokens: model.totalTokens + (snapshot.includesCache ? model.totalCacheReadTokens : 0),
+                            cost: model.formattedCost, speed: model.generationSpeed)
+                    }
+                } else {
+                    ForEach(snapshot.rankedTools) { tool in
+                        usageRow(name: tool.name, emoji: tool.emoji, tokens: snapshot.tokens(for: tool),
+                            cost: tool.formattedCost, speed: harnessSpeeds[tool.name] ?? GenerationSpeed())
                     }
                 }
-                .padding(.trailing, 3)
             }
-            .scrollIndicators(.automatic)
+            .padding(.trailing, 3)
         }
         .padding(10)
-        .frame(maxHeight: .infinity)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
         .background(.purple.opacity(0.035), in: RoundedRectangle(cornerRadius: 16))
     }
 
@@ -457,6 +467,7 @@ struct StatusSummaryContent: View {
         }
         .font(.system(size: 11)).monospacedDigit()
         .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("summary-usage-row-" + name)
     }
 
     private func action(_ title: String, icon: String, color: Color, perform: @escaping () -> Void) -> some View {
