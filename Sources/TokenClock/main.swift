@@ -1,6 +1,17 @@
 import SwiftUI
 
 @main
+enum TokenClockLauncher {
+    @MainActor
+    static func main() {
+        let arguments = Array(CommandLine.arguments.dropFirst())
+        if arguments.first == ClaudeSilentKeychain.helperArgument {
+            exit(ClaudeSilentKeychain.runHelper(arguments: arguments))
+        }
+        TokenClockApp.main()
+    }
+}
+
 struct TokenClockApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
 

@@ -7,17 +7,67 @@ import CommonCrypto
 import CryptoKit
 
 enum ClaudeSilentKeychain {
-    /// No security CLI subprocess and no interactive recovery. An ACL denial is
-    /// a normal missing-credential result, not permission to open a dialog.
-    static func read(service: String, account: String? = nil) -> Data? {
+    static let helperArgument = "--tokenclock-silent-keychain"
+
+    /// LAContext alone does not suppress legacy login-keychain ACL dialogs.
+    /// Disable legacy interaction in a short-lived copy of this signed executable,
+    /// so concurrent interactive connections in the main app remain unaffected.
+    static func read(service: String, account: String? = nil,
+                     executable: URL? = Bundle.main.executableURL) -> Data? {
+        guard accepts(service: service), let executable,
+              executable.lastPathComponent == "TokenClock" else { return nil }
+        let process = Process(), output = Pipe(), completed = DispatchSemaphore(value: 0)
+        process.executableURL = executable
+        process.arguments = [helperArgument, service] + (account.map { [$0] } ?? [])
+        process.standardInput = FileHandle.nullDevice
+        process.standardOutput = output
+        process.standardError = FileHandle.nullDevice
+        process.terminationHandler = { _ in completed.signal() }
+        do { try process.run() } catch { return nil }
+        try? output.fileHandleForWriting.close()
+        defer { try? output.fileHandleForReading.close() }
+        guard completed.wait(timeout: .now() + 2) == .success else {
+            if process.isRunning { process.terminate() }
+            return nil
+        }
+        let data = output.fileHandleForReading.readDataToEndOfFile()
+        guard process.terminationStatus == 0, !data.isEmpty, data.count <= 16_384 else { return nil }
+        return data
+    }
+
+    static func accepts(service: String) -> Bool {
+        ["Claude Safe Storage", "Claude Code", "cursor-access-token"].contains(service)
+            || service.range(of: "^Claude Code(?:-custom-oauth)?-credentials(?:-[0-9a-f]{8})?$",
+                             options: .regularExpression) != nil
+    }
+
+    /// Called before SwiftUI/NSApplication starts. No app windows, timers, retries,
+    /// security CLI, credential logging, or interactive fallback exist in this mode.
+    static func runHelper(arguments: [String]) -> Int32 {
+        guard (2...3).contains(arguments.count), arguments[0] == helperArgument,
+              accepts(service: arguments[1]), hasTrustedParent(),
+              SecKeychainSetUserInteractionAllowed(false) == errSecSuccess else { return 1 }
         let context = LAContext(); context.interactionNotAllowed = true
-        var query: [CFString: Any] = [kSecClass: kSecClassGenericPassword, kSecAttrService: service,
+        var query: [CFString: Any] = [kSecClass: kSecClassGenericPassword, kSecAttrService: arguments[1],
             kSecReturnData: true, kSecMatchLimit: kSecMatchLimitOne, kSecUseAuthenticationContext: context]
-        if let account { query[kSecAttrAccount] = account }
+        if arguments.count == 3 { query[kSecAttrAccount] = arguments[2] }
         var result: CFTypeRef?
         guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess,
-              let data = result as? Data, data.count <= 16_384 else { return nil }
-        return data
+              let data = result as? Data, !data.isEmpty, data.count <= 16_384 else { return 1 }
+        FileHandle.standardOutput.write(data)
+        return 0
+    }
+
+    private static func hasTrustedParent() -> Bool {
+        // The helper must not become a credential-export command for other apps.
+        // Only another running instance of this signed app may receive its output.
+        var own: SecCode?, parent: SecCode?, staticOwn: SecStaticCode?, requirement: SecRequirement?
+        guard SecCodeCopySelf([], &own) == errSecSuccess, let own,
+              SecCodeCopyStaticCode(own, [], &staticOwn) == errSecSuccess, let staticOwn,
+              SecCodeCopyDesignatedRequirement(staticOwn, [], &requirement) == errSecSuccess, let requirement,
+              SecCodeCopyGuestWithAttributes(nil, [kSecGuestAttributePid: getppid()] as CFDictionary,
+                                            [], &parent) == errSecSuccess, let parent else { return false }
+        return SecCodeCheckValidity(parent, [], requirement) == errSecSuccess
     }
 }
 
