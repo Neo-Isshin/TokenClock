@@ -102,32 +102,34 @@ struct StatusSummaryContent: View {
     let onShare: () -> Void
     @State private var showsModels = false
     @State private var showsTimeline = false
-    @State private var quotaContentHeight: CGFloat = 96
+    private var layout: StatusSummaryLayout { StatusSummaryLayout(side: side) }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: layout.spacing) {
             HStack {
                 HStack(spacing: 10) {
                     Image(systemName: "chart.bar.xaxis")
-                        .font(.system(size: 18, weight: .medium))
+                        .font(.system(size: layout.isCompact ? 16 : 18, weight: .medium))
                         .foregroundStyle(.cyan.gradient)
-                        .frame(width: 38, height: 38)
+                        .frame(width: layout.isCompact ? 30 : 38, height: layout.isCompact ? 30 : 38)
                         .background(.cyan.opacity(0.09), in: RoundedRectangle(cornerRadius: 13))
                     VStack(alignment: .leading, spacing: 3) {
                         Text("TOKENCLOCK").font(.system(size: 9, weight: .semibold)).tracking(1.8)
                             .foregroundStyle(.secondary)
                         Text(L10n.shared.tr("status.summary"))
-                            .font(.system(size: 20, weight: .semibold, design: .rounded))
+                            .font(.system(size: layout.isCompact ? 17 : 20, weight: .semibold, design: .rounded))
+                            .lineLimit(1).minimumScaleFactor(0.8)
                     }
                 }
                 Spacer(minLength: 8)
                 Text(date).font(.system(size: 11, weight: .medium))
                     .multilineTextAlignment(.trailing).foregroundStyle(.secondary)
-                    .frame(maxWidth: 125, alignment: .trailing)
+                    .frame(maxWidth: layout.isCompact ? 96 : 125, alignment: .trailing)
+                    .lineLimit(2).minimumScaleFactor(0.8)
             }
 
             ScrollView {
-                VStack(alignment: .leading, spacing: 12) {
+                VStack(alignment: .leading, spacing: layout.spacing) {
                     tokenCard
                     quotaStrip
 
@@ -149,17 +151,28 @@ struct StatusSummaryContent: View {
 
             VStack(spacing: 9) {
                 GlassEffectContainer(spacing: 10) {
-                    HStack(spacing: 10) {
-                        action("detail.historyUsage", icon: "clock.arrow.circlepath", color: .teal, perform: onHistory)
-                        action("detail.subscriptionQuota", icon: "gauge.with.dots.needle.50percent", color: .indigo, perform: onQuota)
-                        action("status.share", icon: "square.and.arrow.up", color: .orange, perform: onShare)
+                    if layout.isCompact {
+                        VStack(spacing: 8) {
+                            HStack(spacing: 8) {
+                                action("detail.historyUsage", icon: "clock.arrow.circlepath", color: .teal, perform: onHistory)
+                                action("detail.subscriptionQuota", icon: "gauge.with.dots.needle.50percent", color: .indigo, perform: onQuota)
+                            }
+                            action("status.share", icon: "square.and.arrow.up", color: .orange, perform: onShare)
+                        }
+                    } else {
+                        HStack(spacing: 10) {
+                            action("detail.historyUsage", icon: "clock.arrow.circlepath", color: .teal, perform: onHistory)
+                            action("detail.subscriptionQuota", icon: "gauge.with.dots.needle.50percent", color: .indigo, perform: onQuota)
+                            action("status.share", icon: "square.and.arrow.up", color: .orange, perform: onShare)
+                        }
                     }
                 }
                 Text(L10n.shared.tr(snapshot.includesCache ? "status.cacheIncluded" : "status.cacheExcluded"))
                     .font(.system(size: 9)).foregroundStyle(.secondary)
+                    .lineLimit(2).multilineTextAlignment(.center)
             }
         }
-        .padding(16)
+        .padding(layout.padding)
         .frame(width: side, height: side)
         .glassEffect(.regular, in: .rect(cornerRadius: 24, style: .continuous))
         .padding(6)
@@ -182,19 +195,8 @@ struct StatusSummaryContent: View {
                 Text(tokens).font(.system(size: 29, weight: .semibold, design: .rounded))
                     .monospacedDigit().lineLimit(1).minimumScaleFactor(0.6)
             }
-            HStack {
-                Label(isLoading ? "—" : "\(snapshot.totalMessages)", systemImage: "bubble.left.and.bubble.right")
-                Spacer()
-                Label(L10n.shared.tr("status.cacheReads") + " " + (isLoading ? "—" : TokenFormat.compact(snapshot.cacheReadTokens))
-                      + " · " + (isLoading ? "—" : (snapshot.cacheShare.map { String(format: "%.1f%%", $0 * 100) } ?? "—")),
-                      systemImage: "arrow.triangle.2.circlepath")
-                    .foregroundStyle(.teal).help(L10n.shared.tr("status.cacheShareHelp"))
-                Spacer()
-                Text("\(L10n.shared.tr("detail.cost"))  \(cost)"
-                     + (comparison.costDelta.map { " · " + deltaText($0, money: true) } ?? ""))
-                    .help(comparisonHelp)
-            }
-            .font(.system(size: 10)).foregroundStyle(.secondary).lineLimit(1).minimumScaleFactor(0.75)
+            usageMetrics
+                .font(.system(size: 10)).foregroundStyle(.secondary).lineLimit(1).minimumScaleFactor(0.75)
             hourlyChart
         }
         .padding(12)
@@ -205,6 +207,32 @@ struct StatusSummaryContent: View {
                                      startPoint: .topLeading, endPoint: .bottomTrailing))
         }
         .overlay { RoundedRectangle(cornerRadius: 18).strokeBorder(.cyan.opacity(0.15), lineWidth: 0.7) }
+    }
+
+    @ViewBuilder private var usageMetrics: some View {
+        if layout.isCompact {
+            VStack(alignment: .leading, spacing: 5) {
+                HStack { messageMetric; Spacer(); costMetric }
+                cacheMetric
+            }
+        } else {
+            HStack { messageMetric; Spacer(); cacheMetric; Spacer(); costMetric }
+        }
+    }
+
+    private var messageMetric: some View {
+        Label(isLoading ? "—" : "\(snapshot.totalMessages)", systemImage: "bubble.left.and.bubble.right")
+    }
+    private var cacheMetric: some View {
+        Label(L10n.shared.tr("status.cacheReads") + " " + (isLoading ? "—" : TokenFormat.compact(snapshot.cacheReadTokens))
+              + " · " + (isLoading ? "—" : (snapshot.cacheShare.map { String(format: "%.1f%%", $0 * 100) } ?? "—")),
+              systemImage: "arrow.triangle.2.circlepath")
+            .foregroundStyle(.teal).help(L10n.shared.tr("status.cacheShareHelp"))
+    }
+    private var costMetric: some View {
+        Text("\(L10n.shared.tr("detail.cost"))  \(cost)"
+             + (comparison.costDelta.map { " · " + deltaText($0, money: true) } ?? ""))
+            .help(comparisonHelp)
     }
 
     private var hourlyChart: some View {
@@ -250,7 +278,8 @@ struct StatusSummaryContent: View {
     }
 
     private var quotaStrip: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        let grid = layout.quotaGrid(count: quotas.count)
+        return VStack(alignment: .leading, spacing: 6) {
             HStack {
                 Text(L10n.shared.tr("detail.subscriptionQuota")).font(.system(size: 11, weight: .semibold))
                 if isQuotaLoading { ProgressView().controlSize(.mini) }
@@ -260,12 +289,12 @@ struct StatusSummaryContent: View {
                 Button(L10n.shared.tr(isQuotaLoading ? "quota.loadingAll" : "status.noReadableQuota"), action: onQuota)
                     .buttonStyle(.plain).font(.system(size: 10)).foregroundStyle(.secondary)
             } else {
-                ScrollView(.horizontal) {
-                    HStack(alignment: .top, spacing: 14) {
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(minimum: 0), spacing: layout.spacing, alignment: .top), count: grid.columns),
+                          alignment: .center, spacing: layout.spacing) {
                         ForEach(quotas) { indicator in
                             Button(action: onQuota) {
                                 VStack(spacing: 3) {
-                                    summaryRing(indicator.indicator)
+                                    summaryRing(indicator.indicator, size: grid.ringSize)
                                     HStack(spacing: 3) {
                                         BrandIconView(name: indicator.displayName,
                                             fallback: indicator.subscriptionName == nil ? indicator.provider.emoji : "𝕏", size: 11)
@@ -283,7 +312,7 @@ struct StatusSummaryContent: View {
                                         .help(resetHelp(reset))
                                     }
                                 }
-                                .frame(width: 124)
+                                .frame(maxWidth: .infinity)
                                 .contentShape(Rectangle())
                             }
                             .buttonStyle(.plain)
@@ -291,19 +320,12 @@ struct StatusSummaryContent: View {
                                 + indicator.details.map { L10n.shared.tr($0.labelKey) + " " + String(format: "%.0f%%", $0.remainingPercent) })
                                 .joined(separator: "\n"))
                         }
-                    }
-                    .padding(.vertical, 2)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { height in
-                        quotaContentHeight = height + 16 // Allow space for non-overlay scrollers.
-                    }
                 }
-                .frame(height: quotaContentHeight)
-                .scrollIndicators(.automatic)
+                .padding(.vertical, 2)
             }
             timelineView
         }
-        .padding(10)
+        .padding(layout.sectionPadding)
         .background(.primary.opacity(0.025), in: RoundedRectangle(cornerRadius: 15))
     }
 
@@ -348,11 +370,21 @@ struct StatusSummaryContent: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 7) {
                     ForEach(timeline) { event in
-                        HStack(spacing: 6) {
-                            Circle().fill(event.kind == .reset ? Color.cyan : .orange).frame(width: 4, height: 4)
-                            Text(event.name + " · " + L10n.shared.tr(event.titleKey)).lineLimit(1)
-                            Spacer(minLength: 8)
-                            Text(timelineDate(event)).monospacedDigit().foregroundStyle(.secondary)
+                        Group {
+                            if layout.isCompact {
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text(event.name + " · " + L10n.shared.tr(event.titleKey)).lineLimit(2)
+                                    Text(timelineDate(event)).monospacedDigit().foregroundStyle(.secondary)
+                                }
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                            } else {
+                                HStack(spacing: 6) {
+                                    Circle().fill(event.kind == .reset ? Color.cyan : .orange).frame(width: 4, height: 4)
+                                    Text(event.name + " · " + L10n.shared.tr(event.titleKey)).lineLimit(1)
+                                    Spacer(minLength: 8)
+                                    Text(timelineDate(event)).monospacedDigit().foregroundStyle(.secondary)
+                                }
+                            }
                         }
                         .font(.system(size: 10))
                         .help(event.accountName + "\n" + event.detail)
@@ -381,39 +413,40 @@ struct StatusSummaryContent: View {
         return formatter.string(from: event.date)
     }
 
-    private func summaryRing(_ indicator: DialQuotaIndicator) -> some View {
+    private func summaryRing(_ indicator: DialQuotaIndicator, size: CGFloat) -> some View {
         let color = indicator.provider == .zhipu ? Color.primary : indicator.provider.dialQuotaColor
         let centerLabel = QuotaCenterLabel(remaining: indicator.outerRemainingPercent)
+        let scale = size / 48
         return ZStack {
-            Circle().stroke(.primary.opacity(0.08), lineWidth: 4)
+            Circle().stroke(.primary.opacity(0.08), lineWidth: 4 * scale)
             Circle().trim(from: 0, to: indicator.outerRemainingPercent / 100)
-                .stroke(color.opacity(0.75).gradient, style: StrokeStyle(lineWidth: 4, lineCap: .round))
+                .stroke(color.opacity(0.75).gradient, style: StrokeStyle(lineWidth: 4 * scale, lineCap: .round))
                 .rotationEffect(.degrees(-90))
             if let inner = indicator.innerRemainingPercent {
-                Circle().inset(by: 7).stroke(.primary.opacity(0.06), lineWidth: 2)
-                Circle().inset(by: 7).trim(from: 0, to: inner / 100)
-                    .stroke(color.opacity(0.4), style: StrokeStyle(lineWidth: 2, lineCap: .round))
+                Circle().inset(by: 7 * scale).stroke(.primary.opacity(0.06), lineWidth: 2 * scale)
+                Circle().inset(by: 7 * scale).trim(from: 0, to: inner / 100)
+                    .stroke(color.opacity(0.4), style: StrokeStyle(lineWidth: 2 * scale, lineCap: .round))
                     .rotationEffect(.degrees(-90))
             }
             if let third = indicator.thirdRemainingPercent {
-                Circle().inset(by: 11).stroke(.primary.opacity(0.06), lineWidth: 1.3)
-                Circle().inset(by: 11).trim(from: 0, to: third / 100)
-                    .stroke(color.opacity(0.65), style: StrokeStyle(lineWidth: 1.3, lineCap: .round))
+                Circle().inset(by: 11 * scale).stroke(.primary.opacity(0.06), lineWidth: 1.3 * scale)
+                Circle().inset(by: 11 * scale).trim(from: 0, to: third / 100)
+                    .stroke(color.opacity(0.65), style: StrokeStyle(lineWidth: 1.3 * scale, lineCap: .round))
                     .rotationEffect(.degrees(-90))
             }
             HStack(alignment: .firstTextBaseline, spacing: 0) {
                 Text(centerLabel.text)
-                    .font(.system(size: 12, weight: .bold, design: .rounded))
+                    .font(.system(size: 12 * scale, weight: .bold, design: .rounded))
                 if centerLabel.showsPercent {
                     Text("%")
-                        .font(.system(size: 8, weight: .regular, design: .rounded))
+                        .font(.system(size: 8 * scale, weight: .regular, design: .rounded))
                 }
             }
             .monospacedDigit()
-            .frame(width: indicator.thirdRemainingPercent == nil ? nil : 20)
+            .frame(width: indicator.thirdRemainingPercent == nil ? nil : 20 * scale)
             .lineLimit(1).minimumScaleFactor(0.6)
         }
-        .padding(3).frame(width: 48, height: 48)
+        .padding(3 * scale).frame(width: size, height: size)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text(L10n.shared.tr("quota.dialAccessibility", indicator.provider.displayName,
                                               Int(indicator.outerRemainingPercent.rounded()))))
@@ -426,13 +459,15 @@ struct StatusSummaryContent: View {
                 Text(L10n.shared.tr("status.modelList")).tag(true)
             }
             .pickerStyle(.segmented).labelsHidden()
-            HStack(spacing: 12) {
-                Text(showsModels ? L10n.shared.tr("detail.model") : "Harness").frame(maxWidth: .infinity, alignment: .leading)
-                Text("Tokens").frame(width: 68, alignment: .trailing)
-                Text(L10n.shared.tr("detail.cost")).frame(width: 64, alignment: .trailing)
-                Text("t/s").frame(width: 40, alignment: .trailing).help(L10n.shared.tr("detail.generationSpeedHelp"))
+            if !layout.isCompact {
+                HStack(spacing: 12) {
+                    Text(showsModels ? L10n.shared.tr("detail.model") : "Harness").frame(maxWidth: .infinity, alignment: .leading)
+                    Text("Tokens").frame(width: 68, alignment: .trailing)
+                    Text(L10n.shared.tr("detail.cost")).frame(width: 64, alignment: .trailing)
+                    Text("t/s").frame(width: 40, alignment: .trailing).help(L10n.shared.tr("detail.generationSpeedHelp"))
+                }
+                .font(.system(size: 9)).foregroundStyle(.secondary)
             }
-            .font(.system(size: 9)).foregroundStyle(.secondary)
             VStack(spacing: 10) {
                 if showsModels {
                     ForEach(models) { model in
@@ -449,25 +484,51 @@ struct StatusSummaryContent: View {
             }
             .padding(.trailing, 3)
         }
-        .padding(10)
+        .padding(layout.sectionPadding)
         .frame(maxWidth: .infinity, alignment: .topLeading)
         .background(.purple.opacity(0.035), in: RoundedRectangle(cornerRadius: 16))
     }
 
     private func usageRow(name: String, emoji: String, tokens: Int, cost: String, speed: GenerationSpeed) -> some View {
-        HStack(spacing: 12) {
-            HStack(spacing: 6) {
-                BrandIconView(name: name, fallback: emoji, size: 14)
-                Text(name).lineLimit(1).truncationMode(.middle)
+        Group {
+            if layout.isCompact {
+                VStack(alignment: .leading, spacing: 5) {
+                    HStack(spacing: 6) {
+                        BrandIconView(name: name, fallback: emoji, size: 14)
+                        Text(name).lineLimit(2).truncationMode(.middle)
+                    }
+                    HStack(spacing: 8) {
+                        compactValue("Tokens", TokenFormat.compact(tokens))
+                        Spacer(minLength: 0)
+                        compactValue(L10n.shared.tr("detail.cost"), cost)
+                        Spacer(minLength: 0)
+                        compactValue("t/s", speed.formatted).help(speed.helpText)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                HStack(spacing: 12) {
+                    HStack(spacing: 6) {
+                        BrandIconView(name: name, fallback: emoji, size: 14)
+                        Text(name).lineLimit(1).truncationMode(.middle)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    Text(TokenFormat.compact(tokens)).frame(width: 68, alignment: .trailing)
+                    Text(cost).frame(width: 64, alignment: .trailing).foregroundStyle(.secondary)
+                    Text(speed.formatted).frame(width: 40, alignment: .trailing).help(speed.helpText)
+                }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            Text(TokenFormat.compact(tokens)).frame(width: 68, alignment: .trailing)
-            Text(cost).frame(width: 64, alignment: .trailing).foregroundStyle(.secondary)
-            Text(speed.formatted).frame(width: 40, alignment: .trailing).help(speed.helpText)
         }
         .font(.system(size: 11)).monospacedDigit()
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("summary-usage-row-" + name)
+    }
+
+    private func compactValue(_ title: String, _ value: String) -> some View {
+        HStack(spacing: 3) {
+            Text(title).font(.system(size: 8)).foregroundStyle(.secondary)
+            Text(value).font(.system(size: 10)).lineLimit(1).minimumScaleFactor(0.85)
+        }
     }
 
     private func action(_ title: String, icon: String, color: Color, perform: @escaping () -> Void) -> some View {

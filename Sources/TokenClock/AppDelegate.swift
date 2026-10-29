@@ -347,7 +347,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             isOpeningStatusSummary = false
         }
         let available = button.window?.screen?.visibleFrame.size ?? NSSize(width: 800, height: 800)
-        let side = min(600, max(320, min(available.width - 40, available.height - 80)))
+        let side = StatusSummaryLayout.panelSide(available: available)
         let popover = statusSummaryPopover ?? NSPopover()
         popover.behavior = .transient
         popover.animates = true

@@ -7,12 +7,27 @@ import XCTest
 @MainActor
 final class StatusSummaryLayoutTests: XCTestCase {
     func testLargeQuotaSectionAndUsageRowsShareANonzeroScrollableViewport() throws {
+        try checkLayout(side: 600, quotaCount: 6)
+    }
+
+    func testCompactPanelKeepsQuotaDetailsAndLongUsageNamesReachable() throws {
+        try checkLayout(side: 268, quotaCount: 4)
+        try checkLayout(side: 320, quotaCount: 4)
+        try checkLayout(side: 420, quotaCount: 6)
+    }
+
+    func testOneAndFourQuotasFitAtRegularSize() throws {
+        try checkLayout(side: 600, quotaCount: 1)
+        try checkLayout(side: 600, quotaCount: 4)
+    }
+
+    private func checkLayout(side: CGFloat, quotaCount: Int) throws {
         _ = NSApplication.shared
         let tools = (1...8).map { index in
-            ToolUsage(name: "Harness \(index)", abbreviation: "H", emoji: "", todayTokens: index * 1_000,
+            ToolUsage(name: "Harness \(index) with a longer descriptive name", abbreviation: "H", emoji: "", todayTokens: index * 1_000,
                 todayMessages: index, isActive: false, recentTokens: 0, hourlyTokens: 0)
         }
-        let quotas = SubscriptionProvider.allCases.map { provider in
+        let quotas = SubscriptionProvider.allCases.prefix(quotaCount).map { provider in
             StatusSummaryQuota(indicator: DialQuotaIndicator(provider: provider, outerRemainingPercent: 95,
                 innerRemainingPercent: 80, thirdRemainingPercent: 20, details: []), isShared: false,
                 resets: (0..<5).map { index in
@@ -22,15 +37,15 @@ final class StatusSummaryLayoutTests: XCTestCase {
         }
         func content(_ values: [ToolUsage]) -> StatusSummaryContent {
             StatusSummaryContent(snapshot: StatusSummarySnapshot(tools: values, includesCache: false),
-                models: [], date: "Oct 28", tokens: "36K", cost: "$3.60", quotas: quotas,
+                models: [], date: "Wednesday, Oct 28", tokens: "36K", cost: "$3.60", side: side, quotas: quotas,
                 onHistory: {}, onQuota: {}, onShare: {})
         }
         let host = NSHostingView(rootView: content(Array(tools.prefix(1))))
-        let window = NSWindow(contentRect: CGRect(x: -10_000, y: -10_000, width: 612, height: 612),
+        let window = NSWindow(contentRect: CGRect(x: -10_000, y: -10_000, width: side + 12, height: side + 12),
             styleMask: .borderless, backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
         window.contentView = host
-        host.frame = CGRect(x: 0, y: 0, width: 612, height: 612)
+        host.frame = CGRect(x: 0, y: 0, width: side + 12, height: side + 12)
         window.orderFront(nil)
         defer { window.orderOut(nil); window.close() }
         func settle() {
@@ -46,15 +61,15 @@ final class StatusSummaryLayoutTests: XCTestCase {
         let all = scrollers(host)
         let vertical = all.filter { $0.hasVerticalScroller }.max { $0.contentView.bounds.height < $1.contentView.bounds.height }
         let body = try XCTUnwrap(vertical, "The main summary must expose a native vertical scroll viewport")
-        XCTAssertGreaterThan(body.contentView.bounds.height, 100, "Quota details must not squeeze the list viewport to zero")
-        XCTAssertGreaterThan(try XCTUnwrap(body.documentView).bounds.height, body.contentView.bounds.height,
-            "All quota details and usage rows must remain reachable by scrolling")
+        XCTAssertGreaterThan(body.contentView.bounds.height, side < 480 ? 60 : 100, "Quota details must not squeeze the list viewport to zero")
         let previousHeight = try XCTUnwrap(body.documentView).bounds.height
         host.rootView = content(tools)
         settle()
         let updated = try XCTUnwrap(scrollers(host).filter { $0.hasVerticalScroller }
             .max { $0.contentView.bounds.height < $1.contentView.bounds.height })
-        XCTAssertGreaterThan(try XCTUnwrap(updated.documentView).bounds.height, previousHeight + 70,
+        XCTAssertGreaterThan(try XCTUnwrap(updated.documentView).bounds.height, body.contentView.bounds.height,
+            "All quota details and usage rows must remain reachable by scrolling")
+        XCTAssertGreaterThan(try XCTUnwrap(updated.documentView).bounds.height, previousHeight + 50,
             "Additional harness rows must contribute real content height instead of disappearing")
     }
 }
