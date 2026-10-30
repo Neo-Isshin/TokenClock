@@ -7,7 +7,7 @@ final class ClaudeCodeUsageService: @unchecked Sendable {
     private(set) var dailyData: [String: DayUsage] = [:]
     private(set) var hourlyData: [String: HourlyUsage] = [:]
     private(set) var dailyCache: [String: Int] = [:]
-    private var fileCache: [String: FileMeta] = [:]
+    private var fileCache: [String: IncrementalUsageLog.Stamp] = [:]
     private var fileDailyContrib: [String: [String: DayUsage]] = [:]
     private var fileHourlyContrib: [String: [String: HourlyUsage]] = [:]
     private var fileCacheContrib: [String: [String: Int]] = [:]
@@ -18,11 +18,14 @@ final class ClaudeCodeUsageService: @unchecked Sendable {
     private var fileBucketContrib: [String: [String: [String: ModelBuckets]]] = [:]
     /// Nested project logs historically participate in session detail only, not
     /// the tool total. Keep that behavior while avoiding recursive re-parsing.
-    private var nestedFileCache: [String: FileMeta] = [:]
+    private var nestedFileCache: [String: IncrementalUsageLog.Stamp] = [:]
     private var nestedDailyContrib: [String: [String: DayUsage]] = [:]
     private var nestedLastModel: [String: [String: String]] = [:]
     private var nestedBucketContrib: [String: [String: [String: ModelBuckets]]] = [:]
     private var recentEntries: [RecentEntry] = []
+    private let directoryIndex = UsageLogDirectoryIndex()
+    private var readers: [String: IncrementalUsageLog] = [:]
+    private var nestedReaders: [String: IncrementalUsageLog] = [:]
 
     private let fm = FileManager.default
     private let overrideHome: String?
@@ -46,11 +49,13 @@ final class ClaudeCodeUsageService: @unchecked Sendable {
     }
 
     func fullScan() {
+        directoryIndex.reset()
         scannedHome = claudeHome
         dailyData.removeAll()
         hourlyData.removeAll()
         dailyCache.removeAll()
         fileCache.removeAll()
+        readers.removeAll(); nestedReaders.removeAll()
         fileDailyContrib.removeAll()
         fileHourlyContrib.removeAll()
         fileCacheContrib.removeAll()
@@ -101,47 +106,41 @@ final class ClaudeCodeUsageService: @unchecked Sendable {
     private func scanProjectsDir() {
         let roots = [URL(fileURLWithPath: claudeHome + "/projects").resolvingSymlinksInPath().path]
             + ClaudeDesktopData.projectRoots(in: desktopHomes)
-        var topBySession: [String: (path: String, modified: Date)] = [:]
-        var nested: [String: Date] = [:]
+        directoryIndex.prepare(roots: roots)
+        var topBySession: [String: (path: String, stamp: IncrementalUsageLog.Stamp)] = [:]
+        var nested: [String: IncrementalUsageLog.Stamp] = [:]
         var seenFiles = Set<String>()
         for projectsDir in roots {
-            guard let projects = try? fm.contentsOfDirectory(atPath: projectsDir) else { continue }
-            for project in projects.sorted() {
-                let projectURL = URL(fileURLWithPath: projectsDir).appendingPathComponent(project).resolvingSymlinksInPath()
-                guard let enumerator = fm.enumerator(at: projectURL,
-                    includingPropertiesForKeys: [.isRegularFileKey], options: [.skipsHiddenFiles]) else { continue }
-                for case let url as URL in enumerator where url.pathExtension == "jsonl" {
+            let projects = directoryIndex.children(in: projectsDir).sorted { $0.lastPathComponent < $1.lastPathComponent }
+            for project in projects {
+                let projectURL = project.resolvingSymlinksInPath()
+                for url in directoryIndex.jsonlFiles(recursivelyIn: projectURL) {
                     let path = url.resolvingSymlinksInPath().path
                     guard seenFiles.insert(path).inserted,
                           let attrs = try? fm.attributesOfItem(atPath: path),
-                          let modified = attrs[.modificationDate] as? Date else { continue }
+                          let stamp = IncrementalUsageLog.Stamp(attrs) else { continue }
                     if url.deletingLastPathComponent().standardizedFileURL.path == projectURL.standardizedFileURL.path {
                         let id = sessionId(fromJSONLPath: path)
                         // Desktop and CLI may mirror the same complete transcript.
                         // Keep its newest writer, never sum copies of one session.
-                        if let old = topBySession[id], old.modified >= modified { continue }
-                        topBySession[id] = (path, modified)
-                    } else { nested[path] = modified }
+                        if let old = topBySession[id], old.stamp.modified >= stamp.modified { continue }
+                        topBySession[id] = (path, stamp)
+                    } else { nested[path] = stamp }
                 }
             }
         }
         let liveTopLevelPaths = Set(topBySession.values.map(\.path))
         let liveNestedPaths = Set(nested.keys)
         for file in topBySession.values {
-            let path = file.path
-            if fileCache[path]?.modDate == file.modified { continue }
-            if let old = fileDailyContrib[path] { subtractDaily(old) }
-            if let old = fileHourlyContrib[path] { subtractHourly(old) }
-            if let old = fileCacheContrib[path] { subtractCache(old) }
-            parseFile(path: path)
-            fileCache[path] = FileMeta(path: path, modDate: file.modified)
+            guard fileCache[file.path] != file.stamp else { continue }
+            if parseFile(path: file.path) { fileCache[file.path] = file.stamp }
         }
-        for (path, modified) in nested {
-            if nestedFileCache[path]?.modDate == modified { continue }
-            parseNestedDetailFile(path: path)
-            nestedFileCache[path] = FileMeta(path: path, modDate: modified)
+        for (path, stamp) in nested {
+            guard nestedFileCache[path] != stamp else { continue }
+            if parseNestedDetailFile(path: path) { nestedFileCache[path] = stamp }
         }
         evictTopLevelFiles(notIn: liveTopLevelPaths)
+        nestedReaders = nestedReaders.filter { liveNestedPaths.contains($0.key) }
         nestedFileCache = nestedFileCache.filter { liveNestedPaths.contains($0.key) }
         nestedDailyContrib = nestedDailyContrib.filter { liveNestedPaths.contains($0.key) }
         nestedLastModel = nestedLastModel.filter { liveNestedPaths.contains($0.key) }
@@ -156,6 +155,7 @@ final class ClaudeCodeUsageService: @unchecked Sendable {
             if let old = fileHourlyContrib[path] { subtractHourly(old) }
             if let old = fileCacheContrib[path] { subtractCache(old) }
             fileCache.removeValue(forKey: path)
+            readers.removeValue(forKey: path)
             fileDailyContrib.removeValue(forKey: path)
             fileHourlyContrib.removeValue(forKey: path)
             fileCacheContrib.removeValue(forKey: path)
@@ -196,40 +196,34 @@ final class ClaudeCodeUsageService: @unchecked Sendable {
         }
     }
 
-    private func parseFile(path: String) {
-        let today = DateHelper.todayKey()
-        var newDaily: [String: DayUsage] = [:]
-        var newHourly: [String: HourlyUsage] = [:]
-        var newCache: [String: Int] = [:]
-        var newRecent: [RecentEntry] = []
-        var newLastModels: [String: String] = [:]
-        var newBuckets: [String: [String: ModelBuckets]] = [:]
-
-        guard let result = JSONLLineReader.read(path: path, matchingAny: Self.assistantLineNeedle, onLine: { line in
-            if line.contains("\"assistant\""), let r = parseLine(line) {
-                accumulate(
-                    r, today: today, daily: &newDaily, hourly: &newHourly,
-                    cache: &newCache, recent: &newRecent, lastModels: &newLastModels,
-                    buckets: &newBuckets
-                )
-            }
-        }) else { return }
-        _ = JSONLLineReader.consumeCompleteTrailingLine(result.trailingData) { line in
-            if line.contains("\"assistant\""), let r = parseLine(line) {
-                accumulate(
-                    r, today: today, daily: &newDaily, hourly: &newHourly,
-                    cache: &newCache, recent: &newRecent, lastModels: &newLastModels,
-                    buckets: &newBuckets
-                )
-            }
+    private func parseFile(path: String) -> Bool {
+        var reader = readers[path] ?? IncrementalUsageLog()
+        var events: [R] = []
+        guard let read = reader.read(path: path, matchingAny: Self.assistantLineNeedle, onLine: { line in
+            if let result = parseLine(line) { events.append(result) }
+        }) else { return false }
+        // Keep the previous published snapshot intact if source I/O fails.
+        if read.reset {
+            if let old = fileDailyContrib[path] { subtractDaily(old) }
+            if let old = fileHourlyContrib[path] { subtractHourly(old) }
+            if let old = fileCacheContrib[path] { subtractCache(old) }
         }
-
-        fileDailyContrib[path] = newDaily
-        fileHourlyContrib[path] = newHourly
-        fileCacheContrib[path] = newCache
-        fileRecentContrib[path] = newRecent
-        fileLastModel[path] = newLastModels
-        fileBucketContrib[path] = newBuckets
+        var daily = read.reset ? [:] : fileDailyContrib[path] ?? [:]
+        var hourly = read.reset ? [:] : fileHourlyContrib[path] ?? [:]
+        var cache = read.reset ? [:] : fileCacheContrib[path] ?? [:]
+        var recent = read.reset ? [] : fileRecentContrib[path] ?? []
+        var models = read.reset ? [:] : fileLastModel[path] ?? [:]
+        var buckets = read.reset ? [:] : fileBucketContrib[path] ?? [:]
+        let today = DateHelper.todayKey()
+        for result in events {
+            accumulate(result, today: today, daily: &daily, hourly: &hourly, cache: &cache,
+                       recent: &recent, lastModels: &models, buckets: &buckets)
+        }
+        fileDailyContrib[path] = daily; fileHourlyContrib[path] = hourly
+        fileCacheContrib[path] = cache; fileRecentContrib[path] = recent
+        fileLastModel[path] = models; fileBucketContrib[path] = buckets
+        readers[path] = reader
+        return true
     }
 
     private struct R {
@@ -336,36 +330,26 @@ final class ClaudeCodeUsageService: @unchecked Sendable {
         return result
     }
 
-    private func parseNestedDetailFile(path: String) {
-        var daily: [String: DayUsage] = [:]
-        var lastModels: [String: String] = [:]
-        var buckets: [String: [String: ModelBuckets]] = [:]
-        guard let result = JSONLLineReader.read(path: path, matchingAny: Self.assistantLineNeedle, onLine: { line in
-            accumulateDetailLine(line, daily: &daily, lastModels: &lastModels, buckets: &buckets)
-        }) else { return }
-        _ = JSONLLineReader.consumeCompleteTrailingLine(result.trailingData) { line in
-            accumulateDetailLine(line, daily: &daily, lastModels: &lastModels, buckets: &buckets)
+    private func parseNestedDetailFile(path: String) -> Bool {
+        var reader = nestedReaders[path] ?? IncrementalUsageLog()
+        var events: [R] = []
+        guard let read = reader.read(path: path, matchingAny: Self.assistantLineNeedle, onLine: { line in
+            if let result = parseLine(line) { events.append(result) }
+        }) else { return false }
+        var daily = read.reset ? [:] : nestedDailyContrib[path] ?? [:]
+        var models = read.reset ? [:] : nestedLastModel[path] ?? [:]
+        var buckets = read.reset ? [:] : nestedBucketContrib[path] ?? [:]
+        for result in events {
+            daily[result.dateKey, default: DayUsage(tokens: 0, messages: 0)].tokens += result.tokens
+            daily[result.dateKey]!.messages += 1
+            if let model = ModelNormalizer.normalize(result.model) {
+                buckets[result.dateKey, default: [:]][model, default: ModelBuckets()].merge(result.buckets)
+            }
+            if let model = result.model, !model.isEmpty { models[result.dateKey] = model }
         }
-        nestedDailyContrib[path] = daily
-        nestedLastModel[path] = lastModels
-        nestedBucketContrib[path] = buckets
-    }
-
-    private func accumulateDetailLine(
-        _ line: String,
-        daily: inout [String: DayUsage],
-        lastModels: inout [String: String],
-        buckets: inout [String: [String: ModelBuckets]]
-    ) {
-        guard line.contains("\"assistant\""), let result = parseLine(line) else { return }
-        daily[result.dateKey, default: DayUsage(tokens: 0, messages: 0)].tokens += result.tokens
-        daily[result.dateKey]!.messages += 1
-        if let model = ModelNormalizer.normalize(result.model) {
-            buckets[result.dateKey, default: [:]][model, default: ModelBuckets()].merge(result.buckets)
-        }
-        if let model = result.model, !model.isEmpty {
-            lastModels[result.dateKey] = model
-        }
+        nestedDailyContrib[path] = daily; nestedLastModel[path] = models; nestedBucketContrib[path] = buckets
+        nestedReaders[path] = reader
+        return true
     }
 
     /// recentEntries 是各文件 recent 贡献的派生聚合：每轮扫描从 fileRecentContrib 重建，
