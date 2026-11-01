@@ -1521,13 +1521,12 @@ final class ViewModel: ObservableObject {
     }
 
     private func performFullScan() {
-        refreshGenerationSpeed()
         runBackgroundScan(incremental: false)
     }
 
     /// 在后台线程执行扫描 + 数据提取，主线程只负责更新 UI
     private func refreshGenerationSpeed() {
-        guard !isSamplingGenerationSpeed else { return }
+        guard !isSamplingGenerationSpeed, !isInitialLoading else { return }
         isSamplingGenerationSpeed = true
         let enabled = enabledTools
         Task.detached(priority: .utility) { [weak self] in
@@ -1553,171 +1552,176 @@ final class ViewModel: ObservableObject {
                 return
             }
 
-            // 后台线程：执行所有 I/O 密集的扫描
-            let activity = ProcessInfo.processInfo.beginActivity(
-                options: .userInitiatedAllowingIdleSystemSleep, reason: "Refresh local token usage")
-            defer { ProcessInfo.processInfo.endActivity(activity) }
-            if enabled.contains("OpenClaw") { incremental ? self.openclawService.incrementalScan() : self.openclawService.fullScan() }
-            if enabled.contains("Claude Code") { incremental ? self.claudeCodeService.incrementalScan() : self.claudeCodeService.fullScan() }
-            if enabled.contains("Gemini CLI") { incremental ? self.geminiService.incrementalScan() : self.geminiService.fullScan() }
-            if enabled.contains("Codex") { incremental ? self.codexService.incrementalScan() : self.codexService.fullScan() }
-            if enabled.contains("Hermes") { incremental ? self.hermesService.incrementalScan() : self.hermesService.fullScan() }
-            if enabled.contains("OpenCode") { incremental ? self.opencodeService.incrementalScan() : self.opencodeService.fullScan() }
-            if enabled.contains("Qwen Code") { incremental ? self.qwenService.incrementalScan() : self.qwenService.fullScan() }
-            if enabled.contains("Copilot") { incremental ? self.copilotService.incrementalScan() : self.copilotService.fullScan() }
-            if enabled.contains("Grok") { incremental ? self.grokService.incrementalScan() : self.grokService.fullScan() }
-            if enabled.contains("Aider") { incremental ? self.aiderService.incrementalScan() : self.aiderService.fullScan() }
-            if enabled.contains("Antigravity") { incremental ? self.antigravityService.incrementalScan() : self.antigravityService.fullScan() }
-            if enabled.contains("Cline") { incremental ? self.clineService.incrementalScan() : self.clineService.fullScan() }
-            for service in self.additionalHarnessServices where enabled.contains(service.harness.name) {
-                incremental ? service.incrementalScan() : service.fullScan()
-                if !incremental { service.importHistoryIfNeeded() }
-                if service.harness.unit == .tokens { HourlyHistoryStore.shared.replace(tool: service.harness.name, hours: service.hourlyData, force: !incremental) }
-            }
-            if enabled.contains("Continue") { incremental ? self.continueService.incrementalScan() : self.continueService.fullScan() }
-            if shouldScanCursorUsage { incremental ? self.cursorAgentService.incrementalScan() : self.cursorAgentService.fullScan() }
-            if enabled.contains("ZCode") { incremental ? self.zcodeService.incrementalScan() : self.zcodeService.fullScan() }
+            // Drain full-scan temporaries before starting the initial speed scan.
+            // The recurring three-minute speed timer and request attribution stay unchanged.
+            let (results, costModes) = autoreleasepool {
+                // 后台线程：执行所有 I/O 密集的扫描
+                let activity = ProcessInfo.processInfo.beginActivity(
+                    options: .userInitiatedAllowingIdleSystemSleep, reason: "Refresh local token usage")
+                defer { ProcessInfo.processInfo.endActivity(activity) }
+                if enabled.contains("OpenClaw") { incremental ? self.openclawService.incrementalScan() : self.openclawService.fullScan() }
+                if enabled.contains("Claude Code") { incremental ? self.claudeCodeService.incrementalScan() : self.claudeCodeService.fullScan() }
+                if enabled.contains("Gemini CLI") { incremental ? self.geminiService.incrementalScan() : self.geminiService.fullScan() }
+                if enabled.contains("Codex") { incremental ? self.codexService.incrementalScan() : self.codexService.fullScan() }
+                if enabled.contains("Hermes") { incremental ? self.hermesService.incrementalScan() : self.hermesService.fullScan() }
+                if enabled.contains("OpenCode") { incremental ? self.opencodeService.incrementalScan() : self.opencodeService.fullScan() }
+                if enabled.contains("Qwen Code") { incremental ? self.qwenService.incrementalScan() : self.qwenService.fullScan() }
+                if enabled.contains("Copilot") { incremental ? self.copilotService.incrementalScan() : self.copilotService.fullScan() }
+                if enabled.contains("Grok") { incremental ? self.grokService.incrementalScan() : self.grokService.fullScan() }
+                if enabled.contains("Aider") { incremental ? self.aiderService.incrementalScan() : self.aiderService.fullScan() }
+                if enabled.contains("Antigravity") { incremental ? self.antigravityService.incrementalScan() : self.antigravityService.fullScan() }
+                if enabled.contains("Cline") { incremental ? self.clineService.incrementalScan() : self.clineService.fullScan() }
+                for service in self.additionalHarnessServices where enabled.contains(service.harness.name) {
+                    incremental ? service.incrementalScan() : service.fullScan()
+                    if !incremental { service.importHistoryIfNeeded() }
+                    if service.harness.unit == .tokens { HourlyHistoryStore.shared.replace(tool: service.harness.name, hours: service.hourlyData, force: !incremental) }
+                }
+                if enabled.contains("Continue") { incremental ? self.continueService.incrementalScan() : self.continueService.fullScan() }
+                if shouldScanCursorUsage { incremental ? self.cursorAgentService.incrementalScan() : self.cursorAgentService.fullScan() }
+                if enabled.contains("ZCode") { incremental ? self.zcodeService.incrementalScan() : self.zcodeService.fullScan() }
 
-            if !incremental, enabled.contains("OpenClaw"),
-               UserDefaults.standard.int(for: .openclawHistoryRepairVersion) < 1 {
-                let days = AppConfig.History.retentionDays
-                let snapshots = self.openclawService.historicalSnapshots(retentionDays: days)
-                let startDate = Calendar.current.date(
-                    byAdding: .day, value: -days + 1,
-                    to: Calendar.current.startOfDay(for: Date())
-                ) ?? Date()
-                if HistoryStore.shared.replaceToolHistory(
-                    toolName: "OpenClaw", snapshotsByDate: snapshots,
-                    from: DateHelper.dateKey(from: startDate), through: DateHelper.todayKey()
-                ) {
-                    UserDefaults.standard.setInt(
-                        1, for: .openclawHistoryRepairVersion
+                if !incremental, enabled.contains("OpenClaw"),
+                   UserDefaults.standard.int(for: .openclawHistoryRepairVersion) < 1 {
+                    let days = AppConfig.History.retentionDays
+                    let snapshots = self.openclawService.historicalSnapshots(retentionDays: days)
+                    let startDate = Calendar.current.date(
+                        byAdding: .day, value: -days + 1,
+                        to: Calendar.current.startOfDay(for: Date())
+                    ) ?? Date()
+                    if HistoryStore.shared.replaceToolHistory(
+                        toolName: "OpenClaw", snapshotsByDate: snapshots,
+                        from: DateHelper.dateKey(from: startDate), through: DateHelper.todayKey()
+                    ) {
+                        UserDefaults.standard.setInt(
+                            1, for: .openclawHistoryRepairVersion
+                        )
+                    }
+                }
+                if !incremental, enabled.contains("ZCode"),
+                   UserDefaults.standard.int(for: .zcodeHistoryImportVersion) < 1 {
+                    let days = AppConfig.History.retentionDays
+                    let startDate = Calendar.current.date(
+                        byAdding: .day, value: -days + 1,
+                        to: Calendar.current.startOfDay(for: Date())
+                    ) ?? Date()
+                    if HistoryStore.shared.replaceToolHistory(
+                        toolName: "ZCode",
+                        snapshotsByDate: self.zcodeService.historicalSnapshots(retentionDays: days),
+                        from: DateHelper.dateKey(from: startDate), through: DateHelper.todayKey()
+                    ) {
+                        UserDefaults.standard.setInt(1, for: .zcodeHistoryImportVersion)
+                    }
+                }
+
+                // 后台线程：提取数据（避免与主线程读取竞争）
+                let hourlySources: [(String, [String: HourlyUsage])] = [
+                    ("Codex", self.codexService.hourlyData),
+                    ("Claude Code", self.claudeCodeService.hourlyData),
+                    ("Gemini CLI", self.geminiService.hourlyData),
+                    ("OpenClaw", self.openclawService.hourlyData),
+                    ("Antigravity", self.antigravityService.hourlyData),
+                    ("OpenCode", self.opencodeService.hourlyData),
+                    ("Qwen Code", self.qwenService.hourlyData),
+                    ("Copilot", self.copilotService.hourlyData),
+                    ("Continue", self.continueService.hourlyData),
+                    ("Grok", self.grokService.hourlyData),
+                    ("ZCode", self.zcodeService.hourlyData),
+                ]
+                for (name, hours) in hourlySources where enabled.contains(name) {
+                    HourlyHistoryStore.shared.replace(tool: name, hours: hours, force: !incremental)
+                }
+                var results: [String: ToolSnapshot] = [:]
+                if enabled.contains("OpenClaw") {
+                    let u = self.openclawService.todayUsage()
+                    results["OpenClaw"] = ToolSnapshot(tokens: u.tokens, messages: u.messages, recent: self.openclawService.recentUsage(minutes: rateWindow).tokens, hourly: self.openclawService.currentHourTokens(), active: self.openclawService.isActive(), cacheRate: u.cacheRate, cost: self.openclawService.todayCost(), cacheRead: self.openclawService.todayCacheReadTokens(), sessions: self.openclawService.todaySessions())
+                }
+                if enabled.contains("Claude Code") {
+                    let u = self.claudeCodeService.todayUsage()
+                    results["Claude Code"] = ToolSnapshot(tokens: u.tokens, messages: u.messages, recent: self.claudeCodeService.recentUsage(minutes: rateWindow).tokens, hourly: self.claudeCodeService.currentHourTokens(), active: self.claudeCodeService.isActive(), cacheRate: u.cacheRate, cost: self.claudeCodeService.todayCost(), cacheRead: self.claudeCodeService.todayCacheReadTokens(), sessions: self.claudeCodeService.todaySessions())
+                }
+                if enabled.contains("Gemini CLI") {
+                    let u = self.geminiService.todayUsage()
+                    results["Gemini CLI"] = ToolSnapshot(tokens: u.tokens, messages: u.messages, recent: self.geminiService.recentUsage(minutes: rateWindow).tokens, hourly: self.geminiService.currentHourTokens(), active: self.geminiService.isActive(), cacheRate: u.cacheRate, sessions: self.geminiService.todaySessions())
+                }
+                if enabled.contains("Codex") {
+                    let u = self.codexService.todayUsage()
+                    results["Codex"] = ToolSnapshot(tokens: u.tokens, messages: u.messages, recent: self.codexService.recentUsage(minutes: rateWindow).tokens, hourly: self.codexService.currentHourTokens(), active: self.codexService.isActive(), cacheRate: u.cacheRate, cost: self.codexService.todayCost(), cacheRead: self.codexService.todayCacheReadTokens(), sessions: self.codexService.todaySessions())
+                }
+                if enabled.contains("Hermes") {
+                    let u = self.hermesService.todayUsage()
+                    results["Hermes"] = ToolSnapshot(tokens: u.tokens, messages: u.messages, recent: self.hermesService.recentUsage(minutes: rateWindow).tokens, hourly: self.hermesService.currentHourTokens(), active: self.hermesService.isActive(), cacheRate: u.cacheRate, sessions: self.hermesService.todaySessions())
+                }
+                if enabled.contains("OpenCode") {
+                    let u = self.opencodeService.todayUsage()
+                    results["OpenCode"] = ToolSnapshot(tokens: u.tokens, messages: u.messages, recent: self.opencodeService.recentUsage(minutes: rateWindow).tokens, hourly: self.opencodeService.currentHourTokens(), active: self.opencodeService.isActive(), cacheRate: u.cacheRate, sessions: self.opencodeService.todaySessions())
+                }
+                if enabled.contains("Qwen Code") {
+                    let u = self.qwenService.todayUsage()
+                    results["Qwen Code"] = ToolSnapshot(tokens: u.tokens, messages: u.messages, recent: self.qwenService.recentUsage(minutes: rateWindow).tokens, hourly: self.qwenService.currentHourTokens(), active: self.qwenService.isActive(), cacheRate: u.cacheRate, sessions: self.qwenService.todaySessions())
+                }
+                if enabled.contains("Copilot") {
+                    let u = self.copilotService.todayUsage()
+                    results["Copilot"] = ToolSnapshot(tokens: u.tokens, messages: u.messages, recent: self.copilotService.recentUsage(minutes: rateWindow).tokens, hourly: self.copilotService.currentHourTokens(), active: self.copilotService.isActive(), cacheRate: u.cacheRate, sessions: self.copilotService.todaySessions())
+                }
+                if enabled.contains("Grok") {
+                    let usage = self.grokService.todayUsage()
+                    results["Grok"] = ToolSnapshot(
+                        tokens: usage.tokens,
+                        messages: usage.messages,
+                        recent: self.grokService.recentUsage(minutes: rateWindow).tokens,
+                        hourly: self.grokService.currentHourTokens(),
+                        active: self.grokService.isActive(),
+                        cacheRate: usage.cacheRate,
+                        sessions: self.grokService.todaySessions()
                     )
                 }
-            }
-            if !incremental, enabled.contains("ZCode"),
-               UserDefaults.standard.int(for: .zcodeHistoryImportVersion) < 1 {
-                let days = AppConfig.History.retentionDays
-                let startDate = Calendar.current.date(
-                    byAdding: .day, value: -days + 1,
-                    to: Calendar.current.startOfDay(for: Date())
-                ) ?? Date()
-                if HistoryStore.shared.replaceToolHistory(
-                    toolName: "ZCode",
-                    snapshotsByDate: self.zcodeService.historicalSnapshots(retentionDays: days),
-                    from: DateHelper.dateKey(from: startDate), through: DateHelper.todayKey()
-                ) {
-                    UserDefaults.standard.setInt(1, for: .zcodeHistoryImportVersion)
+                if enabled.contains("Aider") {
+                    let u = self.aiderService.todayUsage()
+                    results["Aider"] = ToolSnapshot(tokens: u.tokens, messages: u.messages, recent: self.aiderService.recentUsage(minutes: rateWindow).tokens, hourly: self.aiderService.currentHourTokens(), active: self.aiderService.isActive(), cacheRate: u.cacheRate, sessions: self.aiderService.todaySessions())
                 }
-            }
-
-            // 后台线程：提取数据（避免与主线程读取竞争）
-            let hourlySources: [(String, [String: HourlyUsage])] = [
-                ("Codex", self.codexService.hourlyData),
-                ("Claude Code", self.claudeCodeService.hourlyData),
-                ("Gemini CLI", self.geminiService.hourlyData),
-                ("OpenClaw", self.openclawService.hourlyData),
-                ("Antigravity", self.antigravityService.hourlyData),
-                ("OpenCode", self.opencodeService.hourlyData),
-                ("Qwen Code", self.qwenService.hourlyData),
-                ("Copilot", self.copilotService.hourlyData),
-                ("Continue", self.continueService.hourlyData),
-                ("Grok", self.grokService.hourlyData),
-                ("ZCode", self.zcodeService.hourlyData),
-            ]
-            for (name, hours) in hourlySources where enabled.contains(name) {
-                HourlyHistoryStore.shared.replace(tool: name, hours: hours, force: !incremental)
-            }
-            var results: [String: ToolSnapshot] = [:]
-            if enabled.contains("OpenClaw") {
-                let u = self.openclawService.todayUsage()
-                results["OpenClaw"] = ToolSnapshot(tokens: u.tokens, messages: u.messages, recent: self.openclawService.recentUsage(minutes: rateWindow).tokens, hourly: self.openclawService.currentHourTokens(), active: self.openclawService.isActive(), cacheRate: u.cacheRate, cost: self.openclawService.todayCost(), cacheRead: self.openclawService.todayCacheReadTokens(), sessions: self.openclawService.todaySessions())
-            }
-            if enabled.contains("Claude Code") {
-                let u = self.claudeCodeService.todayUsage()
-                results["Claude Code"] = ToolSnapshot(tokens: u.tokens, messages: u.messages, recent: self.claudeCodeService.recentUsage(minutes: rateWindow).tokens, hourly: self.claudeCodeService.currentHourTokens(), active: self.claudeCodeService.isActive(), cacheRate: u.cacheRate, cost: self.claudeCodeService.todayCost(), cacheRead: self.claudeCodeService.todayCacheReadTokens(), sessions: self.claudeCodeService.todaySessions())
-            }
-            if enabled.contains("Gemini CLI") {
-                let u = self.geminiService.todayUsage()
-                results["Gemini CLI"] = ToolSnapshot(tokens: u.tokens, messages: u.messages, recent: self.geminiService.recentUsage(minutes: rateWindow).tokens, hourly: self.geminiService.currentHourTokens(), active: self.geminiService.isActive(), cacheRate: u.cacheRate, sessions: self.geminiService.todaySessions())
-            }
-            if enabled.contains("Codex") {
-                let u = self.codexService.todayUsage()
-                results["Codex"] = ToolSnapshot(tokens: u.tokens, messages: u.messages, recent: self.codexService.recentUsage(minutes: rateWindow).tokens, hourly: self.codexService.currentHourTokens(), active: self.codexService.isActive(), cacheRate: u.cacheRate, cost: self.codexService.todayCost(), cacheRead: self.codexService.todayCacheReadTokens(), sessions: self.codexService.todaySessions())
-            }
-            if enabled.contains("Hermes") {
-                let u = self.hermesService.todayUsage()
-                results["Hermes"] = ToolSnapshot(tokens: u.tokens, messages: u.messages, recent: self.hermesService.recentUsage(minutes: rateWindow).tokens, hourly: self.hermesService.currentHourTokens(), active: self.hermesService.isActive(), cacheRate: u.cacheRate, sessions: self.hermesService.todaySessions())
-            }
-            if enabled.contains("OpenCode") {
-                let u = self.opencodeService.todayUsage()
-                results["OpenCode"] = ToolSnapshot(tokens: u.tokens, messages: u.messages, recent: self.opencodeService.recentUsage(minutes: rateWindow).tokens, hourly: self.opencodeService.currentHourTokens(), active: self.opencodeService.isActive(), cacheRate: u.cacheRate, sessions: self.opencodeService.todaySessions())
-            }
-            if enabled.contains("Qwen Code") {
-                let u = self.qwenService.todayUsage()
-                results["Qwen Code"] = ToolSnapshot(tokens: u.tokens, messages: u.messages, recent: self.qwenService.recentUsage(minutes: rateWindow).tokens, hourly: self.qwenService.currentHourTokens(), active: self.qwenService.isActive(), cacheRate: u.cacheRate, sessions: self.qwenService.todaySessions())
-            }
-            if enabled.contains("Copilot") {
-                let u = self.copilotService.todayUsage()
-                results["Copilot"] = ToolSnapshot(tokens: u.tokens, messages: u.messages, recent: self.copilotService.recentUsage(minutes: rateWindow).tokens, hourly: self.copilotService.currentHourTokens(), active: self.copilotService.isActive(), cacheRate: u.cacheRate, sessions: self.copilotService.todaySessions())
-            }
-            if enabled.contains("Grok") {
-                let usage = self.grokService.todayUsage()
-                results["Grok"] = ToolSnapshot(
-                    tokens: usage.tokens,
-                    messages: usage.messages,
-                    recent: self.grokService.recentUsage(minutes: rateWindow).tokens,
-                    hourly: self.grokService.currentHourTokens(),
-                    active: self.grokService.isActive(),
-                    cacheRate: usage.cacheRate,
-                    sessions: self.grokService.todaySessions()
-                )
-            }
-            if enabled.contains("Aider") {
-                let u = self.aiderService.todayUsage()
-                results["Aider"] = ToolSnapshot(tokens: u.tokens, messages: u.messages, recent: self.aiderService.recentUsage(minutes: rateWindow).tokens, hourly: self.aiderService.currentHourTokens(), active: self.aiderService.isActive(), cacheRate: u.cacheRate, sessions: self.aiderService.todaySessions())
-            }
-            if enabled.contains("Antigravity") {
-                let u = self.antigravityService.todayUsage()
-                results["Antigravity"] = ToolSnapshot(tokens: u.tokens, messages: u.messages, recent: self.antigravityService.recentUsage(minutes: rateWindow).tokens, hourly: self.antigravityService.currentHourTokens(), active: self.antigravityService.isActive(), cacheRate: u.cacheRate, cost: self.antigravityService.todayCost(), cacheRead: self.antigravityService.todayCacheReadTokens(), sessions: self.antigravityService.todaySessions())
-            }
-            if enabled.contains("Cline") {
-                let u = self.clineService.todayUsage()
-                results["Cline"] = ToolSnapshot(tokens: u.tokens, messages: u.messages, recent: self.clineService.recentUsage(minutes: rateWindow).tokens, hourly: self.clineService.currentHourTokens(), active: self.clineService.isActive(), cacheRate: u.cacheRate, sessions: self.clineService.todaySessions())
-            }
-            if enabled.contains("Continue") {
-                let u = self.continueService.todayUsage()
-                results["Continue"] = ToolSnapshot(tokens: u.tokens, messages: u.messages, recent: self.continueService.recentUsage(minutes: rateWindow).tokens, hourly: self.continueService.currentHourTokens(), active: self.continueService.isActive(), cacheRate: u.cacheRate, sessions: self.continueService.todaySessions())
-            }
-            if shouldScanCursorUsage {
-                let u = self.cursorAgentService.todayUsage()
-                if enabled.contains("Cursor Agent") {
-                    results["Cursor Agent"] = ToolSnapshot(tokens: u.tokens, messages: u.messages, recent: self.cursorAgentService.recentUsage(minutes: rateWindow).tokens, hourly: self.cursorAgentService.currentHourTokens(), active: self.cursorAgentService.isActive(), cacheRate: u.cacheRate, cost: self.cursorAgentService.todayCost(), cacheRead: self.cursorAgentService.todayCacheReadTokens(), sessions: self.cursorAgentService.todaySessions())
+                if enabled.contains("Antigravity") {
+                    let u = self.antigravityService.todayUsage()
+                    results["Antigravity"] = ToolSnapshot(tokens: u.tokens, messages: u.messages, recent: self.antigravityService.recentUsage(minutes: rateWindow).tokens, hourly: self.antigravityService.currentHourTokens(), active: self.antigravityService.isActive(), cacheRate: u.cacheRate, cost: self.antigravityService.todayCost(), cacheRead: self.antigravityService.todayCacheReadTokens(), sessions: self.antigravityService.todaySessions())
                 }
-                let bot = self.cursorAgentService.todayGrokBotUsage()
-                results["Grok Bot"] = ToolSnapshot(
-                    tokens: bot.tokens,
-                    messages: bot.messages,
-                    recent: self.cursorAgentService.recentGrokBotUsage(minutes: rateWindow).tokens,
-                    hourly: self.cursorAgentService.currentHourGrokBotTokens(),
-                    active: self.cursorAgentService.isGrokBotActive(),
-                    cacheRate: bot.cacheRate,
-                    cost: self.cursorAgentService.todayGrokBotCost(),
-                    cacheRead: self.cursorAgentService.todayGrokBotCacheReadTokens(),
-                    sessions: self.cursorAgentService.todayGrokBotSessions()
-                )
-            }
-            if enabled.contains("ZCode") {
-                let u = self.zcodeService.todayUsage()
-                results["ZCode"] = ToolSnapshot(tokens: u.tokens, messages: u.messages, recent: self.zcodeService.recentUsage(minutes: rateWindow).tokens, hourly: self.zcodeService.currentHourTokens(), active: self.zcodeService.isActive(), cacheRate: u.cacheRate, cost: self.zcodeService.todayCost(), cacheRead: self.zcodeService.todayCacheReadTokens(), sessions: self.zcodeService.todaySessions())
-            }
+                if enabled.contains("Cline") {
+                    let u = self.clineService.todayUsage()
+                    results["Cline"] = ToolSnapshot(tokens: u.tokens, messages: u.messages, recent: self.clineService.recentUsage(minutes: rateWindow).tokens, hourly: self.clineService.currentHourTokens(), active: self.clineService.isActive(), cacheRate: u.cacheRate, sessions: self.clineService.todaySessions())
+                }
+                if enabled.contains("Continue") {
+                    let u = self.continueService.todayUsage()
+                    results["Continue"] = ToolSnapshot(tokens: u.tokens, messages: u.messages, recent: self.continueService.recentUsage(minutes: rateWindow).tokens, hourly: self.continueService.currentHourTokens(), active: self.continueService.isActive(), cacheRate: u.cacheRate, sessions: self.continueService.todaySessions())
+                }
+                if shouldScanCursorUsage {
+                    let u = self.cursorAgentService.todayUsage()
+                    if enabled.contains("Cursor Agent") {
+                        results["Cursor Agent"] = ToolSnapshot(tokens: u.tokens, messages: u.messages, recent: self.cursorAgentService.recentUsage(minutes: rateWindow).tokens, hourly: self.cursorAgentService.currentHourTokens(), active: self.cursorAgentService.isActive(), cacheRate: u.cacheRate, cost: self.cursorAgentService.todayCost(), cacheRead: self.cursorAgentService.todayCacheReadTokens(), sessions: self.cursorAgentService.todaySessions())
+                    }
+                    let bot = self.cursorAgentService.todayGrokBotUsage()
+                    results["Grok Bot"] = ToolSnapshot(
+                        tokens: bot.tokens,
+                        messages: bot.messages,
+                        recent: self.cursorAgentService.recentGrokBotUsage(minutes: rateWindow).tokens,
+                        hourly: self.cursorAgentService.currentHourGrokBotTokens(),
+                        active: self.cursorAgentService.isGrokBotActive(),
+                        cacheRate: bot.cacheRate,
+                        cost: self.cursorAgentService.todayGrokBotCost(),
+                        cacheRead: self.cursorAgentService.todayGrokBotCacheReadTokens(),
+                        sessions: self.cursorAgentService.todayGrokBotSessions()
+                    )
+                }
+                if enabled.contains("ZCode") {
+                    let u = self.zcodeService.todayUsage()
+                    results["ZCode"] = ToolSnapshot(tokens: u.tokens, messages: u.messages, recent: self.zcodeService.recentUsage(minutes: rateWindow).tokens, hourly: self.zcodeService.currentHourTokens(), active: self.zcodeService.isActive(), cacheRate: u.cacheRate, cost: self.zcodeService.todayCost(), cacheRead: self.zcodeService.todayCacheReadTokens(), sessions: self.zcodeService.todaySessions())
+                }
 
-            for service in self.additionalHarnessServices where enabled.contains(service.harness.name) {
-                let usage = service.todayUsage()
-                results[service.harness.name] = ToolSnapshot(tokens: usage.tokens, messages: usage.messages, recent: service.recentUsage(minutes: rateWindow).tokens, hourly: service.currentHourTokens(), active: service.isActive(), cacheRate: usage.cacheRate, cost: service.todayCost(), cacheRead: service.todayCacheReadTokens(), sessions: service.todaySessions())
-            }
+                for service in self.additionalHarnessServices where enabled.contains(service.harness.name) {
+                    let usage = service.todayUsage()
+                    results[service.harness.name] = ToolSnapshot(tokens: usage.tokens, messages: usage.messages, recent: service.recentUsage(minutes: rateWindow).tokens, hourly: service.currentHourTokens(), active: service.isActive(), cacheRate: usage.cacheRate, cost: service.todayCost(), cacheRead: service.todayCacheReadTokens(), sessions: service.todaySessions())
+                }
 
-            let costModes = enabled.contains("Codex") ? self.codexService.todayCostModes() : nil
+                let costModes = enabled.contains("Codex") ? self.codexService.todayCostModes() : nil
+                return (results, costModes)
+            }
             // 主线程：批量更新 @Published tools
             await MainActor.run {
                 for (name, snap) in results {
@@ -1731,6 +1735,7 @@ final class ViewModel: ObservableObject {
                 self.persistCurrentUsage(synchronously: false)
                 // 扫描全部完成（含主线程应用快照），释放重入守卫，允许下一次调度
                 self.isScanning = false
+                if !incremental { self.refreshGenerationSpeed() }
             }
         }
     }

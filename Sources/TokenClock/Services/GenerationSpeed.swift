@@ -207,12 +207,12 @@ final class GenerationSpeedStore: GenerationSpeedObservable, @unchecked Sendable
             if let db { sqlite3_close(db) }; return []
         }
         defer { sqlite3_close(db) }
-        let query = ZCodeLedger.latestCompletedRowsSQL + "\n" + """
+        let query = ZCodeLedger.recentCompletedRowsSQL + "\n" + """
         SELECT m.logical_request_id, m.model_id, m.started_at, m.first_token_at, m.completed_at,
                m.output_tokens, m.reasoning_tokens
         FROM latest_completed latest JOIN model_usage m ON m.rowid = latest.ledger_rowid
         WHERE latest.completion_rank = 1 AND m.first_token_at IS NOT NULL
-          AND m.completed_at >= ? AND m.completed_at <= ?
+          AND m.completed_at >= ?1 AND m.completed_at <= ?2
           AND m.first_token_at >= m.started_at AND m.completed_at > m.first_token_at
         """
         var statement: OpaquePointer?

@@ -22,12 +22,13 @@ enum JSONLLineReader {
         // mappedIfSafe may silently allocate the entire file instead of mmap.
         // Bound that fallback; large logs use the same chunked streaming path.
         let size = (try? FileManager.default.attributesOfItem(atPath: path)[.size] as? NSNumber)?.uint64Value
-        if offset == 0, prefix.isEmpty, let size, size <= 16 * 1_048_576,
-           let mapped = try? Data(
-               contentsOf: URL(fileURLWithPath: path),
-               options: [.mappedIfSafe, .uncached]
-           ) {
-            return readMapped(mapped, matchingAny: needles, onLine: onLine)
+        if offset == 0, prefix.isEmpty, let size, size <= 16 * 1_048_576 {
+            let mappedResult: Result? = withAutoreleasePool {
+                guard let mapped = try? Data(contentsOf: URL(fileURLWithPath: path),
+                                             options: [.mappedIfSafe, .uncached]) else { return nil }
+                return readMapped(mapped, matchingAny: needles, onLine: onLine)
+            }
+            if let mappedResult { return mappedResult }
         }
 
         guard let handle = FileHandle(forReadingAtPath: path) else { return nil }
