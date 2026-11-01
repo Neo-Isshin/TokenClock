@@ -128,14 +128,15 @@ final class ViewModel: ObservableObject {
             }
         }
         if defaults.object(forKey: SettingsKey.dialQuotaProviders.rawValue) != nil {
-            return Array(providers.prefix(2))
+            return Array(providers.prefix(DialQuotaPager.maximumSelection))
         }
         if let raw = defaults.string(for: .dialQuotaProvider),
            let provider = SubscriptionProvider(rawValue: raw) {
             providers = [provider]
         }
-        return Array(providers.prefix(2))
+        return Array(providers.prefix(DialQuotaPager.maximumSelection))
     }()
+    @Published private var dialQuotaPager = DialQuotaPager()
     private var shouldAutomaticallySelectDialQuotaProvider: Bool = {
         let defaults = UserDefaults.standard
         return defaults.object(forKey: SettingsKey.dialQuotaProviders.rawValue) == nil
@@ -146,7 +147,7 @@ final class ViewModel: ObservableObject {
 
     /// One indicator per provider: weekly outside and five-hour inside. Cursor's API uses
     /// model groups instead, so Other Models is outside and Cursor Models is inside.
-    var dialQuotaIndicators: [DialQuotaIndicator] {
+    private var availableDialQuotaIndicators: [DialQuotaIndicator] {
         dialQuotaProviders.compactMap { provider in
             DialQuotaAccountSelection.indicator(
                 provider: provider, selectedID: DialQuotaAccountSelection.selectedID(for: provider),
@@ -156,8 +157,36 @@ final class ViewModel: ObservableObject {
         }
     }
 
+    var dialQuotaIndicators: [DialQuotaIndicator] {
+        dialQuotaPager.visible(from: availableDialQuotaIndicators)
+    }
+
+    var hasMultipleDialQuotaPages: Bool { availableDialQuotaIndicators.count > DialQuotaPager.pageSize }
+
+    func advanceDialQuotaPage(resetTimer: Bool = true) {
+        let count = availableDialQuotaIndicators.count
+        if count > DialQuotaPager.pageSize { dialQuotaPager.advance(count: count) }
+        if resetTimer { configureDialQuotaRotation() }
+    }
+
+    private func configureDialQuotaRotation() {
+        dialQuotaTimer?.invalidate(); dialQuotaTimer = nil
+        dialQuotaTimerGeneration &+= 1
+        guard dialQuotaProviders.count > DialQuotaPager.pageSize else { return }
+        let generation = dialQuotaTimerGeneration
+        let timer = Timer.scheduledTimer(withTimeInterval: DialQuotaPager.interval, repeats: false) { [weak self] _ in
+            Task { @MainActor in
+                guard let self, self.dialQuotaTimerGeneration == generation else { return }
+                self.advanceDialQuotaPage(resetTimer: false)
+                self.configureDialQuotaRotation()
+            }
+        }
+        dialQuotaTimer = timer
+        RunLoop.main.add(timer, forMode: .common)
+    }
+
     /// The summary lists all readable current subscriptions, independently of
-    /// the dial's two-provider selection. Shared X aliases remain deduplicated.
+    /// the dial's current display page. Shared X aliases remain deduplicated.
     var statusSummaryQuotaIndicators: [StatusSummaryQuota] {
         StatusSummaryQuotas.indicators(records: subscriptionAccounts, activeIDs: activeSubscriptionAccountIDs,
             freshGroups: Dictionary(uniqueKeysWithValues: SubscriptionProvider.allCases.map { ($0, freshQuotaGroups(for: $0)) }))
@@ -184,7 +213,7 @@ final class ViewModel: ObservableObject {
         if isDialAccountSelected(account) {
             toggleDialQuotaProvider(account.provider)
         } else {
-            guard dialQuotaProviders.contains(account.provider) || dialQuotaProviders.count < 2 else { return }
+            guard dialQuotaProviders.contains(account.provider) || dialQuotaProviders.count < DialQuotaPager.maximumSelection else { return }
             objectWillChange.send()
             DialQuotaAccountSelection.select(account.id, for: account.provider)
             if !dialQuotaProviders.contains(account.provider) { toggleDialQuotaProvider(account.provider) }
@@ -213,13 +242,15 @@ final class ViewModel: ObservableObject {
         if let index = dialQuotaProviders.firstIndex(of: provider) {
             dialQuotaProviders.remove(at: index)
         } else {
-            guard dialQuotaProviders.count < 2 else { return }
+            guard dialQuotaProviders.count < DialQuotaPager.maximumSelection else { return }
             dialQuotaProviders.append(provider)
             refreshSubscriptionQuotas(providers: [provider])
         }
         UserDefaults.standard.setStringArray(
             dialQuotaProviders.map(\.rawValue), for: .dialQuotaProviders
         )
+        dialQuotaPager = DialQuotaPager()
+        configureDialQuotaRotation()
         // Keep older platform builds on the primary selected provider.
         UserDefaults.standard.setString(dialQuotaProviders.first?.rawValue, for: .dialQuotaProvider)
     }
@@ -371,6 +402,8 @@ final class ViewModel: ObservableObject {
         ("tz.losAngeles", "America/Los_Angeles"),
     ]
 
+    private var dialQuotaTimer: Timer?
+    private var dialQuotaTimerGeneration = 0
     private var clockTimer: Timer?
     private var dataTimer: Timer?
     private var generationSpeedTimer: Timer?
@@ -1258,6 +1291,7 @@ final class ViewModel: ObservableObject {
             }
         }
         RunLoop.main.add(claudeAppQuotaTimer!, forMode: .common)
+        configureDialQuotaRotation()
         RunLoop.main.add(clockTimer!, forMode: .common)
         RunLoop.main.add(dataTimer!, forMode: .common)
         RunLoop.main.add(generationSpeedTimer!, forMode: .common)
@@ -1489,6 +1523,8 @@ final class ViewModel: ObservableObject {
     }
 
     private func stopTimers() {
+        dialQuotaTimer?.invalidate(); dialQuotaTimer = nil
+        dialQuotaTimerGeneration &+= 1
         clockTimer?.invalidate()
         dataTimer?.invalidate()
         generationSpeedTimer?.invalidate()

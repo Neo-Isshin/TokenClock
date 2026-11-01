@@ -73,7 +73,7 @@ final class GlassQuotaRingTests: XCTestCase {
         let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         let source = try String(contentsOf: root.appendingPathComponent("Sources/TokenClock/Views/ClockContentView.swift"), encoding: .utf8)
         XCTAssertFalse(source.contains("quotaPercentColor"))
-        XCTAssertTrue(source.contains("palette.innerColor(contrastColor: NSColor(viewModel.effectiveDialPrimary))"))
+        XCTAssertTrue(source.contains("palette.innerColor(contrastColor: ink)") && source.contains("let ink = NSColor(viewModel.effectiveDialPrimary)"))
         XCTAssertTrue(source.contains("contrastColor: viewModel.effectiveDialPrimary"))
         let number = try XCTUnwrap(source.range(of: "Text(centerLabel.text)"))
         let suffix = String(source[number.lowerBound...].prefix(650))

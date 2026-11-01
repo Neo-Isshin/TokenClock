@@ -62,7 +62,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let mainView = MainView(
             viewModel: viewModel,
             onNotificationClick: { [weak self] in self?.toggleNotificationCenter() },
-            onClockDragStart: { [weak self] in self?.notificationPanel.hide() }
+            onClockDragStart: { [weak self] in self?.notificationPanel.hide() },
+            onOpenQuota: { [weak self] in self?.showSubscriptionQuotaWindow() }
         )
         let contentView = NSHostingView(rootView: mainView)
         contentView.frame = NSRect(
@@ -1562,12 +1563,14 @@ struct MainView: View {
     @ObservedObject var viewModel: ViewModel
     let onNotificationClick: () -> Void
     let onClockDragStart: () -> Void
+    var onOpenQuota: () -> Void = {}
 
     var body: some View {
         ClockContentView(
             viewModel: viewModel,
             onNotificationClick: onNotificationClick,
-            onClockDragStart: onClockDragStart
+            onClockDragStart: onClockDragStart,
+            onOpenQuota: onOpenQuota
         )
             .frame(width: FloatingPanel.panelWidth, height: FloatingPanel.collapsedHeight)
     }

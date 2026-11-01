@@ -15,17 +15,23 @@ struct ClockInteractionLayer: NSViewRepresentable {
     var tooltipRegions: [ClockTooltipRegion] = []
     let onClick: () -> Void
     var onDragStart: () -> Void = {}
+    var onQuotaClick: (() -> Void)?
+    var onQuotaRightClick: (() -> Void)?
     var onTooltipHover: (String?) -> Void = { _ in }
 
     init(
         tooltipRegions: [ClockTooltipRegion] = [],
         onClick: @escaping () -> Void,
         onDragStart: @escaping () -> Void = {},
-        onTooltipHover: @escaping (String?) -> Void = { _ in }
+        onTooltipHover: @escaping (String?) -> Void = { _ in },
+        onQuotaClick: (() -> Void)? = nil,
+        onQuotaRightClick: (() -> Void)? = nil
     ) {
         self.tooltipRegions = tooltipRegions
         self.onClick = onClick
         self.onDragStart = onDragStart
+        self.onQuotaClick = onQuotaClick
+        self.onQuotaRightClick = onQuotaRightClick
         self.onTooltipHover = onTooltipHover
     }
 
@@ -34,6 +40,8 @@ struct ClockInteractionLayer: NSViewRepresentable {
             onClick: onClick,
             onDragStart: onDragStart,
             onTooltipHover: onTooltipHover,
+            onQuotaClick: onQuotaClick,
+            onQuotaRightClick: onQuotaRightClick,
             tooltipRegions: tooltipRegions
         )
     }
@@ -41,6 +49,8 @@ struct ClockInteractionLayer: NSViewRepresentable {
     func updateNSView(_ nsView: ClockInteractionNSView, context: Context) {
         nsView.onClick = onClick
         nsView.onDragStart = onDragStart
+        nsView.onQuotaClick = onQuotaClick
+        nsView.onQuotaRightClick = onQuotaRightClick
         nsView.onTooltipHover = onTooltipHover
         nsView.updateTooltipRegions(tooltipRegions)
     }
@@ -48,10 +58,13 @@ struct ClockInteractionLayer: NSViewRepresentable {
 final class ClockInteractionNSView: NSView {
     var onClick: () -> Void
     var onDragStart: () -> Void
+    var onQuotaClick: (() -> Void)?
+    var onQuotaRightClick: (() -> Void)?
     var onTooltipHover: (String?) -> Void
     private var dragStartMouse: NSPoint?
     private var dragStartOrigin: NSPoint?
     private var mouseDownTime: TimeInterval?
+    private var mouseDownQuotaRect: NSRect?
     private var isDragging = false
     private let dragThreshold: CGFloat = 5
     private let clickDurationLimit: TimeInterval = 0.35
@@ -63,10 +76,14 @@ final class ClockInteractionNSView: NSView {
         onClick: @escaping () -> Void,
         onDragStart: @escaping () -> Void = {},
         onTooltipHover: @escaping (String?) -> Void = { _ in },
+        onQuotaClick: (() -> Void)? = nil,
+        onQuotaRightClick: (() -> Void)? = nil,
         tooltipRegions: [ClockTooltipRegion] = []
     ) {
         self.onClick = onClick
         self.onDragStart = onDragStart
+        self.onQuotaClick = onQuotaClick
+        self.onQuotaRightClick = onQuotaRightClick
         self.onTooltipHover = onTooltipHover
         self.tooltipRegions = tooltipRegions
         super.init(frame: .zero)
@@ -126,6 +143,11 @@ final class ClockInteractionNSView: NSView {
     }
 
     override func hitTest(_ point: NSPoint) -> NSView? {
+        // Interactive quota regions are local to this view even when the
+        // circular dial is offset inside a wider transparent window.
+        if (onQuotaClick != nil || onQuotaRightClick != nil), !isHiddenOrHasHiddenAncestor,
+           super.hitTest(point) != nil,
+           tooltipRegions.contains(where: { $0.rect.contains(convert(point, from: superview)) }) { return self }
         let dx = point.x - bounds.midX
         let dy = point.y - bounds.midY
         let radius = min(bounds.width, bounds.height) / 2
@@ -137,6 +159,7 @@ final class ClockInteractionNSView: NSView {
         setHoveredTooltip(nil)
         dragStartMouse = screenPoint(for: event, in: window)
         dragStartOrigin = window.frame.origin
+        mouseDownQuotaRect = tooltipRegions.first { $0.rect.contains(convert(event.locationInWindow, from: nil)) }?.rect
         mouseDownTime = event.timestamp
         isDragging = false
     }
@@ -153,13 +176,18 @@ final class ClockInteractionNSView: NSView {
         updateDrag(with: event)
         let pressDuration = event.timestamp - (mouseDownTime ?? event.timestamp)
         if !isDragging && pressDuration <= clickDurationLimit {
-            onClick()
+            if let rect = mouseDownQuotaRect, rect.contains(convert(event.locationInWindow, from: nil)),
+               let onQuotaClick { onQuotaClick() }
+            else { onClick() }
         }
         resetDragState()
     }
 
     override func rightMouseDown(with event: NSEvent) {
-        window?.rightMouseDown(with: event)
+        if tooltipText(at: convert(event.locationInWindow, from: nil)) != nil, let onQuotaRightClick {
+            setHoveredTooltip(nil)
+            onQuotaRightClick()
+        } else { window?.rightMouseDown(with: event) }
     }
 
     private func updateDrag(with event: NSEvent) {
@@ -190,6 +218,7 @@ final class ClockInteractionNSView: NSView {
         dragStartMouse = nil
         dragStartOrigin = nil
         mouseDownTime = nil
+        mouseDownQuotaRect = nil
         isDragging = false
     }
 

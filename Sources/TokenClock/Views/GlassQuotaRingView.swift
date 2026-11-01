@@ -32,6 +32,17 @@ enum GlassQuotaRingPalette: Equatable {
         Color(nsColor: adapted(Self.color(self == .cool ? 0x7298c4 : 0xc69080), to: contrastColor))
     }
 
+    /// Three concentric quotas use separate hue and lightness families, while
+    /// retaining the text-colour contrast adaptation of the approved outer ring.
+    func concentricColor(layer: Int, contrastColor: NSColor) -> NSColor {
+        let lightness = Self.inkLightness(contrastColor)
+        let hex: UInt32
+        if layer == 1 { hex = self == .cool ? 0x169b91 : 0x527acb }
+        else { hex = self == .cool ? 0xd8912e : 0x129d48 }
+        return adapted(Self.color(hex), to: contrastColor,
+            luminanceOffset: layer == 1 ? -0.10 * lightness : 0.025 - 0.22 * lightness)
+    }
+
     /// Adapt to the actual dial ink, not the OS appearance: a glass face may be
     /// over either a light or dark wallpaper regardless of the system theme.
     private func adapted(_ base: NSColor, to ink: NSColor, luminanceOffset: Double = 0) -> NSColor {

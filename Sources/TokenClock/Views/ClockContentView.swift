@@ -8,15 +8,18 @@ struct ClockContentView: View {
     @State private var hoveredQuotaLabel: String?
     let onNotificationClick: () -> Void
     let onClockDragStart: () -> Void
+    let onOpenQuota: () -> Void
 
     init(
         viewModel: ViewModel,
         onNotificationClick: @escaping () -> Void = {},
-        onClockDragStart: @escaping () -> Void = {}
+        onClockDragStart: @escaping () -> Void = {},
+        onOpenQuota: @escaping () -> Void = {}
     ) {
         self.viewModel = viewModel
         self.onNotificationClick = onNotificationClick
         self.onClockDragStart = onClockDragStart
+        self.onOpenQuota = onOpenQuota
         self._clockTicker = ObservedObject(wrappedValue: viewModel.clockTicker)
         self._hoveredQuotaLabel = State(initialValue: nil)
     }
@@ -180,7 +183,9 @@ struct ClockContentView: View {
                 },
                 onTooltipHover: { label in
                     hoveredQuotaLabel = label
-                }
+                },
+                onQuotaClick: viewModel.hasMultipleDialQuotaPages ? { viewModel.advanceDialQuotaPage() } : nil,
+                onQuotaRightClick: onOpenQuota
             )
             .frame(width: d, height: d)
             .accessibilityHidden(true)
@@ -255,9 +260,13 @@ struct ClockContentView: View {
         let innerInset = third == nil ? 5.25 * scale : size / 2 - outerRadius * 0.76
         let thirdInset = size / 2 - outerRadius * 0.55
         let innerLineWidth = 1.7 * scale
-        let accent = palette.innerColor(contrastColor: NSColor(viewModel.effectiveDialPrimary))
+        let ink = NSColor(viewModel.effectiveDialPrimary)
+        let accent = third == nil ? palette.innerColor(contrastColor: ink)
+            : Color(nsColor: palette.concentricColor(layer: 1, contrastColor: ink))
+        let thirdAccent = Color(nsColor: palette.concentricColor(layer: 2, contrastColor: ink))
         let innerGradient = AngularGradient(
-            colors: [accent.opacity(0.60), accent.opacity(0.76), accent.opacity(0.66)],
+            colors: third == nil ? [accent.opacity(0.60), accent.opacity(0.76), accent.opacity(0.66)]
+                : [accent.opacity(0.82), accent.opacity(0.94), accent.opacity(0.86)],
             center: .center,
             startAngle: .degrees(-90),
             endAngle: .degrees(270)
@@ -275,7 +284,7 @@ struct ClockContentView: View {
             if let inner {
                 Circle()
                     .inset(by: innerInset)
-                    .stroke(viewModel.effectiveDialPrimary.opacity(0.08), lineWidth: innerLineWidth)
+                    .stroke(third == nil ? viewModel.effectiveDialPrimary.opacity(0.08) : accent.opacity(0.23), lineWidth: innerLineWidth)
                 Circle()
                     .inset(by: innerInset)
                     .trim(from: 0, to: inner / 100)
@@ -288,10 +297,10 @@ struct ClockContentView: View {
             }
             if let third {
                 Circle().inset(by: thirdInset)
-                    .stroke(viewModel.effectiveDialPrimary.opacity(0.07), lineWidth: 1.25 * scale)
+                    .stroke(thirdAccent.opacity(0.23), lineWidth: 1.25 * scale)
                 Circle().inset(by: thirdInset)
                     .trim(from: 0, to: third / 100)
-                    .stroke(accent.opacity(0.55), style: StrokeStyle(lineWidth: 1.25 * scale, lineCap: .round))
+                    .stroke(thirdAccent.opacity(0.90), style: StrokeStyle(lineWidth: 1.25 * scale, lineCap: .round))
                     .rotationEffect(.degrees(-90))
             }
             HStack(alignment: .firstTextBaseline, spacing: 0) {

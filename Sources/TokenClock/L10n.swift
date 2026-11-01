@@ -382,7 +382,7 @@ final class L10n: @unchecked Sendable {
         "quota.editOrder":       [.zhHans: "修改", .zhHant: "修改", .en: "Edit"],
         "quota.finishOrder":     [.zhHans: "完成", .zhHant: "完成", .en: "Done"],
         "quota.dialDisplay":     [.zhHans: "表盘", .zhHant: "錶盤", .en: "Dial"],
-        "quota.dialDisplayHelp": [.zhHans: "最多选择两个工具；外环为周额度，内环为 5 小时额度（Cursor 按模型额度，Grok Bot 按实际周期）", .zhHant: "最多選擇兩個工具；外環為週額度，內環為 5 小時額度（Cursor 按模型額度，Grok Bot 按實際週期）", .en: "Choose up to two providers; weekly quota is outside and 5-hour quota is inside (Cursor uses model quotas; Grok Bot uses its actual period)"],
+        "quota.dialDisplayHelp": [.zhHans: "最多选择 4 个工具，每次展示 2 个；每分钟自动换组，左键点击环切换下一组，右键打开订阅额度。外、中、内环的额度周期保持原规则。", .zhHant: "最多選擇 4 個工具，每次顯示 2 個；每分鐘自動換組，左鍵點擊環切換下一組，右鍵開啟訂閱額度。外、中、內環的額度週期維持原規則。", .en: "Choose up to 4 providers, shown in groups of 2. Groups rotate every minute; click a ring for the next group, right-click for Subscription Quota. Quota periods stay unchanged."],
         "quota.dialAccessibility": [.zhHans: "%@ 剩余额度 %d%%", .zhHant: "%@ 剩餘額度 %d%%", .en: "%@ quota, %d%% remaining"],
         "quota.dial.weekly": [.zhHans: "周额度", .zhHant: "週額度", .en: "Weekly"],
         "quota.dial.fiveHour": [.zhHans: "5 小时额度", .zhHant: "5 小時額度", .en: "5-hour"],

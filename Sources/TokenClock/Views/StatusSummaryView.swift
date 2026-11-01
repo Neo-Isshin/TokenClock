@@ -449,6 +449,9 @@ struct StatusSummaryContent: View {
     private func summaryRing(_ indicator: DialQuotaIndicator, size: CGFloat) -> some View {
         let color = indicator.provider == .zhipu ? Color.primary : indicator.provider.dialQuotaColor
         let centerLabel = QuotaCenterLabel(remaining: indicator.outerRemainingPercent)
+        let middle = indicator.thirdRemainingPercent == nil ? color.opacity(0.4)
+            : Color(nsColor: GlassQuotaRingPalette.cool.concentricColor(layer: 1, contrastColor: .labelColor))
+        let innermost = Color(nsColor: GlassQuotaRingPalette.cool.concentricColor(layer: 2, contrastColor: .labelColor))
         let scale = size / 48
         return ZStack {
             Circle().stroke(.primary.opacity(0.08), lineWidth: 4 * scale)
@@ -456,15 +459,15 @@ struct StatusSummaryContent: View {
                 .stroke(color.opacity(0.75).gradient, style: StrokeStyle(lineWidth: 4 * scale, lineCap: .round))
                 .rotationEffect(.degrees(-90))
             if let inner = indicator.innerRemainingPercent {
-                Circle().inset(by: 7 * scale).stroke(.primary.opacity(0.06), lineWidth: 2 * scale)
+                Circle().inset(by: 7 * scale).stroke(indicator.thirdRemainingPercent == nil ? Color.primary.opacity(0.06) : middle.opacity(0.22), lineWidth: 2 * scale)
                 Circle().inset(by: 7 * scale).trim(from: 0, to: inner / 100)
-                    .stroke(color.opacity(0.4), style: StrokeStyle(lineWidth: 2 * scale, lineCap: .round))
+                    .stroke(middle, style: StrokeStyle(lineWidth: 2 * scale, lineCap: .round))
                     .rotationEffect(.degrees(-90))
             }
             if let third = indicator.thirdRemainingPercent {
-                Circle().inset(by: 11 * scale).stroke(.primary.opacity(0.06), lineWidth: 1.3 * scale)
+                Circle().inset(by: 11 * scale).stroke(innermost.opacity(0.22), lineWidth: 1.3 * scale)
                 Circle().inset(by: 11 * scale).trim(from: 0, to: third / 100)
-                    .stroke(color.opacity(0.65), style: StrokeStyle(lineWidth: 1.3 * scale, lineCap: .round))
+                    .stroke(innermost, style: StrokeStyle(lineWidth: 1.3 * scale, lineCap: .round))
                     .rotationEffect(.degrees(-90))
             }
             HStack(alignment: .firstTextBaseline, spacing: 0) {

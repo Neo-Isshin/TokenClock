@@ -98,7 +98,7 @@ struct SubscriptionQuotaWindowView: View {
                             .toggleStyle(.checkbox)
                             .font(.system(size: 11, weight: .medium))
                             .disabled(
-                                !isSelected && viewModel.dialQuotaProviders.count == 2
+                                !isSelected && viewModel.dialQuotaProviders.count >= DialQuotaPager.maximumSelection
                             )
                         }
                     }
@@ -404,7 +404,7 @@ struct SubscriptionQuotaWindowView: View {
             ))
             .toggleStyle(.checkbox)
             .font(.system(size: 10.5))
-            .disabled(!viewModel.dialQuotaProviders.contains(account.provider) && viewModel.dialQuotaProviders.count >= 2)
+            .disabled(!viewModel.dialQuotaProviders.contains(account.provider) && viewModel.dialQuotaProviders.count >= DialQuotaPager.maximumSelection)
             if viewModel.isDialAccountSelected(account) && (isStale || !isCurrent) {
                 Text(QuotaAccountLabels.unavailable).font(.system(size: 9)).foregroundStyle(.secondary)
             }
