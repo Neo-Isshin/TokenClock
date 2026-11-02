@@ -161,6 +161,11 @@ final class ViewModel: ObservableObject {
         dialQuotaPager.visible(from: availableDialQuotaIndicators)
     }
 
+    func dialQuotaGroupNumber(for provider: SubscriptionProvider) -> Int? {
+        guard let index = availableDialQuotaIndicators.firstIndex(where: { $0.provider == provider }) else { return nil }
+        return index / DialQuotaPager.pageSize + 1
+    }
+
     var hasMultipleDialQuotaPages: Bool { availableDialQuotaIndicators.count > DialQuotaPager.pageSize }
 
     func advanceDialQuotaPage(resetTimer: Bool = true) {

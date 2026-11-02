@@ -34,6 +34,17 @@ struct SubscriptionQuotaWindowView: View {
         providerOrder.filter(hasQuotaData)
     }
 
+    @ViewBuilder
+    private func dialGroupBadge(for provider: SubscriptionProvider) -> some View {
+        if let group = viewModel.dialQuotaGroupNumber(for: provider) {
+            Text(String(group))
+                .font(.system(size: 9, weight: .semibold, design: .rounded))
+                .foregroundStyle(.secondary)
+                .frame(width: 14, height: 14)
+                .background(.primary.opacity(0.08), in: RoundedRectangle(cornerRadius: 4))
+        }
+    }
+
     private var isTwoColumn: Bool { visibleProviders.count >= 4 }
 
     private var quotaColumns: [GridItem] {
@@ -93,6 +104,7 @@ struct SubscriptionQuotaWindowView: View {
                                         .frame(width: 7, height: 7)
                                     Text(provider.displayName)
                                         .lineLimit(1)
+                                    dialGroupBadge(for: provider)
                                 }
                             }
                             .toggleStyle(.checkbox)
@@ -398,10 +410,17 @@ struct SubscriptionQuotaWindowView: View {
             }
             Text(BillingText.summary(account.effectiveBilling))
                 .font(.system(size: 9.5)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            Toggle(QuotaAccountLabels.showOnDial, isOn: Binding(
+            Toggle(isOn: Binding(
                 get: { viewModel.isDialAccountSelected(account) },
                 set: { _ in viewModel.toggleDialAccount(account) }
-            ))
+            )) {
+                HStack(spacing: 5) {
+                    Text(QuotaAccountLabels.showOnDial)
+                    if viewModel.isDialAccountSelected(account) {
+                        dialGroupBadge(for: account.provider)
+                    }
+                }
+            }
             .toggleStyle(.checkbox)
             .font(.system(size: 10.5))
             .disabled(!viewModel.dialQuotaProviders.contains(account.provider) && viewModel.dialQuotaProviders.count >= DialQuotaPager.maximumSelection)
