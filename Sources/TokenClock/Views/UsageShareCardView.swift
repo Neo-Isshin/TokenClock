@@ -6,6 +6,7 @@ struct UsageShareCardView: View {
     let data: UsageShareData
     var style: UsageShareStyle = .ink
     var scale: CGFloat = 1
+    var artwork: NSImage? = nil
 
     private var background: Color {
         switch style {
@@ -15,7 +16,7 @@ struct UsageShareCardView: View {
         }
     }
     private var foreground: Color {
-        style == .paper ? Color(red: 0.10, green: 0.15, blue: 0.18) : .white
+        style == .paper && artwork == nil ? Color(red: 0.10, green: 0.15, blue: 0.18) : .white
     }
     private var accent: Color {
         switch style {
@@ -38,29 +39,32 @@ struct UsageShareCardView: View {
     var body: some View {
         ZStack {
             background
-            grid
+            if let artwork {
+                Image(nsImage: artwork).resizable().scaledToFill().frame(width:600*scale,height:750*scale).clipped()
+                LinearGradient(colors:[.black.opacity(0.25),.black.opacity(0.68),.black.opacity(0.91)],startPoint:.top,endPoint:.bottom)
+            } else { grid }
             VStack(alignment: .leading, spacing: 0) {
                 header
-                rule.padding(.top, 24 * scale)
-                hero.padding(.top, 28 * scale)
-                metrics.padding(.top, 22 * scale)
-                rule.padding(.top, 27 * scale)
+                rule.padding(.top, 14 * scale)
+                hero.padding(.top, 16 * scale)
+                metrics.padding(.top, 12 * scale)
+                rule.padding(.top, 14 * scale)
                 HStack {
                     Text(L10n.shared.tr("share.toolBreakdown"))
                     Spacer()
                     Text(String(format: "%02d", data.rows.count))
                 }
                 .font(.system(size: 10 * scale, weight: .bold, design: .monospaced))
-                .foregroundColor(foreground.opacity(0.55))
-                .padding(.top, 22 * scale)
-                breakdown.padding(.top, 10 * scale)
-                Spacer(minLength: 12 * scale)
+                .foregroundColor(foreground.opacity(artwork == nil ? 0.55 : 0.72))
+                 .padding(.top, 12 * scale)
+                breakdown.padding(.top, 8 * scale)
+                Spacer(minLength: 6 * scale)
                 quote
-                rule.padding(.top, 16 * scale)
-                footer.padding(.top, 11 * scale)
+                rule.padding(.top, 10 * scale)
+                footer.padding(.top, 8 * scale)
             }
             .padding(.horizontal, 38 * scale)
-            .padding(.vertical, 34 * scale)
+            .padding(.vertical, 26 * scale)
         }
         .frame(width: 600 * scale, height: 750 * scale)
         .clipped()
@@ -86,18 +90,15 @@ struct UsageShareCardView: View {
     private var header: some View {
         HStack(alignment: .top) {
             HStack(spacing: 11 * scale) {
-                ZStack {
-                    Circle().stroke(accent, lineWidth: 2.4 * scale)
-                    Image(systemName: "clock.arrow.2.circlepath")
-                        .font(.system(size: 17 * scale, weight: .medium))
-                        .foregroundColor(accent)
+                if let logo = ShareArtwork.image("ailyre") {
+                    Image(nsImage:logo).resizable().scaledToFit().frame(width:37*scale,height:43*scale)
+                        .padding(5*scale).background(.white.opacity(0.92),in:RoundedRectangle(cornerRadius:10*scale))
                 }
-                .frame(width: 39 * scale, height: 39 * scale)
                 VStack(alignment: .leading, spacing: 2 * scale) {
-                    Text("TokenClock").font(.system(size: 17 * scale, weight: .bold, design: .rounded))
+                    Text("TokenClock · Ailyre").font(.system(size: 17 * scale, weight: .bold, design: .rounded))
                     Text(L10n.shared.tr("share.report"))
                         .font(.system(size: 8 * scale, weight: .semibold, design: .monospaced))
-                        .foregroundColor(foreground.opacity(0.48))
+                        .foregroundColor(foreground.opacity(artwork == nil ? 0.48 : 0.72))
                 }
             }
             Spacer()
@@ -105,7 +106,7 @@ struct UsageShareCardView: View {
                 Text(periodTitle).font(.system(size: 12 * scale, weight: .bold, design: .rounded))
                 Text("\(data.dateKey) — \(data.endDateKey)")
                     .font(.system(size: 9 * scale, weight: .medium, design: .monospaced))
-                    .foregroundColor(foreground.opacity(0.56))
+                    .foregroundColor(foreground.opacity(artwork == nil ? 0.56 : 0.72))
             }
             .padding(.top, 4 * scale)
         }
@@ -132,12 +133,12 @@ struct UsageShareCardView: View {
                     .foregroundColor(foreground)
                 Text(L10n.shared.tr(data.includesCacheRead ? "share.tokensWithCache" : "share.tokens"))
                     .font(.system(size: 10 * scale, weight: .semibold, design: .monospaced))
-                    .foregroundColor(foreground.opacity(0.47))
+                    .foregroundColor(foreground.opacity(artwork == nil ? 0.47 : 0.72))
             }
             Spacer(minLength: 0)
             orbit
         }
-        .frame(height: 164 * scale)
+        .frame(height: 120 * scale)
     }
     private var orbit: some View {
         ZStack {
@@ -156,11 +157,11 @@ struct UsageShareCardView: View {
                     .font(.system(size: 29 * scale, weight: .bold, design: .rounded))
                 Text(L10n.shared.tr("share.tools"))
                     .font(.system(size: 8 * scale, weight: .semibold, design: .monospaced))
-                    .foregroundColor(foreground.opacity(0.52))
+                    .foregroundColor(foreground.opacity(artwork == nil ? 0.52 : 0.72))
             }
             .foregroundColor(foreground)
         }
-        .frame(width: 140 * scale, height: 140 * scale)
+        .frame(width: 116 * scale, height: 116 * scale)
     }
 
     private var metrics: some View {
@@ -175,7 +176,7 @@ struct UsageShareCardView: View {
         VStack(alignment: .leading, spacing: 4 * scale) {
             Text(label.uppercased())
                 .font(.system(size: 9 * scale, weight: .semibold, design: .monospaced))
-                .foregroundColor(foreground.opacity(0.47))
+                .foregroundColor(foreground.opacity(artwork == nil ? 0.47 : 0.72))
             Text(value)
                 .font(.system(size: 21 * scale, weight: .bold, design: .rounded))
                 .foregroundColor(foreground)
@@ -187,19 +188,19 @@ struct UsageShareCardView: View {
         if data.rows.isEmpty {
             Text(L10n.shared.tr("share.noUsage"))
                 .font(.system(size: 14 * scale, weight: .medium, design: .rounded))
-                .foregroundColor(foreground.opacity(0.56))
+                .foregroundColor(foreground.opacity(artwork == nil ? 0.56 : 0.72))
                 .frame(maxWidth: .infinity, minHeight: 190 * scale)
         } else {
-            VStack(spacing: 7 * scale) {
+            VStack(spacing: 4 * scale) {
                 ForEach(Array(data.rows.enumerated()), id: \.element.id) { index, row in
                     HStack(spacing: 8 * scale) {
                         Text(String(format: "%02d", index + 1))
                             .font(.system(size: 9 * scale, weight: .medium, design: .monospaced))
-                            .foregroundColor(foreground.opacity(0.45))
+                            .foregroundColor(foreground.opacity(artwork == nil ? 0.45 : 0.72))
                             .frame(width: 21 * scale, alignment: .leading)
                         RoundedRectangle(cornerRadius: 2 * scale)
                             .fill(toolPalette[index % toolPalette.count])
-                            .frame(width: 3 * scale, height: 27 * scale)
+                            .frame(width: 3 * scale, height: 22 * scale)
                         BrandIconView(name: row.name, fallback: row.emoji, size: 16 * scale)
                         Text(row.name)
                             .font(.system(size: 12 * scale, weight: .medium, design: .rounded))
@@ -210,10 +211,10 @@ struct UsageShareCardView: View {
                             .foregroundColor(foreground)
                         Text(String(format: "%3.0f%%", row.fraction * 100))
                             .font(.system(size: 9 * scale, weight: .medium, design: .monospaced))
-                            .foregroundColor(foreground.opacity(0.53))
+                            .foregroundColor(foreground.opacity(artwork == nil ? 0.53 : 0.72))
                             .frame(width: 36 * scale, alignment: .trailing)
                     }
-                    .frame(height: 27 * scale)
+                    .frame(height: 23 * scale)
                 }
             }
         }
@@ -233,16 +234,16 @@ struct UsageShareCardView: View {
             }
             Spacer(minLength: 0)
         }
-        .frame(maxWidth: .infinity, minHeight: 76 * scale, alignment: .leading)
+        .frame(maxWidth: .infinity, alignment: .leading).frame(height: 90 * scale, alignment: .top)
     }
     private var footer: some View {
         HStack {
-            Text(L10n.shared.tr("share.generatedBy"))
+            Text("TokenClock · Ailyre")
             Spacer()
-            Text("TOKENCLOCK  /  \(data.endDateKey)")
+            Text("www.ailyre.com")
         }
         .font(.system(size: 8 * scale, weight: .semibold, design: .monospaced))
-        .foregroundColor(foreground.opacity(0.44))
+        .foregroundColor(foreground.opacity(artwork == nil ? 0.44 : 0.72))
     }
     private func integer(_ value: Int) -> String {
         let formatter = NumberFormatter(); formatter.numberStyle = .decimal
