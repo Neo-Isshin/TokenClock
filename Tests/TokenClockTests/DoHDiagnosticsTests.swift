@@ -25,6 +25,16 @@ final class DoHDiagnosticsTests: XCTestCase {
         XCTAssertEqual(value?.0,"secure");XCTAssertEqual(value?.1,"dns.example")
         XCTAssertNil(BrowserDoHConfiguration.values([:]))
     }
-
+    func testTTFTIsSeparateAndOnlyAggregatesActualFirstTokenEvidence() {
+        var speed=GenerationSpeed()
+        speed.include(.init(id:"a",model:"model",completedAt:Date(),outputTokens:100,seconds:2,estimated:false,firstTokenDelay:0.2))
+        speed.include(.init(id:"b",model:"model",completedAt:Date(),outputTokens:100,seconds:2,estimated:false))
+        XCTAssertEqual(speed.tokensPerSecond,50)
+        XCTAssertEqual(speed.timeToFirstToken,0.2)
+        XCTAssertEqual(speed.firstTokenDelayCount,1)
+        XCTAssertEqual(GenerationSpeed().formattedTTFT,"—")
+        speed.include(.init(id:"c",model:"model",completedAt:Date(),outputTokens:100,seconds:2,estimated:false,firstTokenDelay:-1))
+        XCTAssertEqual(speed.firstTokenDelayCount,1)
+    }
 }
 #endif

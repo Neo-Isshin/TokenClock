@@ -23,12 +23,10 @@ private func primaryValueText(tokens: Int, cacheRead: Int, cost: CostEstimate,
 
 /// 次列（消息数 ↔ 占比）
 private func secondaryValueText(tokens: Int, cacheRead: Int, messages: Int,
-                                mode: DetailValueMode, grandTotal: Int, includeCacheRead: Bool) -> String {
+                                mode: DetailValueMode, grandTotal: Int, includeCacheRead: Bool, ttft: String = "—") -> String {
     switch mode {
     case .tokens: return "\(messages)"
-    case .costPercent:
-        let shown = includeCacheRead ? tokens + cacheRead : tokens
-        return formatPercent(shown, of: grandTotal)
+    case .costPercent: return ttft
     }
 }
 
@@ -130,7 +128,7 @@ struct DetailDropdownView: View {
 
     /// 数值列表头（主列：用量↔费用；次列：消息数↔占比）
     private var primaryHeaderKey: String { valueMode == .tokens ? "detail.todayUsage" : "detail.cost" }
-    private var secondaryHeaderKey: String { valueMode == .tokens ? "detail.messages" : "detail.share" }
+
 
     var body: some View {
         VStack(spacing: 0) {
@@ -228,14 +226,14 @@ struct DetailDropdownView: View {
 
                     compactAction(
                         icon: "dollarsign.circle",
-                        title: valueMode == .tokens ? L10n.shared.tr("detail.byCost") : L10n.shared.tr("detail.byPercent"),
-                        subtitle: valueMode == .tokens ? L10n.shared.tr("detail.byPercent") : L10n.shared.tr("detail.todayUsage"),
+                        title: valueMode == .tokens ? L10n.shared.tr("detail.byCost") : L10n.shared.tr("detail.todayUsage"),
+                        subtitle: valueMode == .tokens ? "TTFT · t/s" : (groupingMode == .model ? "Msgs · Share" : "Msgs · Cache"),
                         selected: valueMode == .costPercent,
                         hovered: percentHovered,
                         action: { onValueModeChange?(valueMode.next) }
                     )
                     .frame(width: 82)
-                    .help(L10n.shared.tr("detail.valueModeHelp"))
+                    .instantHint(toolboxText("切换用量/消息/占比与 API 费用/TTFT/速度", "Switch Usage/Msgs/Share and API estimate/TTFT/speed"))
                     .onHover { percentHovered = $0 }
                 }
                 .padding(.horizontal, 4)
@@ -247,7 +245,7 @@ struct DetailDropdownView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                     Text(L10n.shared.tr(primaryHeaderKey))
                         .frame(width: 62, alignment: .trailing)
-                    Text(L10n.shared.tr(secondaryHeaderKey))
+                    Text(valueMode == .tokens ? L10n.shared.tr("detail.messages") : "TTFT").instantHint(valueMode == .tokens ? L10n.shared.tr("detail.messages") : toolboxText("已记录首 token 时间的请求平均等待；缺失时为 —", "Mean first-token wait for requests with real timestamps; — if unavailable"))
                         .frame(width: 36, alignment: .trailing)
                     if groupingMode == .session {
                         Text(L10n.shared.tr("detail.cacheRate"))
@@ -255,9 +253,9 @@ struct DetailDropdownView: View {
                     } else {
                         // Numeric right edges use the same 36 pt step without
                         // expanding the message column or squeezing model names.
-                        Text("t/s")
+                        Text(valueMode == .tokens ? L10n.shared.tr("detail.share") : "t/s")
                             .frame(width: 36, alignment: .trailing)
-                            .help(L10n.shared.tr("detail.generationSpeedHelp"))
+                            .instantHint(valueMode == .tokens ? toolboxText("占当前用量总数的比例", "Share of total usage") : L10n.shared.tr("detail.generationSpeedHelp"))
                     }
                 }
                 .font(.system(size: 9, weight: .medium))
@@ -816,7 +814,7 @@ private struct ToolExpandableRow: View {
                         .foregroundColor(textColor)
                         .frame(width: 62, alignment: .trailing)
 
-                    Text(tool.measurementUnit == .requests ? "—" : secondaryValueText(tokens: tool.todayTokens, cacheRead: tool.todayCacheReadTokens, messages: tool.todayMessages, mode: valueMode, grandTotal: grandTotal, includeCacheRead: usageIncludesCache))
+                    Text(tool.measurementUnit == .requests ? "—" : secondaryValueText(tokens: tool.todayTokens, cacheRead: tool.todayCacheReadTokens, messages: tool.todayMessages, mode: valueMode, grandTotal: grandTotal, includeCacheRead: usageIncludesCache, ttft: GenerationSpeedStore.shared.summary(provider:tool.name).formattedTTFT))
                         .font(.system(size: 10, design: .monospaced))
                         .foregroundColor(subtextColor)
                         .frame(width: 36, alignment: .trailing)
@@ -1008,15 +1006,15 @@ private struct ModelExpandableRow: View {
                         .foregroundColor(textColor)
                         .frame(width: 62, alignment: .trailing)
 
-                    Text(secondaryValueText(tokens: group.totalTokens, cacheRead: group.totalCacheReadTokens, messages: group.totalMessages, mode: valueMode, grandTotal: grandTotal, includeCacheRead: usageIncludesCache))
+                    Text(secondaryValueText(tokens: group.totalTokens, cacheRead: group.totalCacheReadTokens, messages: group.totalMessages, mode: valueMode, grandTotal: grandTotal, includeCacheRead: usageIncludesCache, ttft: group.generationSpeed.formattedTTFT))
                         .font(.system(size: 10, design: .monospaced))
                         .foregroundColor(subtextColor)
                         .frame(width: 36, alignment: .trailing)
-                    Text(group.generationSpeed.formatted)
+                    Text(valueMode == .tokens ? formatPercent(group.totalTokens + (usageIncludesCache ? group.totalCacheReadTokens : 0), of:grandTotal) : group.generationSpeed.formatted)
                         .font(.system(size: 9, design: .monospaced))
                         .foregroundColor(subtextColor)
                         .frame(width: 36, alignment: .trailing)
-                        .help(L10n.shared.tr("detail.generationSpeedHelp"))
+                        .instantHint(valueMode == .tokens ? toolboxText("占当前用量总数的比例", "Share of displayed total usage") : group.generationSpeed.helpText)
                 }
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
@@ -1080,15 +1078,15 @@ private struct ModelContributionRow: View {
                 .foregroundColor(subtextColor)
                 .frame(width: 62, alignment: .trailing)
 
-            Text(secondaryValueText(tokens: contribution.tokens, cacheRead: contribution.cacheReadTokens, messages: contribution.messages, mode: valueMode, grandTotal: grandTotal, includeCacheRead: usageIncludesCache))
+            Text(secondaryValueText(tokens: contribution.tokens, cacheRead: contribution.cacheReadTokens, messages: contribution.messages, mode: valueMode, grandTotal: grandTotal, includeCacheRead: usageIncludesCache, ttft: contribution.generationSpeed.formattedTTFT))
                 .font(.system(size: 9, design: .monospaced))
                 .foregroundColor(subtextColor)
                 .frame(width: 36, alignment: .trailing)
-            Text(contribution.generationSpeed.formatted)
+            Text(valueMode == .tokens ? formatPercent(contribution.tokens + (usageIncludesCache ? contribution.cacheReadTokens : 0), of:grandTotal) : contribution.generationSpeed.formatted)
                 .font(.system(size: 9, design: .monospaced))
                 .foregroundColor(subtextColor)
                 .frame(width: 36, alignment: .trailing)
-                .help(L10n.shared.tr("detail.generationSpeedHelp"))
+                .instantHint(valueMode == .tokens ? toolboxText("占当前用量总数的比例", "Share of displayed total usage") : contribution.generationSpeed.helpText)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 5)

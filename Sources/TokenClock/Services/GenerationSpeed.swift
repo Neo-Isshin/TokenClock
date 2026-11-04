@@ -33,11 +33,18 @@ struct GenerationSpeed: Hashable {
     var sampleCount = 0
     var estimated = false
     var lastCompletedAt: Date?
+    var firstTokenDelayTotal = 0.0
+    var firstTokenDelayCount = 0
 
     var tokensPerSecond: Double? {
         guard outputTokens > 0, generationSeconds > 0, generationSeconds.isFinite else { return nil }
         let rate = Double(outputTokens) / generationSeconds
         return rate.isFinite ? rate : nil
+    }
+    var timeToFirstToken: Double? { firstTokenDelayCount > 0 ? firstTokenDelayTotal/Double(firstTokenDelayCount) : nil }
+    var formattedTTFT: String {
+        guard let value=timeToFirstToken else {return "—"}
+        return value < 1 ? String(format:"%.0fms",value*1000) : value>=100 ? String(format:"%.0fs",value) : String(format:"%.2fs",value)
     }
     var formatted: String {
         guard let rate = tokensPerSecond else { return "—" }
@@ -49,12 +56,19 @@ struct GenerationSpeed: Hashable {
         outputTokens = sum
         generationSeconds += sample.seconds
         sampleCount += 1
+        if let value=sample.firstTokenDelay,value.isFinite,value>=0 {
+            let next=firstTokenDelayTotal+value
+            if next.isFinite {firstTokenDelayTotal=next;firstTokenDelayCount += 1}
+        }
         estimated = estimated || sample.estimated
         lastCompletedAt = max(lastCompletedAt ?? sample.completedAt, sample.completedAt)
     }
 
     var helpText: String {
-        let base = L10n.shared.tr("detail.generationSpeedHelp")
+        let cn=L10n.shared.language.rawValue.hasPrefix("zh")
+        let latency = timeToFirstToken == nil ? (cn ? "TTFT：—（缺少可归属的请求开始/首 token 时间）" : "TTFT: — (no request-start / first-token evidence)")
+            : "TTFT: \(formattedTTFT) · \(firstTokenDelayCount) " + (cn ? "个请求；独立于输出 t/s" : "requests; separate from output t/s")
+        let base = L10n.shared.tr("detail.generationSpeedHelp") + "\n" + latency
         guard let lastCompletedAt else { return base }
         let formatter = DateFormatter()
         formatter.dateStyle = .short
@@ -70,6 +84,7 @@ struct GenerationSample: Hashable {
     let outputTokens: Int
     let seconds: Double
     let estimated: Bool
+    var firstTokenDelay: Double? = nil
 
     var valid: Bool { !id.isEmpty && !model.isEmpty && outputTokens > 0 && seconds > 0 && seconds.isFinite }
 }
@@ -235,7 +250,7 @@ final class GenerationSpeedStore: GenerationSpeedObservable, @unchecked Sendable
             let first = sqlite3_column_double(statement, 3)
             let sample = GenerationSample(id: String(cString: idPointer), model: model,
                 completedAt: Date(timeIntervalSince1970: ended / 1000), outputTokens: Int(generated),
-                seconds: (ended - first) / 1000, estimated: false)
+                seconds: (ended - first) / 1000, estimated: false, firstTokenDelay: (first - sqlite3_column_double(statement, 2)) / 1000)
             if sample.valid { result.append(sample) }
         }
         return stepResult == SQLITE_DONE ? result : []
