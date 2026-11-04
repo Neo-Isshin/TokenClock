@@ -15,6 +15,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var subscriptionAccountEditorWindow: NSWindow?
     private var aboutWindow: NSWindow?
     private var modelDetectWindow: ModelDetectNativeWindow?
+    private var networkLeakWindow: NetworkLeakWindow?
+    private var localToolboxWindow: NSWindow?
+    private var localToolboxModel: LocalToolboxModel?
     private var themePickerPanel: NSPanel?
     private var themePickerEventMonitor: Any?
     private var statusItem: NSStatusItem?
@@ -93,6 +96,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             onHistoryUsage: { [weak self] in self?.showUsageOverviewWindow() },
             onShareUsage: { [weak self] in self?.showUsageShareWindow() },
             onModelDetect: { [weak self] in self?.showModelDetect() },
+            onNetworkLeak: { [weak self] in self?.showNetworkLeak() },
+            onLocalToolbox: { [weak self] in self?.showLocalToolbox() },
             onModelDetectSession: { [weak self] session in self?.showModelDetectSession(session) },
             onNotificationClick: { [weak self] in self?.toggleNotificationCenter() }
         )
@@ -365,6 +370,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             onShare: { [weak self] in
                 self?.statusSummaryPopover?.performClose(nil)
                 self?.showUsageShareWindow()
+            },
+            onTool: { [weak self] tool in
+                self?.statusSummaryPopover?.performClose(nil)
+                switch tool {
+                case .model: self?.showModelDetect()
+                case .network: self?.showNetworkLeak()
+                case .local: self?.showLocalToolbox()
+                case .quota: self?.showSubscriptionQuotaWindow()
+                case .history: self?.showUsageOverviewWindow()
+                case .share: self?.showUsageShareWindow()
+                }
             }
         ))
         popover.contentSize = NSSize(width: side + 12, height: side + 12)
@@ -1299,6 +1315,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         shareWindow = window
     }
 
+    private func showLocalToolbox() {
+        NSApp.activate(ignoringOtherApps: true)
+        if let window = localToolboxWindow { window.makeKeyAndOrderFront(nil); return }
+        let window = NSWindow(contentRect: NSRect(x:0,y:0,width:740,height:650), styleMask:[.titled,.closable,.miniaturizable,.resizable],backing:.buffered,defer:false)
+        window.title = toolboxText("本地工具箱", "Local Toolbox")
+        window.minSize = NSSize(width:600,height:460)
+        window.isReleasedWhenClosed = false
+        let model = LocalToolboxModel()
+        localToolboxModel = model
+        window.delegate = self
+        window.contentView = NSHostingView(rootView: LocalToolboxView(model: model))
+        window.level = .floating
+        window.center(); window.makeKeyAndOrderFront(nil)
+        localToolboxWindow = window
+    }
+
+    private func showNetworkLeak() {
+        if networkLeakWindow == nil { networkLeakWindow = NetworkLeakWindow() }
+        networkLeakWindow?.show()
+    }
+
     private func showSubscriptionQuotaWindow() {
         NSApp.activate(ignoringOtherApps: true)
         if let window = subscriptionQuotaWindow {
@@ -1524,7 +1561,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     nonisolated func windowWillClose(_ notification: Notification) {
         let closingWindow = notification.object as? NSWindow
         Task { @MainActor in
-            if let window = closingWindow, window == settingsWindow {
+            if let window = closingWindow, window == localToolboxWindow {
+                localToolboxModel?.stop(); localToolboxModel=nil; localToolboxWindow=nil
+            } else if let window = closingWindow, window == settingsWindow {
                 settingsWindow = nil
             } else if let window = closingWindow, window == overviewWindow {
                 overviewWindow = nil
@@ -1698,6 +1737,8 @@ private struct DropdownPanelView: View {
     let onHistoryUsage: () -> Void
     let onShareUsage: () -> Void
     let onModelDetect: () -> Void
+    let onNetworkLeak: () -> Void
+    let onLocalToolbox: () -> Void
     let onModelDetectSession: (SessionInfo) -> Void
     let onNotificationClick: () -> Void
 
@@ -1721,6 +1762,8 @@ private struct DropdownPanelView: View {
                 onHistoryUsage: onHistoryUsage,
                 onShareUsage: onShareUsage,
                 onModelDetect: onModelDetect,
+                onNetworkLeak: onNetworkLeak,
+                onLocalToolbox: onLocalToolbox,
                 onModelDetectSession: onModelDetectSession,
                 onSubscriptionQuota: onSubscriptionQuota,
                 unreadNotificationCount: viewModel.unreadNotificationCount,

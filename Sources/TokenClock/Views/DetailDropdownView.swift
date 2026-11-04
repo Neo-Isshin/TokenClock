@@ -73,6 +73,8 @@ struct DetailDropdownView: View {
     var onHistoryUsage: (() -> Void)? = nil
     var onShareUsage: (() -> Void)? = nil
     var onModelDetect: (() -> Void)? = nil
+    var onNetworkLeak: (() -> Void)? = nil
+    var onLocalToolbox: (() -> Void)? = nil
     var onModelDetectSession: ((SessionInfo) -> Void)? = nil
     var onSubscriptionQuota: (() -> Void)? = nil
     var unreadNotificationCount: Int = 0
@@ -89,6 +91,7 @@ struct DetailDropdownView: View {
     @State private var percentHovered = false
     @State private var quotaHovered = false
     @State private var modelDetectHovered = false
+    @State private var networkLeakHovered = false
     @State private var cacheHovered = false
     @State private var textColorHovered = false
     @State private var historyHovered = false
@@ -139,33 +142,16 @@ struct DetailDropdownView: View {
                     .padding(.horizontal, 8)
             }
 
-            // 第一行是会打开独立窗口的主入口，视觉上比下方 toggle 更有层次。
-            HStack(spacing: 8) {
-                launcherCard(
-                    icon: "waveform.path.ecg.rectangle",
-                    titleLine1: L10n.shared.tr("detail.modelDetectLine1"),
-                    titleLine2: L10n.shared.tr("detail.modelDetectLine2"),
-                    hovered: modelDetectHovered,
-                    enabled: onModelDetect != nil,
-                    action: { onModelDetect?() }
-                )
-                .onHover { modelDetectHovered = $0 }
-                .help(L10n.shared.tr("detail.modelDetectHint"))
-                .accessibilityIdentifier("model-detect-launcher")
-
-                launcherCard(
-                    icon: "gauge.with.dots.needle.50percent",
-                    titleLine1: L10n.shared.tr("detail.subscriptionQuotaLine1"),
-                    titleLine2: L10n.shared.tr("detail.subscriptionQuotaLine2"),
-                    hovered: quotaHovered,
-                    enabled: true,
-                    action: { onSubscriptionQuota?() }
-                )
-                .onHover { quotaHovered = $0 }
-            }
-            .padding(.horizontal, 12)
-            .padding(.top, 7)
-            .padding(.bottom, 4)
+            QuickToolGrid(color: textColor) { tool in
+                switch tool {
+                case .model: onModelDetect?()
+                case .network: onNetworkLeak?()
+                case .local: onLocalToolbox?()
+                case .quota: onSubscriptionQuota?()
+                case .history: onHistoryUsage?()
+                case .share: onShareUsage?()
+                }
+            }.padding(.horizontal,12).padding(.top,7).padding(.bottom,4)
 
             if isLoading {
                 // 首次数据读取中：显示加载提示（不展示 mock 占位工具，避免误导）

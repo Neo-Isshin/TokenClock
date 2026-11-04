@@ -19,9 +19,9 @@ final class StatusSummaryResponsiveTests: XCTestCase {
         let wide = StatusSummaryLayout(side: 600)
         XCTAssertGreaterThan(wide.quotaGrid(count: 1).ringSize, wide.quotaGrid(count: 4).ringSize)
         XCTAssertGreaterThan(wide.quotaGrid(count: 4).ringSize, wide.quotaGrid(count: 6).ringSize)
-        XCTAssertGreaterThan(wide.quotaGrid(count: 4).ringSize, 48)
-        XCTAssertEqual(wide.quotaGrid(count: 4).columns, 4)
-        XCTAssertEqual(wide.quotaGrid(count: 6).columns, 3)
+        XCTAssertLessThanOrEqual(wide.quotaGrid(count: 4).ringSize, 44)
+        XCTAssertEqual(wide.quotaGrid(count: 4).columns, 2)
+        XCTAssertEqual(wide.quotaGrid(count: 6).columns, 2)
         XCTAssertLessThan(StatusSummaryLayout(side: 320).quotaGrid(count: 6).columns, 6)
     }
 

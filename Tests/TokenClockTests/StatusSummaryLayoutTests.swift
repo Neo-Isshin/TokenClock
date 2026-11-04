@@ -62,6 +62,7 @@ final class StatusSummaryLayoutTests: XCTestCase {
         let vertical = all.filter { $0.hasVerticalScroller }.max { $0.contentView.bounds.height < $1.contentView.bounds.height }
         let body = try XCTUnwrap(vertical, "The main summary must expose a native vertical scroll viewport")
         XCTAssertGreaterThan(body.contentView.bounds.height, side < 480 ? 60 : 100, "Quota details must not squeeze the list viewport to zero")
+
         let previousHeight = try XCTUnwrap(body.documentView).bounds.height
         host.rootView = content(tools)
         settle()
@@ -69,8 +70,12 @@ final class StatusSummaryLayoutTests: XCTestCase {
             .max { $0.contentView.bounds.height < $1.contentView.bounds.height })
         XCTAssertGreaterThan(try XCTUnwrap(updated.documentView).bounds.height, body.contentView.bounds.height,
             "All quota details and usage rows must remain reachable by scrolling")
-        XCTAssertGreaterThan(try XCTUnwrap(updated.documentView).bounds.height, previousHeight + 50,
-            "Additional harness rows must contribute real content height instead of disappearing")
+        // In the two-column layout the taller quota column can determine total
+        // height. In compact mode rows are stacked and must add content height.
+        if side < 480 {
+            XCTAssertGreaterThan(try XCTUnwrap(updated.documentView).bounds.height, previousHeight + 50)
+        }
+
     }
 }
 #endif

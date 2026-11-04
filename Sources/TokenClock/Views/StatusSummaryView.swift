@@ -40,6 +40,7 @@ struct StatusSummaryView: View {
     let onHistory: () -> Void
     let onQuota: () -> Void
     let onShare: () -> Void
+    var onTool: (QuickTool) -> Void = { _ in }
 
     private var snapshot: StatusSummarySnapshot {
         StatusSummarySnapshot(tools: viewModel.visibleTools, includesCache: viewModel.usageIncludesCache)
@@ -70,7 +71,7 @@ struct StatusSummaryView: View {
                 records: viewModel.subscriptionAccounts, activeIDs: viewModel.activeSubscriptionAccountIDs),
             quotas: viewModel.statusSummaryQuotaIndicators, isQuotaLoading: viewModel.statusSummaryQuotaLoading,
             harnessSpeeds: Dictionary(uniqueKeysWithValues: snapshot.rankedTools.map { ($0.name, speedStore.summary(provider: $0.name)) }),
-            onHistory: onHistory, onQuota: onQuota, onShare: onShare
+            onHistory: onHistory, onQuota: onQuota, onShare: onShare, onTool: onTool
         )
         .task(id: hourlyKey) { history.reload(day: day, tools: hourlyTools) }
         .onReceive(NotificationCenter.default.publisher(for: HourlyHistoryStore.updated)
@@ -102,6 +103,7 @@ struct StatusSummaryContent: View {
     let onHistory: () -> Void
     let onQuota: () -> Void
     let onShare: () -> Void
+    var onTool: (QuickTool) -> Void = { _ in }
     @State private var showsModels = false
     @State private var showsTimeline = false
     @State private var showsFullDay = false
@@ -134,23 +136,28 @@ struct StatusSummaryContent: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: layout.spacing) {
                     tokenCard
-                    quotaStrip
-
-                    if isLoading {
-                        ProgressView(L10n.shared.tr("detail.loading"))
-                            .frame(maxWidth: .infinity, minHeight: 120)
-                    } else if snapshot.rankedTools.isEmpty {
-                        Text(L10n.shared.tr("status.empty"))
-                            .font(.system(size: 12)).foregroundStyle(.secondary)
-                            .frame(maxWidth: .infinity, minHeight: 120)
+                    if layout.isCompact {
+                        quotaStrip
+                        summaryUsage
                     } else {
-                        usageTable
+                        HStack(alignment: .top, spacing: layout.spacing) {
+                            quotaStrip.frame(width: max(190, (side-2*layout.padding-24)*0.43))
+                            summaryUsage.frame(maxWidth: .infinity, alignment: .topLeading)
+                        }
                     }
+
                 }
                 .frame(maxWidth: .infinity, alignment: .topLeading)
             }
             .scrollIndicators(.automatic)
             .accessibilityIdentifier("summary-content-scroll")
+
+            if layout.isCompact {
+                QuickToolGrid(compactIcons:true,action:onTool)
+            } else {
+                QuickToolGrid(showHeading:true,action:onTool)
+                    .padding(8).background(.primary.opacity(0.025),in:RoundedRectangle(cornerRadius:12))
+            }
 
             VStack(spacing: 6) {
                 GlassEffectContainer(spacing: 10) {
@@ -310,6 +317,14 @@ struct StatusSummaryContent: View {
             .accessibilityLabel(label + ": " + (hour.hasRecords ? "\(value) tokens" : L10n.shared.tr("status.noHourlyRecord")))
     }
 
+    @ViewBuilder private var summaryUsage: some View {
+        if isLoading {
+            ProgressView(L10n.shared.tr("detail.loading")).frame(maxWidth:.infinity,minHeight:100)
+        } else if snapshot.rankedTools.isEmpty {
+            Text(L10n.shared.tr("status.empty")).font(.system(size:12)).foregroundStyle(.secondary).frame(maxWidth:.infinity,minHeight:100)
+        } else { usageTable }
+    }
+
     private var quotaStrip: some View {
         let grid = layout.quotaGrid(count: quotas.count)
         return VStack(alignment: .leading, spacing: 6) {
@@ -339,17 +354,17 @@ struct StatusSummaryContent: View {
                                         HStack(spacing: 3) {
                                             Text(reset.title).lineLimit(1).minimumScaleFactor(0.8)
                                             Spacer(minLength: 0)
-                                            Text(quotaResetDate(reset.resetsAt)).monospacedDigit().fixedSize()
+                                            Text(quotaResetDate(reset.resetsAt)).monospacedDigit().lineLimit(1).minimumScaleFactor(0.7)
                                         }
                                         .font(.system(size: 8)).foregroundStyle(.secondary)
-                                        .help(resetHelp(reset))
+                                        .instantHint(resetHelp(reset))
                                     }
                                 }
                                 .frame(maxWidth: .infinity)
                                 .contentShape(Rectangle())
                             }
                             .buttonStyle(.plain)
-                            .help(([indicator.displayName, indicator.accountName].compactMap { $0 }
+                            .instantHint(([indicator.displayName, indicator.accountName].compactMap { $0 }
                                 + indicator.details.map { L10n.shared.tr($0.labelKey) + " " + String(format: "%.0f%%", $0.remainingPercent) })
                                 .joined(separator: "\n"))
                         }
@@ -495,15 +510,6 @@ struct StatusSummaryContent: View {
                 Text(L10n.shared.tr("status.modelList")).tag(true)
             }
             .pickerStyle(.segmented).labelsHidden()
-            if !layout.isCompact {
-                HStack(spacing: 12) {
-                    Text(showsModels ? L10n.shared.tr("detail.model") : "Harness").frame(maxWidth: .infinity, alignment: .leading)
-                    Text("Tokens").frame(width: 68, alignment: .trailing)
-                    Text(L10n.shared.tr("detail.cost")).frame(width: 64, alignment: .trailing)
-                    Text("t/s").frame(width: 40, alignment: .trailing).help(L10n.shared.tr("detail.generationSpeedHelp"))
-                }
-                .font(.system(size: 9)).foregroundStyle(.secondary)
-            }
             VStack(spacing: 6) {
                 if showsModels {
                     ForEach(models) { model in
@@ -526,35 +532,20 @@ struct StatusSummaryContent: View {
     }
 
     private func usageRow(name: String, emoji: String, tokens: Int, cost: String, speed: GenerationSpeed) -> some View {
-        Group {
-            if layout.isCompact {
-                VStack(alignment: .leading, spacing: 5) {
-                    HStack(spacing: 6) {
-                        BrandIconView(name: name, fallback: emoji, size: 14)
-                        Text(name).lineLimit(2).truncationMode(.middle)
-                    }
-                    HStack(spacing: 8) {
-                        compactValue("Tokens", TokenFormat.compact(tokens))
-                        Spacer(minLength: 0)
-                        compactValue(L10n.shared.tr("detail.cost"), cost)
-                        Spacer(minLength: 0)
-                        compactValue("t/s", speed.formatted).help(speed.helpText)
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-            } else {
-                HStack(spacing: 12) {
-                    HStack(spacing: 6) {
-                        BrandIconView(name: name, fallback: emoji, size: 14)
-                        Text(name).lineLimit(1).truncationMode(.middle)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    Text(TokenFormat.compact(tokens)).frame(width: 68, alignment: .trailing)
-                    Text(cost).frame(width: 64, alignment: .trailing).foregroundStyle(.secondary)
-                    Text(speed.formatted).frame(width: 40, alignment: .trailing).help(speed.helpText)
-                }
+        VStack(alignment: .leading, spacing: 5) {
+            HStack(spacing: 6) {
+                BrandIconView(name: name, fallback: emoji, size: 14)
+                Text(name).lineLimit(2).truncationMode(.middle)
             }
-        }
+            HStack(spacing: 5) {
+                compactValue("Tokens", TokenFormat.compact(tokens))
+                Spacer(minLength: 0)
+                compactValue(L10n.shared.tr("detail.cost"), cost)
+                Spacer(minLength: 0)
+                compactValue("t/s", speed.formatted).instantHint(speed.helpText)
+            }
+        }.frame(maxWidth: .infinity, alignment: .leading)
+
         .font(.system(size: 11)).monospacedDigit()
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("summary-usage-row-" + name)

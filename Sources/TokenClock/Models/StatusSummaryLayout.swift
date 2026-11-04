@@ -23,13 +23,11 @@ struct StatusSummaryLayout {
         let count = max(1, count)
         // Budget for a non-overlay vertical scroller. Flexible grid columns
         // reclaim this space on systems using overlay scrollbars.
-        let width = max(1, side - 2 * padding - 2 * sectionPadding - 16)
-        let maximumColumns = max(1, Int((width + spacing) / (112 + spacing)))
-        let rows = Int(ceil(Double(count) / Double(maximumColumns)))
-        let columns = Int(ceil(Double(count) / Double(rows)))
-        let cardWidth = max(1, (width - CGFloat(columns - 1) * spacing) / CGFloat(columns))
-        let preferredSize = max(56, 92 - CGFloat(count - 1) * 7)
-        return QuotaGrid(columns: columns, cardWidth: cardWidth,
-                         ringSize: max(1, min(preferredSize, cardWidth - 12)))
+        let content = max(1, side - 2 * padding - 16)
+        let width = max(1, (isCompact ? content : max(190, (side-2*padding-24)*0.43)) - 2*sectionPadding - 16)
+        let columns = min(2, count)
+        let cardWidth = max(1, (width - CGFloat(columns - 1)*spacing)/CGFloat(columns))
+        let preferredSize: CGFloat = count == 1 ? 48 : count <= 4 ? 40 : 36
+        return QuotaGrid(columns: columns, cardWidth: cardWidth, ringSize: max(1,min(preferredSize,cardWidth-12)))
     }
 }
