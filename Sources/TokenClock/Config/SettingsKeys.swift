@@ -55,6 +55,8 @@ enum SettingsKey: String {
     case clinePath = "TC_clinePath"
     case kiloCodePath = "TC_kiloCodePath"
     case piPath = "TC_piPath"
+    case dshPath = "TC_dshPath"
+    case pigPath = "TC_pigPath"
     case ompPath = "TC_ompPath"
     case freebuffPath = "TC_freebuffPath"
     case commandCodePath = "TC_commandCodePath"

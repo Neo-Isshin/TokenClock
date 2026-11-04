@@ -8,12 +8,14 @@ import CSQLite
 
 /// Local, read-only harness integrations. No credentials, keychain prompts, or agent execution.
 enum AdditionalHarness: String, CaseIterable, Sendable {
-    case kiloCode, pi, omp, freebuff, commandCode
+    case kiloCode, pi, omp, freebuff, commandCode, dsh, pig
 
     var name: String {
         switch self {
         case .kiloCode: return "Kilo Code"
         case .pi: return "Pi"
+        case .dsh: return "DSH"
+        case .pig: return "PiG"
         case .omp: return "OMP"
         case .freebuff: return "Freebuff"
         case .commandCode: return "Command Code"
@@ -23,6 +25,8 @@ enum AdditionalHarness: String, CaseIterable, Sendable {
         switch self {
         case .kiloCode: return "KL"
         case .pi: return "PI"
+        case .dsh: return "DS"
+        case .pig: return "PG"
         case .omp: return "OM"
         case .freebuff: return "FB"
         case .commandCode: return "CM"
@@ -32,6 +36,8 @@ enum AdditionalHarness: String, CaseIterable, Sendable {
         switch self {
         case .kiloCode: return "⚡"
         case .pi: return "🥧"
+        case .dsh: return "🐋"
+        case .pig: return "🐷"
         case .omp: return "🥧"
         case .freebuff: return "🦬"
         case .commandCode: return "⌘"
@@ -41,6 +47,8 @@ enum AdditionalHarness: String, CaseIterable, Sendable {
         switch self {
         case .kiloCode: return .kiloCodePath
         case .pi: return .piPath
+        case .dsh: return .dshPath
+        case .pig: return .pigPath
         case .omp: return .ompPath
         case .freebuff: return .freebuffPath
         case .commandCode: return .commandCodePath
@@ -65,7 +73,10 @@ enum AdditionalHarness: String, CaseIterable, Sendable {
             return (value as NSString).expandingTildeInPath
         }
         switch self {
+        case .dsh: return [(env("DSH_HOME") ?? home+"/.dsh")+"/sessions"]
+        case .pig: return [home+"/.pig/agent"]
         case .pi:
+            if let sessions=env("PI_CODING_AGENT_SESSION_DIR"), (env("PI_CONFIG_DIR") ?? ".pi")==".pi", !sessions.contains(".omp") {return [sessions]}
             // OMP shares PI_CODING_AGENT_DIR; never claim its default folder as Pi as well.
             let override = env("PI_CODING_AGENT_DIR")
             // A shared override with an arbitrary name carries no harness identity.
@@ -76,6 +87,7 @@ enum AdditionalHarness: String, CaseIterable, Sendable {
             let configName = requestedConfigName == ".pi" ? ".omp" : requestedConfigName
             let configRoot = configName.hasPrefix("/") ? configName : home + "/" + configName
             var paths = [configRoot + "/agent", configRoot + "/profiles"]
+            if let sessions=env("PI_CODING_AGENT_SESSION_DIR"),requestedConfigName != ".pi" && (env("PI_CONFIG_DIR") != nil || sessions.contains(".omp")) {paths.insert(sessions,at:0)}
             for key in ["XDG_DATA_HOME", "XDG_STATE_HOME"] {
                 if let root = env(key) { paths.append(root + "/omp") }
             }
@@ -110,6 +122,11 @@ enum AdditionalHarness: String, CaseIterable, Sendable {
             for harness in allCases where !HarnessUsageService.sourceFiles(roots: harness.roots(), harness: harness).isEmpty {
                 result.insert(harness.name)
             }
+        }
+        let extensionKey="TC_additionalHarnessMigration_v2"
+        if !UserDefaults.standard.bool(forKey:extensionKey) {
+            for harness in [AdditionalHarness.dsh,.pig] where !HarnessUsageService.sourceFiles(roots:harness.roots(),harness:harness).isEmpty {result.insert(harness.name)}
+            UserDefaults.standard.set(true,forKey:extensionKey)
         }
         UserDefaults.standard.set(true, forKey: key)
         UserDefaults.standard.setStringArray(Array(result).sorted(), for: .enabledTools)
@@ -171,7 +188,13 @@ final class HarnessUsageService: @unchecked Sendable {
             let walSize = (FileManager.default.attributes(path + "-wal")?[.size] as? NSNumber)?.uint64Value ?? 0
             let signatureSize = size &+ walSize
             if let old = files[path], old.modified == stamp, old.size == signatureSize { continue }
-            guard let parsed = parse(path) else { continue } // Keep last complete snapshot on I/O/schema errors.
+            guard let parsed = parse(path) else {
+                if harness == .dsh {
+                    let folder=URL(fileURLWithPath:path).deletingLastPathComponent()
+                    for cached in files.keys where URL(fileURLWithPath:cached).deletingLastPathComponent()==folder {live.insert(cached)}
+                }
+                continue
+            } // Keep last complete snapshot on I/O/schema errors.
             files[path] = CachedFile(modified: stamp, size: signatureSize, receipts: parsed)
             changed = true
         }
@@ -277,6 +300,7 @@ final class HarnessUsageService: @unchecked Sendable {
         var found = Set<String>()
         func accepts(_ path: String) -> Bool {
             let name = URL(fileURLWithPath: path).lastPathComponent
+            if harness == .dsh { return DSHReceiptReader.generation(name) != nil }
             if harness == .freebuff { return name == "chat-messages.json" }
             if harness == .kiloCode { return name == "ui_messages.json" || ["kilo.db", "kilocode.db", "opencode.db"].contains(name) }
             return name.hasSuffix(".jsonl") && !name.contains(".checkpoints.") && !name.contains(".prompts.")
@@ -294,10 +318,14 @@ final class HarnessUsageService: @unchecked Sendable {
                 found.insert(file.resolvingSymlinksInPath().path)
             }
         }
+        if harness == .dsh {return DSHReceiptReader.latest(Array(found))}
         return found.sorted()
     }
 
     private func parse(_ path: String) -> [Receipt]? {
+        if harness == .dsh {
+            return DSHReceiptReader.read(path)?.map { row in Receipt(id:row.id,session:row.session,name:row.name,model:row.model,date:row.date,buckets:row.buckets,path:path) }
+        }
         if path.hasSuffix(".db") { return parseKiloDatabase(path) }
         var records: [[String: Any]] = []
         if path.hasSuffix(".jsonl") {

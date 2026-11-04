@@ -18,6 +18,7 @@ let package = Package(
                 .copy("Resources/macos-variant-switch.sh"),
                 .copy("Resources/BrandIcons"),
                 .copy("Resources/ShareArtwork"),
+                .copy("Resources/DSHDecoder"),
                 .copy("Resources/model-integrity-worker"),
             ],
             swiftSettings: [.unsafeFlags(["-parse-as-library"])]
