@@ -110,7 +110,7 @@ final class ClaudeQuotaService: @unchecked Sendable {
     }
     #endif
 
-    typealias OAuthTransport = @Sendable (URLRequest) -> HTTPResponse?
+    typealias OAuthTransport = @Sendable (ProviderHTTPRequest) -> HTTPResponse?
     #if os(macOS)
     private let appPasswordCache = ClaudeAppPasswordCache()
     #endif
@@ -137,11 +137,12 @@ final class ClaudeQuotaService: @unchecked Sendable {
         self.fileManager = fileManager
     }
 
-    func fetch() -> ClaudeQuotaSnapshot {
+    func fetch(now: Date = Date()) -> ClaudeQuotaSnapshot {
 #if os(macOS)
-        return fetch(connectedSession: nil, connectionSelected: false)
+        return fetch(connectedSession: nil, connectionSelected: false, now: now)
 #else
-        let desktop = ClaudeDesktopData.quota(in: desktopHomes, fileManager: fileManager)
+        let desktop = ClaudeDesktopData.quota(in: desktopHomes, fileManager: fileManager, now: now)
+        if let desktop { return desktop }
         // A fresh Desktop receipt is usable without probing another app's
         // Keychain ACL. File/env OAuth is still preferred when present.
         guard let credential = loadCredential(allowKeychain: desktop == nil) else {
@@ -548,7 +549,7 @@ final class ClaudeQuotaService: @unchecked Sendable {
             "User-Agent": "TokenClock quota widget",
         ]
         if let oauthTransport,let endpoint=URL(string:url) {
-            var request=URLRequest(url:endpoint);request.httpMethod="GET"
+            var request=ProviderHTTPRequest(url:endpoint);request.httpMethod="GET"
             request.httpShouldHandleCookies=false
             for (name,value) in headers {request.setValue(value,forHTTPHeaderField:name)}
             return oauthTransport(request)
@@ -565,7 +566,7 @@ final class ClaudeQuotaService: @unchecked Sendable {
         return HTTPResponse(statusCode: response.statusCode, body: response.body)
         #elseif os(macOS)
         guard let endpoint = URL(string: url) else { return nil }
-        var request = URLRequest(url: endpoint)
+        var request = ProviderHTTPRequest(url: endpoint)
         request.httpMethod = "GET"
         request.httpShouldHandleCookies = false
         request.cachePolicy = .reloadIgnoringLocalCacheData
@@ -577,7 +578,7 @@ final class ClaudeQuotaService: @unchecked Sendable {
         }
         #else
         guard let endpoint = URL(string: url) else { return nil }
-        var request = URLRequest(url: endpoint)
+        var request = ProviderHTTPRequest(url: endpoint)
         request.httpMethod = "GET"
         request.timeoutInterval = AppConfig.Scan.claudeQuotaTimeoutSeconds
         for (name, value) in headers { request.setValue(value, forHTTPHeaderField: name) }

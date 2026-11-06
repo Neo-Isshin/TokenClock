@@ -1867,6 +1867,9 @@ final class WindowsApp: @unchecked Sendable {
         case .monthlyReport: return "📅  \(notification.title)  ›"
         case .modelDetection: return "✨  \(notification.title)  ›"
         case .system: return "ⓘ  \(notification.title)"
+        case .news: return "📰  \(notification.title)  ›"
+        case .notebookReminder: return "📝  \(notification.title)  ›"
+        case .releaseUpdate: return "⬆️  \(notification.title)  ›"
         }
     }
 

@@ -1,0 +1,4 @@
+Zstandard 1.5.7 official x86_64 Windows shared library. BSD license in LICENSE.
+Source: https://github.com/facebook/zstd/releases/tag/v1.5.7
+Asset: zstd-v1.5.7-win64.zip, dll/libzstd.dll
+Only decompression APIs are called; no external CLI is required.

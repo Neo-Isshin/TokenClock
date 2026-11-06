@@ -3,6 +3,11 @@ import PackageDescription
 
 #if os(Linux)
 let linuxSources = [
+    "Services/ProviderHTTPRequest.swift",
+    "Services/ClaudeQuotaPayload.swift",
+    "Services/ClaudeAppResponseCache.swift",
+    "Services/ZstdLibrary.swift",
+    "Services/CacheHash.swift",
     "Services/JSONNumber.swift",
     "Services/ReleaseUpdateService.swift",
     "Services/XSubscriptionQuota.swift",
@@ -114,6 +119,7 @@ let package = Package(
             resources: [
                 .copy("Resources/glass_disc.png"),
                 .copy("Resources/pricing-snapshot.json"),
+                .copy("Resources/DSHDecoder"),
                 .copy("Resources/BrandIcons"),
             ],
             swiftSettings: [.unsafeFlags(["-parse-as-library"])]
@@ -170,6 +176,7 @@ let package = Package(
             resources: [
                 .copy("Resources/glass_disc.png"),
                 .copy("Resources/pricing-snapshot.json"),
+                .copy("Resources/DSHDecoder"),
                 .copy("Resources/BrandIcons"),
             ],
             swiftSettings: [.unsafeFlags(["-parse-as-library"])],
@@ -199,6 +206,7 @@ let package = Package(
             resources: [
                 .copy("Resources/glass_disc.png"),
                 .copy("Resources/pricing-snapshot.json"),
+                .copy("Resources/DSHDecoder"),
                 .copy("Resources/BrandIcons"),
             ],
             swiftSettings: [.unsafeFlags(["-parse-as-library"])]

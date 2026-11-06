@@ -94,10 +94,9 @@ enum ClaudeDesktopData {
                 return fileManager.contents(atPath: path)
             }()
             if let data, let history = decodeUsageHistory(data, now: now, organizationID: organizationID) { results.append(history) }
-            #if os(macOS)
             let selected = organizationID ?? data.flatMap(historySamples).flatMap { historyOrganization($0, selected: nil) }
             if let selected, let response = ClaudeAppResponseCache.read(home: home, organizationID: selected, now: now),
-               var snapshot = try? ClaudeAppQuotaService.decodeUsage(response.data) {
+               var snapshot = try? ClaudeQuotaPayload.decode(response.data) {
                 snapshot.buckets = snapshot.buckets.filter { $0.resetsAt.map { $0 > now } ?? true }
                 if !snapshot.buckets.isEmpty {
                     snapshot.refreshedAt = response.recordedAt
@@ -107,7 +106,6 @@ enum ClaudeDesktopData {
                     results.append(snapshot)
                 }
             }
-            #endif
         }
         return results.max { ($0.refreshedAt ?? .distantPast) < ($1.refreshedAt ?? .distantPast) }
     }

@@ -52,7 +52,7 @@ final class GrokBotQuotaService: @unchecked Sendable {
         let statusCode: Int
         let data: Data
     }
-    typealias Transport = @Sendable (URLRequest) -> HTTPResponse?
+    typealias Transport = @Sendable (ProviderHTTPRequest) -> HTTPResponse?
     private let transport: Transport?
     typealias CursorCredentialReader = @Sendable (Bool) -> GrokBotNativeCredentialStore.PasswordReadResult
     private let cursorCredentialReader: CursorCredentialReader
@@ -411,7 +411,7 @@ final class GrokBotQuotaService: @unchecked Sendable {
         }
         let body = Data("{}".utf8)
         guard let endpoint = URL(string: Self.endpoint) else { return nil }
-        var request = URLRequest(url: endpoint)
+        var request = ProviderHTTPRequest(url: endpoint)
         request.httpMethod = "POST"; request.httpBody = body; request.timeoutInterval = 15
         request.httpShouldHandleCookies = false; request.cachePolicy = .reloadIgnoringLocalCacheData
         for (name, value) in headers { request.setValue(value, forHTTPHeaderField: name) }
@@ -448,8 +448,8 @@ final class GrokBotQuotaService: @unchecked Sendable {
     private final class NoRedirect: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
         func urlSession(_ session: URLSession, task: URLSessionTask,
                         willPerformHTTPRedirection response: HTTPURLResponse,
-                        newRequest request: URLRequest,
-                        completionHandler: @escaping @Sendable (URLRequest?) -> Void) { completionHandler(nil) }
+                        newRequest request: ProviderHTTPRequest,
+                        completionHandler: @escaping @Sendable (ProviderHTTPRequest?) -> Void) { completionHandler(nil) }
     }
     private final class HTTPResultBox: @unchecked Sendable {
         private let lock = NSLock()
