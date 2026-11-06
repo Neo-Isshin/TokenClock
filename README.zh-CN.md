@@ -42,6 +42,9 @@ TokenClock 是一个常驻桌面的 **悬浮时钟**（置顶 · 可拖拽 · �
 > Liquid Glass 版已支持 macOS 27 beta 3，但可能随 beta 版本更新而失效。
 ---
 
+
+**v1.6.3 已提供 macOS Glass、macOS Normal 和 Linux。** 同步统计、额度、速递、行事本、工具箱和总结面板能力，保留各平台自身样式。Windows 暂保持 v1.5.12，等待自有主机验证。
+
 ## 📑 目录
 
 - [🌟 核心优势](#-核心优势)

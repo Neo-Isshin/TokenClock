@@ -6,23 +6,29 @@ enum UsageAggregator {
     /// - Parameter includingCacheRead: true 时返回「包含缓存读」口径（todayTokens + 缓存读）
     static func totalTokens(_ tools: [ToolUsage], includingCacheRead: Bool = false) -> Int {
         tools.reduce(0) {
-            $0 + ($1.measurementUnit == .tokens && $1.measurementScope == .today ? $1.todayTokens + (includingCacheRead ? $1.todayCacheReadTokens : 0) : 0)
+            $0 + ($1.measurementUnit == .tokens && $1.measurementScope == .today
+                ? $1.todayTokens + (includingCacheRead ? $1.todayCacheReadTokens : 0) : 0)
         }
     }
 
     /// 计算所有工具的消息总数
     static func totalMessages(_ tools: [ToolUsage]) -> Int {
-        tools.reduce(0) { $0 + ($1.measurementUnit == .tokens && $1.measurementScope == .today ? $1.todayMessages : 0) }
+        tools.reduce(0) {
+            $0 + ($1.measurementUnit == .tokens && $1.measurementScope == .today ? $1.todayMessages : 0)
+        }
     }
 
     /// 获取 token 消耗最高的工具（最多2个）
     static func topToolsByTokens(_ tools: [ToolUsage], limit: Int = 2) -> [ToolUsage] {
-        tools.filter { $0.measurementUnit == .tokens && $0.measurementScope == .today }.sorted { $0.todayTokens > $1.todayTokens }.prefix(limit).map { $0 }
+        tools.filter { $0.measurementUnit == .tokens && $0.measurementScope == .today }
+            .sorted { $0.todayTokens > $1.todayTokens }.prefix(limit).map { $0 }
     }
 
     /// 根据近 N 分钟 token 消耗判断热力 emoji（阈值可自定义）
     static func rateEmoji(_ tools: [ToolUsage]) -> String {
-        let recentTotal = tools.reduce(0) { $0 + ($1.measurementUnit == .tokens && $1.measurementScope == .today ? $1.recentTokens : 0) }
+        let recentTotal = tools.reduce(0) {
+            $0 + ($1.measurementUnit == .tokens && $1.measurementScope == .today ? $1.recentTokens : 0)
+        }
         let burst = UserDefaults.standard.int(for: .rateBurst, default: 0)
         let hot = UserDefaults.standard.int(for: .rateHot, default: 0)
         let active = UserDefaults.standard.int(for: .rateActive, default: 0)

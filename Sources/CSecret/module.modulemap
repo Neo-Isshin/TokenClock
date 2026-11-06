@@ -1,0 +1,4 @@
+module CSecret [system] {
+    header "shim.h"
+    export *
+}

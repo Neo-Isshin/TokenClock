@@ -25,6 +25,7 @@ final class LinuxSettingsWindow: @unchecked Sendable {
         .init(emoji: "🧰", name: "Cline", service: "cline", pathKey: .clinePath),
         .init(emoji: "▶️", name: "Continue", service: "continue", pathKey: .continuePath),
         .init(emoji: "💎", name: "Cursor Agent", service: "cursorAgent", pathKey: .cursorAgentPath),
+        .init(emoji:"🅉",name:"ZCode",service:"zcode",pathKey:.zcodePath),
     ] + AdditionalHarness.allCases.map { ToolOption(emoji: $0.emoji, name: $0.name, service: $0.rawValue, pathKey: $0.pathKey) }
 
     private weak var owner: LinuxApp?

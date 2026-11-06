@@ -17,6 +17,13 @@ enum AppPaths {
             ?? URL(fileURLWithPath: NSHomeDirectory())
                 .appendingPathComponent(".config", isDirectory: true).path
         return ([configHome] + components).joined(separator: "/")
+#elseif os(Windows)
+        // Windows: %APPDATA%\<components> (Roaming)
+        let environment = ProcessInfo.processInfo.environment
+        let roaming = environment["APPDATA"]
+            ?? environment["USERPROFILE"].map { $0 + "\\AppData\\Roaming" }
+            ?? "C:\\"
+        return ([roaming] + components).joined(separator: "\\")
 #else
         ([NSHomeDirectory(), "Library", "Application Support"] + components)
             .joined(separator: "/")

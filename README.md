@@ -43,6 +43,9 @@ It's built with the macOS 26 **Liquid Glass** material for a crystal clock disc,
 
 ---
 
+
+**v1.6.3 is available for macOS Glass, macOS Normal, and Linux.** Usage, quota, digest, notebook, toolboxes and summary capabilities are aligned while native styles remain distinct. Windows stays on v1.5.12 pending self-hosted validation.
+
 ## 📑 Contents
 
 - [🌟 Core advantages](#-core-advantages)

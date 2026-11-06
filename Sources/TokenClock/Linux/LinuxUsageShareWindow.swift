@@ -120,6 +120,10 @@ final class LinuxUsageShareWindow: @unchecked Sendable {
             styleButtons[choice] = button
         }
         gtk_box_pack_start(tc_gtk_box(root), styles, 0, 0, 0)
+        let pictures=gtk_box_new(GTK_ORIENTATION_HORIZONTAL,6)!
+        _=appendButton(toolboxText("换一张背景","Change background"),name:"share:artwork-next",to:pictures)
+        _=appendButton(toolboxText("选择图片…","Choose image…"),name:"share:artwork-import",to:pictures)
+        gtk_box_pack_start(tc_gtk_box(root),pictures,0,0,0)
 
         let copy = gtk_button_new_with_label("⧉  \(L10n.shared.tr("share.copyImage"))")
         copyButton = copy
@@ -220,6 +224,11 @@ final class LinuxUsageShareWindow: @unchecked Sendable {
                     tc_gtk_choose_integer(window, $0, gint(weekIndex), 1, gint(availableWeekCount))
                 }
                 if value > 0 { weekIndex = Int(value); refresh() }
+            }
+        case "share:artwork-next":renderer.nextArtwork();if let preview{gtk_widget_queue_draw(preview)}
+        case "share:artwork-import":
+            if let window,let path=tc_gtk_select_image(tc_gtk_window(window),toolboxText("选择分享背景","Choose share artwork"),toolboxText("取消","Cancel"),toolboxText("打开","Open")){
+                renderer.setArtwork(path:String(cString:path));g_free(path);if let preview{gtk_widget_queue_draw(preview)}
             }
         case "share:copy": copyImage()
         case "share:save": saveImage()
@@ -334,13 +343,30 @@ final class LinuxUsageShareWindow: @unchecked Sendable {
     }
 }
 
-private final class LinuxUsageShareRenderer {
+final class LinuxUsageShareRenderer {
     private typealias RGB = (Double, Double, Double)
     private let palette: [RGB] = [
         (0.31, 0.78, 0.98), (0.87, 0.51, 0.95), (1.0, 0.63, 0.39),
         (0.38, 0.84, 0.69), (0.98, 0.77, 0.31), (0.57, 0.68, 1.0),
         (0.94, 0.51, 0.60), (0.65, 0.68, 0.70),
     ]
+
+    private var photo:UnsafeMutableRawPointer?
+    private var logo:UnsafeMutableRawPointer?
+    private var scene=""
+    init(){
+        if let path=Bundle.module.resourceURL?.appendingPathComponent("ShareArtwork/ailyre.png").path{logo=tc_gtk_image_asset_load(path)}
+        nextArtwork()
+    }
+    deinit{tc_gtk_image_asset_free(photo);tc_gtk_image_asset_free(logo)}
+    func nextArtwork(){
+        let choices=["alpine","lake","forest","valley"].filter{$0 != scene}
+        scene=choices.randomElement() ?? "alpine"
+        if let path=Bundle.module.resourceURL?.appendingPathComponent("ShareArtwork/"+scene+".jpg").path{setArtwork(path:path)}
+    }
+    func setArtwork(path:String){
+        guard let next=tc_gtk_image_asset_load(path) else{return};tc_gtk_image_asset_free(photo);photo=next
+    }
 
     func writePNG(data: UsageShareData, style: UsageShareStyle = .ink, to path: String) -> Bool {
         guard let surface = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, 1_200, 1_500) else { return false }
@@ -366,6 +392,15 @@ private final class LinuxUsageShareRenderer {
         cairo_save(context)
         cairo_scale(context, scale, scale)
         rectangle(context, 0, 0, 600, 750, color: background)
+        if let photo{
+            tc_cairo_image_asset_cover(context,photo,0,0,600,750)
+            if let shade=cairo_pattern_create_linear(0,0,0,750){
+                cairo_pattern_add_color_stop_rgba(shade,0,background.0,background.1,background.2,paper ? 0.62:0.40)
+                cairo_pattern_add_color_stop_rgba(shade,0.48,background.0,background.1,background.2,paper ? 0.93:0.88)
+                cairo_pattern_add_color_stop_rgba(shade,1,background.0,background.1,background.2,0.97)
+                cairo_set_source(context,shade);cairo_paint(context);cairo_pattern_destroy(shade)
+            }
+        }
         for x in stride(from: 0.0, through: 600, by: 48) {
             line(context, x, 0, x, 750, width: 0.3, color: fg, alpha: paper ? 0.055 : 0.035)
         }
@@ -439,7 +474,8 @@ private final class LinuxUsageShareRenderer {
         text(context, "“", 36, 800, 53, 653, color: accent)
         text(context, L10n.shared.tr(data.quoteKey), 17, 500, 53, 683, color: fg, alpha: 0.84)
         text(context, L10n.shared.tr("share.generatedBy"), 8, 600, 38, 739, color: fg, alpha: 0.44)
-        text(context, "TOKENCLOCK", 8, 600, 562, 739, align: 2, color: fg, alpha: 0.44)
+        text(context, "ailyre.com", 9, 700, 562, 739, align: 2, color: fg, alpha: 0.80)
+        if let logo{tc_cairo_image_asset_cover(context,logo,516,676,44,44)}
         cairo_restore(context)
     }
 

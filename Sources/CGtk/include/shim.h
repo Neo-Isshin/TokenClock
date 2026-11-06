@@ -739,3 +739,118 @@ static inline void tc_cairo_draw_text(
 }
 
 #endif
+
+#ifndef TC_GTK_PARITY_HELPERS
+#define TC_GTK_PARITY_HELPERS
+/* Borderless panels keep native resize cursors and the window manager's drag handling. */
+static inline int tc_panel_resize_edge(GtkWidget *widget, double root_x, double root_y) {
+    GdkWindow *window = gtk_widget_get_window(widget);
+    if (!window || !gtk_window_get_resizable(GTK_WINDOW(widget))) return -1;
+    int ox=0,oy=0;gdk_window_get_origin(window,&ox,&oy);
+    double x=root_x-ox,y=root_y-oy;
+    int w=gtk_widget_get_allocated_width(widget),h=gtk_widget_get_allocated_height(widget);
+    int l=x>=0&&x<6,r=x>=w-6&&x<w,t=y>=0&&y<6,b=y>=h-6&&y<h;
+    if ((l||r) && y<12) return l?GDK_WINDOW_EDGE_NORTH_WEST:GDK_WINDOW_EDGE_NORTH_EAST;
+    if ((l||r) && y>=h-12) return l?GDK_WINDOW_EDGE_SOUTH_WEST:GDK_WINDOW_EDGE_SOUTH_EAST;
+    if ((t||b) && x<12) return t?GDK_WINDOW_EDGE_NORTH_WEST:GDK_WINDOW_EDGE_SOUTH_WEST;
+    if ((t||b) && x>=w-12) return t?GDK_WINDOW_EDGE_NORTH_EAST:GDK_WINDOW_EDGE_SOUTH_EAST;
+    if(l)return GDK_WINDOW_EDGE_WEST;if(r)return GDK_WINDOW_EDGE_EAST;
+    if(t)return GDK_WINDOW_EDGE_NORTH;if(b)return GDK_WINDOW_EDGE_SOUTH;
+    return -1;
+}
+static inline gboolean tc_panel_resize_motion(GtkWidget *widget,GdkEventMotion *event,gpointer data) {
+    int edge=tc_panel_resize_edge(widget,event->x_root,event->y_root);
+    if(GPOINTER_TO_INT(g_object_get_data(G_OBJECT(widget),"tc-panel-edge"))==edge+2)return FALSE;
+    g_object_set_data(G_OBJECT(widget),"tc-panel-edge",GINT_TO_POINTER(edge+2));
+    const char *names[]={"nw-resize","n-resize","ne-resize","w-resize","e-resize","sw-resize","s-resize","se-resize"};
+    GdkWindow *window=gtk_widget_get_window(widget);
+    GdkCursor *cursor=edge<0?NULL:gdk_cursor_new_from_name(gtk_widget_get_display(widget),names[edge]);
+    if(window)gdk_window_set_cursor(window,cursor);if(cursor)g_object_unref(cursor);
+    return FALSE;
+}
+static inline gboolean tc_panel_resize_press(GtkWidget *widget,GdkEventButton *event,gpointer data) {
+    int edge=tc_panel_resize_edge(widget,event->x_root,event->y_root);
+    if(event->button!=1||edge<0)return FALSE;
+    gtk_window_begin_resize_drag(GTK_WINDOW(widget),(GdkWindowEdge)edge,event->button,event->x_root,event->y_root,event->time);
+    return TRUE;
+}
+static inline void tc_gtk_enable_panel_edge_resize(GtkWidget *widget) {
+    gtk_widget_add_events(widget,GDK_POINTER_MOTION_MASK|GDK_BUTTON_PRESS_MASK);
+    g_signal_connect(widget,"motion-notify-event",G_CALLBACK(tc_panel_resize_motion),NULL);
+    g_signal_connect(widget,"button-press-event",G_CALLBACK(tc_panel_resize_press),NULL);
+}
+static inline gulong tc_gtk_on_configure(GtkWidget *widget,
+    gboolean (*callback)(GtkWidget *,GdkEventConfigure *,gpointer),gpointer data) {
+    return g_signal_connect(widget,"configure-event",G_CALLBACK(callback),data);
+}
+
+#include "../../CToolboxShared/NetworkProbe.h"
+
+static inline GtkTextView *tc_gtk_text_view(GtkWidget *widget){return GTK_TEXT_VIEW(widget);}
+static inline void tc_gtk_store_data(GtkWidget *widget,const char *key,gpointer value,GDestroyNotify release){g_object_set_data_full(G_OBJECT(widget),key,value,release);}
+static inline gulong tc_gtk_on_text_changed(GtkTextBuffer *buffer,void (*callback)(GtkTextBuffer *,gpointer),gpointer data){return g_signal_connect(buffer,"changed",G_CALLBACK(callback),data);}
+static inline gboolean tc_gtk_confirm(GtkWindow *parent,const char *title,const char *text){
+    GtkWidget *dialog=gtk_message_dialog_new(parent,GTK_DIALOG_MODAL,GTK_MESSAGE_QUESTION,GTK_BUTTONS_YES_NO,"%s",text);
+    gtk_window_set_title(GTK_WINDOW(dialog),title);int response=gtk_dialog_run(GTK_DIALOG(dialog));gtk_widget_destroy(dialog);return response==GTK_RESPONSE_YES;
+}
+static inline char *tc_gtk_prompt_text(GtkWindow *parent,const char *title,const char *prompt,const char *initial){
+    GtkWidget *dialog=gtk_dialog_new_with_buttons(title,parent,GTK_DIALOG_MODAL,"Cancel",GTK_RESPONSE_CANCEL,"OK",GTK_RESPONSE_OK,NULL);
+    GtkWidget *box=gtk_dialog_get_content_area(GTK_DIALOG(dialog)),*label=gtk_label_new(prompt),*entry=gtk_entry_new();
+    gtk_container_set_border_width(GTK_CONTAINER(box),14);gtk_box_pack_start(GTK_BOX(box),label,FALSE,FALSE,6);gtk_box_pack_start(GTK_BOX(box),entry,FALSE,FALSE,6);gtk_entry_set_text(GTK_ENTRY(entry),initial);
+    gtk_widget_show_all(dialog);char *result=NULL;if(gtk_dialog_run(GTK_DIALOG(dialog))==GTK_RESPONSE_OK)result=g_strdup(gtk_entry_get_text(GTK_ENTRY(entry)));gtk_widget_destroy(dialog);return result;
+}
+static inline gboolean tc_quick_enter(GtkWidget *widget,GdkEventCrossing *event,gpointer data){
+    const char *text=g_object_get_data(G_OBJECT(widget),"tc-quick-expanded");if(text)gtk_button_set_label(GTK_BUTTON(widget),text);return FALSE;
+}
+static inline gboolean tc_quick_leave(GtkWidget *widget,GdkEventCrossing *event,gpointer data){
+    const char *text=g_object_get_data(G_OBJECT(widget),"tc-quick-icon");if(text)gtk_button_set_label(GTK_BUTTON(widget),text);return FALSE;
+}
+static inline void tc_gtk_quick_hover(GtkWidget *widget,const char *icon,const char *title){
+    g_object_set_data_full(G_OBJECT(widget),"tc-quick-icon",g_strdup(icon),g_free);
+    g_object_set_data_full(G_OBJECT(widget),"tc-quick-expanded",g_strdup_printf("%s %s",icon,title),g_free);
+    gtk_widget_add_events(widget,GDK_ENTER_NOTIFY_MASK|GDK_LEAVE_NOTIFY_MASK);
+    g_signal_connect(widget,"enter-notify-event",G_CALLBACK(tc_quick_enter),NULL);
+    g_signal_connect(widget,"leave-notify-event",G_CALLBACK(tc_quick_leave),NULL);
+}
+
+#endif
+
+static inline GtkWidget *tc_gtk_find_named(GtkWidget *widget,const char *name){
+    if(!widget)return NULL;const char *current=gtk_widget_get_name(widget);if(current&&strcmp(current,name)==0)return widget;
+    if(!GTK_IS_CONTAINER(widget))return NULL;GList *children=gtk_container_get_children(GTK_CONTAINER(widget));GtkWidget *found=NULL;
+    for(GList *item=children;item&&!found;item=item->next)found=tc_gtk_find_named(GTK_WIDGET(item->data),name);
+    g_list_free(children);return found;
+}
+static inline GtkWidget *tc_gtk_find_window(const char *name){
+    GList *windows=gtk_window_list_toplevels();GtkWidget *found=NULL;
+    for(GList *item=windows;item&&!found;item=item->next)found=tc_gtk_find_named(GTK_WIDGET(item->data),name);
+    g_list_free(windows);return found;
+}
+#include <sys/stat.h>
+static inline char *tc_gtk_file_identity(const char *path){
+    struct stat info;if(lstat(path,&info)!=0||!S_ISREG(info.st_mode))return NULL;
+    char value[180];snprintf(value,sizeof(value),"%llu:%llu:%lld:%ld",(unsigned long long)info.st_dev,(unsigned long long)info.st_ino,(long long)info.st_ctim.tv_sec,info.st_ctim.tv_nsec);return g_strdup(value);
+}
+static inline void *tc_gtk_image_asset_load(const char *path){
+    GdkPixbuf *pix=gdk_pixbuf_new_from_file_at_scale(path,1600,1600,TRUE,NULL);if(!pix)return NULL;
+    GdkPixbuf *oriented=gdk_pixbuf_apply_embedded_orientation(pix);g_object_unref(pix);return oriented;
+}
+static inline void tc_gtk_image_asset_free(void *asset){if(asset)g_object_unref(asset);}
+static inline void tc_cairo_image_asset_cover(cairo_t *cr,void *asset,double x,double y,double w,double h){
+    if(!asset)return;GdkPixbuf *pix=GDK_PIXBUF(asset);double iw=gdk_pixbuf_get_width(pix),ih=gdk_pixbuf_get_height(pix);if(iw<=0||ih<=0)return;
+    double scale=fmax(w/iw,h/ih);cairo_save(cr);cairo_rectangle(cr,x,y,w,h);cairo_clip(cr);cairo_translate(cr,x+(w-iw*scale)/2,y+(h-ih*scale)/2);cairo_scale(cr,scale,scale);gdk_cairo_set_source_pixbuf(cr,pix,0,0);cairo_paint(cr);cairo_restore(cr);
+}
+static inline char *tc_gtk_select_image(GtkWindow *parent,const char *title,const char *cancel,const char *open){
+    GtkWidget *dialog=gtk_file_chooser_dialog_new(title,parent,GTK_FILE_CHOOSER_ACTION_OPEN,cancel,GTK_RESPONSE_CANCEL,open,GTK_RESPONSE_ACCEPT,NULL);
+    GtkFileFilter *filter=gtk_file_filter_new();gtk_file_filter_set_name(filter,"Images");gtk_file_filter_add_pixbuf_formats(filter);gtk_file_chooser_add_filter(GTK_FILE_CHOOSER(dialog),filter);
+    char *file=NULL;if(gtk_dialog_run(GTK_DIALOG(dialog))==GTK_RESPONSE_ACCEPT)file=gtk_file_chooser_get_filename(GTK_FILE_CHOOSER(dialog));gtk_widget_destroy(dialog);return file;
+}
+static inline void tc_gtk_image_set_file_scaled(GtkWidget *widget,const char *file,int size){
+    GdkPixbuf *pix=gdk_pixbuf_new_from_file_at_scale(file,size,size,TRUE,NULL);if(!pix)return;gtk_image_set_from_pixbuf(GTK_IMAGE(widget),pix);g_object_unref(pix);
+}
+static inline void tc_gtk_button_file_icon(GtkWidget *widget,const char *file,int size){
+    GtkWidget *image=gtk_image_new();tc_gtk_image_set_file_scaled(image,file,size);gtk_button_set_image(GTK_BUTTON(widget),image);gtk_button_set_always_show_image(GTK_BUTTON(widget),TRUE);
+}
+
+static inline double tc_gtk_button_x(GdkEventButton *event){return event->x;}
+static inline double tc_gtk_button_y(GdkEventButton *event){return event->y;}

@@ -9,7 +9,8 @@ import Foundation
 /// 文件路径走 `PathConfig.swift`（已存在，不动）。
 enum AppConfig {
     /// Kept in sync with the release tag by scripts/release.sh validation.
-    static let version = "1.6.0"
+    static let version = "1.6.3"
+    static let macOSVariant = "normal"
 
     // MARK: - 外部 API endpoint
 
@@ -51,20 +52,25 @@ enum AppConfig {
         static let cursorPageSize = 200
         /// JSONL 流式读取缓冲（64KB，平衡内存和 IO 效率）
         static let jsonlBufferSize = 65_536
-        /// 仅扫描今天与昨天的 Codex rollout，覆盖跨日长会话同时限制冷启动成本。
+        /// Codex 面板只消费当日与最近数据。保留今天+昨天的 rollout，覆盖跨日长会话，
+        /// 避免冷启动为当前用量反复解析整个历史目录。
         static let codexSessionLookbackDays = 2
         /// Gemini 面板同样只展示当日/最近用量；保留今天+昨天以覆盖跨日会话。
         static let geminiSessionLookbackDays = 2
+        /// Codex 额度在面板打开或选为表盘额度环时读取；短缓存避免反复开 app-server。
+        static let codexQuotaCacheSeconds: TimeInterval = 60
+        /// app-server 异常时必须及时回收子进程，不能让详情页点击产生常驻后台任务。
+        static let codexQuotaTimeoutSeconds: TimeInterval = 8
+        /// 本地 rollout 兜底只读取最新文件尾部，不为额度查询重扫完整历史。
+        static let codexQuotaFallbackTailBytes = 2_097_152
+        static let codexQuotaFallbackFileLimit = 32
+        /// Claude Code 额度端点限制较严；只在面板打开时请求，并缓存 5 分钟。
+        static let claudeQuotaCacheSeconds: TimeInterval = 180
+        static let claudeQuotaTimeoutSeconds: TimeInterval = 8
         /// "活跃工具" 判定窗口（10 分钟内有调用算活跃）
         static let activeThresholdSeconds: TimeInterval = 600
         /// "最近 token" 默认窗口（分钟）
         static let defaultRecentWindowMinutes = 10
-        static let codexQuotaCacheSeconds: TimeInterval = 60
-        static let codexQuotaTimeoutSeconds: TimeInterval = 8
-        static let codexQuotaFallbackTailBytes = 2_097_152
-        static let codexQuotaFallbackFileLimit = 32
-        static let claudeQuotaCacheSeconds: TimeInterval = 300
-        static let claudeQuotaTimeoutSeconds: TimeInterval = 8
         static let oneDaySeconds: TimeInterval = 86_400
     }
 

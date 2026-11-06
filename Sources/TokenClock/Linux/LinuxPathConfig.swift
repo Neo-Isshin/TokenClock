@@ -21,6 +21,10 @@ enum PathConfig {
     static func antigravityHome() -> String { home(.antigravity, key: "antigravityPath") }
     static func clineHome() -> String { home(.cline, key: "clinePath") }
     static func continueHome() -> String { home(.continue, key: "continuePath") }
+    static func kiroSessionsHome() -> String { customPath(forKey: "kiroSessionsPath") ?? NSHomeDirectory() + "/.kiro/sessions/cli" }
+    static func zcodeHome() -> String { home(.zcode,key:"zcodePath") }
+    static func zcodeCandidates() -> [String] { candidates(.zcode) }
+    static func setZcodePath(_ path: String) { setCustomPath(path, forKey: "zcodePath") }
     static func cursorAgentHome() -> String { home(.cursorAgent, key: "cursorAgentPath") }
 
     static func opencodeDatabasePath() -> String {

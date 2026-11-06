@@ -41,6 +41,49 @@ final class ReleaseUpdateServiceTests: XCTestCase {
         }
     }
 
+    func testScheduledChecksUseRollingTwelveHoursAndPreserveNoticeReadState() throws {
+        let checker = service(#"{"tag_name":"v1.6.1","draft":false,"prerelease":false}"#)
+        check(checker)
+        let id = try XCTUnwrap(checker.notifications().first?.id)
+        checker.markRead()
+        XCTAssertEqual(checker.nextCheckDate(now: now), now.addingTimeInterval(43200))
+        XCTAssertFalse(checker.checkDaily(now: now.addingTimeInterval(43199)))
+        let done = expectation(description: "Half-day check")
+        XCTAssertTrue(checker.checkDaily(now: now.addingTimeInterval(43200)) { done.fulfill() })
+        wait(for: [done], timeout: 3)
+        XCTAssertEqual(checker.notifications().first?.id, id)
+        XCTAssertTrue(checker.notifications().first?.isRead == true)
+    }
+
+    func testManualCheckBypassesDailyThrottleAndPreservesReadState() throws {
+        let checker = service(#"{"tag_name":"v1.5.11","draft":false,"prerelease":false,"html_url":"https://evil.example/"}"#)
+        check(checker)
+        checker.markRead()
+        let done = expectation(description:"Manual check")
+        checker.checkNow { result in
+            XCTAssertEqual(result,.available(version:"1.5.11",url:URL(string:"https://www.ailyre.com/tokenclock/releases/v1.5.11/")!))
+            done.fulfill()
+        }
+        wait(for:[done],timeout:3)
+        XCTAssertEqual(checker.notifications().first?.isRead,true)
+        XCTAssertFalse(checker.checkDaily(now:now,calendar:calendar))
+    }
+
+    func testManualCheckDistinguishesUnavailableFromCurrent() {
+        let cases: [(String?, ReleaseUpdateService.CheckResult)] = [
+            (nil,.unavailable), ("<html>offline</html>",.unavailable),
+            (#"{"tag_name":"v9.0.0","draft":true,"prerelease":false}"#,.unavailable),
+            (#"{"tag_name":"v9.0.0-rc.1","draft":false,"prerelease":false}"#,.unavailable),
+            (#"{"tag_name":"v1.5.9","draft":false,"prerelease":false}"#,.current),
+            (#"{"tag_name":"v1.5.8","draft":false,"prerelease":false}"#,.current),
+        ]
+        for (body,expected) in cases {
+            let done = expectation(description:"Manual result")
+            service(body).checkNow { result in XCTAssertEqual(result,expected); done.fulfill() }
+            wait(for:[done],timeout:3)
+        }
+    }
+
     func testNewReleaseCreatesSafeActionableNoticeAndPersistsReadState() throws {
         let checker = service(#"{"tag_name":"v1.5.11","draft":false,"prerelease":false,"html_url":"https://evil.example/"}"#)
         check(checker)
@@ -116,13 +159,14 @@ final class ReleaseUpdateServiceTests: XCTestCase {
         wait(for: [finished], timeout: 2)
     }
 
-    func testLocalMidnightResetsThrottleAcrossDST() {
+    func testLocalMidnightDoesNotBypassTwelveHourThrottleAcrossDST() {
         calendar.timeZone = TimeZone(identifier: "America/Los_Angeles")!
         now = calendar.date(from: DateComponents(year: 2026, month: 11, day: 1, hour: 23, minute: 59))!
         let checker = service(nil)
         check(checker)
-        let done = expectation(description: "Next local day")
-        XCTAssertTrue(checker.checkDaily(now: now.addingTimeInterval(120), calendar: calendar) { done.fulfill() })
+        XCTAssertFalse(checker.checkDaily(now: now.addingTimeInterval(120), calendar: calendar))
+        let done = expectation(description: "Twelve hours later")
+        XCTAssertTrue(checker.checkDaily(now: now.addingTimeInterval(12 * 3600), calendar: calendar) { done.fulfill() })
         wait(for: [done], timeout: 2)
     }
 
@@ -130,5 +174,19 @@ final class ReleaseUpdateServiceTests: XCTestCase {
         let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         let cli = try String(contentsOf: root.appendingPathComponent("cli/tokenclock"), encoding: .utf8)
         XCTAssertTrue(cli.contains("CLI_VERSION=\"\(AppConfig.version)\""), "Bump AppConfig.version with every release")
+    }
+
+    func testLiveSelfHostedReleaseWhenEnabled() throws {
+        guard ProcessInfo.processInfo.environment["TOKENCLOCK_TEST_LIVE_RELEASE"] == "1" else {
+            throw XCTSkip("Opt in to verify the public release endpoint")
+        }
+        let checker = ReleaseUpdateService(defaults: defaults, installedVersion: "0.0.0")
+        let done = expectation(description: "Self-hosted release check")
+        checker.checkNow { result in
+            XCTAssertEqual(result, .available(version: AppConfig.version,
+                url: ReleaseUpdateService.releaseURL(tag: "v" + AppConfig.version)))
+            done.fulfill()
+        }
+        wait(for: [done], timeout: 30)
     }
 }

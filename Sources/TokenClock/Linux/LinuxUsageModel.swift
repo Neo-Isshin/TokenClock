@@ -16,6 +16,10 @@ final class LinuxUsageModel: @unchecked Sendable {
     private var storedRateWindowMinutes: Int
     private var scanning = false
     private var storedNotifications: [TokenClockNotification] = []
+    private var storedContentNotices:[TokenClockNotification]=[]
+    private var allowedNotificationCategories=Set(NotificationCategory.allCases)
+    func setNotificationPreferences(_ values:Set<NotificationCategory>){lock.lock();allowedNotificationCategories=values;lock.unlock()}
+    func setContentNotices(_ values:[TokenClockNotification]){lock.lock();storedContentNotices=values;lock.unlock()}
 
     // Construct parsers only after init-time Linux catalog detection has saved
     // any alternate path. Otherwise an alternate would take effect only after
@@ -34,13 +38,14 @@ final class LinuxUsageModel: @unchecked Sendable {
     private lazy var clineService = ClineUsageService()
     private let additionalHarnessServices = AdditionalHarness.allCases.map { HarnessUsageService($0) }
     private lazy var continueService = ContinueUsageService()
+    private lazy var zcodeService=ZCodeUsageService()
     private lazy var cursorAgentService = CursorAgentUsageService(onHourlyUpdate: HourlyHistoryStore.saveCursor)
 
     static let allToolNames = Set([
         "OpenClaw", "Claude Code", "Gemini CLI", "Codex", "Hermes", "OpenCode",
         "Qwen Code", "Copilot", "Grok", "Aider", "Antigravity", "Cline",
-        "Continue", "Cursor Agent", "Kilo Code", "Pi", "OMP", "Freebuff", "Command Code",
-    ])
+        "Continue", "Cursor Agent", "ZCode",
+    ] + AdditionalHarness.allCases.map(\.name))
 
     init() {
         let saved = UserDefaults.standard.stringArray(for: .enabledTools)
@@ -144,7 +149,9 @@ final class LinuxUsageModel: @unchecked Sendable {
         if enabled.contains("Continue") { incremental ? continueService.incrementalScan() : continueService.fullScan() }
         if enabled.contains("Cursor Agent") { incremental ? cursorAgentService.incrementalScan() : cursorAgentService.fullScan() }
 
+        if enabled.contains("ZCode"){incremental ? zcodeService.incrementalScan():zcodeService.fullScan()}
         let hourlySources: [(String, [String: HourlyUsage])] = [
+            ("ZCode",zcodeService.hourlyData),
             ("Codex", codexService.hourlyData),
             ("Claude Code", claudeCodeService.hourlyData),
             ("Gemini CLI", geminiService.hourlyData),
@@ -241,6 +248,10 @@ final class LinuxUsageModel: @unchecked Sendable {
             )
         }
 
+        if enabled.contains("ZCode"){
+            let usage=zcodeService.todayUsage()
+            results["ZCode"]=snapshot(usage,zcodeService.recentUsage(minutes:rateWindow).tokens,zcodeService.currentHourTokens(),zcodeService.isActive(),zcodeService.todaySessions(),cost:zcodeService.todayCost(),cacheRead:zcodeService.todayCacheReadTokens())
+        }
         lock.lock()
         for (name, result) in results {
             guard let index = storedTools.firstIndex(where: { $0.name == name }) else { continue }
@@ -273,26 +284,26 @@ final class LinuxUsageModel: @unchecked Sendable {
 
     var notifications: [TokenClockNotification] {
         lock.lock(); defer { lock.unlock() }
-        return (storedNotifications + BillingReminderStore.notifications(accounts: SubscriptionAccountStore.shared.records())
+        return (storedNotifications + storedContentNotices + BillingReminderStore.notifications(accounts: SubscriptionAccountStore.shared.records())
                 + ReleaseUpdateService.shared.notifications())
+            .filter{allowedNotificationCategories.contains(NotificationCategory.category(for:$0))}
             .sorted { $0.createdAt > $1.createdAt }
     }
 
     var unreadNotificationCount: Int { notifications.filter { !$0.isRead }.count }
 
-    func markNotificationsRead() {
-        BillingReminderStore.markRead()
-        ReleaseUpdateService.shared.markRead()
-        lock.lock(); defer { lock.unlock() }
-        storedNotifications = storedNotifications.map { notification in
-            var copy = notification
-            copy.isRead = true
-            return copy
-        }
+    func markNotificationsRead(_ visible:[TokenClockNotification]?=nil) {
+        let notices=visible ?? notifications,ids=Set(notices.map(\.id))
+        if notices.contains(where:{$0.subscriptionAccountID != nil}){BillingReminderStore.markRead()}
+        if notices.contains(where:{$0.releaseURL != nil}){ReleaseUpdateService.shared.markRead()}
+        lock.lock();defer{lock.unlock()}
+        storedNotifications=storedNotifications.map{notification in var copy=notification;if ids.contains(copy.id){copy.isRead=true};return copy}
+        storedContentNotices=storedContentNotices.map{notification in var copy=notification;if ids.contains(copy.id){copy.isRead=true};return copy}
     }
 
     private func appendPendingReports() {
-        ReleaseUpdateService.shared.checkDaily()
+        lock.lock();let checkUpdates=allowedNotificationCategories.contains(.updates);lock.unlock()
+        if checkUpdates{ReleaseUpdateService.shared.checkDaily()}
         let reports = UsageReportScheduler.generatePendingReports()
         guard !reports.isEmpty else { return }
         lock.lock()
@@ -486,6 +497,7 @@ final class LinuxUsageModel: @unchecked Sendable {
             case "cline": PathConfig.setClinePath(result.detectedPath)
             case "continue": PathConfig.setContinuePath(result.detectedPath)
             case "cursorAgent": PathConfig.setCursorAgentPath(result.detectedPath)
+            case "zcode":PathConfig.setZcodePath(result.detectedPath)
             default: break
             }
         }

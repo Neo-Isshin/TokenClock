@@ -1,11 +1,11 @@
 import Foundation
-#if canImport(FoundationNetworking)
+#if canImport(FoundationNetworking) && !os(Windows)
 import FoundationNetworking
 #endif
-#if os(Linux)
-import CSQLite
-#else
+#if os(macOS)
 import SQLite3
+#else
+import CSQLite
 #endif
 
 /// 通过 Cursor 官方 usage API 拉取 token 消耗。
@@ -29,13 +29,17 @@ final class CursorAgentUsageService: @unchecked Sendable {
         "gpt-", "claude-", "gemini-", "grok-", "composer-", "o1-", "o3-", "o4-",
     ]
     /// Cursor occasionally namespaces third-party model IDs as `cursor-<vendor model>`.
-    /// Strip that transport prefix only for known model families so Cursor-owned names
-    /// such as `cursor-small` remain intact.
+    /// Strip that transport prefix only when the remainder starts with a known model
+    /// family. Cursor-owned names such as `cursor-small` must stay intact.
     private static let dashboardCursorAliasFamilies: Set<String> = [
         "chatgpt", "gpt", "o1", "o3", "o4", "claude", "gemini", "grok",
         "qwen", "minimax", "mistral", "deepseek", "kimi", "moonshot", "glm",
         "llama", "command", "nova", "composer",
     ]
+
+    static var cloudFetchEnabled: Bool {
+        UserDefaults.standard.bool(for: .cursorCloudFetchEnabled, default: true)
+    }
 
     private(set) var dailyData: [String: DayUsage] = [:]
     private(set) var hourlyData: [String: HourlyUsage] = [:]
@@ -47,12 +51,16 @@ final class CursorAgentUsageService: @unchecked Sendable {
     private var dailyModelCache: [String: [String: Int]] = [:]
     private var dailyModelLatestActivity: [String: [String: Date]] = [:]
     private var recentEntries: [RecentEntry] = []
+    /// Grok Bot can consume a Cursor subscription while reporting synthetic
+    /// `grok-bot-*` model names. Keep that product usage separate from direct Cursor use.
     private var dailyGrokBotData: [String: DayUsage] = [:]
     private var hourlyGrokBotData: [String: HourlyUsage] = [:]
     private var dailyGrokBotCache: [String: Int] = [:]
     private var recentGrokBotEntries: [RecentEntry] = []
 
+#if !os(Windows)
     private let session: URLSession
+#endif
     private var sessionToken: String?
     private var userId: String?
     private var lastFetchTime: Date = .distantPast
@@ -60,11 +68,13 @@ final class CursorAgentUsageService: @unchecked Sendable {
     private let onHourlyUpdate: (@Sendable ([String: HourlyUsage], [String: HourlyUsage]) -> Void)?
     init(onHourlyUpdate: (@Sendable ([String: HourlyUsage], [String: HourlyUsage]) -> Void)? = nil) {
         self.onHourlyUpdate = onHourlyUpdate
+#if !os(Windows)
         let config = URLSessionConfiguration.default
         config.timeoutIntervalForRequest = AppConfig.HTTP.requestTimeout
         config.timeoutIntervalForResource = AppConfig.HTTP.resourceTimeout
         config.httpCookieStorage = nil  // 不使用系统 cookie storage
         session = URLSession(configuration: config)
+#endif
     }
 
     func fullScan() {
@@ -113,8 +123,11 @@ final class CursorAgentUsageService: @unchecked Sendable {
         let usage = dailyGrokBotData[DateHelper.todayKey()]
         let cache = dailyGrokBotCache[DateHelper.todayKey()] ?? 0
         let tokens = usage?.tokens ?? 0
-        return (tokens, usage?.messages ?? 0,
-                TokenAccounting.cacheReadShare(freshTokens: tokens, cacheRead: cache))
+        return (
+            tokens,
+            usage?.messages ?? 0,
+            TokenAccounting.cacheReadShare(freshTokens: tokens, cacheRead: cache)
+        )
     }
 
     func todayGrokBotModelBuckets() -> [String: ModelBuckets] {
@@ -169,6 +182,18 @@ final class CursorAgentUsageService: @unchecked Sendable {
     private func refreshCredentialsIfNeeded() async {
         if sessionToken != nil && userId != nil { return }
         loadCredentialsFromStateDb()
+        if sessionToken == nil,
+           let native = GrokBotNativeCredentialStore.shared.currentCredential {
+            sessionToken = native.accessToken
+            userId = native.userID
+        }
+    }
+
+    /// Called after the user explicitly authorizes Grok Bot native credentials.
+    func resetCredentials() {
+        sessionToken = nil
+        userId = nil
+        lastFetchTime = .distantPast
     }
 
     /// 同步从 Cursor IDE 的 state.vscdb 读 access token
@@ -194,9 +219,14 @@ final class CursorAgentUsageService: @unchecked Sendable {
         userId = uid
     }
 
-    /// Cursor IDE 的 state.vscdb 路径（macOS: Library，Linux: XDG config）
+    /// Cursor IDE 的 state.vscdb 路径。Settings 中可填写 globalStorage 目录，也可直接
+    /// 填写 state.vscdb；Windows 默认映射到 %APPDATA%\Cursor\User\globalStorage。
     private func cursorStateDbPath() -> String {
-#if os(Linux)
+        #if os(Windows)
+        let configured = PathConfig.cursorAgentHome()
+        if configured.lowercased().hasSuffix(".vscdb") { return configured }
+        return configured + "/state.vscdb"
+        #elseif os(Linux)
         let configured = PathConfig.cursorAgentHome()
         let candidates: [String]
         if configured.hasSuffix(".vscdb") {
@@ -209,9 +239,9 @@ final class CursorAgentUsageService: @unchecked Sendable {
         }
         return candidates.first(where: { FileManager.default.isReadableFile(atPath: $0) })
             ?? candidates[0]
-#else
-        AppPaths.appSupport("Cursor", "User", "globalStorage", "state.vscdb")
-#endif
+        #else
+        return AppPaths.appSupport("Cursor", "User", "globalStorage", "state.vscdb")
+        #endif
     }
 
     /// 从 token 提取 userId
@@ -248,14 +278,16 @@ final class CursorAgentUsageService: @unchecked Sendable {
 
     private func fetchUsageData(timeRangeDays: Int) async {
         // 用户可在设置中关闭 Cursor 云端获取，避免凭证外发 cursor.com
-        guard UserDefaults.standard.bool(for: .cursorCloudFetchEnabled, default: true) else { return }
+        guard Self.cloudFetchEnabled else { return }
         guard let token = sessionToken, let uid = userId else { return }
 
         let nowMs = Int(Date().timeIntervalSince1970 * 1000)
         let startMs = nowMs - timeRangeDays * 24 * 60 * 60 * 1000
 
-        guard let url = URL(string: "\(AppConfig.API.cursorBase)/dashboard/get-filtered-usage-events") else { return }
+        let endpoint = "\(AppConfig.API.cursorBase)/dashboard/get-filtered-usage-events"
 
+#if !os(Windows)
+        guard let url = URL(string: endpoint) else { return }
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -263,6 +295,7 @@ final class CursorAgentUsageService: @unchecked Sendable {
         request.setValue(AppConfig.API.cursorOrigin, forHTTPHeaderField: "Origin")
         request.setValue(AppConfig.API.cursorDashboard, forHTTPHeaderField: "Referer")
         request.setValue(AppConfig.HTTP.userAgent, forHTTPHeaderField: "User-Agent")
+#endif
 
         // Cookie 格式：WorkosCursorSessionToken=user_XXX%3A%3AJWT
         let cookieValue: String
@@ -271,7 +304,18 @@ final class CursorAgentUsageService: @unchecked Sendable {
         } else {
             cookieValue = "\(uid)%3A%3A\(token)"
         }
+#if os(Windows)
+        let requestHeaders = [
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "Origin": AppConfig.API.cursorOrigin,
+            "Referer": AppConfig.API.cursorDashboard,
+            "User-Agent": AppConfig.HTTP.userAgent,
+            "Cookie": "WorkosCursorSessionToken=\(cookieValue)",
+        ]
+#else
         request.setValue("WorkosCursorSessionToken=\(cookieValue)", forHTTPHeaderField: "Cookie")
+#endif
 
         // 分页拉满整个窗口：单页 pageSize=200，超过部分曾被静默丢弃。
         // 循环直到某页返回 < pageSize（最后一页）/ 空 / 非 200，安全上限 100 页（=20000 事件，30 天远超）。
@@ -289,18 +333,35 @@ final class CursorAgentUsageService: @unchecked Sendable {
                 "page": page,
                 "pageSize": AppConfig.Scan.cursorPageSize
             ]
-            request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+            guard let requestBody = try? JSONSerialization.data(withJSONObject: body) else { break }
 
             do {
+#if os(Windows)
+                let nativeResponse = try WindowsNativeHTTP.request(
+                    url: endpoint,
+                    method: "POST",
+                    headers: requestHeaders,
+                    body: requestBody,
+                    connectTimeout: AppConfig.HTTP.requestTimeout,
+                    sendTimeout: AppConfig.HTTP.requestTimeout,
+                    receiveTimeout: AppConfig.HTTP.resourceTimeout,
+                    maximumResponseBytes: 8 * 1024 * 1024
+                )
+                let data = nativeResponse.body
+                let statusCode = nativeResponse.statusCode
+#else
+                request.httpBody = requestBody
                 let (data, response) = try await session.data(for: request)
                 guard let http = response as? HTTPURLResponse else { break }
+                let statusCode = http.statusCode
+#endif
 
                 // 401/403：token 过期，清空凭据，下次扫描重新读；停止翻页
-                if http.statusCode == 401 || http.statusCode == 403 {
+                if statusCode == 401 || statusCode == 403 {
                     sawAuthError = true
                     break
                 }
-                guard http.statusCode == 200 else { break }   // 翻页中途非 200：停止，保留已拿到的事件
+                guard statusCode == 200 else { break }   // 翻页中途非 200：停止，保留已拿到的事件
 
                 guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                       let events = json["usageEventsDisplay"] as? [[String: Any]] else { break }
@@ -488,6 +549,10 @@ final class CursorAgentUsageService: @unchecked Sendable {
         return 0
     }
 
+    /// Cursor appends route markers in several orders, for example
+    /// `-thinking-medium`, `-high-thinking-fast`, or after a dated model ID.
+    /// Peel those markers only on Cursor data, then let the shared normalizer
+    /// remove an exposed date suffix. Official names from other providers stay intact.
     static func normalizeDashboardModel(_ raw: String?) -> String? {
         guard var model = raw?.trimmingCharacters(in: .whitespacesAndNewlines), !model.isEmpty else {
             return nil
@@ -495,12 +560,12 @@ final class CursorAgentUsageService: @unchecked Sendable {
         model = stripKnownCursorAliasPrefix(from: model)
         var removedRouteMarker = false
         let lowercasedModel = model.lowercased()
-        let knownMaxEffortFamily = dashboardMaxEffortFamilies.contains {
+        let knownMaxEffortFamily = Self.dashboardMaxEffortFamilies.contains {
             lowercasedModel.hasPrefix($0)
         }
         while let separator = model.lastIndex(of: "-") {
             let marker = model[model.index(after: separator)...].lowercased()
-            guard dashboardRouteMarkers.contains(marker)
+            guard Self.dashboardRouteMarkers.contains(marker)
                     || (marker == "max" && (removedRouteMarker || knownMaxEffortFamily)) else { break }
             model.removeSubrange(separator...)
             removedRouteMarker = true
@@ -562,10 +627,14 @@ final class CursorAgentUsageService: @unchecked Sendable {
         }.map { model, usage in
             let buckets = dailyModelBuckets[today]?[model]
             return SessionInfo(
-                rawId: "cursor:\(model)", displayName: model, detail: nil,
-                todayTokens: usage.tokens, todayMessages: usage.messages,
+                rawId: "cursor:\(model)",
+                displayName: model,
+                detail: nil,
+                todayTokens: usage.tokens,
+                todayMessages: usage.messages,
                 isActive: (dailyModelLatestActivity[today]?[model] ?? .distantPast) >= activeCutoff,
-                source: "Cursor", model: model,
+                source: "Cursor",
+                model: model,
                 todayCost: buckets.map { PricingService.shared.cost(of: [model: $0]) } ?? .unavailable,
                 cacheReadTokens: dailyModelCache[today]?[model] ?? 0
             )

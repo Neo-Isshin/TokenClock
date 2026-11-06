@@ -39,6 +39,7 @@ struct UsageOverviewDay: Identifiable, Sendable {
     var id: String { dateKey }
     let dateKey: String
     let metrics: UsageOverviewMetrics
+    /// 当天按当前 grouping 聚合的明细，供 30 天热力格悬停展示。
     let rows: [UsageOverviewRow]
 }
 
@@ -121,13 +122,23 @@ enum UsageOverviewBuilder {
         }
 
         let days = (bucketKeys ?? dateKeys(from: startDate, through: endDate)).map { key in
-            UsageOverviewDay(dateKey: key, metrics: dayMetrics[key] ?? .zero, rows: dayRows[key] ?? [])
+            UsageOverviewDay(
+                dateKey: key,
+                metrics: dayMetrics[key] ?? .zero,
+                rows: dayRows[key] ?? []
+            )
         }
-        let rows = makeRows(from: grouped, grouping: grouping, includingCacheRead: includingCacheRead)
+        let rows = makeRows(
+            from: grouped, grouping: grouping,
+            includingCacheRead: includingCacheRead
+        )
         let finalSummary = summary.metrics
         return UsageOverviewData(
-            startDate: startDate, endDate: endDate, summary: finalSummary,
-            days: days, rows: rows,
+            startDate: startDate,
+            endDate: endDate,
+            summary: finalSummary,
+            days: days,
+            rows: rows,
             containsLegacyCacheEstimate: !finalSummary.cacheIsExact,
             containsUnavailableCost: finalSummary.displayedTokens(includingCacheRead: includingCacheRead) > 0 &&
                 (!finalSummary.cost.available || !finalSummary.cost.complete),
@@ -179,7 +190,8 @@ enum UsageOverviewBuilder {
     }
 
     private static func makeRows(
-        from grouped: [String: Accumulator], grouping: UsageOverviewGrouping,
+        from grouped: [String: Accumulator],
+        grouping: UsageOverviewGrouping,
         includingCacheRead: Bool
     ) -> [UsageOverviewRow] {
         grouped.map { name, accumulator in
@@ -292,6 +304,7 @@ enum UsageOverviewBuilder {
         case "Continue": return "▶️"
         case "Cursor Agent": return "💎"
         case "Grok Bot": return "😶"
+        case "ZCode": return "🅉"
         default: return "🧰"
         }
     }
@@ -326,8 +339,11 @@ enum UsageOverviewBuilder {
             if let exactCache {
                 cacheReadTokens += max(0, exactCache)
             } else if tokens > 0 || fallbackCacheRate > 0 {
-                let rate = min(0.999_999, max(0, fallbackCacheRate))
-                if rate > 0, tokens > 0 {
+                // Legacy rows only have a ratio. A non-finite value or a ratio outside
+                // [0, 1) is not invertible and must never be clamped near 100%: doing so
+                // turns a one-million-token row into a trillion-token estimate.
+                let rate = fallbackCacheRate
+                if rate.isFinite, rate > 0, rate < 1, tokens > 0 {
                     cacheReadTokens += Int((Double(tokens) * rate / (1 - rate)).rounded())
                 }
                 cacheIsExact = false

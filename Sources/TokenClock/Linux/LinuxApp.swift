@@ -16,12 +16,14 @@ final class LinuxApp: @unchecked Sendable {
     private var overviewWindow: LinuxUsageOverviewWindow?
     private var shareWindow: LinuxUsageShareWindow?
     private var notificationWindow: LinuxNotificationWindow?
+    private var toolboxes: LinuxToolboxes?
     private var themeItems: [LinuxClockTheme: UnsafeMutablePointer<GtkWidget>] = [:]
     private var sizeItems: [LinuxClockSize: UnsafeMutablePointer<GtkWidget>] = [:]
     private var opacityItems: [Int: UnsafeMutablePointer<GtkWidget>] = [:]
     private var timezoneItems: [String: UnsafeMutablePointer<GtkWidget>] = [:]
     private var languageItems: [AppLanguage: UnsafeMutablePointer<GtkWidget>] = [:]
     private var leftButtonDown = false
+    private var pressedQuotaIndex:Int?
     private var dragStarted = false
     private var pressRootX: Double = 0
     private var pressRootY: Double = 0
@@ -86,6 +88,7 @@ final class LinuxApp: @unchecked Sendable {
         scheduleScan(incremental: false)
         refreshWeather()
 
+        _ = tc_gtk_timeout_add(50, linuxFoundationTick, opaque)
         _ = tc_gtk_timeout_add(1_000, linuxClockTick, opaque)
         _ = tc_gtk_timeout_add_seconds(
             guint(max(1, Int(AppConfig.Timers.dataScan))),
@@ -191,6 +194,39 @@ final class LinuxApp: @unchecked Sendable {
             self?.notificationWindow?.hide()
             self?.overviewWindow?.show(route: route)
         }
+        let parentAddress=UInt(bitPattern:createdWindow)
+        MainActor.assumeIsolated {
+            let tools=LinuxToolboxes(parent:UnsafeMutablePointer<GtkWidget>(bitPattern:parentAddress)!,navigate:{ [weak self] tool in
+                guard let self else{return}
+                switch tool {
+                case .quota:self.detailsPanel?.showQuotaWindow()
+                case .history:self.overviewWindow?.show()
+                case .share:self.shareWindow?.show()
+                default:break
+                }
+            })
+            toolboxes=tools
+            tools.onNotificationPreferences={ [weak self] values in self?.model.setNotificationPreferences(values) }
+            tools.onContentChange={ [weak self] notices in self?.model.setContentNotices(notices);self?.updateDetailsPanel() }
+            tools.onQuickActionsChange={ [weak self] in self?.detailsPanel?.refreshQuickActions() }
+            tools.isNewsVisible={ [weak self] in self?.detailsPanel?.isNewsPresented == true && self?.detailsPanel?.isVisible == true }
+            tools.onNewsBack={ [weak self] in self?.detailsPanel?.setNewsPresented(false) }
+            detailsPanel?.setNewsWidget(tools.makeNewsWidget())
+            detailsPanel?.onQuickTool={ [weak tools] tool in MainActor.assumeIsolated{tools?.open(tool)} }
+            detailsPanel?.onEditQuickTools={ [weak tools] in MainActor.assumeIsolated{tools?.showQuickEditor()} }
+            detailsPanel?.onNewsVisibility={ [weak tools] visible in MainActor.assumeIsolated{tools?.setViewingNews(visible);if visible{tools?.showNews()}} }
+            notificationWindow?.onRead={ [weak self,weak tools] notices in
+                self?.model.markNotificationsRead(notices)
+                MainActor.assumeIsolated{tools?.markRead(notices)}
+                self?.updateDetailsPanel()
+            }
+            notificationWindow?.onNews={ [weak self,weak tools] id in
+                self?.detailsPanel?.setNewsPresented(true)
+                MainActor.assumeIsolated{tools?.showNews(focused:id)}
+            }
+            notificationWindow?.onNotebook={ [weak tools] id in MainActor.assumeIsolated{tools?.showNotebook(selected:id)} }
+            tools.start()
+        }
         buildContextMenu()
 
         gtk_widget_show_all(createdWindow)
@@ -209,6 +245,19 @@ final class LinuxApp: @unchecked Sendable {
             detailsPanel?.showQuotaWindow()
         }
     }
+
+    private func restartApplication(){
+        let executable=ProcessInfo.processInfo.environment["APPIMAGE"] ?? ProcessInfo.processInfo.arguments[0]
+        do{
+            try LinuxAppRestart.schedule(executable:executable,oldPID:ProcessInfo.processInfo.processIdentifier,arguments:Array(CommandLine.arguments.dropFirst()))
+            model.persistCurrentUsage();MainActor.assumeIsolated{toolboxes?.stop()};gtk_main_quit()
+        }catch{if let window{tc_gtk_show_message(window,GTK_MESSAGE_ERROR,L10n.shared.tr("restart.failed"),L10n.shared.tr("restart.failedBody"))}}
+    }
+    private func showSummary(){
+        detailsPanel?.prepareSummaryQuotas()
+        MainActor.assumeIsolated{toolboxes?.showSummary(tools:model.tools,quotas:detailsPanel?.summaryQuotas ?? [],activeIDs:detailsPanel?.summaryActiveAccountIDs ?? [:])}
+    }
+    fileprivate func pumpFoundation(){_ = RunLoop.main.run(mode:.default,before:Date())}
 
     private func buildContextMenu() {
         themeItems.removeAll()
@@ -234,6 +283,10 @@ final class LinuxApp: @unchecked Sendable {
         gtk_menu_item_set_submenu(tc_gtk_menu_item(generalRoot), generalMenu)
         gtk_menu_shell_append(tc_gtk_menu_shell(root), generalRoot)
 
+        appendMenuItem(L10n.shared.tr("status.summary"),name:"menu:summary",to:generalMenu)
+        appendMenuItem(L10n.shared.tr("menu.checkUpdate"),name:"menu:updates",to:generalMenu)
+        appendMenuItem(L10n.shared.tr("menu.restart"),name:"menu:restart",to:generalMenu)
+        appendMenuItem(toolboxText("通知设置","Notification settings"),name:"menu:notification-settings",to:generalMenu)
         appendMenuItem(L10n.shared.tr("menu.clockFace"), name: "theme-picker", to: appearanceMenu)
         if let iconsRoot = gtk_menu_item_new_with_label(BrandIconStyle.menuTitle),
            let iconsMenu = gtk_menu_new() {
@@ -439,11 +492,12 @@ final class LinuxApp: @unchecked Sendable {
 
     private func showNotifications() {
         notificationWindow?.show(model.notifications)
-        model.markNotificationsRead()
         updateDetailsPanel()
     }
 
     fileprivate func refreshClock() {
+        detailsPanel?.tickQuotaPage()
+        MainActor.assumeIsolated{toolboxes?.tick();toolboxes?.updateSummary(tools:model.tools,quotas:detailsPanel?.summaryQuotas ?? [],activeIDs:detailsPanel?.summaryActiveAccountIDs ?? [:])}
         if let dial { gtk_widget_queue_draw(dial) }
     }
 
@@ -468,14 +522,20 @@ final class LinuxApp: @unchecked Sendable {
     }
 
     fileprivate func handleButtonPress(event: UnsafeMutablePointer<GdkEventButton>) {
+        let quotaIndex:Int?
+        if let dial{
+            quotaIndex=renderer.quotaRingIndex(atX:tc_gtk_button_x(event),y:tc_gtk_button_y(event),width:Double(gtk_widget_get_allocated_width(dial)),height:Double(gtk_widget_get_allocated_height(dial)),size:selectedSize,indicatorCount:detailsPanel?.dialQuotaIndicators.count ?? 0)
+        }else{quotaIndex=nil}
         switch tc_gtk_event_button(event) {
         case 1:
+            pressedQuotaIndex=quotaIndex
             leftButtonDown = true
             dragStarted = false
             pressRootX = tc_gtk_button_root_x(event)
             pressRootY = tc_gtk_button_root_y(event)
         case 3:
-            if let menu { tc_gtk_popup_menu(menu, event) }
+            if quotaIndex != nil {detailsPanel?.showQuotaWindow()}
+            else if let menu { tc_gtk_popup_menu(menu, event) }
         default:
             break
         }
@@ -519,7 +579,10 @@ final class LinuxApp: @unchecked Sendable {
         let shouldToggle = leftButtonDown && !dragStarted
         leftButtonDown = false
         dragStarted = false
-        if shouldToggle { detailsPanel?.toggle() }
+        if shouldToggle {
+            if pressedQuotaIndex != nil {detailsPanel?.advanceQuotaPage()}else{detailsPanel?.toggle()}
+        }
+        pressedQuotaIndex=nil
     }
 
     fileprivate func handleMenuAction(widget: UnsafeMutablePointer<GtkWidget>) {
@@ -573,6 +636,10 @@ final class LinuxApp: @unchecked Sendable {
             return
         }
         switch name {
+        case "menu:summary":showSummary()
+        case "menu:updates":MainActor.assumeIsolated{toolboxes?.showUpdates()}
+        case "menu:restart":restartApplication()
+        case "menu:notification-settings":MainActor.assumeIsolated{toolboxes?.showNotificationSettings()}
         case "theme-picker": themePicker?.show(selected: selectedTheme)
         case "copy-api":
             let endpoint = Self.apiEndpointURL
@@ -592,12 +659,13 @@ final class LinuxApp: @unchecked Sendable {
         case "about":
             if let window {
                 if let path = Bundle.module.path(forResource: "glass_disc", ofType: "png") {
-                    path.withCString { tc_gtk_show_about(window, "v1.6.0", $0) }
+                    path.withCString { tc_gtk_show_about(window, "v1.6.3", $0) }
                 } else {
-                    tc_gtk_show_about(window, "v1.6.0", nil)
+                    tc_gtk_show_about(window, "v1.6.3", nil)
                 }
             }
         case "quit":
+            MainActor.assumeIsolated{toolboxes?.stop()}
             shutdown()
             gtk_main_quit()
         default: break
@@ -933,3 +1001,5 @@ private func linuxShapeFinished(_ data: gpointer?) -> gboolean {
     app(from: data)?.applyCircularShape()
     return 0
 }
+
+private func linuxFoundationTick(_ data:gpointer?)->gboolean{guard let app=app(from:data) else{return 0};app.pumpFoundation();return 1}

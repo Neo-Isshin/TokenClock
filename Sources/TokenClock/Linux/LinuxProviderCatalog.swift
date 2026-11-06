@@ -19,6 +19,7 @@ enum LinuxProviderCatalog {
         case cline
         case `continue`
         case cursorAgent
+        case zcode
     }
 
     enum CandidateOrigin: Sendable {
@@ -189,6 +190,11 @@ enum LinuxProviderCatalog {
                 parserInput: "dev_data/*.jsonl and sessions/*.jsonl",
                 limitation: "CONTINUE_HOME is a TokenClock compatibility override."
             )
+        case .zcode:
+            return Entry(provider:provider,service:"zcode",displayName:"ZCode",emoji:"🅉",
+                defaultPath:home(".zcode"),defaultOrigin:.linuxConvention,
+                environmentVariables:[],compatibilityEnvironmentVariables:["ZCODE_HOME"],
+                parserInput:"cli/db/db.sqlite (model_usage request ledger)",limitation:nil)
         case .cursorAgent:
             return Entry(
                 provider: provider, service: "cursorAgent", displayName: "Cursor Agent", emoji: "💎",
@@ -336,6 +342,7 @@ enum LinuxProviderCatalog {
             ]
         case .continue:
             return [EnvironmentRule(name: "CONTINUE_HOME", transform: .directory, official: false)]
+        case .zcode:return [EnvironmentRule(name:"ZCODE_HOME",transform:.directory,official:false)]
         case .cursorAgent:
             return [
                 EnvironmentRule(name: "CURSOR_AGENT_HOME", transform: .directory, official: false),
@@ -361,6 +368,7 @@ enum LinuxProviderCatalog {
                 home(".vscode-server-insiders", "data", "User", "globalStorage", "saoudrizwan.claude-dev"),
                 home(".cursor-server", "data", "User", "globalStorage", "saoudrizwan.claude-dev"),
             ]
+        case .zcode:return [config("ZCode"),config("zcode")]
         case .cursorAgent:
             return [home(".cursor-server", "data", "User", "globalStorage")]
         default:

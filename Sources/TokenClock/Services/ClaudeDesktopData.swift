@@ -1,10 +1,24 @@
 import Foundation
-import CoreFoundation
 
 /// Read-only Desktop support. Chat/cloud sessions without usage receipts are
 /// never turned into guessed tokens. Local Code/Cowork receipts remain separate
 /// from the app's cached subscription percentages.
 enum ClaudeDesktopData {
+    // The App throttles its plan-history writes to roughly fifteen minutes.
+    // Keep these honest snapshots for one cadence plus one refresh margin.
+    static let historyMaximumAge: TimeInterval = 20 * 60
+    private static func historySamples(_ data: Data) -> [[String: Any]]? {
+        guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let version = root["version"] as? NSNumber, !JSONNumber.isBoolean(version),
+              [1.0, 2.0].contains(version.doubleValue) else { return nil }
+        return root["samples"] as? [[String: Any]]
+    }
+    private static func historyOrganization(_ samples: [[String: Any]], selected: String?) -> String? {
+        if let selected, !selected.isEmpty { return selected.lowercased() }
+        let organizations = Set(samples.compactMap { $0["org"] as? String }.filter { !$0.isEmpty }.map { $0.lowercased() })
+        return organizations.count == 1 ? organizations.first : nil
+    }
+
     static func homes(home: String = NSHomeDirectory(), environment: [String: String] = ProcessInfo.processInfo.environment) -> [String] {
         #if os(macOS)
         return [home + "/Library/Application Support/Claude"]
@@ -40,16 +54,14 @@ enum ClaudeDesktopData {
         return result.sorted()
     }
 
-    static func decodeUsageHistory(_ data: Data, now: Date = Date(), maximumAge: TimeInterval = 600) -> ClaudeQuotaSnapshot? {
-        guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              root["version"] as? Int == 2, let samples = root["samples"] as? [[String: Any]] else { return nil }
-        // This file is org-scoped rather than user-scoped. Without a verified
-        // current-org selector, never pick arbitrarily between multiple orgs.
-        let organizations = Set(samples.compactMap { $0["org"] as? String }.filter { !$0.isEmpty })
-        guard organizations.count == 1, let organization = organizations.first else { return nil }
+    static func decodeUsageHistory(_ data: Data, now: Date = Date(),
+                                   maximumAge: TimeInterval = historyMaximumAge,
+                                   organizationID: String? = nil) -> ClaudeQuotaSnapshot? {
+        guard let samples = historySamples(data),
+              let organization = historyOrganization(samples, selected: organizationID) else { return nil }
         let valid = samples.compactMap { sample -> (Date, [String: Any])? in
-            guard sample["org"] as? String == organization,
-                  let t = sample["t"] as? NSNumber, CFGetTypeID(t) != CFBooleanGetTypeID(),
+            guard (sample["org"] as? String)?.lowercased() == organization,
+                  let t = sample["t"] as? NSNumber, !JSONNumber.isBoolean(t),
                   t.doubleValue.isFinite, t.doubleValue > 0,
                   let usage = sample["u"] as? [String: Any] else { return nil }
             let timestamp = Date(timeIntervalSince1970: t.doubleValue / 1000)
@@ -59,7 +71,7 @@ enum ClaudeDesktopData {
         guard let (timestamp, usage) = valid.max(by: { $0.0 < $1.0 }) else { return nil }
         var buckets: [CodexQuotaBucket] = []
         for (key, id, minutes) in [("fh", "five_hour", 300), ("sd", "seven_day", 10_080)] {
-            guard let number = usage[key] as? NSNumber, CFGetTypeID(number) != CFBooleanGetTypeID(),
+            guard let number = usage[key] as? NSNumber, !JSONNumber.isBoolean(number),
                   number.doubleValue.isFinite, (0...100).contains(number.doubleValue) else { continue }
             buckets.append(CodexQuotaBucket(id: "claude:" + id, name: "Claude", usedPercent: number.doubleValue,
                                            windowMinutes: minutes, resetsAt: nil))
@@ -67,18 +79,52 @@ enum ClaudeDesktopData {
         guard !buckets.isEmpty else { return nil }
         return ClaudeQuotaSnapshot(status: .available, buckets: buckets, planType: nil,
             refreshedAt: timestamp, source: .desktopCache,
-            message: "Claude Desktop cached usage; reset times are not available in this source.",
+            message: L10n.shared.tr("quota.claudeCacheNote"),
             account: SubscriptionAccountIdentity(id: "claude-desktop-org:" + organization, email: nil))
     }
 
-    static func quota(in homes: [String], fileManager: FileManager = .default, now: Date = Date()) -> ClaudeQuotaSnapshot? {
-        let snapshots = homes.compactMap { home -> ClaudeQuotaSnapshot? in
+    static func quota(in homes: [String], fileManager: FileManager = .default,
+                      now: Date = Date(), organizationID: String? = nil) -> ClaudeQuotaSnapshot? {
+        var results: [ClaudeQuotaSnapshot] = []
+        for home in homes {
             let path = URL(fileURLWithPath: home).appendingPathComponent("plan-usage-history.json").path
-            guard let attributes = try? fileManager.attributesOfItem(atPath: path),
-                  let size = attributes[.size] as? NSNumber, size.intValue <= 2_097_152,
-                  let data = fileManager.contents(atPath: path) else { return nil }
-            return decodeUsageHistory(data, now: now)
+            let data: Data? = {
+                guard let attributes = try? fileManager.attributesOfItem(atPath: path),
+                      let size = attributes[.size] as? NSNumber, size.intValue <= 2_097_152 else { return nil }
+                return fileManager.contents(atPath: path)
+            }()
+            if let data, let history = decodeUsageHistory(data, now: now, organizationID: organizationID) { results.append(history) }
+            let selected = organizationID ?? data.flatMap(historySamples).flatMap { historyOrganization($0, selected: nil) }
+            if let selected, let response = ClaudeAppResponseCache.read(home: home, organizationID: selected, now: now),
+               var snapshot = try? ClaudeQuotaPayload.decode(response.data) {
+                snapshot.buckets = snapshot.buckets.filter { $0.resetsAt.map { $0 > now } ?? true }
+                if !snapshot.buckets.isEmpty {
+                    snapshot.refreshedAt = response.recordedAt
+                    snapshot.source = .desktopResponseCache
+                    snapshot.account = .init(id: "claude-desktop-org:" + response.organizationID, email: nil)
+                    snapshot.message = L10n.shared.tr("quota.claudeResponseCacheNote")
+                    results.append(snapshot)
+                }
+            }
         }
-        return snapshots.max { ($0.refreshedAt ?? .distantPast) < ($1.refreshedAt ?? .distantPast) }
+        return results.max { ($0.refreshedAt ?? .distantPast) < ($1.refreshedAt ?? .distantPast) }
+    }
+
+}
+
+/// Source of an actual local receipt, independent of the model used in it.
+enum ClaudeUsageSurface: String, CaseIterable {
+    case codeCLI, codeApp, coworkApp
+    var label: String {
+        switch self {
+        case .codeCLI: return "Code · CLI"
+        case .codeApp: return "Code · App"
+        case .coworkApp: return "Cowork · App"
+        }
+    }
+    static func classify(path: String) -> Self {
+        if path.contains("/local-agent-mode-sessions/") {return .coworkApp}
+        if path.contains("/claude-code-sessions/") {return .codeApp}
+        return .codeCLI
     }
 }

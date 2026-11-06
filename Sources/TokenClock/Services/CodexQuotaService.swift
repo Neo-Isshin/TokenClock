@@ -131,22 +131,23 @@ final class CodexQuotaService: @unchecked Sendable {
     private var codexHome: String { overrideHome ?? PathConfig.codexHome() }
 
     init(codexHome: String? = nil) {
-        self.overrideHome = codexHome ?? Self.defaultCodexHome()
-    }
-
-    private static func defaultCodexHome() -> String {
-        return PathConfig.codexHome()
+        self.overrideHome = codexHome
     }
 
     func fetch() -> CodexQuotaSnapshot {
         if let executable = codexExecutable(),
-           let response = fetchAppServerResponse(executable: executable, method: "account/rateLimits/read"),
+           let response = fetchAppServerResponse(
+               executable: executable, method: "account/rateLimits/read"
+           ),
            var snapshot = Self.decodeAppServerResponse(response) {
             if let accountResponse = fetchAppServerResponse(
-                executable: executable, method: "account/read", params: ["refreshToken": false]
+                executable: executable,
+                method: "account/read",
+                params: ["refreshToken": false]
             ), let account = Self.decodeAccountResponse(accountResponse) {
                 snapshot.account = SubscriptionAccountIdentity(
-                    id: snapshot.account?.id ?? account.id, email: account.email
+                    id: snapshot.account?.id ?? account.id,
+                    email: account.email
                 )
                 if snapshot.planType?.isEmpty != false { snapshot.planType = account.planType }
             }
@@ -239,7 +240,9 @@ final class CodexQuotaService: @unchecked Sendable {
     }
 
     private func fetchAppServerResponse(
-        executable: URL, method: String, params: [String: Any] = [:]
+        executable: URL,
+        method: String,
+        params: [String: Any] = [:]
     ) -> Data? {
         let process = Process()
         let input = Pipe()

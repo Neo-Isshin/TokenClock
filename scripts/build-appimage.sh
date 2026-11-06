@@ -33,7 +33,7 @@ die()  { printf '\n❌ %s\n' "$*" >&2; exit 1; }
 if [ "${TOKENCLOCK_SKIP_APT:-0}" = 1 ]; then
   step "Using preinstalled build deps"
   command -v swift >/dev/null || die "swift is not installed"
-  pkg-config --exists gtk+-3.0 sqlite3 || die "preinstalled GTK/SQLite build deps are incomplete"
+  pkg-config --exists gtk+-3.0 sqlite3 libsecret-1 openssl || die "preinstalled GTK/SQLite build deps are incomplete"
   command -v wget >/dev/null || command -v curl >/dev/null || die "wget or curl is required"
   ok "preinstalled deps verified"
 else
@@ -41,7 +41,7 @@ else
   export DEBIAN_FRONTEND=noninteractive
   apt-get update -qq
   apt-get install -y --no-install-recommends \
-    libgtk-3-dev libsqlite3-dev libcurl4-openssl-dev adwaita-icon-theme \
+    libgtk-3-dev libsqlite3-dev libsecret-1-dev libssl-dev libcurl4-openssl-dev adwaita-icon-theme \
     fonts-noto-color-emoji fonts-noto-cjk librsvg2-common shared-mime-info \
     pkg-config file ca-certificates wget libfuse2 \
     >/dev/null

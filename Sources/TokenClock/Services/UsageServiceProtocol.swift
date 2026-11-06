@@ -16,14 +16,20 @@ struct SessionSnapshot: Sendable {
     let isActive: Bool
     let model: String?
     let cost: CostEstimate
+    /// nil 表示旧历史没有保存精确缓存读数，聚合时只能由 cacheRate 估算。
     let cacheReadTokens: Int?
 
     init(id: String, displayName: String, tokens: Int, messages: Int,
          isActive: Bool, model: String? = nil,
          cost: CostEstimate = .unavailable, cacheReadTokens: Int? = nil) {
-        self.id = id; self.displayName = displayName; self.tokens = tokens
-        self.messages = messages; self.isActive = isActive; self.model = model
-        self.cost = cost; self.cacheReadTokens = cacheReadTokens
+        self.id = id
+        self.displayName = displayName
+        self.tokens = tokens
+        self.messages = messages
+        self.isActive = isActive
+        self.model = model
+        self.cost = cost
+        self.cacheReadTokens = cacheReadTokens
     }
 }
 
@@ -35,6 +41,7 @@ struct ToolSnapshot: Sendable {
     let cacheRate: Double
     let isActive: Bool
     let cost: CostEstimate
+    /// nil = 旧记录；新记录必须写入精确值（即使为 0）。
     let cacheReadTokens: Int?
     /// 当日各 session 明细（默认空 → 旧构造调用不破坏）
     let sessions: [SessionSnapshot]

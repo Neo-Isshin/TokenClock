@@ -1,8 +1,8 @@
 import Foundation
-#if os(Linux)
-import CSQLite
-#else
+#if os(macOS)
 import SQLite3
+#else
+import CSQLite
 #endif
 
 /// 从 OpenCode 本地 SQLite 数据库读取 token 使用数据
@@ -14,11 +14,19 @@ final class OpenCodeUsageService: @unchecked Sendable {
     private(set) var dailyCache: [String: Int] = [:]
     private var recentEntries: [RecentEntry] = []
 
+    #if os(Windows)
+    private let databasePath: String
+    #else
     private let opencodeHome: String
+    #endif
     private var lastScanTime: Date = .distantPast
 
     init() {
+        #if os(Windows)
+        databasePath = PathConfig.opencodeDatabasePath()
+        #else
         opencodeHome = PathConfig.opencodeHome()
+        #endif
     }
 
     func fullScan() {
@@ -61,11 +69,13 @@ final class OpenCodeUsageService: @unchecked Sendable {
     // MARK: - 内部
 
     private var dbPath: String {
-#if os(Linux)
+        #if os(Windows)
+        databasePath
+        #elseif os(Linux)
         PathConfig.opencodeDatabasePath()
-#else
+        #else
         opencodeHome + "/opencode.db"
-#endif
+        #endif
     }
 
     private func scanDatabase() {

@@ -3,6 +3,47 @@ import PackageDescription
 
 #if os(Linux)
 let linuxSources = [
+    "Services/LinuxAppRestart.swift",
+    "Services/NewsLogoCache.swift",
+    "Linux/LinuxToolboxes.swift",
+    "Services/NetworkToolboxPresentation.swift",
+    "Services/ModelIntegrityRuntimeCache.swift",
+    "Services/ModelIntegrityLauncher.swift",
+    "Services/QuickToolPreferences.swift",
+    "Services/ConfigJSON.swift",
+    "Services/NTPClockCheck.swift",
+    "Services/NativeLocalFiles.swift",
+    "Services/NativePresentationState.swift",
+    "Services/LocalToolbox.swift",
+    "Services/LocalToolboxCache.swift",
+    "Services/DoHDiagnostics.swift",
+    "Services/NetworkDiagnostics.swift",
+    "Services/MainlandReachability.swift",
+    "Services/UserContentCenter.swift",
+    "Services/NotebookStore.swift",
+    "Services/AilyreNewsService.swift",
+    "Services/StatusSummarySnapshot.swift",
+    "Models/StatusSummaryLayout.swift",
+    "Models/ClockQuotaLayout.swift",
+    "Models/QuotaCenterLabel.swift",
+    "Models/DialQuotaPager.swift",
+    "Services/ProviderHTTPRequest.swift",
+    "Services/ClaudeQuotaPayload.swift",
+    "Services/ClaudeAppResponseCache.swift",
+    "Services/ZstdLibrary.swift",
+    "Services/CacheHash.swift",
+    "Services/JSONNumber.swift",
+    "Services/GrokBotNativeCredentialStore.swift",
+    "Services/XSubscriptionQuota.swift",
+    "Services/StatusSummaryQuotaResets.swift",
+    "Services/StatusSummaryInsights.swift",
+    "Services/StatusSummaryData.swift",
+    "Services/UsageLogDirectoryIndex.swift",
+    "Services/IncrementalUsageLog.swift",
+    "Services/DSHReceiptReader.swift",
+    "Services/ZCodeRecentLedger.swift",
+    "Services/ZCodeUsageService.swift",
+    "Services/AntigravityQuotaFamilies.swift",
     "Config/AppConfig.swift",
     "Config/SettingsKeys.swift",
     "L10n.swift",
@@ -78,6 +119,7 @@ let package = Package(
             pkgConfig: "gtk+-3.0",
             providers: [.apt(["libgtk-3-dev"])]
         ),
+        .systemLibrary(name:"CSecret",pkgConfig:"libsecret-1",providers:[.apt(["libsecret-1-dev"])]),
         .systemLibrary(
             name: "CSQLite",
             pkgConfig: "sqlite3",
@@ -85,7 +127,7 @@ let package = Package(
         ),
         .executableTarget(
             name: "TokenClock",
-            dependencies: ["CGtk", "CSQLite"],
+            dependencies: ["CGtk", "CSQLite", "CSecret"],
             path: "Sources/TokenClock",
             exclude: [
                 "AppDelegate.swift",
@@ -106,9 +148,14 @@ let package = Package(
             resources: [
                 .copy("Resources/glass_disc.png"),
                 .copy("Resources/pricing-snapshot.json"),
+                .copy("Resources/AilyreNews"),
+                .copy("Resources/ShareArtwork"),
+                .copy("Resources/model-integrity-worker"),
+                .copy("Resources/DSHDecoder"),
                 .copy("Resources/BrandIcons"),
             ],
-            swiftSettings: [.unsafeFlags(["-parse-as-library"])]
+            swiftSettings: [.unsafeFlags(["-parse-as-library"])],
+            linkerSettings:[.linkedLibrary("crypto")]
         ),
         .testTarget(
             name: "TokenClockTests",
@@ -129,6 +176,10 @@ let package = Package(
             resources: [
                 .copy("Resources/glass_disc.png"),
                 .copy("Resources/pricing-snapshot.json"),
+                .copy("Resources/AilyreNews"),
+                .copy("Resources/ShareArtwork"),
+                .copy("Resources/model-integrity-worker"),
+                .copy("Resources/DSHDecoder"),
                 .copy("Resources/BrandIcons"),
             ],
             swiftSettings: [.unsafeFlags(["-parse-as-library"])]

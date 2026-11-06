@@ -382,7 +382,7 @@ final class LinuxClockRenderer: @unchecked Sendable {
             cairo_arc(context, centerX, centerY, innerRadius, 0, 2 * Double.pi)
             cairo_stroke(context)
             if inner > 0 {
-                setSource(context, withAlpha(accent, accent.alpha * 0.52))
+                setSource(context, indicator.thirdRemainingPercent == nil ? withAlpha(accent, accent.alpha * 0.52) : LinuxColor(0.13,0.68,0.78,0.85))
                 cairo_arc(
                     context, centerX, centerY, innerRadius,
                     -Double.pi / 2,
@@ -391,25 +391,34 @@ final class LinuxClockRenderer: @unchecked Sendable {
                 cairo_stroke(context)
             }
         }
+        if let third=indicator.thirdRemainingPercent {
+            let radius=max(2,radius-9*scale)
+            cairo_set_line_width(context,1.4*scale)
+            setSource(context,LinuxColor(0.90,0.57,0.20,0.2));cairo_arc(context,centerX,centerY,radius,0,2*Double.pi);cairo_stroke(context)
+            setSource(context,LinuxColor(0.90,0.57,0.20,0.85));cairo_arc(context,centerX,centerY,radius,-Double.pi/2,-Double.pi/2+2*Double.pi*third/100);cairo_stroke(context)
+        }
         let percentColor: LinuxColor = outer <= 15
             ? LinuxColor(1, 59.0 / 255.0, 48.0 / 255.0)
             : (outer <= 35 ? LinuxColor(1, 149.0 / 255.0, 0) : primary)
-        let number = String(format: "%.0f", outer)
+        let centerLabel=QuotaCenterLabel(remaining:outer)
+        let number = centerLabel.text
         let offset = number.count >= 3 ? 1.8 : 1.2
-        drawText(context, number, family: "Sans", size: 7.5 * scale, weight: 700,
-                 x: centerX - offset * scale, y: centerY, alignment: 1, color: percentColor)
+        drawText(context, number, family: "Sans", size: 9.5 * scale, weight: 700,
+                 x: centerX - (centerLabel.showsPercent ? offset * scale : 0), y: centerY, alignment: 1, color: percentColor)
+        if centerLabel.showsPercent {
         drawText(context, "%", family: "Sans", size: 7.5 * scale, weight: 400,
                  x: centerX + (number.count >= 3 ? 8.4 : 6.5) * scale,
                  y: centerY, alignment: 1, color: percentColor)
+        }
     }
 
     private func quotaRingFrames(
         width: Double, height: Double, scale: Double, count: Int
     ) -> [(x: Double, y: Double, size: Double)] {
         guard count == 1 || count == 2 else { return [] }
-        let size = (count == 1 ? 35.0 : 29.0) * scale
+        let size = (count == 1 ? 42.0 : 36.0) * scale
         let trailing = (count == 1 ? 36.0 : 28.0) * scale
-        let spacing = 5 * scale
+        let spacing = 8 * scale
         let totalHeight = size * Double(count) + spacing * Double(max(0, count - 1))
         let top = (height - totalHeight) / 2
         let x = width - trailing - size

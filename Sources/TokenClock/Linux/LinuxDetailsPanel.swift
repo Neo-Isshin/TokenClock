@@ -27,6 +27,26 @@ final class LinuxDetailsPanel: @unchecked Sendable {
     private let onUsageIncludesCache: (Bool) -> Void
     private let onDialQuotaChange: () -> Void
 
+    var onQuickTool: ((QuickTool)->Void)?
+    var onEditQuickTools: (() -> Void)?
+    var onNewsVisibility: ((Bool)->Void)?
+    private var newsWidget: UnsafeMutablePointer<GtkWidget>?
+    private(set) var isNewsPresented = false
+    private var quickExpanded = false
+    private var quotaPager = DialQuotaPager()
+    private var lastQuotaPage = Date()
+    func setNewsWidget(_ widget:UnsafeMutablePointer<GtkWidget>){newsWidget=widget}
+    func setNewsPresented(_ value:Bool){isNewsPresented=value;rebuild();if value && !isVisible{toggle()};onNewsVisibility?(value && isVisible)}
+    func refreshQuickActions(){rebuild()}
+    func advanceQuotaPage(){quotaPager.advance(count:allDialIndicators.count);lastQuotaPage=Date();onDialQuotaChange()}
+    func tickQuotaPage(){if allDialIndicators.count>2,Date().timeIntervalSince(lastQuotaPage)>=60{advanceQuotaPage()}}
+    func prepareSummaryQuotas(){refreshQuota()}
+    var summaryActiveAccountIDs:[SubscriptionProvider:String]{activeSubscriptionAccountIDs}
+    var summaryQuotas:[StatusSummaryQuota]{
+        let groups=Dictionary(uniqueKeysWithValues:LinuxQuotaProvider.allCases.map{(subscriptionProvider($0),freshQuotaGroups(for:$0))})
+        return StatusSummaryQuotas.indicators(records:subscriptionAccountStore.records(),activeIDs:activeSubscriptionAccountIDs,freshGroups:groups)
+    }
+
     private var tools: [ToolUsage] = []
     private var notifications: [TokenClockNotification] = []
     private var weather = WeatherInfo()
@@ -78,7 +98,7 @@ final class LinuxDetailsPanel: @unchecked Sendable {
         if let forced = ProcessInfo.processInfo.environment["TC_DIAL_QUOTA_PROVIDERS"] {
             return Array(forced.split(separator: ",").compactMap {
                 LinuxQuotaProvider(rawValue: String($0))
-            }.prefix(2))
+            }.prefix(4))
         }
         let defaults = UserDefaults.standard
         var providers: [LinuxQuotaProvider] = []
@@ -88,13 +108,13 @@ final class LinuxDetailsPanel: @unchecked Sendable {
             }
         }
         if defaults.object(forKey: SettingsKey.dialQuotaProviders.rawValue) != nil {
-            return Array(providers.prefix(2))
+            return Array(providers.prefix(4))
         }
         if let raw = defaults.string(for: .dialQuotaProvider),
            let provider = LinuxQuotaProvider(rawValue: raw) {
             providers = [provider]
         }
-        return Array(providers.prefix(2))
+        return Array(providers.prefix(4))
     }()
     private var shouldAutomaticallySelectDialQuotaProvider: Bool = {
         let defaults = UserDefaults.standard
@@ -133,8 +153,11 @@ final class LinuxDetailsPanel: @unchecked Sendable {
         }
     }
 
-    var dialQuotaIndicators: [DialQuotaIndicator] {
-        dialQuotaProviders.compactMap { provider in
+    private var allDialIndicators: [DialQuotaIndicator] {
+        let selected=Dictionary(uniqueKeysWithValues:SubscriptionProvider.allCases.compactMap{p in DialQuotaAccountSelection.selectedID(for:p).map{(p,$0)}})
+        let normalized=XSubscriptionQuota.dialProviders(dialQuotaProviders.map{subscriptionProvider($0)},records:subscriptionAccountStore.records(),activeIDs:activeSubscriptionAccountIDs,selectedIDs:selected)
+        return normalized.compactMap { value in
+            guard let provider=LinuxQuotaProvider(rawValue:value.rawValue) else{return nil}
             let subscription = subscriptionProvider(provider)
             return DialQuotaAccountSelection.indicator(
                 provider: subscription, selectedID: DialQuotaAccountSelection.selectedID(for: subscription),
@@ -142,6 +165,8 @@ final class LinuxDetailsPanel: @unchecked Sendable {
                 liveGroups: freshQuotaGroups(for: provider))
         }
     }
+
+    var dialQuotaIndicators:[DialQuotaIndicator]{quotaPager.visible(from:allDialIndicators)}
 
     private var lastBillingFetch = Date.distantPast
     func refreshSelectedDialQuotas() {
@@ -219,6 +244,10 @@ final class LinuxDetailsPanel: @unchecked Sendable {
 
     fileprivate func handleAction(widget: UnsafeMutablePointer<GtkWidget>) {
         let name = String(cString: tc_gtk_widget_name(widget))
+        if name.hasPrefix("details:quick:"),let tool=QuickTool(rawValue:String(name.dropFirst("details:quick:".count))){onQuickTool?(tool);return}
+        if name=="details:quick-edit"{onEditQuickTools?();return}
+        if name=="details:quick-more"{quickExpanded.toggle();rebuild();return}
+        if name=="details:digest"{setNewsPresented(!isNewsPresented);return}
         if name.hasPrefix("details:quota-account-dial:"),
            let account = subscriptionAccountStore.records().first(where: {
                $0.id == String(name.dropFirst("details:quota-account-dial:".count))
@@ -227,7 +256,7 @@ final class LinuxDetailsPanel: @unchecked Sendable {
             if isDialAccountSelected(account) {
                 dialQuotaProviders.removeAll { $0 == provider }
             } else {
-                guard dialQuotaProviders.contains(provider) || dialQuotaProviders.count < 2 else { return }
+                guard dialQuotaProviders.contains(provider) || dialQuotaProviders.count < 4 else { return }
                 DialQuotaAccountSelection.select(account.id, for: account.provider)
                 if !dialQuotaProviders.contains(provider) { dialQuotaProviders.append(provider) }
             }
@@ -238,6 +267,16 @@ final class LinuxDetailsPanel: @unchecked Sendable {
             return
         }
         switch name {
+        case "details:grok-native-authorize":
+            guard !grokBotQuotaFetchInFlight else{return}
+            grokBotQuotaFetchInFlight=true;rebuildQuotaWindow()
+            DispatchQueue.global(qos:.userInitiated).async{ [weak self] in
+                guard let self else{return};_=GrokBotNativeCredentialStore.shared.authorize()
+                let snapshot=self.grokBotQuotaService.fetch()
+                self.quotaLock.lock();self.pendingGrokBotQuota=snapshot;self.quotaLock.unlock()
+                _=tc_gtk_idle_add(linuxDetailsGrokBotQuotaReady,self.opaque)
+            }
+            return
         case "details:session":
             grouping = .session
             UserDefaults.standard.setInt(grouping.rawValue, for: .dropdownGrouping)
@@ -280,7 +319,7 @@ final class LinuxDetailsPanel: @unchecked Sendable {
                 ) else { return }
                 if dialQuotaProviders.contains(provider) {
                     dialQuotaProviders.removeAll { $0 == provider }
-                } else if dialQuotaProviders.count < 2 {
+                } else if dialQuotaProviders.count < 4 {
                     dialQuotaProviders.append(provider)
                     refreshQuota(providers: [provider])
                 }
@@ -332,7 +371,9 @@ final class LinuxDetailsPanel: @unchecked Sendable {
         card = createdCard
         gtk_window_set_title(tc_gtk_window(createdWindow), "TokenClock Details")
         gtk_window_set_decorated(tc_gtk_window(createdWindow), 0)
-        gtk_window_set_resizable(tc_gtk_window(createdWindow), 0)
+        gtk_window_set_resizable(tc_gtk_window(createdWindow), 1)
+        tc_gtk_enable_panel_edge_resize(createdWindow)
+        _ = tc_gtk_on_configure(createdWindow, linuxDetailsConfigured, opaque)
         gtk_window_set_skip_taskbar_hint(tc_gtk_window(createdWindow), 1)
         gtk_window_set_skip_pager_hint(tc_gtk_window(createdWindow), 1)
         gtk_window_set_transient_for(tc_gtk_window(createdWindow), tc_gtk_window(parent))
@@ -350,11 +391,22 @@ final class LinuxDetailsPanel: @unchecked Sendable {
 
     private func rebuild() {
         guard let card else { return }
+        if let newsWidget,let parent=gtk_widget_get_parent(newsWidget){gtk_container_remove(tc_gtk_container(parent),newsWidget)}
         tc_gtk_remove_all_children(card)
 
         if !weather.cityName.isEmpty {
             buildWeatherBar(in: card)
             gtk_box_pack_start(tc_gtk_box(card), separator(), 0, 0, 0)
+        }
+        else {
+            let header=gtk_box_new(GTK_ORIENTATION_HORIZONTAL,5)!,icons=gtk_box_new(GTK_ORIENTATION_VERTICAL,2)!
+            gtk_container_set_border_width(tc_gtk_container(header),10)
+            appendLabel("TokenClock",width:120,expands:true,alignment:0,style:"tokenclock-detail-text",to:header)
+            _=appendControl("🔔",name:"details:notifications",to:icons)
+            _=appendControl("↥",name:"details:share",to:icons)
+            _=appendControl("☷",name:"details:quick-edit",to:icons)
+            gtk_box_pack_end(tc_gtk_box(header),icons,0,0,0)
+            gtk_box_pack_start(tc_gtk_box(card),header,0,0,0)
         }
 
         let controls = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6)
@@ -362,18 +414,25 @@ final class LinuxDetailsPanel: @unchecked Sendable {
         gtk_box_pack_start(tc_gtk_box(card), controls, 0, 0, 0)
         let launcherRow = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 7)
         gtk_box_pack_start(tc_gtk_box(controls), launcherRow, 0, 0, 0)
-        let detect = appendControl(
-            "◉  \(tr("detail.modelDetectLine1"))\n   \(tr("detail.modelDetectLine2"))",
-            name: "details:model-detect", expands: true, prominent: true, to: launcherRow
-        )
-        if let detect { gtk_widget_set_sensitive(detect, 0) }
-        _ = appendControl(
-            "◔  \(tr("detail.subscriptionQuotaLine1"))\n   \(tr("detail.subscriptionQuotaLine2"))",
-            name: "details:quota", expands: true, prominent: true, to: launcherRow
-        )
-        let unread = notifications.filter { !$0.isRead }.count
-        if unread > 0, weather.cityName.isEmpty {
-            _ = appendControl("🔔  \(unread)", name: "details:notifications", prominent: true, to: launcherRow)
+        let preferences=MainActor.assumeIsolated{QuickToolPreferences.shared.order}
+        let icons:[QuickTool:String]=[.model:"◉",.network:"🛡",.local:"🧰",.quota:"◔",.history:"◷",.notebook:"▤",.share:"↥"]
+        for tool in preferences.prefix(4){
+            if let control=appendControl(icons[tool] ?? "•",name:"details:quick:"+tool.rawValue,expands:true,prominent:true,to:launcherRow){
+                gtk_widget_set_tooltip_text(control,tool.hint)
+                tc_gtk_quick_hover(control,icons[tool] ?? "•",tool.title)
+            }
+        }
+        _=appendControl(quickExpanded ? "⌃":"⌄",name:"details:quick-more",to:launcherRow)
+        if quickExpanded {
+            let extra=gtk_box_new(GTK_ORIENTATION_HORIZONTAL,7)!;gtk_box_pack_start(tc_gtk_box(controls),extra,0,0,0)
+            for tool in preferences.dropFirst(4){_=appendControl(tool.title,name:"details:quick:"+tool.rawValue,expands:true,to:extra)}
+        }
+        if isNewsPresented,let newsWidget {
+            let scroll=gtk_scrolled_window_new(nil,nil)!
+            gtk_scrolled_window_set_policy(tc_gtk_scrolled_window(scroll),GTK_POLICY_NEVER,GTK_POLICY_AUTOMATIC)
+            gtk_container_add(tc_gtk_container(scroll),newsWidget)
+            gtk_box_pack_start(tc_gtk_box(card),scroll,1,1,0)
+            gtk_widget_show_all(card);return
         }
 
         let groupingRow = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6)
@@ -388,6 +447,11 @@ final class LinuxDetailsPanel: @unchecked Sendable {
         )
         let displayRow = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4)
         gtk_box_pack_start(tc_gtk_box(controls), displayRow, 0, 0, 0)
+        if let digest=appendControl(toolboxText("AI速递","AI digest"),name:"details:digest",prominent:true,to:displayRow){
+            gtk_widget_set_size_request(digest,80,-1)
+            if let path=Bundle.module.resourceURL?.appendingPathComponent("AilyreNews/ai-digest.png").path{tc_gtk_button_file_icon(digest,path,20)}
+            gtk_widget_set_tooltip_text(digest,toolboxText("查看 Ailyre AI速递","Read the Ailyre AI digest"))
+        }
         let includesCache = UserDefaults.standard.bool(for: .usageIncludesCacheRead)
         let cacheControl = appendControl(
             "\(includesCache ? "✓" : "○")  \(tr("detail.cacheDataLine1"))\n   \(tr("detail.cacheDataLine2"))",
@@ -402,19 +466,12 @@ final class LinuxDetailsPanel: @unchecked Sendable {
             width: 58,
             to: displayRow
         )
-        _ = appendHistoryControl(
-            "\(tr("detail.historyUsageLine1"))\n\(tr("detail.historyUsageLine2"))",
-            width: 80,
-            to: displayRow
-        )
         let valueControl = appendControl(
-            valueMode == .costPercent
-                ? "✓  \(tr("detail.byPercent"))\n   \(tr("detail.todayUsage"))"
-                : "$  \(tr("detail.byCost"))\n   \(tr("detail.byPercent"))",
+            valueMode == .costPercent ? tr("detail.byCost") : toolboxText("按用量","By Usage"),
             name: "details:value-mode", prominent: true, to: displayRow
         )
         if let valueControl {
-            gtk_widget_set_size_request(valueControl, 86, -1)
+            gtk_widget_set_size_request(valueControl, 60, -1)
             tc_gtk_add_class(valueControl, "tokenclock-detail-third-chip")
             gtk_widget_set_tooltip_text(valueControl, tr("detail.valueModeHelp"))
         }
@@ -488,6 +545,7 @@ final class LinuxDetailsPanel: @unchecked Sendable {
            let notificationContent = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 1),
            let bell = gtk_image_new_from_icon_name("notifications-symbolic", GTK_ICON_SIZE_MENU) {
             let unread = notifications.contains { !$0.isRead }
+            if notifications.contains(where:{$0.kind == .news && !$0.isRead}),let path=Bundle.module.resourceURL?.appendingPathComponent("AilyreNews/ai-digest.png").path{tc_gtk_image_set_file_scaled(bell,path,20)}
             gtk_widget_set_name(notificationButton, "details:notifications")
             tc_gtk_add_class(notificationButton, "tokenclock-weather-bell")
             gtk_button_set_relief(tc_gtk_button(notificationButton), GTK_RELIEF_NONE)
@@ -532,6 +590,16 @@ final class LinuxDetailsPanel: @unchecked Sendable {
                 _ = tc_gtk_on_clicked(shareButton, linuxDetailsAction, opaque)
                 gtk_overlay_add_overlay(tc_gtk_overlay(overlay), shareButton)
             }
+            if let editor=gtk_button_new_with_label("☷"){
+                gtk_widget_set_name(editor,"details:quick-edit")
+                gtk_button_set_relief(tc_gtk_button(editor),GTK_RELIEF_NONE)
+                gtk_widget_set_tooltip_text(editor,toolboxText("显示并排序快捷按钮","Choose and reorder quick actions"))
+                gtk_widget_set_size_request(editor,16,16)
+                gtk_widget_set_halign(editor,GTK_ALIGN_END);gtk_widget_set_valign(editor,GTK_ALIGN_START)
+                gtk_widget_set_margin_top(editor,42);gtk_widget_set_margin_end(editor,10)
+                _=tc_gtk_on_clicked(editor,linuxDetailsAction,opaque)
+                gtk_overlay_add_overlay(tc_gtk_overlay(overlay),editor)
+            }
             gtk_box_pack_start(tc_gtk_box(card), overlay, 0, 0, 0)
         } else {
             gtk_box_pack_start(tc_gtk_box(card), box, 0, 0, 0)
@@ -555,7 +623,7 @@ final class LinuxDetailsPanel: @unchecked Sendable {
     private func forecastHour(_ value: String) -> Int {
         if value.count <= 2 { return Int(value) ?? 0 }
         if value.count == 3 { return Int(value.prefix(1)) ?? 0 }
-        return Int(value.prefix(2)) ?? 0
+        return Int(value.prefix(4)) ?? 0
     }
 
     private func displayTemperature(_ celsius: Int) -> String {
@@ -613,11 +681,11 @@ final class LinuxDetailsPanel: @unchecked Sendable {
         let first = grouping == .session ? tr("detail.instance") : tr("detail.model")
         appendLabel(first, width: 130, expands: true, alignment: 0, style: "tokenclock-detail-header", to: row)
         appendLabel(tr(valueMode == .tokens ? "detail.todayUsage" : "detail.cost"), width: 60, alignment: 1, style: "tokenclock-detail-header", to: row)
-        appendLabel(tr(valueMode == .tokens ? "detail.messages" : "detail.share"), width: 40, alignment: 1, style: "tokenclock-detail-header", to: row)
+        appendLabel(valueMode == .tokens ? tr("detail.messages") : "TTFT", width: 40, alignment: 1, style: "tokenclock-detail-header", to: row)
         if grouping == .session {
             appendLabel(tr("detail.cacheRate"), width: 40, alignment: 1, style: "tokenclock-detail-header", to: row)
         } else {
-            appendLabel("t/s", width: 40, alignment: 1, style: "tokenclock-detail-header", to: row)
+            appendLabel(valueMode == .tokens ? tr("detail.share") : "t/s", width: 40, alignment: 1, style: "tokenclock-detail-header", to: row)
         }
         return row
     }
@@ -638,7 +706,7 @@ final class LinuxDetailsPanel: @unchecked Sendable {
             appendDataRow(
                 title: title,
                 tokens: tool.measurementUnit == .requests ? "\(tool.value) \(tr("harness.responses"))" : primaryValue(tokens: tool.todayTokens, cacheRead: tool.todayCacheReadTokens, cost: tool.todayCost, includeCacheRead: includeCache),
-                messages: tool.measurementUnit == .requests ? "—" : secondaryValue(tokens: tool.todayTokens, cacheRead: tool.todayCacheReadTokens, messages: tool.todayMessages, total: total, includeCacheRead: includeCache),
+                messages: tool.measurementUnit == .requests ? "—" : secondaryValue(tokens: tool.todayTokens, cacheRead: tool.todayCacheReadTokens, messages: tool.todayMessages, total: total, includeCacheRead: includeCache,ttft:GenerationSpeedStore.shared.summary(provider:tool.name).formattedTTFT),
                 trailing: tool.measurementUnit == .requests ? "—" : cacheText(tool.cacheRate),
                 actionName: tool.sessions.isEmpty ? nil : "details:tool:\(tool.name)",
                 child: false,
@@ -680,10 +748,11 @@ final class LinuxDetailsPanel: @unchecked Sendable {
             appendDataRow(
                 title: "\(prefix) \(group.emoji) \(group.name)",
                 tokens: primaryValue(tokens: group.totalTokens, cacheRead: group.totalCacheReadTokens, cost: group.totalCost, includeCacheRead: includeCache),
-                messages: secondaryValue(tokens: group.totalTokens, cacheRead: group.totalCacheReadTokens, messages: group.totalMessages, total: total, includeCacheRead: includeCache),
-                trailing: group.generationSpeed.formatted,
+                messages: secondaryValue(tokens: group.totalTokens, cacheRead: group.totalCacheReadTokens, messages: group.totalMessages, total: total, includeCacheRead: includeCache,ttft:group.generationSpeed.formattedTTFT),
+                trailing: valueMode == .tokens ? shareValue(group.totalTokens+(includeCache ? group.totalCacheReadTokens:0),total:total):group.generationSpeed.formatted,
                 actionName: group.contributions.isEmpty ? nil : "details:model-row:\(group.name)",
                 child: false,
+                tooltip:group.generationSpeed.helpText,
                 to: list
             )
             if expanded {
@@ -691,10 +760,11 @@ final class LinuxDetailsPanel: @unchecked Sendable {
                     appendDataRow(
                         title: "    \(contribution.emoji) \(contribution.tool)",
                         tokens: primaryValue(tokens: contribution.tokens, cacheRead: contribution.cacheReadTokens, cost: contribution.cost, includeCacheRead: includeCache),
-                        messages: secondaryValue(tokens: contribution.tokens, cacheRead: contribution.cacheReadTokens, messages: contribution.messages, total: total, includeCacheRead: includeCache),
-                        trailing: GenerationSpeedStore.shared.summary(model: group.name, providers: [contribution.tool]).formatted,
+                        messages: secondaryValue(tokens: contribution.tokens, cacheRead: contribution.cacheReadTokens, messages: contribution.messages, total: total, includeCacheRead: includeCache,ttft:contribution.generationSpeed.formattedTTFT),
+                        trailing: valueMode == .tokens ? shareValue(contribution.tokens+(includeCache ? contribution.cacheReadTokens:0),total:total):contribution.generationSpeed.formatted,
                         actionName: nil,
                         child: true,
+                        tooltip:contribution.generationSpeed.helpText,
                         to: list
                     )
                 }
@@ -709,6 +779,7 @@ final class LinuxDetailsPanel: @unchecked Sendable {
         trailing: String?,
         actionName: String?,
         child: Bool,
+        tooltip:String?=nil,
         to list: UnsafeMutablePointer<GtkWidget>
     ) {
         guard let row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0) else { return }
@@ -718,7 +789,7 @@ final class LinuxDetailsPanel: @unchecked Sendable {
         appendLabel(tokens, width: 60, alignment: 1, style: "tokenclock-detail-text", to: row)
         appendLabel(messages, width: 40, alignment: 1, style: "tokenclock-detail-subtext", to: row)
         if let trailing {
-            appendLabel(trailing, width: 40, alignment: 1, style: "tokenclock-detail-subtext", to: row)
+            if let label=appendLabel(trailing, width: 40, alignment: 1, style: "tokenclock-detail-subtext", to: row),let tooltip{gtk_widget_set_tooltip_text(label,tooltip)}
         }
 
         if let actionName, let button = gtk_button_new() {
@@ -733,20 +804,21 @@ final class LinuxDetailsPanel: @unchecked Sendable {
         }
     }
 
-    private func appendLabel(
+    @discardableResult private func appendLabel(
         _ text: String,
         width: Int,
         expands: Bool = false,
         alignment: Float,
         style: String,
         to box: UnsafeMutablePointer<GtkWidget>?
-    ) {
-        guard let label = LinuxBrandIcons.label(text) else { return }
+    ) -> UnsafeMutablePointer<GtkWidget>? {
+        guard let label = LinuxBrandIcons.label(text) else { return nil }
         if BrandIconCatalog.labelParts(text) == nil { gtk_label_set_xalign(tc_gtk_label(label), alignment) }
         if text.count > 24 { gtk_widget_set_tooltip_text(label, text) }
         gtk_widget_set_size_request(label, gint(width), -1)
         tc_gtk_add_class(label, style)
         gtk_box_pack_start(tc_gtk_box(box), label, expands ? 1 : 0, expands ? 1 : 0, 0)
+        return label
     }
 
     private func appendEmptyState(to list: UnsafeMutablePointer<GtkWidget>) {
@@ -822,12 +894,12 @@ final class LinuxDetailsPanel: @unchecked Sendable {
             gtk_box_pack_start(tc_gtk_box(selectorBox), selectorLabel, 0, 0, 0)
             gtk_grid_set_column_spacing(tc_gtk_grid(selectorGrid), 10)
             gtk_grid_set_row_spacing(tc_gtk_grid(selectorGrid), 5)
-            for (index, provider) in LinuxQuotaProvider.allCases.enumerated() {
+            for (index, provider) in LinuxQuotaProvider.allCases.filter({!hiddenUnifiedAlias($0)}).enumerated() {
                 guard let toggle = gtk_check_button_new(),
                       let labelBox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 5) else { continue }
                 let selected = dialQuotaProviders.contains(provider)
                 gtk_toggle_button_set_active(tc_gtk_toggle_button(toggle), selected ? 1 : 0)
-                gtk_widget_set_sensitive(toggle, selected || dialQuotaProviders.count < 2 ? 1 : 0)
+                gtk_widget_set_sensitive(toggle, selected || dialQuotaProviders.count < 4 ? 1 : 0)
                 gtk_widget_set_name(toggle, "details:quota-dial:\(provider.rawValue)")
                 gtk_widget_set_tooltip_text(toggle, tr("quota.dialDisplayHelp"))
                 let dot = gtk_label_new(nil)
@@ -835,7 +907,8 @@ final class LinuxDetailsPanel: @unchecked Sendable {
                     tc_gtk_label(dot),
                     "<span foreground=\"\(quotaDialHexColor(provider))\">●</span>"
                 )
-                let title = gtk_label_new(subscriptionProvider(provider).displayName)
+                let badge=dialQuotaProviders.firstIndex(of:provider).map{" [\($0/2+1)]"} ?? ""
+                let title = gtk_label_new(displayQuotaName(provider)+badge)
                 gtk_label_set_xalign(tc_gtk_label(title), 0)
                 gtk_box_pack_start(tc_gtk_box(labelBox), dot, 0, 0, 0)
                 gtk_box_pack_start(tc_gtk_box(labelBox), title, 1, 1, 0)
@@ -850,7 +923,7 @@ final class LinuxDetailsPanel: @unchecked Sendable {
             gtk_box_pack_start(tc_gtk_box(content), selectorBox, 0, 0, 0)
         }
 
-        for (index, provider) in quotaProviderOrder.enumerated() {
+        for (index, provider) in quotaProviderOrder.filter({!hiddenUnifiedAlias($0) || !subscriptionAccounts(for:subscriptionProvider($0)).isEmpty}).enumerated() {
             if index > 0 { gtk_box_pack_start(tc_gtk_box(content), separator(), 0, 0, 4) }
             guard let row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 7),
                   let section = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8) else { continue }
@@ -905,6 +978,10 @@ final class LinuxDetailsPanel: @unchecked Sendable {
     ) {
         let accountProvider = subscriptionProvider(provider)
         let accounts = subscriptionAccounts(for: accountProvider)
+        if provider == .grokBot,GrokBotNativeCredentialStore.shared.accessState == .authorizationRequired{
+            appendLabel(tr("quota.grokBotAuthorizationBody"),width:300,expands:true,alignment:0,style:"tokenclock-quota-source",to:content)
+            if let authorize=appendControl(tr("quota.grokBotAuthorize"),name:"details:grok-native-authorize",prominent:true,to:content){gtk_widget_set_sensitive(authorize,grokBotQuotaFetchInFlight ? 0:1)}
+        }
         if !accounts.isEmpty {
             appendQuotaProviderHeading(
                 quotaProviderTitle(provider), plan: nil,
@@ -930,16 +1007,16 @@ final class LinuxDetailsPanel: @unchecked Sendable {
                 unavailable: tr("quota.cursorUnavailable"), to: content)
         case .grokBot:
             appendProviderQuotaSection("😶 Grok Bot", snapshot: grokBotQuota,
-                unavailable: "Grok Bot quota unavailable; check Cursor sign-in", to: content)
+                unavailable: tr("quota.grokBotLoginUnavailable"), to: content)
         case .zhipu:
             appendProviderQuotaSection("🅉 Z.ai", snapshot: zhipuQuota,
-                unavailable: "Z.ai quota unavailable; check ZCode sign-in", to: content)
+                unavailable: tr("quota.zhipuUnavailable"), to: content)
         }
     }
 
     private func quotaProviderTitle(_ provider: LinuxQuotaProvider) -> String {
         let subscription = subscriptionProvider(provider)
-        return "\(subscription.emoji) \(subscription.displayName)"
+        return "\(subscription.emoji) \(displayQuotaName(provider))"
     }
 
     private func subscriptionProvider(_ provider: LinuxQuotaProvider) -> SubscriptionProvider {
@@ -1026,9 +1103,21 @@ final class LinuxDetailsPanel: @unchecked Sendable {
         }
     }
 
+    private var visibleAccounts:[SubscriptionAccountRecord]{
+        XSubscriptionQuota.visibleAccounts(subscriptionAccountStore.records(),activeIDs:activeSubscriptionAccountIDs,selected:dialQuotaProviders.map{subscriptionProvider($0)})
+    }
+    private func hiddenUnifiedAlias(_ provider:LinuxQuotaProvider)->Bool{
+        let value=subscriptionProvider(provider)
+        guard let id=activeSubscriptionAccountIDs[value],subscriptionAccountStore.records().first(where:{$0.id==id})?.isUnifiedSubscription==true else{return false}
+        return !visibleAccounts.contains{$0.id==id}
+    }
+    private func displayQuotaName(_ provider:LinuxQuotaProvider)->String{
+        let records=subscriptionAccounts(for:subscriptionProvider(provider))
+        return !records.isEmpty && records.allSatisfy(\.isUnifiedSubscription) ? XSubscriptionQuota.title:subscriptionProvider(provider).displayName
+    }
     private func subscriptionAccounts(for provider: SubscriptionProvider) -> [SubscriptionAccountRecord] {
         let current = activeSubscriptionAccountIDs[provider]
-        return subscriptionAccountStore.records().filter { $0.provider == provider }.sorted {
+        return visibleAccounts.filter { $0.provider == provider }.sorted {
             if $0.id == current { return true }
             if $1.id == current { return false }
             return ($0.refreshedAt ?? .distantPast) > ($1.refreshedAt ?? .distantPast)
@@ -1071,7 +1160,7 @@ final class LinuxDetailsPanel: @unchecked Sendable {
         if let toggle = gtk_check_button_new_with_label(QuotaAccountLabels.showOnDial) {
             gtk_toggle_button_set_active(tc_gtk_toggle_button(toggle), isDialAccountSelected(account) ? 1 : 0)
             gtk_widget_set_name(toggle, "details:quota-account-dial:\(account.id)")
-            let permitted = dialQuotaProviders.contains { subscriptionProvider($0) == account.provider } || dialQuotaProviders.count < 2
+            let permitted = dialQuotaProviders.contains { subscriptionProvider($0) == account.provider } || dialQuotaProviders.count < 4
             gtk_widget_set_sensitive(toggle, permitted ? 1 : 0)
             _ = tc_gtk_on_clicked(toggle, linuxDetailsAction, opaque)
             gtk_box_pack_start(tc_gtk_box(content), toggle, 0, 0, 0)
@@ -1684,6 +1773,9 @@ final class LinuxDetailsPanel: @unchecked Sendable {
     }
 
     private func quotaDidChange() {
+        let selected=Dictionary(uniqueKeysWithValues:SubscriptionProvider.allCases.compactMap{p in DialQuotaAccountSelection.selectedID(for:p).map{(p,$0)}})
+        let normalized=XSubscriptionQuota.dialProviders(dialQuotaProviders.map{subscriptionProvider($0)},records:subscriptionAccountStore.records(),activeIDs:activeSubscriptionAccountIDs,selectedIDs:selected).compactMap{LinuxQuotaProvider(rawValue:$0.rawValue)}
+        if normalized != dialQuotaProviders{dialQuotaProviders=normalized;UserDefaults.standard.set(normalized.map(\.rawValue),forKey:SettingsKey.dialQuotaProviders.rawValue)}
         selectAutomaticDialQuotaProviderIfReady()
         rebuildQuotaWindow()
         onDialQuotaChange()
@@ -1755,12 +1847,9 @@ final class LinuxDetailsPanel: @unchecked Sendable {
         return TokenFormat.compact(tokens + (includeCacheRead ? cacheRead : 0))
     }
 
-    private func secondaryValue(tokens: Int, cacheRead: Int, messages: Int, total: Int, includeCacheRead: Bool) -> String {
-        if valueMode == .tokens { return "\(messages)" }
-        let shown = tokens + (includeCacheRead ? cacheRead : 0)
-        guard shown > 0, total > 0 else { return "–" }
-        let percent = Double(shown) / Double(total) * 100
-        return percent < 1 ? "<1%" : String(format: "%.0f%%", percent)
+    private func shareValue(_ tokens:Int,total:Int)->String{String(format:"%.0f%%",Double(tokens)*100/Double(max(1,total)))}
+    private func secondaryValue(tokens:Int,cacheRead:Int,messages:Int,total:Int,includeCacheRead:Bool,ttft:String="—")->String{
+        valueMode == .tokens ? String(messages):ttft
     }
 
     private func cacheText(_ rate: Double) -> String {
@@ -1769,11 +1858,18 @@ final class LinuxDetailsPanel: @unchecked Sendable {
         return percent < 1 ? "<1%" : String(format: "%.0f%%", percent)
     }
 
+    fileprivate func didResize(width: Int32, height: Int32) {
+        guard width >= Self.panelWidth, height >= 300 else { return }
+        UserDefaults.standard.set(Int(width), forKey: "TC_linuxDetailWidth")
+        UserDefaults.standard.set(Int(height), forKey: "TC_linuxDetailHeight")
+    }
+
     private func resizeAndPosition() {
         guard let parent, let window else { return }
-        let width = Self.panelWidth
-        let height = Self.panelHeight
-        gtk_widget_set_size_request(window, gint(width), gint(height))
+        let width = max(Self.panelWidth, UserDefaults.standard.integer(forKey: "TC_linuxDetailWidth"))
+        let height = max(300, UserDefaults.standard.integer(forKey: "TC_linuxDetailHeight") > 0
+            ? UserDefaults.standard.integer(forKey: "TC_linuxDetailHeight") : Self.panelHeight)
+        gtk_widget_set_size_request(window, gint(Self.panelWidth), 300)
         gtk_window_resize(tc_gtk_window(window), gint(width), gint(height))
         tc_gtk_position_adjacent_panel(
             parent, window, gint(width), gint(height), 8
@@ -1935,5 +2031,11 @@ private func linuxDetailsGrokBotQuotaReady(_ data: gpointer?) -> gboolean {
 
 private func linuxDetailsZhipuQuotaReady(_ data: gpointer?) -> gboolean {
     detailsPanel(from: data)?.applyPendingZhipuQuota()
+    return 0
+}
+
+private let linuxDetailsConfigured: @convention(c) (UnsafeMutablePointer<GtkWidget>?, UnsafeMutablePointer<GdkEventConfigure>?, gpointer?) -> gboolean = { _, event, data in
+    guard let event, let data else { return 0 }
+    Unmanaged<LinuxDetailsPanel>.fromOpaque(data).takeUnretainedValue().didResize(width:event.pointee.width,height:event.pointee.height)
     return 0
 }

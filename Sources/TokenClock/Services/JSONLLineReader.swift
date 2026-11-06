@@ -19,12 +19,16 @@ enum JSONLLineReader {
         // Cold scans are dominated by large historical files. A read-only mmap
         // lets us inspect line slices without allocating/copying each enormous
         // tool-output record. EOF appends still use the streaming path below.
-        if offset == 0, prefix.isEmpty,
-           let mapped = try? Data(
-               contentsOf: URL(fileURLWithPath: path),
-               options: [.mappedIfSafe, .uncached]
-           ) {
-            return readMapped(mapped, matchingAny: needles, onLine: onLine)
+        // mappedIfSafe may silently allocate the entire file instead of mmap.
+        // Bound that fallback; large logs use the same chunked streaming path.
+        let size = (try? FileManager.default.attributesOfItem(atPath: path)[.size] as? NSNumber)?.uint64Value
+        if offset == 0, prefix.isEmpty, let size, size <= 16 * 1_048_576 {
+            let mappedResult: Result? = withAutoreleasePool {
+                guard let mapped = try? Data(contentsOf: URL(fileURLWithPath: path),
+                                             options: [.mappedIfSafe, .uncached]) else { return nil }
+                return readMapped(mapped, matchingAny: needles, onLine: onLine)
+            }
+            if let mappedResult { return mappedResult }
         }
 
         guard let handle = FileHandle(forReadingAtPath: path) else { return nil }
@@ -45,35 +49,43 @@ enum JSONLLineReader {
         let chunkSize = max(AppConfig.Scan.jsonlBufferSize, 4_096)
 
         while true {
-            let chunk: Data
-            do {
-                chunk = try handle.read(upToCount: chunkSize) ?? Data()
-            } catch {
-                return nil
-            }
-            guard !chunk.isEmpty else { break }
-
-            readOffset += UInt64(chunk.count)
-            buffer.append(chunk)
-
-            var lineStart = buffer.startIndex
-            var searchStart = buffer.index(buffer.startIndex, offsetBy: searchedByteCount)
-            while let newline = buffer[searchStart...].firstIndex(of: 0x0A) {
-                let lineData = buffer[lineStart..<newline]
-                if lineStart < newline,
-                   (needles.isEmpty || needles.contains(where: { lineData.range(of: $0) != nil })),
-                   let line = String(data: lineData, encoding: .utf8) {
-                    withAutoreleasePool { onLine(line) }
+            // FileHandle/NSData and byte-search bridging can create autoreleased
+            // objects outside the per-line pool. Drain them once per chunk,
+            // rather than keeping an entire large append alive until task exit.
+            let more: Bool? = withAutoreleasePool {
+                let chunk: Data
+                do {
+                    chunk = try handle.read(upToCount: chunkSize) ?? Data()
+                } catch {
+                    return nil
                 }
-                lineStart = buffer.index(after: newline)
-                if lineStart == buffer.endIndex { break }
-                searchStart = lineStart
-            }
+                guard !chunk.isEmpty else { return false }
 
-            if lineStart > buffer.startIndex {
-                buffer.removeSubrange(buffer.startIndex..<lineStart)
+                readOffset += UInt64(chunk.count)
+                buffer.append(chunk)
+
+                var lineStart = buffer.startIndex
+                var searchStart = buffer.index(buffer.startIndex, offsetBy: searchedByteCount)
+                while let newline = buffer[searchStart...].firstIndex(of: 0x0A) {
+                    let lineData = buffer[lineStart..<newline]
+                    if lineStart < newline,
+                       (needles.isEmpty || needles.contains(where: { lineData.range(of: $0) != nil })),
+                       let line = String(data: lineData, encoding: .utf8) {
+                        withAutoreleasePool { onLine(line) }
+                    }
+                    lineStart = buffer.index(after: newline)
+                    if lineStart == buffer.endIndex { break }
+                    searchStart = lineStart
+                }
+
+                if lineStart > buffer.startIndex {
+                    buffer.removeSubrange(buffer.startIndex..<lineStart)
+                }
+                searchedByteCount = buffer.count
+                return true
             }
-            searchedByteCount = buffer.count
+            guard let more else { return nil }
+            if !more { break }
         }
 
         return Result(offset: readOffset, trailingData: buffer)
@@ -117,11 +129,11 @@ enum JSONLLineReader {
     }
 
     @inline(__always)
-    private static func withAutoreleasePool(_ body: () -> Void) {
+    private static func withAutoreleasePool<T>(_ body: () -> T) -> T {
 #if canImport(ObjectiveC)
-        autoreleasepool(invoking: body)
+        return autoreleasepool(invoking: body)
 #else
-        body()
+        return body()
 #endif
     }
 }

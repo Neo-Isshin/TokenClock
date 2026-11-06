@@ -12,10 +12,21 @@ final class AiderUsageService: @unchecked Sendable {
     private var lastScanTime: Date = .distantPast
 
     private let fm = FileManager.default
-    private let aiderHome: String
+    private let analyticsPath: String
 
     init(aiderHome: String? = nil) {
-        self.aiderHome = aiderHome ?? PathConfig.aiderHome()
+        if let aiderHome {
+            // 传入单个 .jsonl 文件可直连（便携/测试场景）
+            analyticsPath = aiderHome.lowercased().hasSuffix(".jsonl")
+                ? aiderHome
+                : aiderHome + "/analytics.jsonl"
+        } else {
+            #if os(Windows)
+            analyticsPath = PathConfig.aiderAnalyticsPath()
+            #else
+            analyticsPath = PathConfig.aiderHome() + "/analytics.jsonl"
+            #endif
+        }
     }
 
     func fullScan() {
@@ -50,10 +61,6 @@ final class AiderUsageService: @unchecked Sendable {
     }
 
     // MARK: - 内部
-
-    private var analyticsPath: String {
-        aiderHome + "/analytics.jsonl"
-    }
 
     private func scanAnalyticsFile() {
         let path = analyticsPath
@@ -106,11 +113,12 @@ final class AiderUsageService: @unchecked Sendable {
             }
         ) != nil else { return }
 
-        // 单文件读取完后再修剪一次；逐行过滤会让繁忙日志退化为 O(n²)。
+        // 限制 recentEntries 增长，但只在整文件读取完成后过滤一次，避免逐行 O(n²)。
         if recentEntries.count > 64 {
             let cutoff = Date().addingTimeInterval(-AppConfig.Scan.activeThresholdSeconds * 3)
             recentEntries = recentEntries.filter { $0.timestamp >= cutoff }
         }
+
         lastScanTime = Date()
     }
 

@@ -7,7 +7,7 @@ RUN sed -i "s@http://ports.ubuntu.com/ubuntu-ports@${UBUNTU_PORTS_MIRROR}@g" /et
     && apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
         libgtk-3-dev \
-        libsqlite3-dev \
+        libsqlite3-dev libsecret-1-dev libssl-dev \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /src
@@ -40,7 +40,7 @@ RUN runtime_mirror="$(printf '%s' "${UBUNTU_PORTS_MIRROR}" | sed 's@^https:@http
         libcurl4 \
         libgtk-3-0 \
         librsvg2-common \
-        libsqlite3-0 \
+        libsqlite3-0 libsecret-1-0 libssl3 \
         shared-mime-info \
     && rm -rf /var/lib/apt/lists/*
 

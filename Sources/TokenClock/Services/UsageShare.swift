@@ -90,7 +90,6 @@ struct UsageShareData: Sendable {
     let quoteKey: String
     var startDate: Date { period.bounds.start }
     var endDate: Date { period.bounds.end }
-    var date: Date { endDate }
 }
 
 enum UsageShareBuilder {

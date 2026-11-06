@@ -1,8 +1,8 @@
 import Foundation
-#if os(Linux)
-import CSQLite
-#else
+#if os(macOS)
 import SQLite3
+#else
+import CSQLite
 #endif
 
 /// 日结历史持久化：每天 00:01 抓 viewModel.tools 快照写入 SQLite
@@ -10,6 +10,7 @@ import SQLite3
 /// API 端点：GET /api/history?days=N
 final class HistoryStore: @unchecked Sendable {
     static let shared = HistoryStore()
+    private static let currentAccountingVersion = 2
 
     private var db: OpaquePointer?
     private let ioQueue = DispatchQueue(label: "com.tokenclock.history.io", qos: .utility)
@@ -45,6 +46,7 @@ final class HistoryStore: @unchecked Sendable {
                 cost_value    REAL NOT NULL DEFAULT 0,
                 cost_complete INTEGER NOT NULL DEFAULT 0,
                 cost_available INTEGER NOT NULL DEFAULT 0,
+                accounting_version INTEGER NOT NULL DEFAULT 0,
                 PRIMARY KEY (date_key, tool_name)
             );
             CREATE INDEX IF NOT EXISTS idx_date ON daily_snapshots(date_key);
@@ -80,6 +82,9 @@ final class HistoryStore: @unchecked Sendable {
         }
         if !columns.contains("cost_available") {
             sqlite3_exec(db, "ALTER TABLE daily_snapshots ADD COLUMN cost_available INTEGER NOT NULL DEFAULT 0", nil, nil, nil)
+        }
+        if !columns.contains("accounting_version") {
+            sqlite3_exec(db, "ALTER TABLE daily_snapshots ADD COLUMN accounting_version INTEGER NOT NULL DEFAULT 0", nil, nil, nil)
         }
     }
 
@@ -143,7 +148,22 @@ final class HistoryStore: @unchecked Sendable {
         return URL(fileURLWithPath: dataHome, isDirectory: true)
             .appendingPathComponent("tokenclock", isDirectory: true)
             .appendingPathComponent("history.sqlite")
+#elseif os(Windows)
+        // Windows 历史始终留在当前用户 LocalAppData，不与 macOS/Linux 路径混用。
+        let environment = ProcessInfo.processInfo.environment
+        let local = environment["LOCALAPPDATA"]
+            ?? environment["USERPROFILE"].map { $0 + "\\AppData\\Local" }
+            ?? "C:\\TokenClock"
+        return URL(fileURLWithPath: local, isDirectory: true)
+            .appendingPathComponent("TokenClock", isDirectory: true)
+            .appendingPathComponent("history.sqlite")
 #else
+        // Integration runs may use an isolated history database. This is only
+        // an explicit host setting; session content never supplies this path.
+        if let override = ProcessInfo.processInfo.environment["TOKENCLOCK_HISTORY_DB_PATH"] {
+            precondition(override.hasPrefix("/"), "TOKENCLOCK_HISTORY_DB_PATH must be absolute")
+            return URL(fileURLWithPath: override)
+        }
         let appSupport = (try? FileManager.default.url(
             for: .applicationSupportDirectory, in: .userDomainMask,
             appropriateFor: nil, create: true
@@ -174,8 +194,9 @@ final class HistoryStore: @unchecked Sendable {
             guard sqlite3_prepare_v2(db, """
                 INSERT INTO daily_snapshots
                   (date_key, tool_name, tokens, messages, cache_rate, is_active, settled_at,
-                   sessions_json, cache_read_tokens, cost_value, cost_complete, cost_available)
-                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
+                   sessions_json, cache_read_tokens, cost_value, cost_complete, cost_available,
+                   accounting_version)
+                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
             """, -1, &ins, nil) == SQLITE_OK else {
                 return
             }
@@ -196,6 +217,7 @@ final class HistoryStore: @unchecked Sendable {
                 sqlite3_bind_double(ins, 10, s.cost.value)
                 sqlite3_bind_int(ins, 11, s.cost.complete ? 1 : 0)
                 sqlite3_bind_int(ins, 12, s.cost.available ? 1 : 0)
+                sqlite3_bind_int(ins, 13, Int32(Self.currentAccountingVersion))
                 if sqlite3_step(ins) != SQLITE_DONE {
                     print("[HistoryStore] insert failed for \(s.name): \(String(cString: sqlite3_errmsg(db)))")
                 }
@@ -203,8 +225,9 @@ final class HistoryStore: @unchecked Sendable {
         }
     }
 
-    /// 查询过去 N 天(返回数据库里实际存在的 date_key,缺数据日由 caller 补 0)
-    /// 返回按 date_key 降序的 [DaySnapshot]
+    /// Replace one provider's rows inside a bounded date interval without
+    /// touching any other tool. Used for repairable provider-local history.
+    @discardableResult
     func replaceToolHistory(
         toolName: String,
         snapshotsByDate: [String: ToolSnapshot],
@@ -213,9 +236,9 @@ final class HistoryStore: @unchecked Sendable {
     ) -> Bool {
         ioQueue.sync {
             guard let db else { return false }
-            guard sqlite3_exec(db, "BEGIN IMMEDIATE", nil, nil, nil) == SQLITE_OK else { return false }
+            sqlite3_exec(db, "BEGIN IMMEDIATE", nil, nil, nil)
             var committed = false
-            defer { if !committed { sqlite3_exec(db, "ROLLBACK", nil, nil, nil) } }
+            defer { sqlite3_exec(db, committed ? "COMMIT" : "ROLLBACK", nil, nil, nil) }
 
             var delete: OpaquePointer?
             guard sqlite3_prepare_v2(db, """
@@ -233,8 +256,9 @@ final class HistoryStore: @unchecked Sendable {
             guard sqlite3_prepare_v2(db, """
                 INSERT INTO daily_snapshots
                   (date_key, tool_name, tokens, messages, cache_rate, is_active, settled_at,
-                   sessions_json, cache_read_tokens, cost_value, cost_complete, cost_available)
-                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
+                   sessions_json, cache_read_tokens, cost_value, cost_complete, cost_available,
+                   accounting_version)
+                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
                 """, -1, &insert, nil) == SQLITE_OK else { return false }
             defer { sqlite3_finalize(insert) }
             let now = ISO8601DateFormatter().string(from: Date())
@@ -253,14 +277,16 @@ final class HistoryStore: @unchecked Sendable {
                 sqlite3_bind_double(insert, 10, snapshot.cost.value)
                 sqlite3_bind_int(insert, 11, snapshot.cost.complete ? 1 : 0)
                 sqlite3_bind_int(insert, 12, snapshot.cost.available ? 1 : 0)
+                sqlite3_bind_int(insert, 13, Int32(Self.currentAccountingVersion))
                 guard sqlite3_step(insert) == SQLITE_DONE else { return false }
             }
-            guard sqlite3_exec(db, "COMMIT", nil, nil, nil) == SQLITE_OK else { return false }
             committed = true
             return true
         }
     }
 
+    /// 查询过去 N 天(返回数据库里实际存在的 date_key,缺数据日由 caller 补 0)
+    /// 返回按 date_key 降序的 [DaySnapshot]
     func queryRecent(days: Int) -> [DaySnapshot] {
         query(whereClause: """
             WHERE date_key IN (
@@ -290,7 +316,8 @@ final class HistoryStore: @unchecked Sendable {
             // 取最近 N 个不同 date_key 下的所有 (tool, tokens, messages, cacheRate, isActive) 行
             let sql = """
                 SELECT date_key, tool_name, tokens, messages, cache_rate, is_active, sessions_json,
-                       cache_read_tokens, cost_value, cost_complete, cost_available
+                       cache_read_tokens, cost_value, cost_complete, cost_available,
+                       accounting_version
                 FROM daily_snapshots
                 \(whereClause)
                 ORDER BY date_key DESC, tool_name ASC
@@ -324,6 +351,10 @@ final class HistoryStore: @unchecked Sendable {
                     complete: sqlite3_column_int(stmt, 9) != 0,
                     available: sqlite3_column_int(stmt, 10) != 0
                 )
+                let accountingVersion = Int(sqlite3_column_int(stmt, 11))
+                // v1 Codex rows can contain inherited subagent replay. Keep the database
+                // row recoverable, but never surface known-invalid historical totals.
+                if name == "Codex", accountingVersion < Self.currentAccountingVersion { continue }
                 byDate[dateKey, default: []].append(
                     Row(name: name, tokens: tokens, messages: messages,
                         cacheRate: cacheRate, isActive: isActive,

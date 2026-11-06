@@ -270,8 +270,8 @@ final class GeminiUsageService: @unchecked Sendable {
         let input = tokens["input"] as? Int ?? 0
         let output = tokens["output"] as? Int ?? 0
         let cached = tokens["cached"] as? Int ?? 0
-        // Gemini CLI 的 input(promptTokenCount) 已含 cached(cachedContentTokenCount)，
-        // 同 Codex：cached 再加会双计。thought 为推理 token，单列计入（字段名兼容 thought/thoughts）。
+        // Gemini CLI 的 input(promptTokenCount) 已含 cached(cachedContentTokenCount)。
+        // 主用量排除 cached；thought 为独立推理 token（字段名兼容 thought/thoughts）。
         let thought = (tokens["thought"] as? Int) ?? (tokens["thoughts"] as? Int) ?? 0
         let total = TokenAccounting.excludingCacheRead(
             inclusiveInput: input, cacheRead: cached, output: output, additional: [thought]
@@ -305,11 +305,11 @@ final class GeminiUsageService: @unchecked Sendable {
         else { hourlyData[r.hourKey] = HourlyUsage(tokens: r.tokens, messages: 1) }
         if var e = hourly[r.hourKey] { e.tokens += r.tokens; e.messages += 1; hourly[r.hourKey] = e }
         else { hourly[r.hourKey] = HourlyUsage(tokens: r.tokens, messages: 1) }
-        // cache
         if r.timestamp != nil {
-            hourlyData[r.hourKey]?.recordMetadata(tokens: r.tokens,cache: r.cachedTokens,model: r.model)
-            hourly[r.hourKey]?.recordMetadata(tokens: r.tokens,cache: r.cachedTokens,model: r.model)
+            hourlyData[r.hourKey]?.recordMetadata(tokens: r.tokens, cache: r.cachedTokens, model: r.model)
+            hourly[r.hourKey]?.recordMetadata(tokens: r.tokens, cache: r.cachedTokens, model: r.model)
         }
+        // cache
         dailyCache[r.dateKey, default: 0] += r.cachedTokens
         cache[r.dateKey, default: 0] += r.cachedTokens
         // recent

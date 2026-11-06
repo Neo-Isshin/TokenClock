@@ -1,0 +1,3 @@
+Zstandard 1.4.8, Ubuntu 22.04 libzstd1 x86_64 shared library.
+BSD license and source package details in LICENSE.
+Read-only decompression of standard zstd frames; no external CLI is required.

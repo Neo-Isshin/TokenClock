@@ -9,7 +9,14 @@ final class MockUsageService {
     /// `enabledTools` 保留参数以兼容旧调用点，但不再影响数据（一律返回 0）。
     static func generateInitialData(enabledTools: Set<String> = .init()) -> [ToolUsage] {
         _ = enabledTools
-        let tools: [(name: String, abbr: String, emoji: String)] = [
+        #if os(Windows)
+        let catalogTools: [(name: String, abbr: String, emoji: String, unit: UsageMeasurementUnit, scope: UsageMeasurementScope)] =
+            WindowsProviderCatalog.orderedEntries.map {
+                ($0.displayName, $0.abbreviation, $0.emoji, $0.measurementUnit, $0.measurementScope)
+            }
+        let tools = catalogTools + [("Grok Bot", "GB", "😶", .tokens, .today)]
+        #else
+        let tokenTools: [(name: String, abbr: String, emoji: String)] = [
             ("OpenClaw", "OC", "🦞"),
             ("Gemini CLI", "GC", "❇️"),
             ("Claude Code", "CC", "✳️"),
@@ -25,13 +32,15 @@ final class MockUsageService {
             ("Continue", "CN", "▶️"),
             ("Cursor Agent", "CA", "💎"),
             ("Grok Bot", "GB", "😶"),
+            ("ZCode", "ZC", "🅉"),
         ]
-
-        let existing = tools.map { (name: $0.name, abbr: $0.abbr, emoji: $0.emoji, unit: UsageMeasurementUnit.tokens, scope: UsageMeasurementScope.today) }
+        let tools: [(name: String, abbr: String, emoji: String, unit: UsageMeasurementUnit, scope: UsageMeasurementScope)] =
+            tokenTools.map { ($0.name, $0.abbr, $0.emoji, .tokens, .today) }
+        #endif
         let additional = AdditionalHarness.allCases.filter { harness in !tools.contains { $0.name == harness.name } }.map { harness in
             (name: harness.name, abbr: harness.abbreviation, emoji: harness.emoji, unit: harness.unit, scope: UsageMeasurementScope.today)
         }
-        return (existing + additional).map { tool in
+        return (tools + additional).map { tool in
             ToolUsage(
                 name: tool.name,
                 abbreviation: tool.abbr,
