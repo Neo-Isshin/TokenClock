@@ -21,11 +21,40 @@ final class ClaudeDesktopDataTests: XCTestCase {
         XCTAssertEqual(indicator.innerRemainingPercent,75)
     }
     func testRejectsStaleFutureAmbiguousAndMalformedCaches() throws {
-        XCTAssertNil(ClaudeDesktopData.decodeUsageHistory(try data(samples:[sample(age:601)]),now:now))
+        XCTAssertNil(ClaudeDesktopData.decodeUsageHistory(try data(samples:[sample(age:1201)]),now:now))
         XCTAssertNil(ClaudeDesktopData.decodeUsageHistory(try data(samples:[sample(age:-10)]),now:now))
         XCTAssertNil(ClaudeDesktopData.decodeUsageHistory(try data(samples:[sample(),sample(org:"other")]),now:now))
         XCTAssertNil(ClaudeDesktopData.decodeUsageHistory(try data(samples:[sample(usage:["fh":true,"sd":101])]),now:now))
     }
+    func testFifteenMinuteDesktopHistoryAndVersionOneKeepActualSamplingTime() throws {
+        let value=try XCTUnwrap(ClaudeDesktopData.decodeUsageHistory(data(samples:[sample(age:900)]),now:now))
+        XCTAssertEqual(value.refreshedAt,now.addingTimeInterval(-900))
+        XCTAssertEqual(value.buckets.map(\.remainingPercent),[75,30])
+        XCTAssertNil(ClaudeDesktopData.decodeUsageHistory(try data(samples:[sample(age:601)]),now:now,maximumAge:600))
+        let versionOne=try JSONSerialization.data(withJSONObject:["version":1,"samples":[sample(age:900)]])
+        XCTAssertNotNil(ClaudeDesktopData.decodeUsageHistory(versionOne,now:now))
+        let bad=try JSONSerialization.data(withJSONObject:["version":true,"samples":[sample()]])
+        XCTAssertNil(ClaudeDesktopData.decodeUsageHistory(bad,now:now))
+    }
+    #if os(macOS)
+    final class Calls: @unchecked Sendable {let lock=NSLock();var count=0;func increment(){lock.withLock{count+=1}}}
+    func testUsableDesktopDataIsPreferredBeforeAnyOAuthOrWebRequest() throws {
+        let root=FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer {try? FileManager.default.removeItem(at:root)}
+        let home=ClaudeDesktopData.homes(home:root.path).first!
+        try FileManager.default.createDirectory(atPath:home,withIntermediateDirectories:true)
+        let recorded=Date().addingTimeInterval(-900)
+        let row:[String:Any]=["t":recorded.timeIntervalSince1970*1000,"org":"only-org","u":["fh":25,"sd":70]]
+        try data(samples:[row]).write(to:URL(fileURLWithPath:home).appendingPathComponent("plan-usage-history.json"))
+        let calls=Calls()
+        let service=ClaudeQuotaService(claudeHome:root.appendingPathComponent("no-cli").path,environment:["CLAUDE_CODE_OAUTH_TOKEN":"synthetic-only"],homeDirectory:root.path,oauthTransport:{_ in calls.increment();return nil})
+        let result=service.fetch()
+        XCTAssertEqual(result.source,.desktopCache)
+        XCTAssertEqual(try XCTUnwrap(result.refreshedAt).timeIntervalSince1970,recorded.timeIntervalSince1970,accuracy:0.001)
+        XCTAssertEqual(calls.count,0)
+        XCTAssertEqual(result.buckets.map(\.remainingPercent),[75,30])
+    }
+    #endif
     func testModelSpecificQuotaCannotOverrideOverallSubscriptionRing() throws {
         let buckets=[
             CodexQuotaBucket(id:"claude:seven_day",name:"Claude",usedPercent:30,windowMinutes:10080,resetsAt:nil),

@@ -93,6 +93,10 @@ enum NotificationPanelFilter: String, CaseIterable, Identifiable {
         }
         changed()
     }
+    func markRead(_ notices: [TokenClockNotification]) {
+        news.markRead(ids: Set(notices.compactMap(\.newsItemID)))
+        notebook.markRead(ids: Set(notices.compactMap(\.notebookEntryID)))
+    }
     func notices() -> [TokenClockNotification] { news.notices() + notebook.notices() }
     private func changed() { schedule(); onChange?() }
     private func schedule() {

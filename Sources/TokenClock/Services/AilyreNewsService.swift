@@ -208,8 +208,15 @@ struct AilyreNewsItem: Codable, Identifiable {
         if value { markAllRead() }
     }
     func markAllRead() {
-        guard unreadCount > 0, isPresentationVisible?() ?? true else { return }
-        cache.readIDs.formUnion(items.map(\.id)); save(); onChange?()
+        guard isPresentationVisible?() ?? true else { return }
+        markRead(ids: Set(items.map(\.id)))
+    }
+    /// Explicit acknowledgement from either the digest or notification panel.
+    /// The hidden digest's visibility guard must not block reading its notices.
+    func markRead(ids: Set<String>) {
+        let newlyRead = ids.intersection(Set(items.map(\.id))).subtracting(cache.readIDs)
+        guard !newlyRead.isEmpty else { return }
+        cache.readIDs.formUnion(newlyRead); save(); onChange?()
     }
     func notices() -> [TokenClockNotification] {
         items.map { item in

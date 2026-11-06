@@ -29,4 +29,19 @@ enum ClaudeLocalCredentialAccess {
         return Result(data:data,authorizationRequired:false,cancelled:false)
     }
 }
+/// An explicitly granted App encryption key can be reused within this process.
+/// This does not cache OAuth tokens or write anything to Keychain/preferences.
+final class ClaudeAppPasswordCache: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value: Data?
+    func read(_ load: () -> ClaudeLocalCredentialAccess.Result) -> (result: ClaudeLocalCredentialAccess.Result, cached: Bool) {
+        lock.withLock {
+            if let value { return (.init(data: value, authorizationRequired: false, cancelled: false), true) }
+            let result = load()
+            if let data = result.data, !data.isEmpty, data.count <= 16_384 { value = data }
+            return (result, false)
+        }
+    }
+    func invalidate() { lock.withLock { value = nil } }
+}
 #endif

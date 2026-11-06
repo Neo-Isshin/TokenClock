@@ -74,6 +74,11 @@ final class L10n: @unchecked Sendable {
     // MARK: - String Table
 
     private let table: [String: [AppLanguage: String]] = [
+        "quota.claudeRetryLocal": [.zhHans:"重试读取额度",.zhHant:"重試讀取額度",.en:"Retry quota read"],
+        "quota.claudeAuthorizeFallback": [.zhHans:"授权备用本机登录（可选）",.zhHant:"授權備用本機登入（可選）",.en:"Authorize another local sign-in (optional)"],
+        "quota.claudeResponseCacheSource": [.zhHans:"Claude App · 本地额度响应",.zhHant:"Claude App · 本機額度回應",.en:"Claude App · Saved usage response"],
+        "quota.claudeResponseCacheNote": [.zhHans:"来自原 App 保存的真实额度；下方为实际采样时间，未额外联网。",.zhHant:"來自原 App 儲存的真實額度；下方為實際取樣時間，未額外連線。",.en:"Real usage saved by Claude App, with its original observation time. No extra network request was made."],
+
         "quota.grokBotCursorAuthorizationTitle": [.zhHans:"授权复用已有 Cursor 登录",.zhHant:"授權重用既有 Cursor 登入",.en:"Allow access to existing Cursor sign-in"],
         "quota.grokBotCursorAuthorizationBody": [.zhHans:"已找到 Cursor CLI 配置，但 macOS 尚不允许静默读取已有登录。点击按钮仅申请读取现有登录的权限，无需安装 Grok Bot 或重新网页登录；后台不会弹出授权。",.zhHant:"已找到 Cursor CLI 設定，但 macOS 尚不允許靜默讀取既有登入。點擊按鈕僅申請讀取既有登入的權限，無須安裝 Grok Bot 或重新網頁登入；背景不會彈出授權。",.en:"Reading the existing Cursor CLI sign-in needs macOS permission. This button requests local read access; no Grok Bot installation or web sign-in is required. Background checks never prompt."],
         "quota.grokBotNoIncludedAllowance": [.zhHans:"此账号的接口明确报告没有可用的 Grok Bot 额度；Cursor 独立额度仍单独显示，无需重复授权。",.zhHant:"此帳戶的介面明確回報沒有可用的 Grok Bot 額度；Cursor 獨立額度仍分別顯示，無須重複授權。",.en:"This account reports no available Grok Bot allowance. Independent Cursor quota remains separate; another permission grant is not needed."],
@@ -162,7 +167,7 @@ final class L10n: @unchecked Sendable {
         "quota.claudeNoSubscription": [.zhHans: "当前账户没有可读取的 Claude 订阅组织。API 余额不等于订阅额度，请确认账户或套餐。", .zhHant: "目前帳戶沒有可讀取的 Claude 訂閱組織。API 餘額不等於訂閱額度，請確認帳戶或方案。", .en: "No readable Claude subscription organization for this account. API credit is not subscription quota; check the account or plan."],
         "quota.claudeNetworkError": [.zhHans: "Claude 额度请求失败，请稍后重试；不会切换到其他账户。", .zhHant: "Claude 額度請求失敗，請稍後重試；不會切換到其他帳戶。", .en: "Claude quota request failed. Retry later; no other account was selected."],
         "quota.claudeRateLimited": [.zhHans: "Claude 暂时限制请求，请稍后重试，无需重新登录。", .zhHant: "Claude 暫時限制請求，請稍後重試，無須重新登入。", .en: "Claude rate-limited this request. Try later; signing in again is not needed."],
-        "quota.claudeWebBlocked": [.zhHans: "Claude 的网页验证阻止了本次读取，不代表账户未登录；后台不会自动打开登录页。", .zhHant: "Claude 的網頁驗證阻止了本次讀取，不代表帳戶未登入；背景不會自動開啟登入頁。", .en: "A Claude web security check blocked this read; it does not mean you are signed out. No login page is opened automatically."],
+        "quota.claudeWebBlocked": [.zhHans: "Claude 的网页安全验证拦截了在线查询。重复输入密码或授权不能解除；将优先读取原 App 的真实本地额度记录。", .zhHant: "Claude 的網頁安全驗證攔截了線上查詢。重複輸入密碼或授權無法解除；將優先讀取原 App 的真實本機額度紀錄。", .en: "Claude web security blocked the online query. Repeating passwords or permission grants will not clear it; saved App usage records are preferred."],
         "quota.claudeInvalidResponse": [.zhHans: "Claude 未返回可识别的额度数据，不会按 0% 或 100% 展示。", .zhHant: "Claude 未傳回可辨識的額度資料，不會按 0% 或 100% 顯示。", .en: "Claude returned no recognized quota. Missing data is not shown as 0% or 100%."],
         "quota.claudeConnectPrivacy": [.zhHans: "在 Claude 官方网页登录，完成后点击下方连接。登录信息仅保存在本机独立 WebKit 配置中；仅查询订阅额度，不读取云端聊天或估算 Token。", .zhHant: "在 Claude 官方網頁登入，完成後點擊下方連接。登入資訊僅儲存在本機獨立 WebKit 設定中；僅查詢訂閱額度，不讀取雲端聊天或估算 Token。", .en: "Sign in on Claude's official page, then confirm below. Login stays in a separate local WebKit profile. Only subscription quota is queried, not cloud chats or estimated tokens."],
         "quota.claudeConnectCancel": [.zhHans: "取消", .zhHant: "取消", .en: "Cancel"],

@@ -9,6 +9,7 @@ import FoundationNetworking
 enum ClaudeQuotaSource: String, Sendable {
     case oauthAPI
     case desktopCache
+    case desktopResponseCache
     case desktopWeb
     case connectedWeb
 }
@@ -35,6 +36,7 @@ struct ClaudeQuotaSnapshot: Equatable, Sendable {
 #endif
         switch source {
         case .desktopCache: return L10n.shared.tr("quota.claudeCacheSource")
+        case .desktopResponseCache: return L10n.shared.tr("quota.claudeResponseCacheSource")
         case .desktopWeb: return L10n.shared.tr("quota.claudeAppSource")
         case .connectedWeb: return L10n.shared.tr("quota.claudeConnectedSource")
         default: return "Claude OAuth API"
@@ -109,6 +111,9 @@ final class ClaudeQuotaService: @unchecked Sendable {
     #endif
 
     typealias OAuthTransport = @Sendable (URLRequest) -> HTTPResponse?
+    #if os(macOS)
+    private let appPasswordCache = ClaudeAppPasswordCache()
+    #endif
     private let oauthTransport: OAuthTransport?
     private let fileManager: FileManager
     private let environment: [String: String]
@@ -179,15 +184,26 @@ final class ClaudeQuotaService: @unchecked Sendable {
     #if os(macOS)
     func fetch(connectedSession: ClaudeAppSession?, connectionSelected: Bool,
                expectedIdentity: String? = nil, previous: ClaudeQuotaSnapshot? = nil,
-               userInitiatedCredentialAccess: Bool = false) -> ClaudeQuotaSnapshot {
-        let cached = ClaudeDesktopData.quota(in: desktopHomes, fileManager: fileManager)
+               userInitiatedCredentialAccess: Bool = false, now: Date = Date()) -> ClaudeQuotaSnapshot {
+        var cached = ClaudeDesktopData.quota(in: desktopHomes, fileManager: fileManager, now: now)
         let owner = ClaudeQuotaIdentity(key: expectedIdentity ?? connectedSession?.expectedIdentity)
+        let mayUseUnpinnedAppCache = !connectionSelected && owner == nil && previous?.verifiedIdentity == nil
+            && (previous?.buckets.isEmpty != false || previous?.source == .desktopCache || previous?.source == .desktopResponseCache)
+        if mayUseUnpinnedAppCache, let cached { return cached }
         var needsVerifiedFallback = owner != nil || previous?.verifiedIdentity != nil
         var fallbackOwner = owner ?? previous?.verifiedIdentity ?? ClaudeQuotaIdentity(key:previous?.account?.id)
-        var authorizationRequired = false, cancelled = false
+        var authorizationRequired = false, cancelled = false, usedCachedAppKey = false
         let readLocal: (String,String) -> Data? = { service, account in
             guard !cancelled else { return nil }
-            let value=ClaudeLocalCredentialAccess.read(service:service,account:account,userInitiated:userInitiatedCredentialAccess)
+            let value: ClaudeLocalCredentialAccess.Result
+            if service == "Claude Safe Storage", account == "Claude Key" {
+                let cached = self.appPasswordCache.read {
+                    ClaudeLocalCredentialAccess.read(service:service,account:account,userInitiated:userInitiatedCredentialAccess)
+                }
+                value = cached.result; usedCachedAppKey = usedCachedAppKey || cached.cached
+            } else {
+                value = ClaudeLocalCredentialAccess.read(service:service,account:account,userInitiated:userInitiatedCredentialAccess)
+            }
             authorizationRequired = authorizationRequired || value.authorizationRequired
             cancelled = cancelled || value.cancelled
             return value.data
@@ -199,9 +215,20 @@ final class ClaudeQuotaService: @unchecked Sendable {
                 if owner == nil, let verified = result.verifiedIdentity { fallbackOwner = verified }
                 return result
             }, desktop: {
-                guard var session = ClaudeAppCookieReader.read(homes: self.desktopHomes,password: {readLocal("Claude Safe Storage","Claude Key").flatMap {String(data:$0,encoding:.utf8)}}) else {
+                let readApp = { ClaudeAppCookieReader.read(homes: self.desktopHomes,password: {readLocal("Claude Safe Storage","Claude Key").flatMap {String(data:$0,encoding:.utf8)}}) }
+                var appSession = readApp()
+                if appSession == nil && usedCachedAppKey {
+                    self.appPasswordCache.invalidate(); usedCachedAppKey = false
+                    appSession = readApp() // One fresh read handles a rotated App encryption key.
+                }
+                guard var session = appSession else {
                     if !connectionSelected && previous?.source == .oauthAPI { fallbackOwner = nil }
                     return ClaudeQuotaReadPolicy.failure(authorizationRequired ? .localAuthorization : .noCredential,key:authorizationRequired ? "quota.claudeLocalAuthorizationRequired":"quota.claudePassiveUnavailable",source:.desktopWeb)
+                }
+                if let organization = session.organizationID {
+                    let selectedCache = ClaudeDesktopData.quota(in: self.desktopHomes, fileManager: self.fileManager, now: now, organizationID: organization)
+                    if let selectedCache, (cached?.refreshedAt ?? .distantPast) < (selectedCache.refreshedAt ?? .distantPast) { cached = selectedCache }
+                    if mayUseUnpinnedAppCache, let selectedCache { return selectedCache }
                 }
                 if connectionSelected { session.expectedIdentity = fallbackOwner?.key }
                 let result = self.appQuota(session)
@@ -212,7 +239,7 @@ final class ClaudeQuotaService: @unchecked Sendable {
             }, oauth: {
                 return self.oauthQuota(previous: previous, allowKeychain: cached == nil || needsVerifiedFallback, expected: fallbackOwner,
                                        keychainReader:readLocal,authorizationRequired:{authorizationRequired})
-            }, cache: { cached })
+            }, cache: { cached }, now: now)
         result.localAuthorizationRequired = authorizationRequired && (result.status == .unavailable || result.isCachedFallback)
         if result.localAuthorizationRequired {
             if result.readFailure == .noCredential || result.readFailure == .localAuthorization {

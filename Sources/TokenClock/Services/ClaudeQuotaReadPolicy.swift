@@ -49,17 +49,20 @@ enum ClaudeQuotaReadPolicy {
             if constrained && selectedWeb && owner == nil {return nil}
             return value
         }
+        func cacheAge(_ value: ClaudeQuotaSnapshot) -> TimeInterval {
+            value.source == .desktopCache ? ClaudeDesktopData.historyMaximumAge : 600
+        }
         func cachedResult(_ fallback: ClaudeQuotaSnapshot) -> ClaudeQuotaSnapshot {
             let current = now ?? Date()
             if var value=previous, value.status == .available,!value.buckets.isEmpty,
-               let date=value.refreshedAt,date<=current,current.timeIntervalSince(date)<=600,
+               let date=value.refreshedAt,date<=current,current.timeIntervalSince(date)<=cacheAge(value),
                owner == nil || (value.verifiedIdentity ?? ClaudeQuotaIdentity(key:value.account?.id)) == owner {
                 value.isCachedFallback=true
                 value.message=L10n.shared.tr("quota.claudeKeepingSnapshot")
                 value.requiresConnection=false
                 return value
             }
-            if let value=cache(), let date=value.refreshedAt, date<=current,current.timeIntervalSince(date)<=600,
+            if let value=cache(), let date=value.refreshedAt, date<=current,current.timeIntervalSince(date)<=cacheAge(value),
                value.status == .available, !value.buckets.isEmpty, owner == nil || (value.verifiedIdentity ?? ClaudeQuotaIdentity(key:value.account?.id)) == owner {
                 return value
             }

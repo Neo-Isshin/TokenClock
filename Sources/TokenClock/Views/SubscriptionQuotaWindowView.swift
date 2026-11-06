@@ -253,6 +253,18 @@ struct SubscriptionQuotaWindowView: View {
                 Text(viewModel.claudeQuota.message ?? L10n.shared.tr("quota.claudeRecoveryHelp"))
                     .font(.system(size: 11)).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
+                if viewModel.claudeQuota.readFailure == .blocked {
+                    Button {
+                        viewModel.refreshSubscriptionQuotas(providers: [.claude])
+                    } label: {
+                        Label(L10n.shared.tr("quota.claudeRetryLocal"), systemImage: "arrow.clockwise")
+                    }.buttonStyle(.bordered).controlSize(.small).disabled(providerIsLoading(provider))
+                    if viewModel.claudeQuota.localAuthorizationRequired {
+                        Button(L10n.shared.tr("quota.claudeAuthorizeFallback")) { viewModel.authorizeClaudeLocal() }
+                            .buttonStyle(.plain).font(.system(size: 10)).foregroundStyle(.secondary)
+                            .instantHint(L10n.shared.tr("quota.claudeLocalAuthHint"))
+                    }
+                } else {
                 Button {
                     NSApp.activate(ignoringOtherApps: true)
                     viewModel.authorizeClaudeLocal()
@@ -262,6 +274,7 @@ struct SubscriptionQuotaWindowView: View {
                 .buttonStyle(.bordered).controlSize(.small)
                 .disabled(providerIsLoading(provider))
                 .instantHint(L10n.shared.tr("quota.claudeLocalAuthHint"))
+                }
                 Button(L10n.shared.tr("quota.claudeWebFallback")) { viewModel.connectClaude() }
                     .buttonStyle(.plain).font(.system(size: 10)).foregroundStyle(.secondary)
                 Text(L10n.shared.tr("quota.claudeNoBackgroundPrompts"))

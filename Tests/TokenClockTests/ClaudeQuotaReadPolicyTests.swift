@@ -43,7 +43,7 @@ final class ClaudeQuotaReadPolicyTests: XCTestCase {
         XCTAssertEqual(result.refreshedAt,previous.refreshedAt);XCTAssertEqual(result.buckets,previous.buckets)
     }
     func testFreshCacheWorksWithoutCredentialsButStaleOrFutureCacheDoesNot() {
-        for age in [90.0,601.0,-1.0] {
+        for age in [90.0,1201.0,-1.0] {
             let result=ClaudeQuotaReadPolicy.resolve(selectedWeb:false,expected:nil,previous:nil,connected:{self.missing()},desktop:{self.missing()},oauth:{self.missing()},cache:{self.good(nil,source:.desktopCache,age:age)},now:now)
             XCTAssertEqual(result.status,age==90 ? .available:.unavailable)
         }

@@ -111,7 +111,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             height: FloatingPanel.collapsedHeight
         )
         detailContentView.autoresizingMask = [.width, .height]
-        dropdownPanel.contentView = detailContentView
+        dropdownPanel.contentView = PanelResizeEdgesView.wrapping(detailContentView)
 
         let notificationView = NotificationCenterView(
             viewModel: viewModel,
@@ -149,7 +149,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let notificationContentView = NSHostingView(rootView: notificationView)
         notificationContentView.frame = NSRect(x: 0, y: 0, width: 280, height: 240)
         notificationContentView.autoresizingMask = [.width, .height]
-        notificationPanel.contentView = notificationContentView
+        notificationPanel.contentView = PanelResizeEdgesView.wrapping(notificationContentView)
 
         applyClockWindowLevel()
         if !viewModel.alwaysOnTop { startFullscreenDetection() }
@@ -279,7 +279,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             return
         }
         viewModel.isExpanded = false
-        if viewModel.hasUnreadNews { viewModel.notificationFilter = .news }
+        viewModel.notificationFilter = viewModel.hasUnreadNews ? .news : .all
         notificationPanel.show(near: panel.frame)
         viewModel.markNotificationsRead()
     }

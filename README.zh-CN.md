@@ -39,7 +39,7 @@
 
 ---
 
-**v1.6.2 本轮仅更新 macOS Glass。** 修复 Claude 本机授权入口与 Grok Bot 授权、账号处理，补交付本机 Codex 检测、Claude 网络策略和表盘点击修复。Normal 与 Linux 仍为 v1.6.0，Windows 仍为 v1.5.12。
+**v1.6.3 本轮仅更新 macOS Glass。** 优先读取 Claude App 保存的近期真实额度记录，修复通知未读标记，并支持下拉面板与通知面板的边缘、边角拉伸。Normal 与 Linux 仍为 v1.6.0，Windows 仍为 v1.5.12。
 
 ## ✨ 核心特性
 

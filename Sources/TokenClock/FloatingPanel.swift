@@ -328,3 +328,196 @@ final class NotificationPanel: NSPanel, NSWindowDelegate {
         orderOut(nil)
     }
 }
+
+
+// MARK: - Edge resizing for the borderless detail and notification panels
+
+enum PanelResizeEdge: CaseIterable {
+    case left, right, bottom, top, bottomLeft, bottomRight, topLeft, topRight
+    var adjustsLeft: Bool { [.left, .bottomLeft, .topLeft].contains(self) }
+    var adjustsRight: Bool { [.right, .bottomRight, .topRight].contains(self) }
+    var adjustsBottom: Bool { [.bottom, .bottomLeft, .bottomRight].contains(self) }
+    var adjustsTop: Bool { [.top, .topLeft, .topRight].contains(self) }
+    @MainActor var cursor: NSCursor {
+        let position: NSCursor.FrameResizePosition
+        switch self {
+        case .left: position = .left
+        case .right: position = .right
+        case .bottom: position = .bottom
+        case .top: position = .top
+        case .bottomLeft: position = .bottomLeft
+        case .bottomRight: position = .bottomRight
+        case .topLeft: position = .topLeft
+        case .topRight: position = .topRight
+        }
+        return .frameResize(position: position, directions: .all)
+    }
+}
+
+struct PanelResizeGeometry {
+    /// L-shaped corners stay within the six-point perimeter, leaving nearby
+    /// toolbar buttons and the rest of the panel fully interactive.
+    static func regions(in bounds: NSRect) -> [(edge: PanelResizeEdge, rect: NSRect)] {
+        let thickness = min(6, min(bounds.width, bounds.height) / 2)
+        let corner = min(12, min(bounds.width, bounds.height) / 2)
+        guard thickness > 0 else { return [] }
+        let x = bounds.minX, y = bounds.minY, right = bounds.maxX, top = bounds.maxY
+        let regions: [(edge: PanelResizeEdge, rect: NSRect)] = [
+            (.left, NSRect(x: x, y: y + corner, width: thickness, height: bounds.height - 2 * corner)),
+            (.right, NSRect(x: right - thickness, y: y + corner, width: thickness, height: bounds.height - 2 * corner)),
+            (.bottom, NSRect(x: x + corner, y: y, width: bounds.width - 2 * corner, height: thickness)),
+            (.top, NSRect(x: x + corner, y: top - thickness, width: bounds.width - 2 * corner, height: thickness)),
+            (.bottomLeft, NSRect(x: x, y: y, width: corner, height: thickness)),
+            (.bottomLeft, NSRect(x: x, y: y + thickness, width: thickness, height: corner - thickness)),
+            (.bottomRight, NSRect(x: right - corner, y: y, width: corner, height: thickness)),
+            (.bottomRight, NSRect(x: right - thickness, y: y + thickness, width: thickness, height: corner - thickness)),
+            (.topLeft, NSRect(x: x, y: top - thickness, width: corner, height: thickness)),
+            (.topLeft, NSRect(x: x, y: top - corner, width: thickness, height: corner - thickness)),
+            (.topRight, NSRect(x: right - corner, y: top - thickness, width: corner, height: thickness)),
+            (.topRight, NSRect(x: right - thickness, y: top - corner, width: thickness, height: corner - thickness)),
+        ]
+        return regions.filter { !$0.rect.isEmpty }
+    }
+
+    static func edge(at point: NSPoint, in bounds: NSRect) -> PanelResizeEdge? {
+        regions(in: bounds).first { $0.rect.contains(point) }?.edge
+    }
+
+    static func resizedFrame(from original: NSRect, edge: PanelResizeEdge, delta: NSSize,
+                             minimum: NSSize, maximum: NSSize, visibleFrame: NSRect?) -> NSRect {
+        var result = original
+        func clamp(_ length: CGFloat, minimum: CGFloat, maximum: CGFloat, available: CGFloat) -> CGFloat {
+            let upper = max(0, min(maximum, available))
+            return min(max(length, min(minimum, upper)), upper)
+        }
+        if edge.adjustsLeft {
+            let width = clamp(original.width - delta.width, minimum: minimum.width, maximum: maximum.width,
+                              available: visibleFrame.map { original.maxX - $0.minX } ?? maximum.width)
+            result.origin.x = original.maxX - width; result.size.width = width
+        } else if edge.adjustsRight {
+            result.size.width = clamp(original.width + delta.width, minimum: minimum.width, maximum: maximum.width,
+                                      available: visibleFrame.map { $0.maxX - original.minX } ?? maximum.width)
+        }
+        if edge.adjustsBottom {
+            let height = clamp(original.height - delta.height, minimum: minimum.height, maximum: maximum.height,
+                               available: visibleFrame.map { original.maxY - $0.minY } ?? maximum.height)
+            result.origin.y = original.maxY - height; result.size.height = height
+        } else if edge.adjustsTop {
+            result.size.height = clamp(original.height + delta.height, minimum: minimum.height, maximum: maximum.height,
+                                       available: visibleFrame.map { $0.maxY - original.minY } ?? maximum.height)
+        }
+        return result
+    }
+}
+
+/// An invisible perimeter above the hosting view. Its center is click-through;
+/// the standard container keeps SwiftUI's own hit testing out of edge tracking.
+final class PanelResizeEdgesView: NSView {
+    private struct Drag {
+        let edge: PanelResizeEdge
+        let mouse: NSPoint
+        let frame: NSRect
+        let minimum: NSSize
+        let maximum: NSSize
+        let visibleFrame: NSRect?
+    }
+    private var drag: Drag?
+    private var edgeTrackingAreas: [NSTrackingArea] = []
+
+    static func wrapping(_ content: NSView) -> NSView { PanelResizeContainerView(content: content) }
+
+    @discardableResult static func install(on panel: NSPanel) -> PanelResizeEdgesView? {
+        if let container = panel.contentView as? PanelResizeContainerView { return container.edges }
+        guard let content = panel.contentView else { return nil }
+        let container = PanelResizeContainerView(content: content)
+        panel.contentView = container
+        return container.edges
+    }
+
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        guard !isHiddenOrHasHiddenAncestor, super.hitTest(point) != nil,
+              PanelResizeGeometry.edge(at: convert(point, from: superview), in: bounds) != nil else { return nil }
+        return self
+    }
+
+    override func resetCursorRects() {
+        super.resetCursorRects()
+        for region in PanelResizeGeometry.regions(in: bounds) { addCursorRect(region.rect, cursor: region.edge.cursor) }
+    }
+
+    override func updateTrackingAreas() {
+        for area in edgeTrackingAreas { removeTrackingArea(area) }
+        edgeTrackingAreas = PanelResizeGeometry.regions(in: bounds).map { region in
+            NSTrackingArea(rect: region.rect, options: [.mouseEnteredAndExited, .cursorUpdate, .activeAlways], owner: self, userInfo: nil)
+        }
+        for area in edgeTrackingAreas { addTrackingArea(area) }
+        super.updateTrackingAreas()
+    }
+
+    override func setFrameSize(_ newSize: NSSize) {
+        super.setFrameSize(newSize)
+        window?.invalidateCursorRects(for: self)
+    }
+
+    private func updateCursor(for event: NSEvent) {
+        let edge = drag?.edge ?? PanelResizeGeometry.edge(at: convert(event.locationInWindow, from: nil), in: bounds)
+        (edge?.cursor ?? .arrow).set()
+    }
+    override func cursorUpdate(with event: NSEvent) { updateCursor(for: event) }
+    override func mouseEntered(with event: NSEvent) { updateCursor(for: event) }
+    override func mouseExited(with event: NSEvent) { if drag == nil { NSCursor.arrow.set() } }
+
+    override func mouseDown(with event: NSEvent) {
+        guard let window, window.styleMask.contains(.resizable),
+              let edge = PanelResizeGeometry.edge(at: convert(event.locationInWindow, from: nil), in: bounds) else { return }
+        drag = Drag(edge: edge, mouse: window.convertPoint(toScreen: event.locationInWindow), frame: window.frame,
+                    minimum: window.minSize, maximum: window.maxSize, visibleFrame: window.screen?.visibleFrame)
+        edge.cursor.set()
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        guard let window, let drag else { return }
+        let mouse = window.convertPoint(toScreen: event.locationInWindow)
+        let frame = PanelResizeGeometry.resizedFrame(from: drag.frame, edge: drag.edge,
+            delta: NSSize(width: mouse.x - drag.mouse.x, height: mouse.y - drag.mouse.y),
+            minimum: drag.minimum, maximum: drag.maximum, visibleFrame: drag.visibleFrame)
+        window.setFrame(frame, display: true)
+        drag.edge.cursor.set()
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        guard drag != nil else { return }
+        mouseDragged(with: event)
+        finishResize()
+        updateCursor(for: event)
+    }
+
+    override func viewWillMove(toWindow newWindow: NSWindow?) {
+        if newWindow == nil { finishResize() }
+        super.viewWillMove(toWindow: newWindow)
+    }
+
+    private func finishResize() {
+        guard drag != nil else { return }
+        drag = nil
+        if let window {
+            window.delegate?.windowDidEndLiveResize?(Notification(name: NSWindow.didEndLiveResizeNotification, object: window))
+        }
+        NSCursor.arrow.set()
+    }
+}
+
+private final class PanelResizeContainerView: NSView {
+    let edges = PanelResizeEdgesView(frame: .zero)
+    init(content: NSView) {
+        super.init(frame: NSRect(origin: .zero, size: content.frame.size))
+        content.removeFromSuperview()
+        content.frame = bounds; content.autoresizingMask = [.width, .height]
+        addSubview(content)
+        edges.frame = bounds; edges.autoresizingMask = [.width, .height]
+        addSubview(edges, positioned: .above, relativeTo: content)
+    }
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+}

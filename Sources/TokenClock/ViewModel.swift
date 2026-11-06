@@ -600,10 +600,10 @@ final class ViewModel: ObservableObject {
         let ids = Set(visible.map(\.id))
         if visible.contains(where: { $0.subscriptionAccountID != nil }) { BillingReminderStore.markRead() }
         if visible.contains(where: { $0.releaseURL != nil }) { ReleaseUpdateService.shared.markRead() }
-        userContent.notebook.markRead(ids: Set(visible.compactMap(\.notebookEntryID)))
+        userContent.markRead(visible)
         notifications = notifications.map {
             var notification = $0
-            if ids.contains($0.id), $0.kind != .news { notification.isRead = true }
+            if ids.contains($0.id) { notification.isRead = true }
             return notification
         }
         refreshBillingNotices()

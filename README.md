@@ -39,7 +39,7 @@
 
 ---
 
-**v1.6.2 updates macOS Glass only.** Fixes Claude local-access entry points and Grok Bot authorization/account handling; includes the completed local Codex detection, Claude networking and clock click fixes. Normal and Linux remain on v1.6.0; Windows remains on v1.5.12.
+**v1.6.3 updates macOS Glass only.** Reads recent real quota records saved by Claude App, repairs notification unread acknowledgement, and adds reliable edge/corner resizing for the dropdown and notification panels. Normal and Linux remain on v1.6.0; Windows remains on v1.5.12.
 
 ## ✨ Features
 
