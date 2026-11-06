@@ -237,6 +237,9 @@ final class ModelIntegrityLauncher: @unchecked Sendable {
             let prepared = try ModelIntegrityRuntimeCache.prepare(worker: sourceWorker, state: stateDirectory)
             let worker = prepared.worker
             var childEnvironment = environment
+            #if os(macOS)
+            childEnvironment["TOKENCLOCK_CODEX_HOME"] = PathConfig.codexHome()
+            #endif
             let runtime = prepared.runtime ?? sourceWorker.deletingLastPathComponent().appendingPathComponent("runtime")
             if fileManager.fileExists(atPath: runtime.appendingPathComponent("runtime-manifest.json").path) {
                 childEnvironment["TOKENCLOCK_MODEL_INTEGRITY_RUNTIME"] = runtime.path

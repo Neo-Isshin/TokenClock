@@ -9,6 +9,8 @@ struct SubscriptionQuotaWindowView: View {
     @State private var providerOrder: [SubscriptionProvider]
     @State private var expandedEmails: Set<String> = []
     @State private var costModesExpanded = false
+    @State private var legacyClaudeExpanded = false
+    @AppStorage(SettingsKey.claudeQuotaRequireProxy.rawValue) private var claudeRequireProxy = false
 
     init(
         viewModel: ViewModel,
@@ -32,6 +34,17 @@ struct SubscriptionQuotaWindowView: View {
 
     private var visibleProviders: [SubscriptionProvider] {
         providerOrder.filter(hasQuotaData)
+    }
+
+    @ViewBuilder
+    private func dialGroupBadge(for provider: SubscriptionProvider) -> some View {
+        if let group = viewModel.dialQuotaGroupNumber(for: provider) {
+            Text(String(group))
+                .font(.system(size: 9, weight: .semibold, design: .rounded))
+                .foregroundStyle(.secondary)
+                .frame(width: 14, height: 14)
+                .background(.primary.opacity(0.08), in: RoundedRectangle(cornerRadius: 4))
+        }
     }
 
     private var isTwoColumn: Bool { visibleProviders.count >= 4 }
@@ -82,23 +95,25 @@ struct SubscriptionQuotaWindowView: View {
                             Toggle(isOn: Binding(
                                 get: { isSelected },
                                 set: { value in
-                                    if value != isSelected { viewModel.toggleDialQuotaProvider(provider) }
+                                    if value != isSelected {
+                                        viewModel.toggleDialQuotaProvider(provider)
+                                    }
                                 }
                             )) {
                                 HStack(spacing: 5) {
                                     Circle()
-                                        .fill(viewModel.selectedTheme.dialQuotaColor(
-                                            for: provider,
-                                            contrastColor: viewModel.effectiveDialPrimary
-                                        ).opacity(0.78))
+                                        .fill(provider.dialQuotaColor.opacity(0.72))
                                         .frame(width: 7, height: 7)
-                                    Text(provider.displayName)
+                                    Text(viewModel.quotaDisplayName(for: provider))
                                         .lineLimit(1)
+                                    dialGroupBadge(for: provider)
                                 }
                             }
                             .toggleStyle(.checkbox)
                             .font(.system(size: 11, weight: .medium))
-                            .disabled(!isSelected && viewModel.dialQuotaProviders.count == 2)
+                            .disabled(
+                                !isSelected && viewModel.dialQuotaProviders.count >= DialQuotaPager.maximumSelection
+                            )
                         }
                     }
                     .help(L10n.shared.tr("quota.dialDisplayHelp"))
@@ -141,11 +156,25 @@ struct SubscriptionQuotaWindowView: View {
                     .padding(18)
                 }
             }
+            Divider()
+            DisclosureGroup(L10n.shared.tr("quota.claudeNetworkSettings")) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Toggle(L10n.shared.tr("quota.claudeRequireProxy"), isOn: $claudeRequireProxy)
+                        .toggleStyle(.checkbox)
+                        .accessibilityIdentifier("claude-quota-require-proxy")
+                    Text(L10n.shared.tr("quota.claudeNetworkPolicyHelp"))
+                        .font(.system(size: 10)).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }.padding(.top, 6)
+            }
+            .font(.system(size: 11))
+            .padding(.horizontal, 20).padding(.vertical, 10)
         }
         .frame(minWidth: isTwoColumn ? 700 : 380,
                idealWidth: isTwoColumn ? 760 : 430,
                minHeight: 480, idealHeight: 650)
         .background(Color(nsColor: .windowBackgroundColor))
+        .environment(\.locale, Locale(identifier:L10n.shared.language.rawValue))
         .onAppear { onLayoutChange(isTwoColumn) }
         .onChange(of: isTwoColumn) { onLayoutChange($0) }
     }
@@ -224,9 +253,30 @@ struct SubscriptionQuotaWindowView: View {
                 Text(viewModel.claudeQuota.message ?? L10n.shared.tr("quota.claudeRecoveryHelp"))
                     .font(.system(size: 11)).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
-                Button { viewModel.connectClaude() } label: {
-                    Label(L10n.shared.tr("quota.claudeConnect"), systemImage: "person.crop.circle.badge.checkmark")
-                }.buttonStyle(.bordered).controlSize(.small)
+                if viewModel.claudeQuota.readFailure == .blocked {
+                    Button {
+                        viewModel.refreshSubscriptionQuotas(providers: [.claude])
+                    } label: {
+                        Label(L10n.shared.tr("quota.claudeRetryLocal"), systemImage: "arrow.clockwise")
+                    }.buttonStyle(.bordered).controlSize(.small).disabled(providerIsLoading(provider))
+                    if viewModel.claudeQuota.localAuthorizationRequired {
+                        Button(L10n.shared.tr("quota.claudeAuthorizeFallback")) { viewModel.authorizeClaudeLocal() }
+                            .buttonStyle(.plain).font(.system(size: 10)).foregroundStyle(.secondary)
+                            .instantHint(L10n.shared.tr("quota.claudeLocalAuthHint"))
+                    }
+                } else {
+                Button {
+                    NSApp.activate(ignoringOtherApps: true)
+                    viewModel.authorizeClaudeLocal()
+                } label: {
+                    Label(L10n.shared.tr("quota.claudeReadLocal"), systemImage: "key")
+                }
+                .buttonStyle(.bordered).controlSize(.small)
+                .disabled(providerIsLoading(provider))
+                .instantHint(L10n.shared.tr("quota.claudeLocalAuthHint"))
+                }
+                Button(L10n.shared.tr("quota.claudeWebFallback")) { viewModel.connectClaude() }
+                    .buttonStyle(.plain).font(.system(size: 10)).foregroundStyle(.secondary)
                 Text(L10n.shared.tr("quota.claudeNoBackgroundPrompts"))
                     .font(.system(size: 9.5)).foregroundStyle(.secondary)
             }.sectionContainer()
@@ -241,9 +291,9 @@ struct SubscriptionQuotaWindowView: View {
                 VStack(spacing: 8) {
                     Image(systemName: "lock.shield")
                         .font(.system(size: 19, weight: .semibold))
-                    Text(L10n.shared.tr("quota.grokBotAuthorizationTitle"))
+                    Text(L10n.shared.tr(viewModel.grokBotQuota.localAuthorizationSource == .cursorCLI ? "quota.grokBotCursorAuthorizationTitle" : "quota.grokBotAuthorizationTitle"))
                         .font(.system(size: 12, weight: .bold, design: .rounded))
-                    Text(L10n.shared.tr("quota.grokBotAuthorizationBody"))
+                    Text(L10n.shared.tr(viewModel.grokBotQuota.localAuthorizationSource == .cursorCLI ? "quota.grokBotCursorAuthorizationBody" : "quota.grokBotAuthorizationBody"))
                         .font(.system(size: 9.5))
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
@@ -309,6 +359,9 @@ struct SubscriptionQuotaWindowView: View {
     }
 
     private func hasQuotaData(_ provider: SubscriptionProvider) -> Bool {
+        let needsGrokRecovery = provider == .grokBot && (viewModel.grokBotQuota.requiresLocalAuthorization
+            || (viewModel.grokBotQuota.status == .unavailable && viewModel.grokBotNativeAccessState != .unavailable))
+        if !needsGrokRecovery, viewModel.isHiddenUnifiedQuotaAlias(provider), viewModel.subscriptionAccounts(for: provider).isEmpty { return false }
         switch provider {
         case .codex: return !viewModel.codexQuota.buckets.isEmpty
         case .claude: return true // Connect must be reachable without App/CLI credentials.
@@ -316,6 +369,7 @@ struct SubscriptionQuotaWindowView: View {
         case .cursor: return !viewModel.cursorQuota.groups.isEmpty
         case .grokBot:
             return !viewModel.grokBotQuota.groups.isEmpty || viewModel.grokBotAuthorizationVisible
+                || viewModel.grokBotNativeAccessState != .unavailable
         case .zhipu: return !viewModel.zhipuQuota.groups.isEmpty
         }
     }
@@ -330,24 +384,61 @@ struct SubscriptionQuotaWindowView: View {
     }
 
     private func accountProviderSection(_ provider: SubscriptionProvider, title: String) -> some View {
-        let accounts = viewModel.subscriptionAccounts(for: provider)
+        let allAccounts = viewModel.subscriptionAccounts(for: provider)
+        let legacyIDs = provider == .claude ? ClaudeQuotaIdentity.legacySnapshotIDs(in: allAccounts) : []
+        let accounts = allAccounts.filter { !legacyIDs.contains($0.id) }
+        let legacy = allAccounts.filter { legacyIDs.contains($0.id) }
         return VStack(alignment: .leading, spacing: 11) {
             HStack(spacing: 7) {
                 if providerIsLoading(provider) { ProgressView().controlSize(.small) }
-                BrandIconView(name: provider.displayName, fallback: provider.emoji, size: 18)
-                Text(provider.displayName).font(.system(size: 13, weight: .bold, design: .rounded))
+                let name = viewModel.quotaDisplayName(for: provider)
+                BrandIconView(name: name, fallback: name == XSubscriptionQuota.title ? "𝕏" : provider.emoji, size: 18)
+                Text(name).font(.system(size: 13, weight: .bold, design: .rounded))
                 Spacer()
                 if provider == .claude {
-                    Button(L10n.shared.tr("quota.claudeConnect")) { viewModel.connectClaude() }
-                        .buttonStyle(.plain).font(.system(size: 10)).foregroundStyle(.secondary)
+                    if viewModel.claudeQuota.localAuthorizationRequired {
+                        Button(L10n.shared.tr("quota.claudeReadLocal")) {
+                            NSApp.activate(ignoringOtherApps:true)
+                            viewModel.authorizeClaudeLocal()
+                        }.buttonStyle(.bordered).controlSize(.small)
+                            .instantHint(L10n.shared.tr("quota.claudeLocalAuthHint"))
+                    } else {
+                        Button(L10n.shared.tr("quota.claudeConnect")) { viewModel.connectClaude() }
+                            .buttonStyle(.plain).font(.system(size: 10)).foregroundStyle(.secondary)
+                    }
                 }
                 if accounts.count > 1 { metaChip(L10n.shared.tr("quota.accounts", accounts.count)) }
             }
+            if provider == .claude {
+                Text(L10n.shared.tr("quota.claudeSharedScope")).font(.system(size: 9.5)).foregroundStyle(.secondary)
+                if viewModel.claudeQuota.localAuthorizationRequired {
+                    if !accounts.isEmpty {
+                        Text(viewModel.claudeQuota.message ?? L10n.shared.tr("quota.claudeLocalAuthorizationRequired"))
+                            .font(.system(size:10)).foregroundStyle(.secondary).fixedSize(horizontal:false,vertical:true)
+                    }
+                    Button(L10n.shared.tr("quota.claudeWebFallback")) { viewModel.connectClaude() }
+                        .buttonStyle(.plain).font(.system(size:10)).foregroundStyle(.secondary)
+                }
+            }
+            if provider == .grokBot, !accounts.isEmpty, viewModel.grokBotQuota.status == .unavailable,
+               !viewModel.grokBotAuthorizationVisible, let message = viewModel.grokBotQuota.message {
+                Text(message).font(.system(size: 10)).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             if accounts.isEmpty {
-                unavailableRow(provider == .codex && !viewModel.codexQuota.buckets.isEmpty
-                    ? QuotaAccountLabels.unverified : L10n.shared.tr("quota.loadingProvider", title))
+                unavailableRow(provider == .grokBot && viewModel.grokBotQuota.status == .unavailable
+                    ? (viewModel.grokBotQuota.message ?? L10n.shared.tr("quota.grokBotCredentialReadFailed"))
+                    : provider == .claude && viewModel.claudeQuota.status != .loading
+                    ? (viewModel.claudeQuota.message ?? L10n.shared.tr("quota.claudePassiveUnavailable"))
+                    : provider == .codex && !viewModel.codexQuota.buckets.isEmpty
+                        ? QuotaAccountLabels.unverified : L10n.shared.tr("quota.loadingProvider", title))
             } else {
                 ForEach(accounts) { accountCard($0) }
+            }
+            if !legacy.isEmpty {
+                DisclosureGroup(L10n.shared.tr("quota.claudeLegacySnapshots",legacy.count),isExpanded:$legacyClaudeExpanded) {
+                    VStack(spacing:8) {ForEach(legacy) {accountCard($0)}}.padding(.top,6)
+                }.font(.system(size:10)).foregroundStyle(.secondary)
             }
         }
         .sectionContainer()
@@ -365,19 +456,26 @@ struct SubscriptionQuotaWindowView: View {
                     .lineLimit(1)
                 Spacer(minLength: 4)
                 if isStale { metaChip(L10n.shared.tr("quota.snapshotStale")) }
-                if let plan = account.effectivePlan { metaChip(L10n.shared.tr("quota.plan", displayPlan(plan))) }
+                if let plan = account.effectivePlan {
+                    metaChip(L10n.shared.tr("quota.plan", displayPlan(plan)))
+                }
                 Button {
                     expandedEmails.remove(account.id)
                     onEditAccount(account)
                 } label: {
-                    Image(systemName: "pencil").font(.system(size: 9, weight: .semibold)).frame(width: 18, height: 18)
+                    Image(systemName: "pencil")
+                        .font(.system(size: 9, weight: .semibold))
+                        .frame(width: 18, height: 18)
                 }
                 .buttonStyle(.plain)
                 .help(L10n.shared.tr("quota.editAccount"))
                 if account.revealsEmailOnDemand {
                     Button {
-                        if expandedEmails.contains(account.id) { expandedEmails.remove(account.id) }
-                        else { expandedEmails.insert(account.id) }
+                        if expandedEmails.contains(account.id) {
+                            expandedEmails.remove(account.id)
+                        } else {
+                            expandedEmails.insert(account.id)
+                        }
                     } label: {
                         Image(systemName: "chevron.right")
                             .font(.system(size: 9, weight: .bold))
@@ -388,33 +486,56 @@ struct SubscriptionQuotaWindowView: View {
                     .help(L10n.shared.tr("quota.showEmail"))
                 }
             }
+            if account.isUnifiedSubscription {
+                Text(XSubscriptionQuota.title + " · " + (account.detectedPlan ?? ""))
+                    .font(.system(size: 10, weight: .medium)).foregroundStyle(.secondary)
+                Text(XSubscriptionQuota.scopeLabel)
+                    .font(.system(size: 9.5)).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             Text(BillingText.summary(account.effectiveBilling))
                 .font(.system(size: 9.5)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            Toggle(QuotaAccountLabels.showOnDial, isOn: Binding(
+            Toggle(isOn: Binding(
                 get: { viewModel.isDialAccountSelected(account) },
                 set: { _ in viewModel.toggleDialAccount(account) }
-            ))
+            )) {
+                HStack(spacing: 5) {
+                    Text(QuotaAccountLabels.showOnDial)
+                    if viewModel.isDialAccountSelected(account) {
+                        dialGroupBadge(for: account.provider)
+                    }
+                }
+            }
             .toggleStyle(.checkbox)
             .font(.system(size: 10.5))
-            .disabled(!viewModel.dialQuotaProviders.contains(account.provider) && viewModel.dialQuotaProviders.count >= 2)
+            .disabled(!viewModel.dialQuotaProviders.contains(account.provider) && viewModel.dialQuotaProviders.count >= DialQuotaPager.maximumSelection)
             if viewModel.isDialAccountSelected(account) && (isStale || !isCurrent) {
                 Text(QuotaAccountLabels.unavailable).font(.system(size: 9)).foregroundStyle(.secondary)
             }
-            if account.revealsEmailOnDemand, expandedEmails.contains(account.id), let email = account.email {
+            if account.revealsEmailOnDemand,
+               expandedEmails.contains(account.id),
+               let email = account.email {
                 Label(email, systemImage: "envelope")
-                    .font(.system(size: 9.5)).foregroundStyle(.secondary).textSelection(.enabled)
+                    .font(.system(size: 9.5))
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
             }
             ForEach(account.groups) { group in
                 if account.groups.count > 1 || group.name != "Subscription" {
-                    Text(group.name).font(.system(size: 10.5, weight: .semibold)).foregroundStyle(.secondary)
+                    Text(localizedQuotaName(group.name))
+                        .font(.system(size: 10.5, weight: .semibold))
+                        .foregroundStyle(.secondary)
                 }
                 ForEach(group.buckets) { quotaCard($0) }
             }
-            if account.hasUnlimitedCredits { metaChip(L10n.shared.tr("quota.unlimited")) }
-            else if let balance = account.creditBalance, balance != "0" {
+            if account.hasUnlimitedCredits {
+                metaChip(L10n.shared.tr("quota.unlimited"))
+            } else if let balance = account.creditBalance, balance != "0" {
                 metaChip(L10n.shared.tr("quota.creditBalance", balance))
             }
-            if account.resetCreditCount > 0 { metaChip(L10n.shared.tr("quota.resetCredits", account.resetCreditCount)) }
+            if account.resetCreditCount > 0 {
+                metaChip(L10n.shared.tr("quota.resetCredits", account.resetCreditCount))
+            }
             sourceRow(account.source, refreshedAt: account.refreshedAt, isCurrent: isCurrent)
         }
         .padding(10)
@@ -439,7 +560,7 @@ struct SubscriptionQuotaWindowView: View {
         return VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(bucket.name.isEmpty ? quotaWindowLabel(minutes: bucket.windowMinutes) : bucket.name)
+                    Text(bucket.name.isEmpty ? quotaWindowLabel(minutes: bucket.windowMinutes) : localizedQuotaName(bucket.name))
                         .font(.system(size: 12, weight: .semibold))
                     Text(quotaWindowLabel(minutes: bucket.windowMinutes))
                         .font(.system(size: 9.5))
@@ -506,6 +627,20 @@ struct SubscriptionQuotaWindowView: View {
         if remaining <= 15 { return .red }
         if remaining <= 35 { return .orange }
         return .green
+    }
+
+    private func localizedQuotaName(_ raw: String) -> String {
+        switch raw {
+        case "Subscription": return toolboxText("订阅", "Subscription")
+        case "Cursor Models": return L10n.shared.tr("quota.dial.cursorModels")
+        case "Other Models": return L10n.shared.tr("quota.dial.otherModels")
+        case "Weekly quota": return L10n.shared.tr("quota.weekly")
+        case "5-hour quota": return toolboxText("5 小时额度", "5-hour quota")
+        case "Monthly MCP quota": return toolboxText("MCP 月额度", "Monthly MCP quota")
+        case "Extra Usage": return toolboxText("额外用量", "Extra Usage")
+        case "Claude Apps": return toolboxText("Claude 应用", "Claude Apps")
+        default: return raw
+        }
     }
 
     private func quotaWindowLabel(minutes: Int) -> String {
@@ -581,12 +716,17 @@ struct SubscriptionAccountEditorView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text(L10n.shared.tr("quota.editAccount")).font(.system(size: 17, weight: .bold, design: .rounded))
+            Text(L10n.shared.tr("quota.editAccount"))
+                .font(.system(size: 17, weight: .bold, design: .rounded))
             if let email = account.email {
-                Label(email, systemImage: "envelope").font(.system(size: 11)).foregroundStyle(.secondary).textSelection(.enabled)
+                Label(email, systemImage: "envelope")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
             }
             VStack(alignment: .leading, spacing: 6) {
-                Text(L10n.shared.tr("quota.accountNote")).font(.system(size: 11, weight: .semibold))
+                Text(L10n.shared.tr("quota.accountNote"))
+                    .font(.system(size: 11, weight: .semibold))
                 SubscriptionAccountNoteField(
                     text: $note,
                     placeholder: L10n.shared.tr("quota.accountNotePlaceholder")
@@ -594,12 +734,15 @@ struct SubscriptionAccountEditorView: View {
                 .frame(height: 22)
             }
             VStack(alignment: .leading, spacing: 6) {
-                Text(L10n.shared.tr("quota.planLabel")).font(.system(size: 11, weight: .semibold))
+                Text(L10n.shared.tr("quota.planLabel"))
+                    .font(.system(size: 11, weight: .semibold))
                 Picker("", selection: $selectedPlan) {
                     Text(autoPlanLabel).tag("")
                     ForEach(planOptions, id: \.self) { plan in Text(plan).tag(plan) }
                 }
-                .labelsHidden().pickerStyle(.menu).frame(maxWidth: .infinity, alignment: .leading)
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
             VStack(alignment: .leading, spacing: 9) {
                 Text(BillingText.title).font(.system(size: 12, weight: .semibold))
@@ -635,7 +778,8 @@ struct SubscriptionAccountEditorView: View {
                 .keyboardShortcut(.defaultAction)
             }
         }
-        .padding(20).frame(width: 360)
+        .padding(20)
+        .frame(width: 360)
     }
 
     private var autoPlanLabel: String {
@@ -677,7 +821,9 @@ private struct SubscriptionAccountNoteField: NSViewRepresentable {
     @Binding var text: String
     let placeholder: String
 
-    func makeCoordinator() -> Coordinator { Coordinator(text: $text) }
+    func makeCoordinator() -> Coordinator {
+        Coordinator(text: $text)
+    }
 
     func makeNSView(context: Context) -> ActivatingTextField {
         let field = ActivatingTextField(string: text)
@@ -697,12 +843,17 @@ private struct SubscriptionAccountNoteField: NSViewRepresentable {
     func updateNSView(_ field: ActivatingTextField, context: Context) {
         context.coordinator.text = $text
         field.placeholderString = placeholder
-        if field.stringValue != text { field.stringValue = text }
+        if field.stringValue != text {
+            field.stringValue = text
+        }
     }
 
     final class Coordinator: NSObject, NSTextFieldDelegate {
         var text: Binding<String>
-        init(text: Binding<String>) { self.text = text }
+
+        init(text: Binding<String>) {
+            self.text = text
+        }
 
         func controlTextDidChange(_ notification: Notification) {
             guard let field = notification.object as? NSTextField else { return }

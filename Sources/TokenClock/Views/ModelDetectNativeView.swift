@@ -70,6 +70,7 @@ struct ModelDetectNativeView: View {
               .onChange(of: model.brief?.title) { _ in proxy.scrollTo("model-detect-scroll-top", anchor: .top) }
             }
         }
+        .environment(\.locale, Locale(identifier:L10n.shared.language.rawValue))
         .frame(minWidth: 860, idealWidth: 900, maxWidth: .infinity,
                minHeight: 390, idealHeight: model.phase == .result ? 740 : 480, maxHeight: .infinity, alignment: .topLeading)
         .background(Color(nsColor: .windowBackgroundColor))
@@ -85,7 +86,7 @@ struct ModelDetectNativeView: View {
     private var header: some View {
         HStack(alignment: .top) {
             VStack(alignment: .leading, spacing: 3) {
-                Text("Model Detect")
+                Text(L10n.shared.tr("menu.sessionAssessment"))
                     .font(.system(size: 19, weight: .bold, design: .rounded))
                 Text(headerSubtitle)
                     .font(.caption)
@@ -127,13 +128,17 @@ struct ModelDetectNativeView: View {
             Picker(T.text("检测内容", "檢測內容", "Assess"), selection: edit(\.mode)) {
                 Text(T.text("检查会话", "檢查會話", "Check a session")).tag(ModelDetectNativeModel.Mode.session)
                 Text(T.text("检查 API", "檢查 API", "Check an API" )).tag(ModelDetectNativeModel.Mode.api)
+                Text(T.text("本机 Codex", "本機 Codex", "Local Codex")).tag(ModelDetectNativeModel.Mode.codex)
             }
             .labelsHidden()
             .pickerStyle(.segmented)
-            .frame(width: 300)
+            .frame(width: 420)
             .accessibilityIdentifier("model-detect-mode")
+            .onChange(of: model.mode) { value in
+                if value == .codex { model.assessmentEnabled = false; model.refreshLocalCodex() }
+            }
 
-            if model.mode == .session { sessionFields } else { apiFields }
+            if model.mode == .session { sessionFields } else if model.mode == .codex { localCodexFields } else { apiFields }
             if model.needsReferenceChoice {
                 VStack(alignment: .leading, spacing: 6) {
                     Text(T.text("这个型号暂时没有参考", "這個型號暫時沒有參考", "No reference for this model yet")).font(.callout.weight(.semibold))
@@ -148,12 +153,13 @@ struct ModelDetectNativeView: View {
                 .font(.system(size: 11)).foregroundColor(.secondary)
                 .accessibilityIdentifier("model-detect-plan-summary")
 
-            DisclosureGroup(isExpanded: $advancedExpanded) {
+            if model.mode != .codex { DisclosureGroup(isExpanded: $advancedExpanded) {
                 advancedContent.padding(.top, 12)
             } label: {
                 Text(T.text("高级设置", "進階設定", "Advanced settings")).font(.callout)
             }
             .accessibilityIdentifier("model-detect-advanced")
+            }
 
             if let preview = model.preview {
                 confirmation(preview)
@@ -168,6 +174,7 @@ struct ModelDetectNativeView: View {
                     .accessibilityIdentifier("model-detect-prepare")
                     Text(model.mode == .session && !model.assessmentEnabled
                          ? T.text("仅在本机处理，无模型费用。", "僅在本機處理，無模型費用。", "Local processing, without model charges.")
+                         : model.mode == .codex ? T.text("点击即使用此账户额度执行上述测试。", "點擊即使用此帳戶額度執行上述測試。", "Start uses this account's allowance for the tests shown above.")
                          : T.text("确认范围和预算后才发送请求。", "確認範圍與預算後才傳送請求。", "Requests require confirmation of scope and budget."))
                         .font(.caption)
                         .foregroundColor(.secondary)
@@ -175,6 +182,35 @@ struct ModelDetectNativeView: View {
             }
 
         }
+    }
+
+    private var localCodexFields: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Label(model.localCodex["account_label"].string ?? T.text("读取本机登录状态", "讀取本機登入狀態", "Read local sign-in"), systemImage: "desktopcomputer")
+                Spacer()
+                if model.localCodexLoading { ProgressView().controlSize(.small) }
+                Button(T.text("刷新", "重新整理", "Refresh")) { model.refreshLocalCodex() }
+                    .disabled(model.localCodexLoading || model.isBusy)
+                    .accessibilityIdentifier("model-detect-codex-refresh")
+            }
+            Picker(T.text("待测型号", "待測型號", "Model to test"), selection: $model.localCodexModel) {
+                Text(T.text("选择型号", "選擇型號", "Choose a model")).tag("")
+                ForEach(model.localCodex["models"].array.compactMap { $0["id"].string }, id: \.self) { name in Text(name).tag(name) }
+            }.accessibilityIdentifier("model-detect-codex-model")
+            Text(T.text("复用 Codex 已有登录，无需填写 Key。每份回答使用新会话，不带入原聊天。", "重用 Codex 既有登入，無需填寫 Key。每份回答使用新會話，不帶入原聊天。", "Uses your existing Codex sign-in. Each answer starts a fresh thread, without your chat history."))
+                .font(.caption).foregroundColor(.secondary)
+            DisclosureGroup(T.text("测试方式与范围", "測試方式與範圍", "Test method and scope")) {
+                Text((model.localCodex["provider"].string ?? "Codex") + " · " + (model.localCodex["home"].string ?? ""))
+                    .font(.caption).foregroundColor(.secondary).textSelection(.enabled)
+                Picker(T.text("题包", "題組", "Questions"), selection: $model.localCodexMethod) {
+                    Text(T.text("数字指纹 · 3 次回答", "數字指紋 · 3 次回答", "Numeric fingerprint · 3 answers")).tag("numeric")
+                    Text(T.text("轻量行为 · 6 次回答", "輕量行為 · 6 次回答", "Short behavior probes · 6 answers")).tag("behavior")
+                }
+                Text(T.text("最多运行 15 分钟；不会自动重发题目。使用订阅或 API 额度，美元费用未知。可能保留 Codex 自带及个人指令，目前保存观察，不直接确认型号或给出身份概率。", "最多執行 15 分鐘；不會自動重發題目。使用訂閱或 API 額度，美元費用未知。可能保留 Codex 自帶及個人指令，目前儲存觀察，不直接確認型號或給出身分機率。", "Up to 15 minutes, without resending questions. Uses subscription or API allowance; dollar cost is unknown. Codex and personal instructions may remain, so this path records observations without confirming identity or assigning an identity probability."))
+                    .font(.caption).foregroundColor(.secondary)
+            }
+        }.disabled(model.isBusy)
     }
 
     private var sessionFields: some View {
@@ -209,6 +245,10 @@ struct ModelDetectNativeView: View {
                 }
             }
             if model.filePurpose == "session" {
+                if model.isCodexSession {
+                    Button(T.text("用本机 Codex 新建测试", "用本機 Codex 新建測試", "Start a fresh test with local Codex")) { model.useLocalCodex() }
+                        .accessibilityIdentifier("model-detect-from-codex-session")
+                }
                 labeled(T.text("比较型号（可选）", "比較型號（可選）", "Expected model (optional)")) {
                     TextField("gpt-6-astra", text: edit(\.comparisonModel))
                         .accessibilityIdentifier("model-detect-comparison-model")
@@ -727,6 +767,13 @@ struct ModelDetectNativeView: View {
 
 @MainActor
 enum ModelDetectNativeText {
+    nonisolated static func localized(_ simplified: String, _ english: String) -> String {
+        switch L10n.shared.language {
+        case .zhHans: return simplified
+        case .zhHant: return simplified.applyingTransform(StringTransform("Hans-Hant"), reverse: false) ?? simplified
+        case .en: return english
+        }
+    }
     static func text(_ simplified: String, _ traditional: String, _ english: String) -> String {
         switch L10n.shared.language {
         case .zhHans: return simplified

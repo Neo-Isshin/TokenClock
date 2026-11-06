@@ -82,6 +82,7 @@ struct UsageOverviewView: View {
             alignment: .topLeading
         )
         .background(Color(nsColor: .windowBackgroundColor))
+        .environment(\.locale, Locale(identifier:L10n.shared.language.rawValue))
         .onAppear { applyInitialRouteIfNeeded() }
         .onReceive(NotificationCenter.default.publisher(for: HourlyHistoryStore.updated).debounce(for: .milliseconds(250), scheduler: RunLoop.main)) { _ in
             if period == .custom { reload() }

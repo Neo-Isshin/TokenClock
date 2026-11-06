@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="444 110 396 478" role="img" aria-labelledby="title description">
+  <title id="title">ailyre</title>
+  <desc id="description">A navy lyre surrounding a gold robot face above a custom outlined ailyre wordmark. Redrawn from the supplied reference as editable vector geometry.</desc>
+
+  <g id="emblem">
+    <g id="strings" fill="none" stroke="#bb8749" stroke-width="3.8">
+      <path id="left-string" d="M620.5 181.5V267.6 M620.5 377V419.4" />
+      <path id="middle-string" d="M641.7 145V267.6 M641.7 377V422.7" />
+      <path id="right-string" d="M662 181.5V267.6 M662 377V419.4" />
+    </g>
+    <g id="crown" fill="#bb8749">
+      <circle cx="641.7" cy="138.8" r="9.9" />
+      <rect x="600.6" y="174.3" width="82.5" height="10" rx="5" />
+    </g>
+    <g id="robot" fill="#bb8749">
+      <rect id="face-outline" x="572.8" y="267.7" width="137.5" height="109.1" rx="26.8" fill="none" stroke="#bb8749" stroke-width="10.7" />
+      <circle id="left-eye" cx="609.8" cy="319.7" r="11.3" />
+      <circle id="right-eye" cx="673.2" cy="319.7" r="11.3" />
+    </g>
+    <path id="lyre" d="M550.6 125.8 C572 123.5 584.6 135 584.6 154.2 C584.6 172.1 574.9 190.6 563.8 212.5 C545.9 247.7 528.3 283.6 528.3 318.9 C528.3 383.7 572.5 424.1 641.7 424.1 C710.9 424.1 755.1 383.7 755.1 318.9 C755.1 283.6 737.5 247.7 719.6 212.5 C708.5 190.6 698.8 172.1 698.8 154.2 C698.8 135 711.4 123.5 732.8 125.8" fill="none" stroke="#263879" stroke-width="15.5" stroke-linecap="round" stroke-linejoin="round" />
+  </g>
+
+  
+  <g id="wordmark" fill="#263879" fill-rule="evenodd" aria-label="ailyre">
+    <path id="letter-a" d="M516 486.4H526.3V550.2H516V539.8 C509.8 547.6 501.5 551.6 490.3 551.6 C470.8 551.6 456.5 537.6 456.5 518.4 C456.5 499.1 470.9 484.6 490.4 484.6 C501.2 484.6 509.8 488.7 516 496.4Z M516 518.2 C516 504.1 505.9 493.8 491.7 493.8 C477.5 493.8 467.2 504 467.2 518.3 C467.2 532.5 477.4 542.2 491.7 542.2 C505.8 542.2 516 532.4 516 518.2Z" />
+    <path id="letter-i" d="M553.5 486.3H564.2V550.2H553.5Z M566.2 464.8 A7.25 7.25 0 1 1 551.7 464.8 A7.25 7.25 0 1 1 566.2 464.8Z" />
+    <path id="letter-l" d="M592.8 457.8H603.5V550.2H592.8Z" />
+    <path id="letter-y" d="M623.4 486.4H635L657 537.7L678.7 486.4H690.1L651.6 575.1H640.2L651.3 550.1Z" />
+    <path id="letter-r" d="M709.9 486.4H720.2V496.7 C725.5 488.8 734.2 484.2 746 484.9V494.8 C730 493.4 720.5 502.5 720.5 516V550.2H709.9Z" />
+    <path id="letter-e" d="M826.2 521.4H770.9 C772.2 534.4 781.6 542.4 795.2 542.4 C804 542.4 810.7 539.2 815.7 532.4L823.6 537.9 C817.4 547 807.5 551.6 794.8 551.6 C774.7 551.6 760.7 537.8 760.7 518.3 C760.7 498.8 774.8 484.6 794.1 484.6 C813.4 484.6 826.3 498 826.3 517.8Z M771.2 513.1H816.2 C814.6 500.9 806.1 493.7 794.1 493.7 C782.3 493.7 773.3 501.2 771.2 513.1Z" />
+  </g>
+</svg>

@@ -175,57 +175,59 @@ final class ZCodeUsageService: @unchecked Sendable {
         var stepResult = sqlite3_step(statement)
         while stepResult == SQLITE_ROW {
             defer { stepResult = sqlite3_step(statement) }
-            let sessionID = text(statement, 0)
-            guard !sessionID.isEmpty else { continue }
-            let title = text(statement, 1)
-            let directory = text(statement, 2)
-            let taskType = text(statement, 3)
-            let model = Self.normalizedModel(text(statement, 4))
-            let startedAt = milliseconds(statement, 5)
-            let completedAt = milliseconds(statement, 6)
-            let input = integer(statement, 7)
-            let output = integer(statement, 8)
-            let reasoning = integer(statement, 9)
-            let cacheWrite = integer(statement, 10)
-            let cacheRead = integer(statement, 11)
-            let freshInput = max(0, input - min(input, cacheRead))
-            let tokens = TokenAccounting.separateCacheFields(
-                input: freshInput, cacheWrite: cacheWrite, output: output,
-                additional: [reasoning]
-            )
-            guard tokens > 0 else { continue }
-
-            let date = completedAt ?? startedAt ?? .distantPast
-            guard date != .distantPast else { continue }
-            let dateKey = DateHelper.dateKey(from: date)
-            let hourKey = DateHelper.hourKey(from: date)
-            add(tokens: tokens, messages: 1, to: dateKey, hourKey: hourKey)
-            dailyCache[dateKey, default: 0] += cacheRead
-            let hourBuckets = ModelBuckets(input: freshInput, output: output + reasoning, cacheRead: cacheRead, cacheWrite: cacheWrite)
-            let hourCost = model.map { PricingService.shared.cost(of: [$0: hourBuckets]) } ?? .unavailable
-            hourlyData[hourKey]?.recordMetadata(tokens: tokens, cache: cacheRead, model: model, cost: hourCost)
-
-            if let model {
-                let buckets = ModelBuckets(
-                    input: freshInput,
-                    output: output + reasoning,
-                    cacheRead: cacheRead,
-                    cacheWrite: cacheWrite
+            Self.withRowTemporaries {
+                let sessionID = text(statement, 0)
+                guard !sessionID.isEmpty else { return }
+                let title = text(statement, 1)
+                let directory = text(statement, 2)
+                let taskType = text(statement, 3)
+                let model = Self.normalizedModel(text(statement, 4))
+                let startedAt = milliseconds(statement, 5)
+                let completedAt = milliseconds(statement, 6)
+                let input = integer(statement, 7)
+                let output = integer(statement, 8)
+                let reasoning = integer(statement, 9)
+                let cacheWrite = integer(statement, 10)
+                let cacheRead = integer(statement, 11)
+                let freshInput = max(0, input - min(input, cacheRead))
+                let tokens = TokenAccounting.separateCacheFields(
+                    input: freshInput, cacheWrite: cacheWrite, output: output,
+                    additional: [reasoning]
                 )
-                dailyModelBuckets[dateKey, default: [:]][model, default: ModelBuckets()].merge(buckets)
-                var session = dailySessions[dateKey, default: [:]][sessionID]
-                    ?? SessionAggregate(title: title, directory: directory.isEmpty ? nil : directory,
-                                        taskType: taskType.isEmpty ? nil : taskType)
-                session.tokens += tokens
-                session.messages += 1
-                session.cacheRead += cacheRead
-                session.latest = max(session.latest, date)
-                session.modelTokens[model, default: 0] += tokens
-                session.modelMessages[model, default: 0] += 1
-                session.modelBuckets[model, default: ModelBuckets()].merge(buckets)
-                dailySessions[dateKey, default: [:]][sessionID] = session
+                guard tokens > 0 else { return }
+
+                let date = completedAt ?? startedAt ?? .distantPast
+                guard date != .distantPast else { return }
+                let dateKey = DateHelper.dateKey(from: date)
+                let hourKey = DateHelper.hourKey(from: date)
+                add(tokens: tokens, messages: 1, to: dateKey, hourKey: hourKey)
+                dailyCache[dateKey, default: 0] += cacheRead
+                let hourBuckets = ModelBuckets(input: freshInput, output: output + reasoning, cacheRead: cacheRead, cacheWrite: cacheWrite)
+                let hourCost = model.map { PricingService.shared.cost(of: [$0: hourBuckets]) } ?? .unavailable
+                hourlyData[hourKey]?.recordMetadata(tokens: tokens, cache: cacheRead, model: model, cost: hourCost)
+
+                if let model {
+                    let buckets = ModelBuckets(
+                        input: freshInput,
+                        output: output + reasoning,
+                        cacheRead: cacheRead,
+                        cacheWrite: cacheWrite
+                    )
+                    dailyModelBuckets[dateKey, default: [:]][model, default: ModelBuckets()].merge(buckets)
+                    var session = dailySessions[dateKey, default: [:]][sessionID]
+                        ?? SessionAggregate(title: title, directory: directory.isEmpty ? nil : directory,
+                                            taskType: taskType.isEmpty ? nil : taskType)
+                    session.tokens += tokens
+                    session.messages += 1
+                    session.cacheRead += cacheRead
+                    session.latest = max(session.latest, date)
+                    session.modelTokens[model, default: 0] += tokens
+                    session.modelMessages[model, default: 0] += 1
+                    session.modelBuckets[model, default: ModelBuckets()].merge(buckets)
+                    dailySessions[dateKey, default: [:]][sessionID] = session
+                }
+                if dateKey == today { recentEntries.append(RecentEntry(timestamp: date, tokens: tokens)) }
             }
-            if dateKey == today { recentEntries.append(RecentEntry(timestamp: date, tokens: tokens)) }
         }
         guard stepResult == SQLITE_DONE else {
             dailyData = previousDaily; hourlyData = previousHourly
@@ -236,6 +238,14 @@ final class ZCodeUsageService: @unchecked Sendable {
         let cutoff = Date().addingTimeInterval(-AppConfig.Scan.activeThresholdSeconds * 3)
         recentEntries = recentEntries.filter { $0.timestamp >= cutoff }
         lastScanTime = newest == .distantPast ? Date() : newest
+    }
+
+    private static func withRowTemporaries(_ body: () -> Void) {
+#if canImport(ObjectiveC)
+        autoreleasepool(invoking: body)
+#else
+        body()
+#endif
     }
 
     private func clearData() {

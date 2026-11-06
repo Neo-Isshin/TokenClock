@@ -1,0 +1,86 @@
+#if os(macOS)
+import AppKit
+import SwiftUI
+import XCTest
+@testable import TokenClock
+
+@MainActor
+final class StatusSummaryLayoutTests: XCTestCase {
+    func testLargeQuotaSectionAndUsageRowsShareANonzeroScrollableViewport() throws {
+        try checkLayout(side: 600, quotaCount: 6)
+    }
+
+    func testCompactPanelKeepsQuotaDetailsAndLongUsageNamesReachable() throws {
+        try checkLayout(side: 268, quotaCount: 4)
+        try checkLayout(side: 320, quotaCount: 4)
+        try checkLayout(side: 420, quotaCount: 6)
+    }
+
+    func testOneAndFourQuotasFitAtRegularSize() throws {
+        try checkLayout(side: 600, quotaCount: 1)
+        try checkLayout(side: 600, quotaCount: 4)
+    }
+
+    private func checkLayout(side: CGFloat, quotaCount: Int) throws {
+        _ = NSApplication.shared
+        let tools = (1...8).map { index in
+            ToolUsage(name: "Harness \(index) with a longer descriptive name", abbreviation: "H", emoji: "", todayTokens: index * 1_000,
+                todayMessages: index, isActive: false, recentTokens: 0, hourlyTokens: 0)
+        }
+        let quotas = SubscriptionProvider.allCases.prefix(quotaCount).map { provider in
+            StatusSummaryQuota(indicator: DialQuotaIndicator(provider: provider, outerRemainingPercent: 95,
+                innerRemainingPercent: 80, thirdRemainingPercent: 20, details: []), isShared: false,
+                resets: (0..<5).map { index in
+                    StatusSummaryQuotaReset(labelKey: "quota.dial.weekly", windowMinutes: 10_080,
+                        resetsAt: Date(timeIntervalSince1970: 1_800_000_000 + Double(index * 3_600)), source: "fixture")
+                })
+        }
+        let notesDirectory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: notesDirectory) }
+        let notebook = NotebookStore(url: notesDirectory.appendingPathComponent("notes.json"))
+        for index in 0..<4 { let id = notebook.add(); notebook.update(id, title: "A longer notebook entry \(index)", body: "Line one\nLine two") }
+        notebook.flush()
+        func content(_ values: [ToolUsage]) -> StatusSummaryContent {
+            StatusSummaryContent(snapshot: StatusSummarySnapshot(tools: values, includesCache: false),
+                models: [], date: "Wednesday, Oct 28", tokens: "36K", cost: "$3.60", side: side, quotas: quotas, notebook: notebook,
+                onHistory: {}, onQuota: {}, onShare: {})
+        }
+        let host = NSHostingView(rootView: content(Array(tools.prefix(1))))
+        let window = NSWindow(contentRect: CGRect(x: -10_000, y: -10_000, width: side + 12, height: side + 12),
+            styleMask: .borderless, backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = host
+        host.frame = CGRect(x: 0, y: 0, width: side + 12, height: side + 12)
+        window.orderFront(nil)
+        defer { window.orderOut(nil); window.close() }
+        func settle() {
+            for _ in 0..<4 {
+                host.layoutSubtreeIfNeeded()
+                RunLoop.main.run(until: Date().addingTimeInterval(0.03))
+            }
+        }
+        func scrollers(_ view: NSView) -> [NSScrollView] {
+            ((view as? NSScrollView).map { [$0] } ?? []) + view.subviews.flatMap(scrollers)
+        }
+        settle()
+        let all = scrollers(host)
+        let vertical = all.filter { $0.hasVerticalScroller }.max { $0.contentView.bounds.height < $1.contentView.bounds.height }
+        let body = try XCTUnwrap(vertical, "The main summary must expose a native vertical scroll viewport")
+        XCTAssertGreaterThan(body.contentView.bounds.height, side < 480 ? 60 : 100, "Quota details must not squeeze the list viewport to zero")
+
+        let previousHeight = try XCTUnwrap(body.documentView).bounds.height
+        host.rootView = content(tools)
+        settle()
+        let updated = try XCTUnwrap(scrollers(host).filter { $0.hasVerticalScroller }
+            .max { $0.contentView.bounds.height < $1.contentView.bounds.height })
+        XCTAssertGreaterThan(try XCTUnwrap(updated.documentView).bounds.height, body.contentView.bounds.height,
+            "All quota details and usage rows must remain reachable by scrolling")
+        // In the two-column layout the taller quota column can determine total
+        // height. In compact mode rows are stacked and must add content height.
+        if side < 480 {
+            XCTAssertGreaterThan(try XCTUnwrap(updated.documentView).bounds.height, previousHeight + 50)
+        }
+
+    }
+}
+#endif

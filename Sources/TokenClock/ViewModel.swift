@@ -2,13 +2,16 @@ import SwiftUI
 import Combine
 import AppKit
 
+/// 表盘文字颜色覆盖模式（「表盘外观 ▸ 文字颜色」）
 enum DialTextMode: Int {
-    case theme = 0
+    case theme = 0    // 跟随主题
     case white = 1
     case black = 2
-    case custom = 3
+    case custom = 3   // dialTextColorHex
 }
 
+/// 详情面板中的高对比度快捷配色。右键菜单仍可分别精细设置两处颜色；
+/// 快捷按钮只在用户主动点击时同时覆盖表盘与详情文字色。
 enum QuickContrastPreset: Int, CaseIterable {
     case light, dark, amber
     var next: Self {
@@ -28,14 +31,14 @@ enum QuickContrastPreset: Int, CaseIterable {
     }
 }
 
-/// 下拉面板分组模式：按会话 / 按模型
+/// 下拉面板的分组模式：按会话（工具 → session）或按模型（跨工具归并）
 enum GroupingMode: Int {
     case session = 0
     case model = 1
 }
 
-/// 秒针刷新独立于业务 ViewModel，避免每秒的时钟 tick 让详情列表、设置页和主题页
-/// 一起重算。只有 `ClockContentView` 观察这个轻量对象。
+/// 秒针刷新独立于业务 ViewModel，避免每秒 tick 让详情、设置和主题视图全部重算。
+/// 只有主表盘观察这个轻量对象。
 @MainActor
 final class ClockTicker: ObservableObject {
     @Published fileprivate var currentTime = Date()
@@ -43,11 +46,6 @@ final class ClockTicker: ObservableObject {
 
 @MainActor
 final class ViewModel: ObservableObject {
-    // Glass and Normal intentionally keep independent dial text overrides.  A color chosen for
-    // a photographic Glass face must not make a light Normal face unreadable after switching
-    // installed variants.
-    private static let normalDialTextModeKey = "TC_normalDialTextMode"
-    private static let normalDialTextColorKey = "TC_normalDialTextColor"
     @Published var tools: [ToolUsage] {
         didSet { updateSortedTools() }
     }
@@ -82,33 +80,31 @@ final class ViewModel: ObservableObject {
     /// 展开状态变化时的回调（由 AppDelegate 设置）
     var onExpandChanged: ((Bool) -> Void)?
 
-    /// 下拉面板分组模式（按会话 / 按模型），持久化到 UserDefaults
+    /// 下拉面板分组模式（按会话 / 按模型），持久化
     @Published var groupingMode: GroupingMode = {
         GroupingMode(rawValue: UserDefaults.standard.int(for: .dropdownGrouping, default: 0)) ?? .session
     }() {
         didSet { UserDefaults.standard.setInt(groupingMode.rawValue, for: .dropdownGrouping) }
     }
 
-    /// 下拉面板数值显示模式（用量+消息数 / 费用+占比），chip 点击切换，持久化
+    /// 下拉面板数值显示模式（用量+消息数 / 费用+占比）。
     @Published var valueMode: DetailValueMode = {
         if let raw = UserDefaults.standard.object(forKey: SettingsKey.dropdownValueMode.rawValue) as? Int,
            let mode = DetailValueMode(rawValue: raw) {
             return mode
         }
-        // 迁移：旧版布尔（true=按百分比）与三态中间版本（1=percent / 2=cost）都归入组合模式
         if UserDefaults.standard.bool(for: .dropdownShowPercentage) { return .costPercent }
         return .tokens
     }() {
         didSet { UserDefaults.standard.setInt(valueMode.rawValue, for: .dropdownValueMode) }
     }
 
-    /// 用量口径：是否把缓存读计入展示的 token 数（默认排除，与 Codex 官方口径一致）。
-    /// 只影响表盘总数与用量列显示，不影响费用估算（费用始终按分桶全量计价）。
+    /// token 展示是否包含缓存读；费用估算不受此开关影响。
     @Published var usageIncludesCache = UserDefaults.standard.bool(for: .usageIncludesCacheRead) {
         didSet { UserDefaults.standard.setBool(usageIncludesCache, for: .usageIncludesCacheRead) }
     }
 
-    /// Codex 额度面板按需读取；不开面板时不会启动 app-server，也没有额外轮询。
+    /// Codex 额度按需读取；不开面板时不启动 app-server，也没有额外轮询。
     @Published var showsCodexQuota = false
     @Published private(set) var codexQuota = CodexQuotaSnapshot.idle
     @Published private(set) var claudeQuota = ClaudeQuotaSnapshot.idle
@@ -129,30 +125,106 @@ final class ViewModel: ObservableObject {
             }
         }
         if defaults.object(forKey: SettingsKey.dialQuotaProviders.rawValue) != nil {
-            return Array(providers.prefix(2))
+            return Array(providers.prefix(DialQuotaPager.maximumSelection))
         }
         if let raw = defaults.string(for: .dialQuotaProvider),
            let provider = SubscriptionProvider(rawValue: raw) {
             providers = [provider]
         }
-        return Array(providers.prefix(2))
+        return Array(providers.prefix(DialQuotaPager.maximumSelection))
     }()
+    @Published private var dialQuotaPager = DialQuotaPager()
     private var shouldAutomaticallySelectDialQuotaProvider: Bool = {
         let defaults = UserDefaults.standard
         return defaults.object(forKey: SettingsKey.dialQuotaProviders.rawValue) == nil
             && defaults.object(forKey: SettingsKey.dialQuotaProvider.rawValue) == nil
     }()
     @Published private(set) var notifications: [TokenClockNotification] = []
-    var unreadNotificationCount: Int { notifications.filter { !$0.isRead }.count }
+    let userContent = UserContentCenter()
+    @Published var notificationFilter = NotificationPanelFilter.all
+    @Published private(set) var isNewsPresented = false
+    @Published private(set) var focusedNewsItemID: String?
+    var onNewsModeChanged: (() -> Void)?
+    var visibleNotifications: [TokenClockNotification] { notifications.filter { userContent.preferences.allows($0) } }
+    var filteredNotifications: [TokenClockNotification] { visibleNotifications.filter { notificationFilter.includes($0) } }
+    var unreadNotificationCount: Int { visibleNotifications.filter { !$0.isRead }.count }
+    var hasUnreadNews: Bool { userContent.preferences.allows(.news) && userContent.news.unreadCount > 0 }
 
-    var dialQuotaIndicators: [DialQuotaIndicator] {
-        dialQuotaProviders.compactMap { provider in
+    func showNews(itemID: String? = nil) {
+        focusedNewsItemID = itemID
+        isNewsPresented = true
+        userContent.news.setViewing(true)
+        userContent.news.refreshIfDue(language: L10n.shared.language.rawValue)
+        onNewsModeChanged?()
+    }
+    func hideNews() {
+        isNewsPresented = false; focusedNewsItemID = nil
+        userContent.news.setViewing(false)
+        onNewsModeChanged?()
+    }
+
+    /// One indicator per provider: weekly outside and five-hour inside. Cursor's API uses
+    /// model groups instead, so Other Models is outside and Cursor Models is inside.
+    private var availableDialQuotaIndicators: [DialQuotaIndicator] {
+        normalizedDialQuotaProviders.compactMap { provider in
             DialQuotaAccountSelection.indicator(
                 provider: provider, selectedID: DialQuotaAccountSelection.selectedID(for: provider),
                 activeID: activeSubscriptionAccountIDs[provider], records: subscriptionAccounts,
                 liveGroups: freshQuotaGroups(for: provider)
             )
         }
+    }
+
+    var dialQuotaIndicators: [DialQuotaIndicator] {
+        dialQuotaPager.visible(from: availableDialQuotaIndicators)
+    }
+
+    func dialQuotaGroupNumber(for provider: SubscriptionProvider) -> Int? {
+        guard let index = availableDialQuotaIndicators.firstIndex(where: { $0.provider == provider }) else { return nil }
+        return index / DialQuotaPager.pageSize + 1
+    }
+
+    var hasMultipleDialQuotaPages: Bool { availableDialQuotaIndicators.count > DialQuotaPager.pageSize }
+
+    func advanceDialQuotaPage(resetTimer: Bool = true) {
+        let count = availableDialQuotaIndicators.count
+        if count > DialQuotaPager.pageSize { dialQuotaPager.advance(count: count) }
+        if resetTimer { configureDialQuotaRotation() }
+    }
+
+    private func configureDialQuotaRotation() {
+        dialQuotaTimer?.invalidate(); dialQuotaTimer = nil
+        dialQuotaTimerGeneration &+= 1
+        guard dialQuotaProviders.count > DialQuotaPager.pageSize else { return }
+        let generation = dialQuotaTimerGeneration
+        let timer = Timer.scheduledTimer(withTimeInterval: DialQuotaPager.interval, repeats: false) { [weak self] _ in
+            Task { @MainActor in
+                guard let self, self.dialQuotaTimerGeneration == generation else { return }
+                self.advanceDialQuotaPage(resetTimer: false)
+                self.configureDialQuotaRotation()
+            }
+        }
+        dialQuotaTimer = timer
+        RunLoop.main.add(timer, forMode: .common)
+    }
+
+    /// The summary lists all readable current subscriptions, independently of
+    /// the dial's current display page. Shared X aliases remain deduplicated.
+    var statusSummaryQuotaIndicators: [StatusSummaryQuota] {
+        StatusSummaryQuotas.indicators(records: subscriptionAccounts, activeIDs: activeSubscriptionAccountIDs,
+            freshGroups: Dictionary(uniqueKeysWithValues: SubscriptionProvider.allCases.map { ($0, freshQuotaGroups(for: $0)) }))
+    }
+
+    var statusSummaryQuotaLoading: Bool {
+        SubscriptionProvider.allCases.contains { quotaStatus(for: $0) == .loading }
+    }
+
+    private var statusSummaryQuotaSchedule = StatusSummaryQuotaSchedule()
+    func refreshStatusSummaryQuotasIfNeeded(now: Date = Date()) {
+        guard statusSummaryQuotaSchedule.shouldRefresh(now: now) else { return }
+        // Reuse the quota panel's silent, read-only fetches; no new polling timer.
+        refreshSubscriptionQuotas(providers: Set(SubscriptionProvider.allCases).subtracting([.grokBot]))
+        refreshGrokBotQuota(silentCLI: true)
     }
 
     func isDialAccountSelected(_ account: SubscriptionAccountRecord) -> Bool {
@@ -164,7 +236,7 @@ final class ViewModel: ObservableObject {
         if isDialAccountSelected(account) {
             toggleDialQuotaProvider(account.provider)
         } else {
-            guard dialQuotaProviders.contains(account.provider) || dialQuotaProviders.count < 2 else { return }
+            guard dialQuotaProviders.contains(account.provider) || dialQuotaProviders.count < DialQuotaPager.maximumSelection else { return }
             objectWillChange.send()
             DialQuotaAccountSelection.select(account.id, for: account.provider)
             if !dialQuotaProviders.contains(account.provider) { toggleDialQuotaProvider(account.provider) }
@@ -173,9 +245,42 @@ final class ViewModel: ObservableObject {
 
     var dialQuotaProviderOptions: [SubscriptionProvider] {
         SubscriptionProvider.allCases.filter {
-            dialQuotaProviders.contains($0)
+            !isHiddenUnifiedQuotaAlias($0) && (dialQuotaProviders.contains($0)
                 || DialQuotaResolver.resolve(provider: $0, groups: quotaGroups(for: $0)) != nil
+            )
         }
+    }
+
+    private var normalizedDialQuotaProviders: [SubscriptionProvider] {
+        let selected = Dictionary(uniqueKeysWithValues: SubscriptionProvider.allCases.compactMap { provider in
+            DialQuotaAccountSelection.selectedID(for: provider).map { (provider, $0) }
+        })
+        return XSubscriptionQuota.dialProviders(dialQuotaProviders, records: subscriptionAccounts,
+            activeIDs: activeSubscriptionAccountIDs, selectedIDs: selected)
+    }
+
+    private var displayedSubscriptionAccounts: [SubscriptionAccountRecord] {
+        XSubscriptionQuota.visibleAccounts(subscriptionAccounts, activeIDs: activeSubscriptionAccountIDs,
+                                           selected: normalizedDialQuotaProviders)
+    }
+
+    func isHiddenUnifiedQuotaAlias(_ provider: SubscriptionProvider) -> Bool {
+        guard let id = activeSubscriptionAccountIDs[provider],
+              subscriptionAccounts.first(where: { $0.id == id })?.isUnifiedSubscription == true else { return false }
+        return !displayedSubscriptionAccounts.contains { $0.id == id }
+    }
+
+    func quotaDisplayName(for provider: SubscriptionProvider) -> String {
+        let records = subscriptionAccounts(for: provider)
+        return !records.isEmpty && records.allSatisfy(\.isUnifiedSubscription) ? XSubscriptionQuota.title : provider.displayName
+    }
+
+    private func normalizeUnifiedDialSelection() {
+        let providers = normalizedDialQuotaProviders
+        guard providers != dialQuotaProviders else { return }
+        dialQuotaProviders = providers
+        UserDefaults.standard.setStringArray(providers.map(\.rawValue), for: .dialQuotaProviders)
+        UserDefaults.standard.setString(providers.first?.rawValue, for: .dialQuotaProvider)
     }
 
     var grokBotAuthorizationVisible: Bool {
@@ -183,8 +288,10 @@ final class ViewModel: ObservableObject {
             return true
         }
         return grokBotQuota.status == .unavailable
+            && grokBotQuota.requiresLocalAuthorization
             && grokBotQuota.groups.isEmpty
-            && (grokBotNativeAccessState == .authorizationRequired
+            && (grokBotQuota.localAuthorizationSource == .cursorCLI
+                || grokBotNativeAccessState == .authorizationRequired
                 || grokBotNativeAccessState == .authorizing)
     }
 
@@ -193,13 +300,17 @@ final class ViewModel: ObservableObject {
         if let index = dialQuotaProviders.firstIndex(of: provider) {
             dialQuotaProviders.remove(at: index)
         } else {
-            guard dialQuotaProviders.count < 2 else { return }
+            guard dialQuotaProviders.count < DialQuotaPager.maximumSelection else { return }
             dialQuotaProviders.append(provider)
             refreshSubscriptionQuotas(providers: [provider])
         }
+        normalizeUnifiedDialSelection()
         UserDefaults.standard.setStringArray(
             dialQuotaProviders.map(\.rawValue), for: .dialQuotaProviders
         )
+        dialQuotaPager = DialQuotaPager()
+        configureDialQuotaRotation()
+        // Keep older platform builds on the primary selected provider.
         UserDefaults.standard.setString(dialQuotaProviders.first?.rawValue, for: .dialQuotaProvider)
     }
 
@@ -229,16 +340,42 @@ final class ViewModel: ObservableObject {
     /// IP 定位解析到的城市名（用于菜单动态标签）
     @Published var resolvedCityName: String = ""
 
+    // MARK: - 表盘外观（液态玻璃：文字颜色 / 材质档位 / 玻璃底色）
+    /// 表盘文字颜色模式。变更触发 SwiftUI 重渲染：数字经 numberColorOverride 重绘，
+    /// 叠加层文字经 effectiveDialPrimary/Secondary 重绘。
     @Published var dialTextMode: DialTextMode = .theme {
-        didSet { UserDefaults.standard.set(dialTextMode.rawValue, forKey: Self.normalDialTextModeKey) }
+        didSet { UserDefaults.standard.setInt(dialTextMode.rawValue, for: .dialTextMode) }
     }
+    /// 自定义文字颜色 #RRGGBB（仅 dialTextMode == .custom 时使用）。
     @Published var dialTextColorHex: String = "#FFFFFF" {
-        didSet { UserDefaults.standard.set(dialTextColorHex, forKey: Self.normalDialTextColorKey) }
+        didSet { UserDefaults.standard.setString(dialTextColorHex, for: .dialTextColor) }
     }
+    /// 私有 NSGlassEffectView 材质配方（set_variant:）。2=标准(dock) 13=清透(clearGlass) 8=磨砂(controlCenter)。
+    /// 经 .id(glassMaterialVariant) 触发 LiquidGlassDial 重建 —— variant 会重建内部子层，重建比 in-place 改更可靠。
+    @Published var glassMaterialVariant: Int = 2 {
+        didSet { UserDefaults.standard.setInt(glassMaterialVariant, for: .glassVariant) }
+    }
+    /// 私有玻璃底色 #RRGGBB（nil = 纯净玻璃，随壁纸自适应）。变更触发 updateNSView 重设 tintColor。
+    @Published var glassTintHex: String? = nil {
+        didSet { UserDefaults.standard.setString(glassTintHex, for: .glassTint) }
+    }
+    /// 下拉详情面板主文字色覆写 #RRGGBB（nil = 跟随主题）。
     @Published var dropdownTextColorHex: String? = nil {
         didSet { UserDefaults.standard.setString(dropdownTextColorHex, for: .dropdownTextColor) }
     }
 
+    /// 液态玻璃折射总开关（默认开；关 → 回退公开 .clear 玻璃）。表盘立即切换；
+    /// 但 FloatingPanel 的 _hasActiveAppearance 覆写在启动时据 TC_GLASS_DISABLE 决定，彻底关闭需重启。
+    @Published var glassRefractionEnabled: Bool = true {
+        didSet { UserDefaults.standard.set(!glassRefractionEnabled, forKey: "TC_GLASS_DISABLE") }
+    }
+
+    /// 折射玻璃下层毛玻璃底板透明度 0…1（0=无底板，纯玻璃）。公开 NSVisualEffectView.alphaValue。
+    @Published var glassBackingAlpha: Double = 0 {
+        didSet { UserDefaults.standard.set(glassBackingAlpha, forKey: SettingsKey.glassBackingAlpha.rawValue) }
+    }
+
+    /// 表盘文字主色（受 dialTextMode 覆盖；custom 解析失败回退主题色）。
     var effectiveDialPrimary: Color {
         switch dialTextMode {
         case .theme: return selectedTheme.textPrimaryColor
@@ -247,13 +384,18 @@ final class ViewModel: ObservableObject {
         case .custom: return CodableColor(hex: dialTextColorHex)?.swiftUIColor ?? selectedTheme.textPrimaryColor
         }
     }
+    /// 表盘文字副色（custom/white/black = 主色 72% 透明，保留主副层级关系）。
     var effectiveDialSecondary: Color {
         dialTextMode == .theme ? selectedTheme.textSecondaryColor : effectiveDialPrimary.opacity(0.72)
     }
+    /// 表盘数字颜色覆盖（theme = nil 跟随主题；注入 ClockFaceView.numberColorOverride）。
     var effectiveDialNumberColor: Color? { dialTextMode == .theme ? nil : effectiveDialPrimary }
+
     var quickContrastPreset: QuickContrastPreset? {
         QuickContrastPreset.matchingPanelColor(dropdownTextColorHex)
     }
+
+    /// 从自定义状态首次点击回到白色；此后白/黑/琥珀色循环。
     func cycleQuickContrast() {
         let preset = quickContrastPreset?.next ?? .light
         dropdownTextColorHex = preset.hex
@@ -295,6 +437,8 @@ final class ViewModel: ObservableObject {
         ("tz.losAngeles", "America/Los_Angeles"),
     ]
 
+    private var dialQuotaTimer: Timer?
+    private var dialQuotaTimerGeneration = 0
     private var clockTimer: Timer?
     private var dataTimer: Timer?
     private var generationSpeedTimer: Timer?
@@ -364,14 +508,24 @@ final class ViewModel: ObservableObject {
         if let s = UserDefaults.standard.string(for: .selectedTimezone) { selectedTimezone = s }
         if UserDefaults.standard.object(forKey: SettingsKey.windowOpacity.rawValue) != nil { windowOpacity = UserDefaults.standard.double(forKey: SettingsKey.windowOpacity.rawValue) }
         if UserDefaults.standard.object(forKey: SettingsKey.cursorCloudFetchEnabled.rawValue) != nil { cursorCloudFetchEnabled = UserDefaults.standard.bool(for: .cursorCloudFetchEnabled) }
-        if let raw = UserDefaults.standard.object(forKey: Self.normalDialTextModeKey) as? Int,
+
+        // 表盘外观（液态玻璃文字/材质/底色）
+        if let raw = UserDefaults.standard.object(forKey: SettingsKey.dialTextMode.rawValue) as? Int,
            let mode = DialTextMode(rawValue: raw) { dialTextMode = mode }
-        if let hex = UserDefaults.standard.string(forKey: Self.normalDialTextColorKey) {
-            dialTextColorHex = hex
+        if let hex = UserDefaults.standard.string(for: .dialTextColor) { dialTextColorHex = hex }
+        if UserDefaults.standard.object(forKey: SettingsKey.glassVariant.rawValue) != nil {
+            glassMaterialVariant = UserDefaults.standard.int(for: .glassVariant, default: 2)
         }
-        if let hex = UserDefaults.standard.string(for: .dropdownTextColor), CodableColor(hex: hex) != nil {
-            dropdownTextColorHex = hex
+        if UserDefaults.standard.object(forKey: SettingsKey.glassBackingAlpha.rawValue) != nil {
+            glassBackingAlpha = UserDefaults.standard.double(forKey: SettingsKey.glassBackingAlpha.rawValue)
         }
+        if let tintHex = UserDefaults.standard.string(for: .glassTint), CodableColor(hex: tintHex) != nil {
+            glassTintHex = tintHex
+        }
+        if let panelHex = UserDefaults.standard.string(for: .dropdownTextColor), CodableColor(hex: panelHex) != nil {
+            dropdownTextColorHex = panelHex
+        }
+        glassRefractionEnabled = !UserDefaults.standard.bool(forKey: "TC_GLASS_DISABLE")
 
         loadTheme()
         // 表盘大小：首启按主屏分辨率自动选档（用户手动改过后跳过），再加载到 @Published
@@ -383,6 +537,8 @@ final class ViewModel: ObservableObject {
         runInitialPathDetection()
         setupPricingObservers()
         startTimers()
+        userContent.onChange = { [weak self] in self?.refreshBillingNotices() }
+        userContent.start()
         refreshBillingIfNeeded()
         if !dialQuotaProviders.isEmpty {
             refreshSubscriptionQuotas(providers: Set(dialQuotaProviders))
@@ -396,6 +552,7 @@ final class ViewModel: ObservableObject {
     }
 
     func shutdown() {
+        userContent.stop()
         stopTimers()
         codexQuotaTask?.cancel()
         codexQuotaTask = nil
@@ -412,21 +569,24 @@ final class ViewModel: ObservableObject {
     }
 
     func markNotificationsRead() {
-        BillingReminderStore.markRead()
-        ReleaseUpdateService.shared.markRead()
-        guard unreadNotificationCount > 0 else { return }
+        let visible = filteredNotifications
+        let ids = Set(visible.map(\.id))
+        if visible.contains(where: { $0.subscriptionAccountID != nil }) { BillingReminderStore.markRead() }
+        if visible.contains(where: { $0.releaseURL != nil }) { ReleaseUpdateService.shared.markRead() }
+        userContent.markRead(visible)
         notifications = notifications.map {
             var notification = $0
-            notification.isRead = true
+            if ids.contains($0.id) { notification.isRead = true }
             return notification
         }
+        refreshBillingNotices()
     }
 
     private var lastBillingFetch = Date.distantPast
     private func refreshBillingNotices() {
         let billing = BillingReminderStore.notifications(accounts: subscriptionAccounts)
-        notifications = (notifications.filter { $0.subscriptionAccountID == nil && $0.releaseURL == nil }
-                         + billing + ReleaseUpdateService.shared.notifications())
+        notifications = (notifications.filter { $0.subscriptionAccountID == nil && $0.releaseURL == nil && $0.newsItemID == nil && $0.notebookEntryID == nil }
+                         + billing + ReleaseUpdateService.shared.notifications() + userContent.notices())
             .sorted { $0.createdAt > $1.createdAt }
     }
     private func refreshBillingIfNeeded() {
@@ -443,12 +603,29 @@ final class ViewModel: ObservableObject {
         message: String,
         route: UsageOverviewRoute? = nil
     ) {
-        notifications.insert(
-            TokenClockNotification(kind: kind, title: title, message: message, route: route),
-            at: 0
+        let stored = notifications.filter { $0.subscriptionAccountID == nil && $0.releaseURL == nil && $0.newsItemID == nil && $0.notebookEntryID == nil }
+        notifications = [TokenClockNotification(kind: kind, title: title, message: message, route: route)] + Array(stored.prefix(19))
+        refreshBillingNotices()
+    }
+
+    // MARK: - 价格目录
+
+    private func setupPricingObservers() {
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(handlePricingUpdate),
+            name: PricingService.catalogUpdatedNotification, object: nil
         )
-        if notifications.count > 20 {
-            notifications = Array(notifications.prefix(20))
+        PricingService.shared.startAutomaticRefresh()
+        if PricingService.shared.isStale() {
+            Task.detached(priority: .utility) {
+                try? await PricingService.shared.refresh()
+            }
+        }
+    }
+
+    @objc nonisolated private func handlePricingUpdate() {
+        Task { @MainActor [weak self] in
+            self?.updateMockData()
         }
     }
 
@@ -466,6 +643,7 @@ final class ViewModel: ObservableObject {
         refreshSubscriptionQuotas()
     }
 
+    /// 额度窗口读取全部服务；表盘只定期读取用户选中的额度来源。
     func refreshSubscriptionQuotas(
         providers: Set<SubscriptionProvider> = Set(SubscriptionProvider.allCases)
     ) {
@@ -474,9 +652,7 @@ final class ViewModel: ObservableObject {
             codexQuota = .loading(previous: codexQuota)
             let service = codexQuotaService
             codexQuotaTask = Task { [weak self] in
-                let result = await Task.detached(priority: .utility) {
-                    service.fetch()
-                }.value
+                let result = await Task.detached(priority: .utility) { service.fetch() }.value
                 guard !Task.isCancelled else { return }
                 self?.codexQuota = result
                 self?.rememberCodexQuota(result)
@@ -485,13 +661,15 @@ final class ViewModel: ObservableObject {
         }
         if providers.contains(.claude), claudeQuota.status != .loading {
             claudeQuotaTask?.cancel()
-            claudeQuota = .loading(previous: claudeQuota)
+            let previous = claudeQuota
+            claudeQuota = .loading(previous: previous)
             let service = claudeQuotaService
             claudeQuotaTask = Task { [weak self] in
                 let selected = ClaudeConnectionController.isSelected
+                let identity = ClaudeConnectionController.selectedIdentity
                 let session = await ClaudeConnectionController.shared.currentSession()
                 let result = await Task.detached(priority: .utility) {
-                    service.fetch(connectedSession: session, connectionSelected: selected)
+                    service.fetch(connectedSession: session, connectionSelected: selected, expectedIdentity: identity, previous: previous)
                 }.value
                 guard !Task.isCancelled else { return }
                 self?.claudeQuota = result
@@ -538,6 +716,21 @@ final class ViewModel: ObservableObject {
         }
     }
 
+    func authorizeClaudeLocal() {
+        guard claudeQuota.status != .loading else { return }
+        let previous=claudeQuota,service=claudeQuotaService
+        claudeQuotaTask?.cancel();claudeQuota = .loading(previous:previous)
+        claudeQuotaTask=Task { [weak self] in
+            let selected=ClaudeConnectionController.isSelected,identity=ClaudeConnectionController.selectedIdentity
+            let session=await ClaudeConnectionController.shared.currentSession()
+            let value=await Task.detached(priority:.userInitiated) {
+                service.fetch(connectedSession:session,connectionSelected:selected,expectedIdentity:identity,previous:previous,userInitiatedCredentialAccess:true)
+            }.value
+            guard !Task.isCancelled else { return }
+            self?.claudeQuota=value;self?.rememberClaudeQuota(value);self?.selectAutomaticDialQuotaProviderIfReady()
+        }
+    }
+
     func connectClaude() {
         ClaudeConnectionController.shared.show { [weak self] snapshot in
             guard let self else { return }
@@ -548,14 +741,21 @@ final class ViewModel: ObservableObject {
         }
     }
 
-    private func refreshGrokBotQuota() {
-        guard grokBotQuota.status != .loading else { return }
+    private func refreshGrokBotQuota(silentCLI: Bool = false, force: Bool = false) {
+        guard force || grokBotQuota.status != .loading else { return }
         grokBotQuotaTask?.cancel()
         grokBotQuota = .loading(previous: grokBotQuota)
         grokBotNativeAccessState = GrokBotNativeCredentialStore.shared.accessState
         let service = grokBotQuotaService
         grokBotQuotaTask = Task { [weak self] in
-            let result = await Task.detached(priority: .utility) { service.fetch() }.value
+            let result = await Task.detached(priority: .utility) {
+                guard silentCLI else { return service.fetch() }
+                let environment = StatusSummaryQuotaCredentials.environment(ProcessInfo.processInfo.environment) {
+                    ClaudeSilentKeychain.read(service: "cursor-access-token", account: "cursor-user")
+                        .flatMap { String(data: $0, encoding: .utf8) }
+                }
+                return GrokBotQuotaService(environment: environment).fetch()
+            }.value
             guard !Task.isCancelled else { return }
             if ProcessInfo.processInfo.environment["TC_QUOTA_DIAGNOSTICS"] == "1" {
                 print("[GrokBotQuota] status=\(result.status.rawValue) message=\(result.message ?? "none")")
@@ -570,15 +770,28 @@ final class ViewModel: ObservableObject {
     func authorizeGrokBotNativeAccess() {
         guard grokBotNativeAccessState != .authorizing else { return }
         grokBotNativeAccessState = .authorizing
+        let target = grokBotQuota.localAuthorizationSource ?? .grokBot
+        let service = grokBotQuotaService
         Task { [weak self] in
             let authorized = await Task.detached(priority: .userInitiated) {
-                GrokBotNativeCredentialStore.shared.authorize()
+                target == .cursorCLI ? service.authorizeCursorCLI() : GrokBotNativeCredentialStore.shared.authorize()
             }.value
             guard let self else { return }
             self.grokBotNativeAccessState = GrokBotNativeCredentialStore.shared.accessState
-            guard authorized else { return }
+            guard authorized else {
+                if target == .cursorCLI {
+                    self.grokBotQuota = .unavailable(L10n.shared.tr("quota.grokBotCursorAuthorizationBody"), source: "Cursor Agent CLI")
+                    self.grokBotQuota.requiresLocalAuthorization = true
+                    self.grokBotQuota.localAuthorizationSource = .cursorCLI
+                } else if let key = GrokBotNativeCredentialStore.shared.failureMessageKey {
+                    self.grokBotQuota = .unavailable(L10n.shared.tr(key), source: "Grok Bot")
+                    self.grokBotQuota.requiresLocalAuthorization = self.grokBotNativeAccessState == .authorizationRequired
+                    if self.grokBotQuota.requiresLocalAuthorization { self.grokBotQuota.localAuthorizationSource = .grokBot }
+                }
+                return
+            }
             self.cursorAgentService.resetCredentials()
-            self.refreshGrokBotQuota()
+            self.refreshGrokBotQuota(force: true)
             self.refreshUsageData()
         }
     }
@@ -623,7 +836,7 @@ final class ViewModel: ObservableObject {
 
     func subscriptionAccounts(for provider: SubscriptionProvider) -> [SubscriptionAccountRecord] {
         let current = activeSubscriptionAccountIDs[provider]
-        return subscriptionAccounts.filter { $0.provider == provider }.sorted {
+        return displayedSubscriptionAccounts.filter { $0.provider == provider }.sorted {
             if $0.id == current { return true }
             if $1.id == current { return false }
             return ($0.refreshedAt ?? .distantPast) > ($1.refreshedAt ?? .distantPast)
@@ -669,17 +882,22 @@ final class ViewModel: ObservableObject {
     }
 
     func updateSubscriptionAccount(id: String, note: String, manualPlan: String?, billing: SubscriptionBillingEdit) {
-        subscriptionAccounts = subscriptionAccountStore.update(id: id, note: note, manualPlan: manualPlan)
+        subscriptionAccounts = subscriptionAccountStore.update(
+            id: id, note: note, manualPlan: manualPlan
+        )
         subscriptionAccounts = subscriptionAccountStore.updateBilling(id: id, edit: billing)
         refreshBillingNotices()
     }
 
     private func rememberCodexQuota(_ snapshot: CodexQuotaSnapshot) {
         guard snapshot.status == .available, !snapshot.buckets.isEmpty else {
-            activeSubscriptionAccountIDs[.codex] = nil; return
+            activeSubscriptionAccountIDs[.codex] = nil
+            return
         }
         rememberSubscriptionAccount(
-            provider: .codex, identity: snapshot.account, plan: snapshot.planType,
+            provider: .codex,
+            identity: snapshot.account,
+            plan: snapshot.planType,
             groups: [ProviderQuotaGroup(id: "codex:subscription", name: "Subscription", buckets: snapshot.buckets)],
             refreshedAt: snapshot.refreshedAt,
             source: snapshot.source == .appServer ? "Codex app-server" : "Codex session log",
@@ -693,22 +911,31 @@ final class ViewModel: ObservableObject {
 
     private func rememberClaudeQuota(_ snapshot: ClaudeQuotaSnapshot) {
         guard snapshot.status == .available, !snapshot.buckets.isEmpty else {
-            activeSubscriptionAccountIDs[.claude] = nil; return
+            activeSubscriptionAccountIDs[.claude] = nil
+            return
         }
         rememberSubscriptionAccount(
-            provider: .claude, identity: snapshot.account, plan: snapshot.planType,
+            provider: .claude,
+            identity: snapshot.account,
+            plan: snapshot.planType,
             groups: [ProviderQuotaGroup(id: "claude:subscription", name: "Subscription", buckets: snapshot.buckets)],
-            refreshedAt: snapshot.refreshedAt, source: snapshot.sourceDescription
+            refreshedAt: snapshot.refreshedAt,
+            source: snapshot.sourceDescription
         )
     }
 
     private func rememberProviderQuota(_ snapshot: ProviderQuotaSnapshot, provider: SubscriptionProvider) {
         guard snapshot.status == .available, !snapshot.groups.isEmpty else {
-            activeSubscriptionAccountIDs[provider] = nil; return
+            activeSubscriptionAccountIDs[provider] = nil
+            return
         }
         rememberSubscriptionAccount(
-            provider: provider, identity: snapshot.account, plan: snapshot.planType,
-            groups: snapshot.groups, refreshedAt: snapshot.refreshedAt, source: snapshot.source
+            provider: provider,
+            identity: snapshot.account,
+            plan: snapshot.planType,
+            groups: snapshot.groups,
+            refreshedAt: snapshot.refreshedAt,
+            source: snapshot.source
         )
         subscriptionAccounts = subscriptionAccountStore.updateDetectedBilling(provider: provider, identity: snapshot.account, info: snapshot.billing)
         refreshBillingNotices()
@@ -728,37 +955,22 @@ final class ViewModel: ObservableObject {
         let accountID = identity?.id.trimmingCharacters(in: .whitespacesAndNewlines)
         let stableID = accountID?.isEmpty == false ? accountID! : "active"
         let record = SubscriptionAccountRecord(
-            provider: provider, accountID: stableID, email: identity?.email, note: "",
-            detectedPlan: plan, manualPlan: nil, groups: groups, refreshedAt: refreshedAt,
-            source: source, creditBalance: creditBalance, hasUnlimitedCredits: hasUnlimitedCredits,
+            provider: provider,
+            accountID: stableID,
+            email: identity?.email,
+            note: "",
+            detectedPlan: plan,
+            manualPlan: nil,
+            groups: groups,
+            refreshedAt: refreshedAt,
+            source: source,
+            creditBalance: creditBalance,
+            hasUnlimitedCredits: hasUnlimitedCredits,
             resetCreditCount: resetCreditCount
         )
         subscriptionAccounts = subscriptionAccountStore.merge(record)
         activeSubscriptionAccountIDs[provider] = record.hasVerifiedIdentity ? record.id : nil
-    }
-
-    // MARK: - 价格目录
-
-    /// 价格目录刷新 / 自定义价修改后，费用需要重算。
-    /// 分桶缓存在扫描服务里，增量重扫不读盘（modDate 未变的文件直接跳过），代价极小。
-    private func setupPricingObservers() {
-        NotificationCenter.default.addObserver(
-            self, selector: #selector(handlePricingUpdate),
-            name: PricingService.catalogUpdatedNotification, object: nil
-        )
-        // 启动时检查，并为长时间运行的小组件启动周期检查。
-        PricingService.shared.startAutomaticRefresh()
-        if PricingService.shared.isStale() {
-            Task.detached(priority: .utility) {
-                try? await PricingService.shared.refresh()
-            }
-        }
-    }
-
-    @objc nonisolated private func handlePricingUpdate() {
-        Task { @MainActor [weak self] in
-            self?.updateMockData()
-        }
+        normalizeUnifiedDialSelection()
     }
 
     // MARK: - 首次启动路径探测
@@ -865,11 +1077,6 @@ final class ViewModel: ObservableObject {
     }
 
     private func loadTheme() {
-        if let forced = ProcessInfo.processInfo.environment["TOKENCLOCK_THEME"],
-           let theme = ClockFaceTheme(rawValue: forced) {
-            selectedTheme = theme
-            return
-        }
         if let saved = UserDefaults.standard.string(for: .selectedTheme),
            let theme = ClockFaceTheme(rawValue: saved) {
             selectedTheme = theme
@@ -956,14 +1163,11 @@ final class ViewModel: ObservableObject {
 
     // MARK: - 聚合属性
 
-    // 表盘/VoiceOver 总数走统一 TokenFormat（含 B/M/K 档，与 main 一致），
-    // 否则十亿级用量会停在 "1625M" 不切 B 档。
     var totalTokensFormatted: String {
         if isInitialLoading { return "—" }
         return TokenFormat.compact(UsageAggregator.totalTokens(visibleTools, includingCacheRead: usageIncludesCache))
     }
 
-    /// 今日全部已启用工具的估算费用（按 API 牌价折算；未计价模型记 0 并触发 ≈ 前缀）
     var totalCost: CostEstimate {
         var result = CostEstimate.unavailable
         guard !isInitialLoading else { return result }
@@ -975,7 +1179,6 @@ final class ViewModel: ObservableObject {
         UsageAggregator.totalTokens(visibleTools) > 0 && totalCost.available ? CostFormat.estimate(totalCost) : "—"
     }
 
-    /// 当前口径下所有可见工具的 token 总数（表盘/占比分母共用）
     var displayTotalTokens: Int {
         UsageAggregator.totalTokens(visibleTools, includingCacheRead: usageIncludesCache)
     }
@@ -1156,6 +1359,7 @@ final class ViewModel: ObservableObject {
             }
         }
         RunLoop.main.add(claudeAppQuotaTimer!, forMode: .common)
+        configureDialQuotaRotation()
         RunLoop.main.add(clockTimer!, forMode: .common)
         RunLoop.main.add(dataTimer!, forMode: .common)
         RunLoop.main.add(generationSpeedTimer!, forMode: .common)
@@ -1198,8 +1402,7 @@ final class ViewModel: ObservableObject {
         print("[History] 下次日结: \(DateHelper.dateKey(from: next)) 00:01 (\(intervalMin) 分钟后)")
     }
 
-    /// 午夜定时器只确保新一天已有记录。前一天已经由每次成功扫描持续覆盖到最新值，
-    /// 不能在 00:01 再用已经切到新日期的统计反向覆盖昨天。
+    /// 前一天已经由每次扫描持续覆盖到最新值；午夜只确保新一天已有记录。
     private func performDailySettlement() {
         persistCurrentUsage()
         if let yesterday = Calendar.current.date(byAdding: .day, value: -1, to: Date()) {
@@ -1207,7 +1410,6 @@ final class ViewModel: ObservableObject {
         }
     }
 
-    /// 把当前日统计写入历史库。总览窗口因此能展示“今天”，异常退出也不会丢掉整天。
     func persistCurrentUsage(synchronously: Bool = true) {
         let dateKey = DateHelper.todayKey()
         let snapshots: [TokenClock.ToolSnapshot] = tools.filter { $0.measurementUnit == .tokens }.map { tool in
@@ -1215,8 +1417,7 @@ final class ViewModel: ObservableObject {
                 SessionSnapshot(id: $0.rawId, displayName: $0.displayName,
                                 tokens: $0.todayTokens, messages: $0.todayMessages,
                                 isActive: $0.isActive, model: $0.model,
-                                cost: $0.todayCost,
-                                cacheReadTokens: $0.cacheReadTokens)
+                                cost: $0.todayCost, cacheReadTokens: $0.cacheReadTokens)
             }
             return TokenClock.ToolSnapshot(
                 name: tool.name,
@@ -1262,9 +1463,6 @@ final class ViewModel: ObservableObject {
 
     private func generatePendingReports(through completedDate: Date) {
         refreshBillingNotices()
-        ReleaseUpdateService.shared.checkDaily { [weak self] in
-            Task { @MainActor [weak self] in self?.refreshBillingNotices() }
-        }
         generatePendingDailyReports(through: completedDate)
         generatePendingWeeklyReports(through: completedDate)
         generatePendingMonthlyReports(through: completedDate)
@@ -1390,6 +1588,8 @@ final class ViewModel: ObservableObject {
     }
 
     private func stopTimers() {
+        dialQuotaTimer?.invalidate(); dialQuotaTimer = nil
+        dialQuotaTimerGeneration &+= 1
         clockTimer?.invalidate()
         dataTimer?.invalidate()
         generationSpeedTimer?.invalidate()
@@ -1417,19 +1617,17 @@ final class ViewModel: ObservableObject {
         runBackgroundScan(incremental: true)
     }
 
-    /// 设置页修改自定义价格后立即重算费用（增量扫描，modDate 未变的文件不重读，代价极小）
     func refreshUsageData() {
         runBackgroundScan(incremental: true)
     }
 
     private func performFullScan() {
-        refreshGenerationSpeed()
         runBackgroundScan(incremental: false)
     }
 
     /// 在后台线程执行扫描 + 数据提取，主线程只负责更新 UI
     private func refreshGenerationSpeed() {
-        guard !isSamplingGenerationSpeed else { return }
+        guard !isSamplingGenerationSpeed, !isInitialLoading else { return }
         isSamplingGenerationSpeed = true
         let enabled = enabledTools
         Task.detached(priority: .utility) { [weak self] in
@@ -1455,169 +1653,176 @@ final class ViewModel: ObservableObject {
                 return
             }
 
-            // 后台线程：执行所有 I/O 密集的扫描
-            let activity = ProcessInfo.processInfo.beginActivity(
-                options: .userInitiatedAllowingIdleSystemSleep, reason: "Refresh local token usage")
-            defer { ProcessInfo.processInfo.endActivity(activity) }
-            if enabled.contains("OpenClaw") { incremental ? self.openclawService.incrementalScan() : self.openclawService.fullScan() }
-            if enabled.contains("Claude Code") { incremental ? self.claudeCodeService.incrementalScan() : self.claudeCodeService.fullScan() }
-            if enabled.contains("Gemini CLI") { incremental ? self.geminiService.incrementalScan() : self.geminiService.fullScan() }
-            if enabled.contains("Codex") { incremental ? self.codexService.incrementalScan() : self.codexService.fullScan() }
-            if enabled.contains("Hermes") { incremental ? self.hermesService.incrementalScan() : self.hermesService.fullScan() }
-            if enabled.contains("OpenCode") { incremental ? self.opencodeService.incrementalScan() : self.opencodeService.fullScan() }
-            if enabled.contains("Qwen Code") { incremental ? self.qwenService.incrementalScan() : self.qwenService.fullScan() }
-            if enabled.contains("Copilot") { incremental ? self.copilotService.incrementalScan() : self.copilotService.fullScan() }
-            if enabled.contains("Grok") { incremental ? self.grokService.incrementalScan() : self.grokService.fullScan() }
-            if enabled.contains("Aider") { incremental ? self.aiderService.incrementalScan() : self.aiderService.fullScan() }
-            if enabled.contains("Antigravity") { incremental ? self.antigravityService.incrementalScan() : self.antigravityService.fullScan() }
-            if enabled.contains("Cline") { incremental ? self.clineService.incrementalScan() : self.clineService.fullScan() }
-            for service in self.additionalHarnessServices where enabled.contains(service.harness.name) {
-                incremental ? service.incrementalScan() : service.fullScan()
-                if !incremental { service.importHistoryIfNeeded() }
-                if service.harness.unit == .tokens { HourlyHistoryStore.shared.replace(tool: service.harness.name, hours: service.hourlyData, force: !incremental) }
-            }
-            if enabled.contains("Continue") { incremental ? self.continueService.incrementalScan() : self.continueService.fullScan() }
-            if shouldScanCursorUsage { incremental ? self.cursorAgentService.incrementalScan() : self.cursorAgentService.fullScan() }
-            if enabled.contains("ZCode") { incremental ? self.zcodeService.incrementalScan() : self.zcodeService.fullScan() }
-
-            if !incremental, enabled.contains("OpenClaw"),
-               UserDefaults.standard.int(for: .openclawHistoryRepairVersion) < 1 {
-                let days = AppConfig.History.retentionDays
-                let snapshots = self.openclawService.historicalSnapshots(retentionDays: days)
-                let startDate = Calendar.current.date(
-                    byAdding: .day, value: -days + 1,
-                    to: Calendar.current.startOfDay(for: Date())
-                ) ?? Date()
-                if HistoryStore.shared.replaceToolHistory(
-                    toolName: "OpenClaw", snapshotsByDate: snapshots,
-                    from: DateHelper.dateKey(from: startDate), through: DateHelper.todayKey()
-                ) {
-                    UserDefaults.standard.setInt(1, for: .openclawHistoryRepairVersion)
+            // Drain full-scan temporaries before starting the initial speed scan.
+            // The recurring three-minute speed timer and request attribution stay unchanged.
+            let (results, costModes) = autoreleasepool {
+                // 后台线程：执行所有 I/O 密集的扫描
+                let activity = ProcessInfo.processInfo.beginActivity(
+                    options: .userInitiatedAllowingIdleSystemSleep, reason: "Refresh local token usage")
+                defer { ProcessInfo.processInfo.endActivity(activity) }
+                if enabled.contains("OpenClaw") { incremental ? self.openclawService.incrementalScan() : self.openclawService.fullScan() }
+                if enabled.contains("Claude Code") { incremental ? self.claudeCodeService.incrementalScan() : self.claudeCodeService.fullScan() }
+                if enabled.contains("Gemini CLI") { incremental ? self.geminiService.incrementalScan() : self.geminiService.fullScan() }
+                if enabled.contains("Codex") { incremental ? self.codexService.incrementalScan() : self.codexService.fullScan() }
+                if enabled.contains("Hermes") { incremental ? self.hermesService.incrementalScan() : self.hermesService.fullScan() }
+                if enabled.contains("OpenCode") { incremental ? self.opencodeService.incrementalScan() : self.opencodeService.fullScan() }
+                if enabled.contains("Qwen Code") { incremental ? self.qwenService.incrementalScan() : self.qwenService.fullScan() }
+                if enabled.contains("Copilot") { incremental ? self.copilotService.incrementalScan() : self.copilotService.fullScan() }
+                if enabled.contains("Grok") { incremental ? self.grokService.incrementalScan() : self.grokService.fullScan() }
+                if enabled.contains("Aider") { incremental ? self.aiderService.incrementalScan() : self.aiderService.fullScan() }
+                if enabled.contains("Antigravity") { incremental ? self.antigravityService.incrementalScan() : self.antigravityService.fullScan() }
+                if enabled.contains("Cline") { incremental ? self.clineService.incrementalScan() : self.clineService.fullScan() }
+                for service in self.additionalHarnessServices where enabled.contains(service.harness.name) {
+                    incremental ? service.incrementalScan() : service.fullScan()
+                    if !incremental { service.importHistoryIfNeeded() }
+                    if service.harness.unit == .tokens { HourlyHistoryStore.shared.replace(tool: service.harness.name, hours: service.hourlyData, force: !incremental) }
                 }
-            }
-            if !incremental, enabled.contains("ZCode"),
-               UserDefaults.standard.int(for: .zcodeHistoryImportVersion) < 1 {
-                let days = AppConfig.History.retentionDays
-                let startDate = Calendar.current.date(
-                    byAdding: .day, value: -days + 1,
-                    to: Calendar.current.startOfDay(for: Date())
-                ) ?? Date()
-                if HistoryStore.shared.replaceToolHistory(
-                    toolName: "ZCode",
-                    snapshotsByDate: self.zcodeService.historicalSnapshots(retentionDays: days),
-                    from: DateHelper.dateKey(from: startDate), through: DateHelper.todayKey()
-                ) {
-                    UserDefaults.standard.setInt(1, for: .zcodeHistoryImportVersion)
+                if enabled.contains("Continue") { incremental ? self.continueService.incrementalScan() : self.continueService.fullScan() }
+                if shouldScanCursorUsage { incremental ? self.cursorAgentService.incrementalScan() : self.cursorAgentService.fullScan() }
+                if enabled.contains("ZCode") { incremental ? self.zcodeService.incrementalScan() : self.zcodeService.fullScan() }
+
+                if !incremental, enabled.contains("OpenClaw"),
+                   UserDefaults.standard.int(for: .openclawHistoryRepairVersion) < 1 {
+                    let days = AppConfig.History.retentionDays
+                    let snapshots = self.openclawService.historicalSnapshots(retentionDays: days)
+                    let startDate = Calendar.current.date(
+                        byAdding: .day, value: -days + 1,
+                        to: Calendar.current.startOfDay(for: Date())
+                    ) ?? Date()
+                    if HistoryStore.shared.replaceToolHistory(
+                        toolName: "OpenClaw", snapshotsByDate: snapshots,
+                        from: DateHelper.dateKey(from: startDate), through: DateHelper.todayKey()
+                    ) {
+                        UserDefaults.standard.setInt(
+                            1, for: .openclawHistoryRepairVersion
+                        )
+                    }
                 }
-            }
-
-            // 后台线程：提取数据（避免与主线程读取竞争）
-            let hourlySources: [(String, [String: HourlyUsage])] = [
-                ("Codex", self.codexService.hourlyData),
-                ("Claude Code", self.claudeCodeService.hourlyData),
-                ("Gemini CLI", self.geminiService.hourlyData),
-                ("OpenClaw", self.openclawService.hourlyData),
-                ("Antigravity", self.antigravityService.hourlyData),
-                ("OpenCode", self.opencodeService.hourlyData),
-                ("Qwen Code", self.qwenService.hourlyData),
-                ("Copilot", self.copilotService.hourlyData),
-                ("Continue", self.continueService.hourlyData),
-                ("Grok", self.grokService.hourlyData),
-                ("ZCode", self.zcodeService.hourlyData),
-            ]
-            for (name, hours) in hourlySources where enabled.contains(name) {
-                HourlyHistoryStore.shared.replace(tool: name, hours: hours, force: !incremental)
-            }
-            var results: [String: ToolSnapshot] = [:]
-            if enabled.contains("OpenClaw") {
-                let u = self.openclawService.todayUsage()
-                results["OpenClaw"] = ToolSnapshot(tokens: u.tokens, messages: u.messages, recent: self.openclawService.recentUsage(minutes: rateWindow).tokens, hourly: self.openclawService.currentHourTokens(), active: self.openclawService.isActive(), cacheRate: u.cacheRate, cost: self.openclawService.todayCost(), cacheRead: self.openclawService.todayCacheReadTokens(), sessions: self.openclawService.todaySessions())
-            }
-            if enabled.contains("Claude Code") {
-                let u = self.claudeCodeService.todayUsage()
-                results["Claude Code"] = ToolSnapshot(tokens: u.tokens, messages: u.messages, recent: self.claudeCodeService.recentUsage(minutes: rateWindow).tokens, hourly: self.claudeCodeService.currentHourTokens(), active: self.claudeCodeService.isActive(), cacheRate: u.cacheRate, cost: self.claudeCodeService.todayCost(), cacheRead: self.claudeCodeService.todayCacheReadTokens(), sessions: self.claudeCodeService.todaySessions())
-            }
-            if enabled.contains("Gemini CLI") {
-                let u = self.geminiService.todayUsage()
-                results["Gemini CLI"] = ToolSnapshot(tokens: u.tokens, messages: u.messages, recent: self.geminiService.recentUsage(minutes: rateWindow).tokens, hourly: self.geminiService.currentHourTokens(), active: self.geminiService.isActive(), cacheRate: u.cacheRate, sessions: self.geminiService.todaySessions())
-            }
-            if enabled.contains("Codex") {
-                let u = self.codexService.todayUsage()
-                results["Codex"] = ToolSnapshot(tokens: u.tokens, messages: u.messages, recent: self.codexService.recentUsage(minutes: rateWindow).tokens, hourly: self.codexService.currentHourTokens(), active: self.codexService.isActive(), cacheRate: u.cacheRate, cost: self.codexService.todayCost(), cacheRead: self.codexService.todayCacheReadTokens(), sessions: self.codexService.todaySessions())
-            }
-            if enabled.contains("Hermes") {
-                let u = self.hermesService.todayUsage()
-                results["Hermes"] = ToolSnapshot(tokens: u.tokens, messages: u.messages, recent: self.hermesService.recentUsage(minutes: rateWindow).tokens, hourly: self.hermesService.currentHourTokens(), active: self.hermesService.isActive(), cacheRate: u.cacheRate, sessions: self.hermesService.todaySessions())
-            }
-            if enabled.contains("OpenCode") {
-                let u = self.opencodeService.todayUsage()
-                results["OpenCode"] = ToolSnapshot(tokens: u.tokens, messages: u.messages, recent: self.opencodeService.recentUsage(minutes: rateWindow).tokens, hourly: self.opencodeService.currentHourTokens(), active: self.opencodeService.isActive(), cacheRate: u.cacheRate, sessions: self.opencodeService.todaySessions())
-            }
-            if enabled.contains("Qwen Code") {
-                let u = self.qwenService.todayUsage()
-                results["Qwen Code"] = ToolSnapshot(tokens: u.tokens, messages: u.messages, recent: self.qwenService.recentUsage(minutes: rateWindow).tokens, hourly: self.qwenService.currentHourTokens(), active: self.qwenService.isActive(), cacheRate: u.cacheRate, sessions: self.qwenService.todaySessions())
-            }
-            if enabled.contains("Copilot") {
-                let u = self.copilotService.todayUsage()
-                results["Copilot"] = ToolSnapshot(tokens: u.tokens, messages: u.messages, recent: self.copilotService.recentUsage(minutes: rateWindow).tokens, hourly: self.copilotService.currentHourTokens(), active: self.copilotService.isActive(), cacheRate: u.cacheRate, sessions: self.copilotService.todaySessions())
-            }
-            if enabled.contains("Grok") {
-                let usage = self.grokService.todayUsage()
-                results["Grok"] = ToolSnapshot(
-                    tokens: usage.tokens,
-                    messages: usage.messages,
-                    recent: self.grokService.recentUsage(minutes: rateWindow).tokens,
-                    hourly: self.grokService.currentHourTokens(),
-                    active: self.grokService.isActive(),
-                    cacheRate: usage.cacheRate,
-                    sessions: self.grokService.todaySessions()
-                )
-            }
-            if enabled.contains("Aider") {
-                let u = self.aiderService.todayUsage()
-                results["Aider"] = ToolSnapshot(tokens: u.tokens, messages: u.messages, recent: self.aiderService.recentUsage(minutes: rateWindow).tokens, hourly: self.aiderService.currentHourTokens(), active: self.aiderService.isActive(), cacheRate: u.cacheRate, sessions: self.aiderService.todaySessions())
-            }
-            if enabled.contains("Antigravity") {
-                let u = self.antigravityService.todayUsage()
-                results["Antigravity"] = ToolSnapshot(tokens: u.tokens, messages: u.messages, recent: self.antigravityService.recentUsage(minutes: rateWindow).tokens, hourly: self.antigravityService.currentHourTokens(), active: self.antigravityService.isActive(), cacheRate: u.cacheRate, cost: self.antigravityService.todayCost(), cacheRead: self.antigravityService.todayCacheReadTokens(), sessions: self.antigravityService.todaySessions())
-            }
-            if enabled.contains("Cline") {
-                let u = self.clineService.todayUsage()
-                results["Cline"] = ToolSnapshot(tokens: u.tokens, messages: u.messages, recent: self.clineService.recentUsage(minutes: rateWindow).tokens, hourly: self.clineService.currentHourTokens(), active: self.clineService.isActive(), cacheRate: u.cacheRate, sessions: self.clineService.todaySessions())
-            }
-            if enabled.contains("Continue") {
-                let u = self.continueService.todayUsage()
-                results["Continue"] = ToolSnapshot(tokens: u.tokens, messages: u.messages, recent: self.continueService.recentUsage(minutes: rateWindow).tokens, hourly: self.continueService.currentHourTokens(), active: self.continueService.isActive(), cacheRate: u.cacheRate, sessions: self.continueService.todaySessions())
-            }
-            if shouldScanCursorUsage {
-                let u = self.cursorAgentService.todayUsage()
-                if enabled.contains("Cursor Agent") {
-                    results["Cursor Agent"] = ToolSnapshot(tokens: u.tokens, messages: u.messages, recent: self.cursorAgentService.recentUsage(minutes: rateWindow).tokens, hourly: self.cursorAgentService.currentHourTokens(), active: self.cursorAgentService.isActive(), cacheRate: u.cacheRate, cost: self.cursorAgentService.todayCost(), cacheRead: self.cursorAgentService.todayCacheReadTokens(), sessions: self.cursorAgentService.todaySessions())
+                if !incremental, enabled.contains("ZCode"),
+                   UserDefaults.standard.int(for: .zcodeHistoryImportVersion) < 1 {
+                    let days = AppConfig.History.retentionDays
+                    let startDate = Calendar.current.date(
+                        byAdding: .day, value: -days + 1,
+                        to: Calendar.current.startOfDay(for: Date())
+                    ) ?? Date()
+                    if HistoryStore.shared.replaceToolHistory(
+                        toolName: "ZCode",
+                        snapshotsByDate: self.zcodeService.historicalSnapshots(retentionDays: days),
+                        from: DateHelper.dateKey(from: startDate), through: DateHelper.todayKey()
+                    ) {
+                        UserDefaults.standard.setInt(1, for: .zcodeHistoryImportVersion)
+                    }
                 }
-                let bot = self.cursorAgentService.todayGrokBotUsage()
-                results["Grok Bot"] = ToolSnapshot(
-                    tokens: bot.tokens,
-                    messages: bot.messages,
-                    recent: self.cursorAgentService.recentGrokBotUsage(minutes: rateWindow).tokens,
-                    hourly: self.cursorAgentService.currentHourGrokBotTokens(),
-                    active: self.cursorAgentService.isGrokBotActive(),
-                    cacheRate: bot.cacheRate,
-                    cost: self.cursorAgentService.todayGrokBotCost(),
-                    cacheRead: self.cursorAgentService.todayGrokBotCacheReadTokens(),
-                    sessions: self.cursorAgentService.todayGrokBotSessions()
-                )
-            }
-            if enabled.contains("ZCode") {
-                let u = self.zcodeService.todayUsage()
-                results["ZCode"] = ToolSnapshot(tokens: u.tokens, messages: u.messages, recent: self.zcodeService.recentUsage(minutes: rateWindow).tokens, hourly: self.zcodeService.currentHourTokens(), active: self.zcodeService.isActive(), cacheRate: u.cacheRate, cost: self.zcodeService.todayCost(), cacheRead: self.zcodeService.todayCacheReadTokens(), sessions: self.zcodeService.todaySessions())
-            }
 
-            for service in self.additionalHarnessServices where enabled.contains(service.harness.name) {
-                let usage = service.todayUsage()
-                results[service.harness.name] = ToolSnapshot(tokens: usage.tokens, messages: usage.messages, recent: service.recentUsage(minutes: rateWindow).tokens, hourly: service.currentHourTokens(), active: service.isActive(), cacheRate: usage.cacheRate, cost: service.todayCost(), cacheRead: service.todayCacheReadTokens(), sessions: service.todaySessions())
-            }
+                // 后台线程：提取数据（避免与主线程读取竞争）
+                let hourlySources: [(String, [String: HourlyUsage])] = [
+                    ("Codex", self.codexService.hourlyData),
+                    ("Claude Code", self.claudeCodeService.hourlyData),
+                    ("Gemini CLI", self.geminiService.hourlyData),
+                    ("OpenClaw", self.openclawService.hourlyData),
+                    ("Antigravity", self.antigravityService.hourlyData),
+                    ("OpenCode", self.opencodeService.hourlyData),
+                    ("Qwen Code", self.qwenService.hourlyData),
+                    ("Copilot", self.copilotService.hourlyData),
+                    ("Continue", self.continueService.hourlyData),
+                    ("Grok", self.grokService.hourlyData),
+                    ("ZCode", self.zcodeService.hourlyData),
+                ]
+                for (name, hours) in hourlySources where enabled.contains(name) {
+                    HourlyHistoryStore.shared.replace(tool: name, hours: hours, force: !incremental)
+                }
+                var results: [String: ToolSnapshot] = [:]
+                if enabled.contains("OpenClaw") {
+                    let u = self.openclawService.todayUsage()
+                    results["OpenClaw"] = ToolSnapshot(tokens: u.tokens, messages: u.messages, recent: self.openclawService.recentUsage(minutes: rateWindow).tokens, hourly: self.openclawService.currentHourTokens(), active: self.openclawService.isActive(), cacheRate: u.cacheRate, cost: self.openclawService.todayCost(), cacheRead: self.openclawService.todayCacheReadTokens(), sessions: self.openclawService.todaySessions())
+                }
+                if enabled.contains("Claude Code") {
+                    let u = self.claudeCodeService.todayUsage()
+                    results["Claude Code"] = ToolSnapshot(tokens: u.tokens, messages: u.messages, recent: self.claudeCodeService.recentUsage(minutes: rateWindow).tokens, hourly: self.claudeCodeService.currentHourTokens(), active: self.claudeCodeService.isActive(), cacheRate: u.cacheRate, cost: self.claudeCodeService.todayCost(), cacheRead: self.claudeCodeService.todayCacheReadTokens(), sessions: self.claudeCodeService.todaySessions())
+                }
+                if enabled.contains("Gemini CLI") {
+                    let u = self.geminiService.todayUsage()
+                    results["Gemini CLI"] = ToolSnapshot(tokens: u.tokens, messages: u.messages, recent: self.geminiService.recentUsage(minutes: rateWindow).tokens, hourly: self.geminiService.currentHourTokens(), active: self.geminiService.isActive(), cacheRate: u.cacheRate, sessions: self.geminiService.todaySessions())
+                }
+                if enabled.contains("Codex") {
+                    let u = self.codexService.todayUsage()
+                    results["Codex"] = ToolSnapshot(tokens: u.tokens, messages: u.messages, recent: self.codexService.recentUsage(minutes: rateWindow).tokens, hourly: self.codexService.currentHourTokens(), active: self.codexService.isActive(), cacheRate: u.cacheRate, cost: self.codexService.todayCost(), cacheRead: self.codexService.todayCacheReadTokens(), sessions: self.codexService.todaySessions())
+                }
+                if enabled.contains("Hermes") {
+                    let u = self.hermesService.todayUsage()
+                    results["Hermes"] = ToolSnapshot(tokens: u.tokens, messages: u.messages, recent: self.hermesService.recentUsage(minutes: rateWindow).tokens, hourly: self.hermesService.currentHourTokens(), active: self.hermesService.isActive(), cacheRate: u.cacheRate, sessions: self.hermesService.todaySessions())
+                }
+                if enabled.contains("OpenCode") {
+                    let u = self.opencodeService.todayUsage()
+                    results["OpenCode"] = ToolSnapshot(tokens: u.tokens, messages: u.messages, recent: self.opencodeService.recentUsage(minutes: rateWindow).tokens, hourly: self.opencodeService.currentHourTokens(), active: self.opencodeService.isActive(), cacheRate: u.cacheRate, sessions: self.opencodeService.todaySessions())
+                }
+                if enabled.contains("Qwen Code") {
+                    let u = self.qwenService.todayUsage()
+                    results["Qwen Code"] = ToolSnapshot(tokens: u.tokens, messages: u.messages, recent: self.qwenService.recentUsage(minutes: rateWindow).tokens, hourly: self.qwenService.currentHourTokens(), active: self.qwenService.isActive(), cacheRate: u.cacheRate, sessions: self.qwenService.todaySessions())
+                }
+                if enabled.contains("Copilot") {
+                    let u = self.copilotService.todayUsage()
+                    results["Copilot"] = ToolSnapshot(tokens: u.tokens, messages: u.messages, recent: self.copilotService.recentUsage(minutes: rateWindow).tokens, hourly: self.copilotService.currentHourTokens(), active: self.copilotService.isActive(), cacheRate: u.cacheRate, sessions: self.copilotService.todaySessions())
+                }
+                if enabled.contains("Grok") {
+                    let usage = self.grokService.todayUsage()
+                    results["Grok"] = ToolSnapshot(
+                        tokens: usage.tokens,
+                        messages: usage.messages,
+                        recent: self.grokService.recentUsage(minutes: rateWindow).tokens,
+                        hourly: self.grokService.currentHourTokens(),
+                        active: self.grokService.isActive(),
+                        cacheRate: usage.cacheRate,
+                        sessions: self.grokService.todaySessions()
+                    )
+                }
+                if enabled.contains("Aider") {
+                    let u = self.aiderService.todayUsage()
+                    results["Aider"] = ToolSnapshot(tokens: u.tokens, messages: u.messages, recent: self.aiderService.recentUsage(minutes: rateWindow).tokens, hourly: self.aiderService.currentHourTokens(), active: self.aiderService.isActive(), cacheRate: u.cacheRate, sessions: self.aiderService.todaySessions())
+                }
+                if enabled.contains("Antigravity") {
+                    let u = self.antigravityService.todayUsage()
+                    results["Antigravity"] = ToolSnapshot(tokens: u.tokens, messages: u.messages, recent: self.antigravityService.recentUsage(minutes: rateWindow).tokens, hourly: self.antigravityService.currentHourTokens(), active: self.antigravityService.isActive(), cacheRate: u.cacheRate, cost: self.antigravityService.todayCost(), cacheRead: self.antigravityService.todayCacheReadTokens(), sessions: self.antigravityService.todaySessions())
+                }
+                if enabled.contains("Cline") {
+                    let u = self.clineService.todayUsage()
+                    results["Cline"] = ToolSnapshot(tokens: u.tokens, messages: u.messages, recent: self.clineService.recentUsage(minutes: rateWindow).tokens, hourly: self.clineService.currentHourTokens(), active: self.clineService.isActive(), cacheRate: u.cacheRate, sessions: self.clineService.todaySessions())
+                }
+                if enabled.contains("Continue") {
+                    let u = self.continueService.todayUsage()
+                    results["Continue"] = ToolSnapshot(tokens: u.tokens, messages: u.messages, recent: self.continueService.recentUsage(minutes: rateWindow).tokens, hourly: self.continueService.currentHourTokens(), active: self.continueService.isActive(), cacheRate: u.cacheRate, sessions: self.continueService.todaySessions())
+                }
+                if shouldScanCursorUsage {
+                    let u = self.cursorAgentService.todayUsage()
+                    if enabled.contains("Cursor Agent") {
+                        results["Cursor Agent"] = ToolSnapshot(tokens: u.tokens, messages: u.messages, recent: self.cursorAgentService.recentUsage(minutes: rateWindow).tokens, hourly: self.cursorAgentService.currentHourTokens(), active: self.cursorAgentService.isActive(), cacheRate: u.cacheRate, cost: self.cursorAgentService.todayCost(), cacheRead: self.cursorAgentService.todayCacheReadTokens(), sessions: self.cursorAgentService.todaySessions())
+                    }
+                    let bot = self.cursorAgentService.todayGrokBotUsage()
+                    results["Grok Bot"] = ToolSnapshot(
+                        tokens: bot.tokens,
+                        messages: bot.messages,
+                        recent: self.cursorAgentService.recentGrokBotUsage(minutes: rateWindow).tokens,
+                        hourly: self.cursorAgentService.currentHourGrokBotTokens(),
+                        active: self.cursorAgentService.isGrokBotActive(),
+                        cacheRate: bot.cacheRate,
+                        cost: self.cursorAgentService.todayGrokBotCost(),
+                        cacheRead: self.cursorAgentService.todayGrokBotCacheReadTokens(),
+                        sessions: self.cursorAgentService.todayGrokBotSessions()
+                    )
+                }
+                if enabled.contains("ZCode") {
+                    let u = self.zcodeService.todayUsage()
+                    results["ZCode"] = ToolSnapshot(tokens: u.tokens, messages: u.messages, recent: self.zcodeService.recentUsage(minutes: rateWindow).tokens, hourly: self.zcodeService.currentHourTokens(), active: self.zcodeService.isActive(), cacheRate: u.cacheRate, cost: self.zcodeService.todayCost(), cacheRead: self.zcodeService.todayCacheReadTokens(), sessions: self.zcodeService.todaySessions())
+                }
 
-            let costModes = enabled.contains("Codex") ? self.codexService.todayCostModes() : nil
+                for service in self.additionalHarnessServices where enabled.contains(service.harness.name) {
+                    let usage = service.todayUsage()
+                    results[service.harness.name] = ToolSnapshot(tokens: usage.tokens, messages: usage.messages, recent: service.recentUsage(minutes: rateWindow).tokens, hourly: service.currentHourTokens(), active: service.isActive(), cacheRate: usage.cacheRate, cost: service.todayCost(), cacheRead: service.todayCacheReadTokens(), sessions: service.todaySessions())
+                }
+
+                let costModes = enabled.contains("Codex") ? self.codexService.todayCostModes() : nil
+                return (results, costModes)
+            }
             // 主线程：批量更新 @Published tools
             await MainActor.run {
                 for (name, snap) in results {
@@ -1631,6 +1836,7 @@ final class ViewModel: ObservableObject {
                 self.persistCurrentUsage(synchronously: false)
                 // 扫描全部完成（含主线程应用快照），释放重入守卫，允许下一次调度
                 self.isScanning = false
+                if !incremental { self.refreshGenerationSpeed() }
             }
         }
     }
@@ -1643,9 +1849,7 @@ final class ViewModel: ObservableObject {
         let hourly: Int
         let active: Bool
         let cacheRate: Double
-        /// 今日估算费用；未提供可靠模型分桶的工具保持 unavailable。
         var cost: CostEstimate = .unavailable
-        /// 今日缓存读 token 数（「包含缓存读」口径展示用）
         var cacheRead: Int = 0
         let sessions: [SessionInfo]
     }
@@ -1693,8 +1897,6 @@ final class ViewModel: ObservableObject {
         return defaultWindowPosition(screenFrame: screenFrame, panelSize: panelSize)
     }
 
-    /// Place a fresh install fully inside the visible frame with an even edge margin.
-    /// The previous fixed `width - 220` offset put 60–180 points of every current size off-screen.
     static func defaultWindowPosition(screenFrame: NSRect, panelSize: NSSize) -> NSPoint {
         let margin: CGFloat = 20
         return NSPoint(

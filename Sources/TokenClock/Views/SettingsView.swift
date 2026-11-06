@@ -52,6 +52,7 @@ struct SettingsView: View {
     @State private var rateThresholdExpanded = false
     @State private var customThemeExpanded = false
     @State private var toolSelectionExpanded = false
+    @State private var notificationsExpanded = false
 
     // MARK: - 费用估算状态
     @State private var pricingExpanded = false
@@ -62,7 +63,6 @@ struct SettingsView: View {
     @State private var pricingUnpriced: [String] = []
     @State private var pricingCustomRows: [CustomPriceRow] = []
 
-    /// 自定义价格表的可编辑行（字符串态，提交时解析入库）
     struct CustomPriceRow: Identifiable {
         let id = UUID()
         var model = ""
@@ -90,6 +90,10 @@ struct SettingsView: View {
                 VStack(alignment: .leading, spacing: 12) {
                     // 自动探测（始终可见）
                     autoDetectSection()
+
+                    collapsibleSection(title: toolboxText("通知", "Notifications"), isExpanded: $notificationsExpanded) {
+                        NotificationSettingsView(preferences: viewModel.userContent.preferences)
+                    }
 
                     // 工具选择
                     collapsibleSection(title: L10n.shared.tr("settings.toolSelection"), isExpanded: $toolSelectionExpanded) {
@@ -252,7 +256,6 @@ struct SettingsView: View {
                         rateThresholdSection()
                     }
 
-                    // 费用估算
                     collapsibleSection(title: L10n.shared.tr("pricing.title"), isExpanded: $pricingExpanded) {
                         pricingSection()
                     }
@@ -274,8 +277,6 @@ struct SettingsView: View {
                     savePaths()
                     saveRateSettings()
                     saveCustomTheme()
-                    // TextField.onSubmit is not guaranteed to run when the user clicks Done.
-                    // Persist every valid row explicitly so normal mouse-driven use cannot lose it.
                     persistAllCustomRows()
                     onDone?()
                 }
@@ -507,6 +508,7 @@ struct SettingsView: View {
         reloadPricingState()
     }
 
+
     // MARK: - 自动探测区域
 
     private func autoDetectSection() -> some View {
@@ -536,8 +538,7 @@ struct SettingsView: View {
                     Spacer()
                 }
                 .padding(8)
-                .background(Color.secondary.opacity(0.08))
-                .cornerRadius(6)
+                .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
             }
 
             Divider().padding(.vertical, 2)
@@ -622,8 +623,7 @@ struct SettingsView: View {
                 }
             }
             .padding(10)
-            .background(Color.secondary.opacity(0.06))
-            .cornerRadius(8)
+            .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
         }
     }
 
@@ -839,8 +839,7 @@ struct SettingsView: View {
             .padding(.top, 2)
         }
         .padding(12)
-        .background(Color.secondary.opacity(0.06))
-        .cornerRadius(8)
+        .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 
     private func thresholdRow(emoji: String, label: String, value: Binding<String>, unit: Binding<String>) -> some View {
@@ -1009,8 +1008,7 @@ struct SettingsView: View {
                     }
                 }
                 .padding(8)
-                .background(Color.secondary.opacity(0.05))
-                .cornerRadius(6)
+                .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
             }
 
             if !isEditingCustomTheme {
@@ -1068,7 +1066,8 @@ struct SettingsView: View {
     private func startEditingCustomTheme() {
         themeBeforeEdit = viewModel.selectedTheme
         editingConfig = CustomThemeConfig.load()
-        editingConfigBeforeEdit = editingConfig   // 快照编辑前配置，供取消时回写
+        // 在用户编辑前快照当前已保存的 customThemeConfig，以便取消时恢复
+        editingConfigBeforeEdit = editingConfig
         editingThemeName = ""
         isEditingCustomTheme = true
         viewModel.selectedTheme = .custom
@@ -1079,12 +1078,12 @@ struct SettingsView: View {
         isEditingCustomTheme = false
         viewModel.selectedTheme = themeBeforeEdit
         viewModel.saveTheme()
-        // 回写编辑前的 customThemeConfig，撤销编辑期间的实时 save()
-        if let snap = editingConfigBeforeEdit {
-            editingConfig = snap
+        // 恢复编辑前持久化的 customThemeConfig，丢弃半编辑状态
+        if let snapshot = editingConfigBeforeEdit {
+            editingConfig = snapshot
             editingConfig.save()
+            editingConfigBeforeEdit = nil
         }
-        editingConfigBeforeEdit = nil
     }
 
     private func saveEditingCustomTheme() {
@@ -1543,7 +1542,7 @@ struct SettingsView: View {
         panel.canChooseFiles = false
         panel.allowsMultipleSelection = false
         panel.title = title
-        panel.prompt = "选择"
+        panel.prompt = L10n.shared.tr("common.choose")
 
         if !currentPath.isEmpty {
             panel.directoryURL = URL(fileURLWithPath: currentPath)

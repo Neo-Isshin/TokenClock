@@ -1,6 +1,5 @@
 #if os(macOS)
 import Foundation
-import CoreFoundation
 
 struct ClaudeAppSession: Sendable {
     let key: String
@@ -21,10 +20,12 @@ struct ClaudeWebOrganization: Equatable, Sendable, Identifiable {
 }
 
 enum ClaudeAppQuotaError: Error, Sendable {
-    case signIn, chooseOrganization([ClaudeWebOrganization]), noSubscription, network, rateLimited, blocked, malformed
+    case signIn, chooseOrganization([ClaudeWebOrganization]), noSubscription, network, rateLimited, blocked, malformed, permissionDenied
+    case proxyRequired, proxyRequestFailed
 
     var messageKey: String {
         switch self {
+        case .permissionDenied: return "quota.claudePermissionDenied"
         case .signIn: return "quota.claudeConnectRequired"
         case .chooseOrganization: return "quota.claudeChooseOrganization"
         case .noSubscription: return "quota.claudeNoSubscription"
@@ -32,12 +33,15 @@ enum ClaudeAppQuotaError: Error, Sendable {
         case .rateLimited: return "quota.claudeRateLimited"
         case .blocked: return "quota.claudeWebBlocked"
         case .malformed: return "quota.claudeInvalidResponse"
+        case .proxyRequired: return "quota.claudeProxyRequired"
+        case .proxyRequestFailed: return "quota.claudeProxyRequestFailed"
         }
     }
 
     var snapshot: ClaudeQuotaSnapshot {
         var value = ClaudeQuotaSnapshot.unavailable(L10n.shared.tr(messageKey))
-        value.requiresConnection = true
+        value.requiresConnection = ["quota.claudeConnectRequired", "quota.claudeChooseOrganization"].contains(messageKey)
+        value.readFailure = ClaudeQuotaReadFailure.messageKey(messageKey)
         return value
     }
 }
@@ -49,13 +53,14 @@ final class ClaudeAppQuotaService: @unchecked Sendable {
         let status: Int
         let data: Data
         var challenge = false
+        var networkFailure: ClaudeQuotaNetwork.Failure? = nil
     }
     typealias Transport = @Sendable (URLRequest) -> Response?
     private let transport: Transport
 
     init(transport: @escaping Transport = ClaudeQuotaHTTP.get) { self.transport = transport }
 
-    func fetch(_ session: ClaudeAppSession) -> Result<ClaudeQuotaSnapshot, ClaudeAppQuotaError> {
+    func fetch(_ session: ClaudeAppSession, onVerifiedIdentity: ((ClaudeQuotaIdentity) -> Void)? = nil) -> Result<ClaudeQuotaSnapshot, ClaudeAppQuotaError> {
         guard ClaudeAppSession.validKey(session.key) else { return .failure(.signIn) }
         let deadline = Date().addingTimeInterval(8)
         func get(_ path: String) throws -> Data {
@@ -70,9 +75,13 @@ final class ClaudeAppQuotaService: @unchecked Sendable {
             request.setValue("sessionKey=" + session.key, forHTTPHeaderField: "Cookie")
             request.setValue("application/json", forHTTPHeaderField: "Accept")
             guard let response = transport(request) else { throw ClaudeAppQuotaError.network }
+            if let failure = response.networkFailure {
+                throw failure == .proxyRequired ? ClaudeAppQuotaError.proxyRequired : ClaudeAppQuotaError.proxyRequestFailed
+            }
             if response.challenge { throw ClaudeAppQuotaError.blocked }
             if response.status == 429 { throw ClaudeAppQuotaError.rateLimited }
-            if response.status == 401 || response.status == 403 { throw ClaudeAppQuotaError.signIn }
+            if response.status == 401 { throw ClaudeAppQuotaError.signIn }
+            if response.status == 403 { throw ClaudeAppQuotaError.permissionDenied }
             guard response.status == 200 else { throw ClaudeAppQuotaError.network }
             guard response.data.count <= 1_048_576 else { throw ClaudeAppQuotaError.malformed }
             return response.data
@@ -91,9 +100,12 @@ final class ClaudeAppQuotaService: @unchecked Sendable {
             let org = try Self.selectOrganization(organizations, preferred: session.organizationID)
             let verifiedID = "claude-web:" + identity.lowercased() + ":" + org.id
             if let expected = session.expectedIdentity, expected != verifiedID { throw ClaudeAppQuotaError.signIn }
+            let verifiedOwner=ClaudeQuotaIdentity(accountID:identity,organizationID:org.id)
+            onVerifiedIdentity?(verifiedOwner)
             let usage = try get("organizations/" + org.id + "/usage")
             var snapshot = try Self.decodeUsage(usage)
             snapshot.source = session.connected ? .connectedWeb : .desktopWeb
+            snapshot.verifiedIdentity = verifiedOwner
             // Same account in two organizations may have different limits.
             snapshot.account = SubscriptionAccountIdentity(id: verifiedID,
                                                          email: email?.isEmpty == false ? email : nil)
@@ -135,9 +147,29 @@ final class ClaudeAppQuotaService: @unchecked Sendable {
 
     static func decodeUsage(_ data: Data) throws -> ClaudeQuotaSnapshot {
         guard var root = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { throw ClaudeAppQuotaError.malformed }
+        if let declared = root["limits"], !(declared is NSNull) {
+            guard let limits = declared as? [[String: Any]] else { throw ClaudeAppQuotaError.malformed }
+            var mapped: [String: Any] = [:]
+            for limit in limits {
+                let unscoped = limit["scope"] == nil || limit["scope"] is NSNull
+                    || ((limit["scope"] as? [String: Any]).map { $0.values.allSatisfy { $0 is NSNull } } ?? false)
+                guard unscoped, let kind = limit["kind"] as? String,
+                      let value = limit["percent"] as? NSNumber, !JSONNumber.isBoolean(value),
+                      value.doubleValue.isFinite, (0...100).contains(value.doubleValue) else { continue }
+                let key: String
+                if kind == "session" { key = "five_hour" }
+                else if kind == "weekly_all" { key = "seven_day" }
+                else { continue }
+                var bucket: [String: Any] = ["utilization":value]
+                if let reset = limit["resets_at"] as? String { bucket["resets_at"] = reset }
+                if let existing = mapped[key] as? NSDictionary, !existing.isEqual(to: bucket) { throw ClaudeAppQuotaError.malformed }
+                mapped[key] = bucket
+            }
+            root = mapped // The declared windows are authoritative; never mix old/new periods.
+        }
         for key in ["five_hour", "seven_day", "seven_day_opus", "seven_day_sonnet", "seven_day_oauth_apps", "seven_day_overage_included"] {
             guard let bucket = root[key] as? [String: Any] else { root.removeValue(forKey: key); continue }
-            guard let used = bucket["utilization"] as? NSNumber, CFGetTypeID(used) != CFBooleanGetTypeID(),
+            guard let used = bucket["utilization"] as? NSNumber, !JSONNumber.isBoolean(used),
                   used.doubleValue.isFinite, (0...100).contains(used.doubleValue) else {
                 root.removeValue(forKey: key); continue
             }
@@ -149,48 +181,13 @@ final class ClaudeAppQuotaService: @unchecked Sendable {
     }
 }
 
-/// Ephemeral, bounded, GET-only transport. Refuse redirects rather than forwarding
-/// a credential to an authentication/SSO/CDN host. No shared browser cookie jar.
-private final class ClaudeQuotaHTTP: NSObject, URLSessionDataDelegate, @unchecked Sendable {
-    private let lock = NSLock()
-    private let completed = DispatchSemaphore(value: 0)
-    private var body = Data()
-    private var response: HTTPURLResponse?
-    private var failed = false
-
+/// Both desktop-cookie and connected-Web quota reads use the same strict proxy transport.
+private enum ClaudeQuotaHTTP {
     static func get(_ request: URLRequest) -> ClaudeAppQuotaService.Response? {
-        guard request.url?.scheme == "https", request.url?.host == "claude.ai", request.httpMethod == "GET" else { return nil }
-        let delegate = ClaudeQuotaHTTP()
-        let config = URLSessionConfiguration.ephemeral
-        config.urlCache = nil; config.httpCookieStorage = nil; config.httpShouldSetCookies = false
-        let session = URLSession(configuration: config, delegate: delegate, delegateQueue: nil)
-        defer { session.invalidateAndCancel() }
-        session.dataTask(with: request).resume()
-        guard delegate.completed.wait(timeout: .now() + request.timeoutInterval) == .success else { return nil }
-        return delegate.lock.withLock {
-            guard !delegate.failed, let response = delegate.response else { return nil }
-            let challenge = response.value(forHTTPHeaderField: "cf-mitigated") == "challenge"
-                || (response.statusCode == 403 && String(decoding: delegate.body.prefix(4096), as: UTF8.self).contains("Just a moment"))
-            return .init(status: response.statusCode, data: delegate.body, challenge: challenge)
+        switch ClaudeQuotaNetwork.get(request, claudeHome: PathConfig.claudeCodeHome()) {
+        case .success(let result): return .init(status: result.status, data: result.data, challenge: result.challenge)
+        case .failure(let failure): return .init(status: 0, data: Data(), networkFailure: failure)
         }
-    }
-    func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
-                    newRequest request: URLRequest, completionHandler: @escaping @Sendable (URLRequest?) -> Void) { completionHandler(nil) }
-    func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive response: URLResponse,
-                    completionHandler: @escaping @Sendable (URLSession.ResponseDisposition) -> Void) {
-        lock.withLock { self.response = response as? HTTPURLResponse }
-        completionHandler(response.expectedContentLength > 1_048_576 ? .cancel : .allow)
-    }
-    func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
-        let cancel = lock.withLock {
-            if body.count + data.count > 1_048_576 { failed = true; return true }
-            body.append(data); return false
-        }
-        if cancel { dataTask.cancel() }
-    }
-    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
-        lock.withLock { if error != nil { failed = true } }
-        completed.signal()
     }
 }
 #endif

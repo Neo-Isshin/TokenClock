@@ -15,9 +15,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var subscriptionAccountEditorWindow: NSWindow?
     private var aboutWindow: NSWindow?
     private var modelDetectWindow: ModelDetectNativeWindow?
+    private var networkLeakWindow: NetworkLeakWindow?
+    private var localToolboxWindow: NSWindow?
+    private var localToolboxModel: LocalToolboxModel?
+    private var notebookWindow: NSWindow?
     private var themePickerPanel: NSPanel?
     private var themePickerEventMonitor: Any?
     private var statusItem: NSStatusItem?
+    private var statusSummaryPopover: NSPopover?
+    private let statusBarClickCoordinator = StatusBarClickCoordinator()
+    private let statusSummaryHiddenWindows = StatusSummaryHiddenWindows()
+    private var isOpeningStatusSummary = false
     private var isSwitchingEdition = false
     private var isCheckingAppUpdate = false
     private var isRestartingApp = false
@@ -58,7 +66,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let mainView = MainView(
             viewModel: viewModel,
             onNotificationClick: { [weak self] in self?.toggleNotificationCenter() },
-            onClockDragStart: { [weak self] in self?.notificationPanel.hide() }
+            onClockDragStart: { [weak self] in self?.notificationPanel.hide() },
+            onOpenQuota: { [weak self] in self?.showSubscriptionQuotaWindow() }
         )
         let contentView = NSHostingView(rootView: mainView)
         contentView.frame = NSRect(
@@ -88,6 +97,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             onHistoryUsage: { [weak self] in self?.showUsageOverviewWindow() },
             onShareUsage: { [weak self] in self?.showUsageShareWindow() },
             onModelDetect: { [weak self] in self?.showModelDetect() },
+            onNetworkLeak: { [weak self] in self?.showNetworkLeak() },
+            onLocalToolbox: { [weak self] in self?.showLocalToolbox() },
+            onNotebook: { [weak self] in self?.showNotebook() },
             onModelDetectSession: { [weak self] session in self?.showModelDetectSession(session) },
             onNotificationClick: { [weak self] in self?.toggleNotificationCenter() }
         )
@@ -99,12 +111,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             height: FloatingPanel.collapsedHeight
         )
         detailContentView.autoresizingMask = [.width, .height]
-        dropdownPanel.contentView = detailContentView
+        dropdownPanel.contentView = PanelResizeEdgesView.wrapping(detailContentView)
 
         let notificationView = NotificationCenterView(
             viewModel: viewModel,
             onClose: { [weak self] in self?.notificationPanel.hide() },
             onOpen: { [weak self] notification in
+                if let id = notification.notebookEntryID {
+                    self?.notificationPanel.hide()
+                    self?.showNotebook(entryID: id)
+                    return
+                }
+                if let id = notification.newsItemID {
+                    self?.notificationPanel.hide()
+                    self?.viewModel.showNews(itemID: id)
+                    self?.viewModel.isExpanded = true
+                    return
+                }
                 if let url = notification.releaseURL {
                     self?.notificationPanel.hide()
                     NSWorkspace.shared.open(url)
@@ -126,21 +149,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let notificationContentView = NSHostingView(rootView: notificationView)
         notificationContentView.frame = NSRect(x: 0, y: 0, width: 280, height: 240)
         notificationContentView.autoresizingMask = [.width, .height]
-        notificationPanel.contentView = notificationContentView
+        notificationPanel.contentView = PanelResizeEdgesView.wrapping(notificationContentView)
 
-        // 同步 alwaysOnTop 状态到面板
-        if viewModel.alwaysOnTop {
-            panel.level = .statusBar
-            panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        } else {
-            // 非置顶 = 普通窗口：NSPanel 即使 level=normal 也排在普通窗口之上，故 Apple TV 等
-            // 播放器的伪全屏（铺屏普通窗口）盖不住它。这里启用智能隐藏：被大面积覆盖就隐藏。
-            panel.level = .normal
-            panel.collectionBehavior = []
-            startFullscreenDetection()
+        applyClockWindowLevel()
+        if !viewModel.alwaysOnTop { startFullscreenDetection() }
+
+        viewModel.userContent.news.isPresentationVisible = { [weak self] in
+            self?.dropdownPanel?.isVisible == true && !NSApp.isHidden
         }
-        dropdownPanel.configureLevel(alwaysOnTop: viewModel.alwaysOnTop)
-        notificationPanel.configureLevel(alwaysOnTop: viewModel.alwaysOnTop)
 
         // 绑定展开/收起直接回调，绕过 NotificationCenter 延迟
         viewModel.onExpandChanged = { [weak self] expanded in
@@ -148,13 +164,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             self.panel.updateSize(
                 expanded: expanded,
                 activeToolCount: self.activeToolCount,
-                showsWeather: !self.viewModel.weather.cityName.isEmpty
+                showsWeather: true
             )
             if expanded {
                 self.showDropdownPanel()
                 self.notificationPanel.hide()
             } else {
                 self.dropdownPanel.hide()
+                self.viewModel.userContent.news.setViewing(false)
             }
         }
 
@@ -165,12 +182,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             self.panel.updateSize(
                 expanded: self.viewModel.isExpanded,
                 activeToolCount: self.activeToolCount,
-                showsWeather: !self.viewModel.weather.cityName.isEmpty
+                showsWeather: true
             )
             if self.viewModel.isExpanded {
                 self.dropdownPanel.reposition(below: self.panel.frame)
             }
         }
+        viewModel.onNewsModeChanged = { [weak self] in
+            guard let self, self.viewModel.isExpanded else { return }
+            self.showDropdownPanel()
+        }
+        NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(handleUserContentWake(_:)),
+            name: NSWorkspace.didWakeNotification, object: nil)
 
         // 监听天气更新（城市解析后刷新菜单标签）
         NotificationCenter.default.addObserver(
@@ -203,13 +226,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 alert.runModal()
             }
         }
+        if ProcessInfo.processInfo.environment["TC_OPEN_QUOTA_ON_LAUNCH"] == "1" {
+            DispatchQueue.main.async { [weak self] in self?.showSubscriptionQuotaWindow() }
+        }
         // 兜底迁移：清理旧的 installer plist / SMAppService 残留
         LaunchAgentHelper.cleanupLegacy()
     }
 
     private var activeToolCount: Int {
-        viewModel.visibleTools.filter { $0.todayTokens > 0 }.count
+        let count = viewModel.visibleTools.filter { $0.todayTokens > 0 }.count
+        return viewModel.isNewsPresented ? max(6, count) : count
     }
+
+    @objc private func handleUserContentWake(_ notification: Notification) { viewModel?.userContent.runDueJobs() }
 
     nonisolated static func isModelDetectOnly(arguments: [String]) -> Bool {
         arguments.dropFirst().contains("--model-detect-only")
@@ -239,8 +268,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         dropdownPanel.show(
             below: panel.frame,
             activeToolCount: activeToolCount,
-            showsWeather: !viewModel.weather.cityName.isEmpty
+            showsWeather: true
         )
+        viewModel.userContent.news.setViewing(viewModel.isNewsPresented)
     }
 
     private func toggleNotificationCenter() {
@@ -249,11 +279,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             return
         }
         viewModel.isExpanded = false
+        viewModel.notificationFilter = viewModel.hasUnreadNews ? .news : .all
         notificationPanel.show(near: panel.frame)
         viewModel.markNotificationsRead()
     }
 
-    // MARK: - macOS menu-bar visibility toggle
+    // MARK: - macOS menu-bar summary and visibility menu
 
     private func setupStatusBarItem() {
         guard statusItem == nil else { return }
@@ -285,22 +316,99 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     private func updateStatusBarItemPresentation() {
         guard let button = statusItem?.button else { return }
-        let actionKey = statusBarVisibility.isHidden ? "status.show" : "status.hide"
-        let actionLabel = L10n.shared.tr(actionKey)
-        button.toolTip = actionLabel
+        let actionLabel = L10n.shared.tr("status.summary")
+        button.toolTip = L10n.shared.tr("status.interactionHint")
         button.setAccessibilityLabel("TokenClock — \(actionLabel)")
+        button.setAccessibilityHelp(L10n.shared.tr("status.interactionHint"))
     }
 
     @objc private func statusBarClicked(_ sender: NSStatusBarButton) {
         let event = NSApp.currentEvent
-        if event?.type == .rightMouseUp || event?.modifierFlags.contains(.control) == true {
+        if event?.type == .rightMouseUp || event?.type == .rightMouseDown || event?.modifierFlags.contains(.control) == true {
+            statusBarClickCoordinator.cancel()
             showStatusBarMenu(sender)
         } else {
-            toggleStatusBarVisibility(sender)
+            statusBarClickCoordinator.click(event: event,
+                single: { [weak self, weak sender] in
+                    guard let sender else { return }
+                    self?.toggleStatusSummary(sender)
+                },
+                double: { [weak self] in self?.handleStatusBarDoubleClick(sender) })
         }
     }
 
+    private func handleStatusBarDoubleClick(_ sender: Any?) {
+        guard let panel else { toggleStatusBarVisibility(sender); return }
+        statusSummaryPopover?.performClose(nil)
+        let hidden = statusBarVisibility.isHidden || !panel.isVisible
+        let coverage = hidden || statusBarVisibility.isTemporarilyOnTop ? nil : dialCoveredFraction(panel)
+        if statusBarVisibility.shouldShowOnDoubleClick(windowVisible: panel.isVisible, coveredFraction: coverage) {
+            showStatusBarClock()
+        } else { hideStatusBarClock() }
+    }
+
+    private func dialCoveredFraction(_ panel: NSWindow) -> Double? {
+        guard let primaryTop = NSScreen.screens.first?.frame.maxY,
+              let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] else { return nil }
+        let dial = DialOcclusion.cgRect(from: DialOcclusion.dialBounds(in: panel.frame, diameter: viewModel.clockSize.diameter), primaryTop: primaryTop)
+        // Front-to-back; windows behind the dial never contribute coverage.
+        return DialOcclusion.coveredFraction(dial: dial, windowNumber: panel.windowNumber, windows: windows)
+    }
+
+    private func toggleStatusSummary(_ button: NSStatusBarButton) {
+        guard let viewModel else { showModelDetect(); return }
+        if statusSummaryPopover?.isShown == true {
+            statusSummaryPopover?.performClose(nil)
+            return
+        }
+        if NSApp.isHidden {
+            // Unhide the process so AppKit can present the popover, while keeping
+            // the clock and other hidden windows out of the way until Show.
+            isOpeningStatusSummary = true
+            NSApp.unhideWithoutActivation()
+            statusSummaryHiddenWindows.hide(NSApp.windows, excluding: button.window)
+            isOpeningStatusSummary = false
+        }
+        let available = button.window?.screen?.visibleFrame.size ?? NSSize(width: 800, height: 800)
+        let side = StatusSummaryLayout.panelSide(available: available)
+        let popover = statusSummaryPopover ?? NSPopover()
+        popover.behavior = .transient
+        popover.animates = true
+        popover.contentViewController = NSHostingController(rootView: StatusSummaryView(
+            viewModel: viewModel, side: side,
+            onHistory: { [weak self] in
+                self?.statusSummaryPopover?.performClose(nil)
+                self?.showUsageOverviewWindow()
+            },
+            onQuota: { [weak self] in
+                self?.statusSummaryPopover?.performClose(nil)
+                self?.showSubscriptionQuotaWindow()
+            },
+            onShare: { [weak self] in
+                self?.statusSummaryPopover?.performClose(nil)
+                self?.showUsageShareWindow()
+            },
+            onTool: { [weak self] tool in
+                self?.statusSummaryPopover?.performClose(nil)
+                switch tool {
+                case .model: self?.showModelDetect()
+                case .network: self?.showNetworkLeak()
+                case .local: self?.showLocalToolbox()
+                case .quota: self?.showSubscriptionQuotaWindow()
+                case .history: self?.showUsageOverviewWindow()
+                case .notebook: self?.showNotebook()
+                case .share: self?.showUsageShareWindow()
+                }
+            }
+        ))
+        popover.contentSize = NSSize(width: side + 12, height: side + 12)
+        statusSummaryPopover = popover
+        popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+        popover.contentViewController?.view.window?.makeKey()
+    }
+
     private func showStatusBarMenu(_ button: NSStatusBarButton) {
+        statusSummaryPopover?.performClose(nil)
         let menu = (panel?.menu?.copy() as? NSMenu) ?? NSMenu()
         let toggle = NSMenuItem(
             title: L10n.shared.tr(statusBarVisibility.isHidden ? "status.show" : "status.hide"),
@@ -323,44 +431,72 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     @objc private func toggleStatusBarVisibility(_ sender: Any?) {
-        if statusBarVisibility.isHidden {
-            statusBarVisibility.setHidden(false)
-            NSApp.unhideWithoutActivation()
-            isHiddenForFullscreen = false
-            NSApp.activate(ignoringOtherApps: true)
-            // Raise once, without changing the user's persistent window level.
-            panel?.orderFrontRegardless()
-            if panel == nil { showModelDetect() }
-        } else {
-            statusBarVisibility.setHidden(true)
-            // Close transient picker tracking before hiding the app. NSApp.hide
-            // then hides every TokenClock window while preserving its state.
-            hideThemePicker()
-            NSApp.hide(nil)
-        }
+        if statusBarVisibility.isHidden { showStatusBarClock() }
+        else { hideStatusBarClock() }
+    }
+
+    private func showStatusBarClock() {
+        statusSummaryPopover?.performClose(nil)
+        // Re-evaluate Space membership as well as z-order, even when a covered
+        // clock is already visible. This does not write the Always on Top option.
+        panel?.orderOut(nil)
+        statusBarVisibility.showTemporarilyOnTop()
+        applyClockWindowLevel()
+        NSApp.unhideWithoutActivation()
+        statusSummaryHiddenWindows.restore()
+        if let viewModel { viewModel.userContent.news.setViewing(viewModel.isNewsPresented && dropdownPanel.isVisible) }
+        isHiddenForFullscreen = false
+        NSApp.activate(ignoringOtherApps: true)
+        // Temporary level is held until Hide; a second double click always hides.
+        panel?.orderFrontRegardless()
+        if panel == nil { showModelDetect() }
         updateStatusBarItemPresentation()
     }
 
-    @objc private func handleApplicationDidHide(_ notification: Notification) {
+    private func hideStatusBarClock() {
+        statusSummaryPopover?.performClose(nil)
         statusBarVisibility.setHidden(true)
+        hideThemePicker()
+        NSApp.hide(nil)
+        applyClockWindowLevel()
+        updateStatusBarItemPresentation()
+    }
+
+    private func applyClockWindowLevel() {
+        guard let viewModel, let panel else { return }
+        statusBarVisibility.apply(to: panel, alwaysOnTop: viewModel.alwaysOnTop)
+        if let dropdownPanel { statusBarVisibility.apply(to: dropdownPanel, alwaysOnTop: viewModel.alwaysOnTop) }
+        if let notificationPanel { statusBarVisibility.apply(to: notificationPanel, alwaysOnTop: viewModel.alwaysOnTop) }
+    }
+
+    @objc private func handleApplicationDidHide(_ notification: Notification) {
+        viewModel?.userContent.news.setViewing(false)
+        statusBarClickCoordinator.cancel()
+        statusSummaryPopover?.performClose(nil)
+        statusBarVisibility.setHidden(true)
+        applyClockWindowLevel()
         updateStatusBarItemPresentation()
     }
 
     @objc private func handleApplicationDidUnhide(_ notification: Notification) {
+        guard !isOpeningStatusSummary else { return }
+        statusSummaryHiddenWindows.restore()
+        viewModel?.userContent.news.setViewing(viewModel.isNewsPresented && dropdownPanel.isVisible)
         statusBarVisibility.setHidden(false)
+        applyClockWindowLevel()
         updateStatusBarItemPresentation()
     }
 
     nonisolated func applicationWillTerminate(_ notification: Notification) {
         ModelIntegrityLauncher.shared.stop()
-        // AppKit delivers this callback on the main thread. A detached MainActor Task can be
-        // discarded as the process exits, which previously lost the final window position.
         MainActor.assumeIsolated {
             // 先停 ViewModel 定时器（含 historyTimer），再处理其余清理
             viewModel?.shutdown()
             UsageAPIServer.shared.stop()
             panel?.savePosition()
             notificationPanel?.hide()
+            statusSummaryPopover?.close()
+            statusBarClickCoordinator.cancel()
             if let statusItem {
                 NSStatusBar.system.removeStatusItem(statusItem)
                 self.statusItem = nil
@@ -422,38 +558,57 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         sizeItem.submenu = sizeMenu
         appearanceMenu.addItem(sizeItem)
 
-        appearanceMenu.addItem(.separator())
-        let dialTextMenu = NSMenu()
+        // — 文字颜色（解决浅色壁纸上白色文字不可见）—
+        let textColorMenu = NSMenu()
         for (mode, title) in [(DialTextMode.theme, tr("menu.dialTextTheme")),
-                              (.white, tr("menu.dialTextWhite")),
-                              (.black, tr("menu.dialTextBlack"))] {
+                              (DialTextMode.white, tr("menu.dialTextWhite")),
+                              (DialTextMode.black, tr("menu.dialTextBlack"))] {
             let item = NSMenuItem(title: title, action: #selector(setDialTextMode(_:)), keyEquivalent: "")
             item.tag = mode.rawValue
             if viewModel.dialTextMode == mode { item.state = .on }
-            dialTextMenu.addItem(item)
+            textColorMenu.addItem(item)
         }
-        let dialCustom = NSMenuItem(title: tr("menu.dialTextCustom"), action: #selector(pickDialTextColor(_:)), keyEquivalent: "")
-        if viewModel.dialTextMode == .custom { dialCustom.state = .on }
-        dialTextMenu.addItem(dialCustom)
-        let dialTextItem = NSMenuItem(title: tr("menu.dialTextColor"), action: nil, keyEquivalent: "")
-        dialTextItem.submenu = dialTextMenu
-        appearanceMenu.addItem(dialTextItem)
+        let customTextItem = NSMenuItem(title: tr("menu.dialTextCustom"),
+                                        action: #selector(pickDialTextColor(_:)), keyEquivalent: "")
+        if viewModel.dialTextMode == .custom { customTextItem.state = .on }
+        textColorMenu.addItem(customTextItem)
+        let textColorItem = NSMenuItem(title: tr("menu.dialTextColor"), action: nil, keyEquivalent: "")
+        textColorItem.submenu = textColorMenu
+        appearanceMenu.addItem(.separator())
+        appearanceMenu.addItem(textColorItem)
 
+        // — 详情面板文字色（覆写下拉面板文字色；nil = 跟随主题）—
+        let panelHex = viewModel.dropdownTextColorHex
         let panelTextMenu = NSMenu()
-        for (hex, title) in [(nil, tr("menu.panelTextTheme")),
-                             ("#FFFFFF", tr("menu.panelTextWhite")),
-                             ("#000000", tr("menu.panelTextBlack"))] as [(String?, String)] {
-            let item = NSMenuItem(title: title, action: #selector(setDropdownTextColorPreset(_:)), keyEquivalent: "")
-            item.representedObject = hex
-            if viewModel.dropdownTextColorHex == hex { item.state = .on }
-            panelTextMenu.addItem(item)
-        }
-        let panelCustom = NSMenuItem(title: tr("menu.panelTextCustom"), action: #selector(pickDropdownTextColor(_:)), keyEquivalent: "")
-        if let hex = viewModel.dropdownTextColorHex, hex != "#FFFFFF", hex != "#000000" { panelCustom.state = .on }
-        panelTextMenu.addItem(panelCustom)
+        let panelThemeItem = NSMenuItem(title: tr("menu.panelTextTheme"),
+                                        action: #selector(setDropdownTextColorPreset(_:)), keyEquivalent: "")
+        // representedObject 默认 nil → 跟随主题
+        if panelHex == nil { panelThemeItem.state = .on }
+        panelTextMenu.addItem(panelThemeItem)
+        let panelWhiteItem = NSMenuItem(title: tr("menu.panelTextWhite"),
+                                        action: #selector(setDropdownTextColorPreset(_:)), keyEquivalent: "")
+        panelWhiteItem.representedObject = "#FFFFFF"
+        if panelHex == "#FFFFFF" { panelWhiteItem.state = .on }
+        panelTextMenu.addItem(panelWhiteItem)
+        let panelBlackItem = NSMenuItem(title: tr("menu.panelTextBlack"),
+                                        action: #selector(setDropdownTextColorPreset(_:)), keyEquivalent: "")
+        panelBlackItem.representedObject = "#000000"
+        if panelHex == "#000000" { panelBlackItem.state = .on }
+        panelTextMenu.addItem(panelBlackItem)
+        let panelCustomItem = NSMenuItem(title: tr("menu.panelTextCustom"),
+                                         action: #selector(pickDropdownTextColor(_:)), keyEquivalent: "")
+        if panelHex != nil && panelHex != "#FFFFFF" && panelHex != "#000000" { panelCustomItem.state = .on }
+        panelTextMenu.addItem(panelCustomItem)
         let panelTextItem = NSMenuItem(title: tr("menu.panelTextColor"), action: nil, keyEquivalent: "")
         panelTextItem.submenu = panelTextMenu
         appearanceMenu.addItem(panelTextItem)
+        let opacityInsertIndex = appearanceMenu.numberOfItems
+
+        // 一键恢复默认：文字→跟随主题、材质→标准、底色→无
+        appearanceMenu.addItem(.separator())
+        let resetItem = NSMenuItem(title: tr("menu.dialResetDefaults"),
+                                   action: #selector(resetDialAppearance(_:)), keyEquivalent: "")
+        appearanceMenu.addItem(resetItem)
 
         let apiItem = NSMenuItem(title: L10n.shared.tr("menu.api", Int(AppDelegate.resolveAPIServerPort())),
                                  action: #selector(copyAPIEndpoint(_:)), keyEquivalent: "")
@@ -468,14 +623,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
         let opacityItem = NSMenuItem(title: tr("menu.opacity"), action: nil, keyEquivalent: "")
         opacityItem.submenu = opacityMenu
-        appearanceMenu.addItem(opacityItem)
-
-        appearanceMenu.addItem(.separator())
-        appearanceMenu.addItem(NSMenuItem(
-            title: tr("menu.dialResetDefaults"),
-            action: #selector(resetNormalAppearance(_:)),
-            keyEquivalent: ""
-        ))
+        appearanceMenu.insertItem(opacityItem, at: opacityInsertIndex)
 
         let alwaysOnTopItem = NSMenuItem(title: tr("menu.alwaysOnTop"),
                                          action: #selector(toggleAlwaysOnTop(_:)), keyEquivalent: "")
@@ -491,7 +639,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         tempMenu.addItem(fahrenheitItem)
         tempItem.submenu = tempMenu
 
-        // 用量口径：token 展示是否包含缓存读（费用估算始终含缓存计价，不受此影响）
         let cityMenu = NSMenu()
         let currentCity = viewModel.selectedCity
         for city in ViewModel.cityOptions {
@@ -588,6 +735,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             item.submenu = submenu
             return item
         }
+
         menu.addItem(categoryItem(
             title: tr("menu.appearance"), symbol: "paintpalette", submenu: appearanceMenu
         ))
@@ -716,10 +864,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         setupRightClickMenu()  // 刷新子菜单勾选状态
     }
 
+    // MARK: - 表盘外观（液态玻璃）Actions
+
     @objc private func setDialTextMode(_ sender: NSMenuItem) {
         guard let mode = DialTextMode(rawValue: sender.tag) else { return }
         viewModel.dialTextMode = mode
         setupRightClickMenu()
+    }
+
+    /// 毛玻璃底板透明度档位（0/25/50/75/100%）：公开 NSVisualEffectView.alphaValue，折射玻璃下层。
+    @objc private func setGlassBackingAlpha(_ sender: NSMenuItem) {
+        viewModel.glassBackingAlpha = Double(sender.tag) / 100.0
+        setupRightClickMenu()
+    }
+
+    @objc private func pickDialTextColor(_ sender: NSMenuItem) {
+        openColorPicker(for: .dialText)
+    }
+
+    @objc private func clearDialTint(_ sender: NSMenuItem) {
+        viewModel.glassTintHex = nil
+        setupRightClickMenu()
+    }
+
+    @objc private func pickDialTint(_ sender: NSMenuItem) {
+        openColorPicker(for: .glassTint)
+    }
+
+    @objc private func pickDropdownTextColor(_ sender: NSMenuItem) {
+        openColorPicker(for: .dropdownText)
     }
 
     @objc private func setDropdownTextColorPreset(_ sender: NSMenuItem) {
@@ -727,22 +900,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         setupRightClickMenu()
     }
 
-    /// Restores the selected face's authored text palette without changing the face itself.
-    @objc private func resetNormalAppearance(_ sender: NSMenuItem) {
-        viewModel.dialTextMode = .theme
-        viewModel.dialTextColorHex = "#FFFFFF"
-        viewModel.dropdownTextColorHex = nil
-        setupRightClickMenu()
-    }
-
-    @objc private func pickDialTextColor(_ sender: NSMenuItem) { openColorPicker(for: .dialText) }
-    @objc private func pickDropdownTextColor(_ sender: NSMenuItem) { openColorPicker(for: .dropdownText) }
-
-    private enum ColorPickerTarget { case dialText, dropdownText }
+    private enum ColorPickerTarget { case dialText, glassTint, dropdownText }
     private var colorPickerTarget: ColorPickerTarget = .dialText
 
+    /// 打开系统拾色器（target/action 实时回写 viewModel）。两类目标复用同一 NSColorPanel。
     private func openColorPicker(for target: ColorPickerTarget) {
         colorPickerTarget = target
+        NSLog("TC pickDialColor open target=\(target)")
+        // accessory app 里直接 makeKeyAndOrderFront 会被菜单 modal tracking 吞掉且面板不上前；
+        // dispatch 到下个 runloop + 显式激活 app + 不随失焦隐藏。
         DispatchQueue.main.async {
             let picker = NSColorPanel.shared
             picker.showsAlpha = false
@@ -750,6 +916,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             switch target {
             case .dialText:
                 picker.color = CodableColor(hex: self.viewModel.dialTextColorHex)?.nsColor ?? .white
+            case .glassTint:
+                picker.color = self.viewModel.glassTintHex.flatMap { CodableColor(hex: $0)?.nsColor }
+                    ?? NSColor(srgbRed: 0.55, green: 0.72, blue: 0.92, alpha: 1)
             case .dropdownText:
                 picker.color = self.viewModel.dropdownTextColorHex.flatMap { CodableColor(hex: $0)?.nsColor } ?? .white
             }
@@ -764,11 +933,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let hex = CodableColor(nsColor: panel.color).hexString
         switch colorPickerTarget {
         case .dialText:
-            viewModel.dialTextColorHex = hex
             viewModel.dialTextMode = .custom
+            viewModel.dialTextColorHex = hex
+        case .glassTint:
+            viewModel.glassTintHex = hex
         case .dropdownText:
             viewModel.dropdownTextColorHex = hex
         }
+    }
+
+    /// 一键恢复表盘外观默认：文字→跟随主题（hex 复位）、材质→标准(dock)、底色→无。
+    @objc private func resetDialAppearance(_ sender: NSMenuItem) {
+        NSLog("TC resetDialAppearance fired")
+        viewModel.dialTextMode = .theme
+        viewModel.dialTextColorHex = "#FFFFFF"
+        viewModel.glassMaterialVariant = 2
+        viewModel.glassTintHex = nil
+        viewModel.glassBackingAlpha = 0
+        viewModel.dropdownTextColorHex = nil
+        setupRightClickMenu()
+    }
+
+    /// 液态玻璃折射总开关。表盘立即在折射玻璃 / 公开 .clear 之间切换；
+    /// _hasActiveAppearance 覆写为启动时决策，彻底关闭/重开需重启。
+    @objc private func toggleGlassRefraction(_ sender: NSMenuItem) {
+        viewModel.glassRefractionEnabled.toggle()
+        setupRightClickMenu()
     }
 
     @objc private func selectBrandIconStyle(_ sender: NSMenuItem) {
@@ -808,22 +998,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         panel.orderOut(nil)
         if sender.state == .on {
             sender.state = .off
-            panel.level = .normal
-            panel.collectionBehavior = [.canJoinAllSpaces]
-            dropdownPanel.configureLevel(alwaysOnTop: false)
-            notificationPanel.configureLevel(alwaysOnTop: false)
             viewModel.alwaysOnTop = false
         } else {
             sender.state = .on
-            panel.level = .statusBar
-            panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-            dropdownPanel.configureLevel(alwaysOnTop: true)
-            notificationPanel.configureLevel(alwaysOnTop: true)
             viewModel.alwaysOnTop = true
         }
-        // 以新属性重显（用 orderFront 而非 orderFrontRegardless：后者会无视 collectionBehavior
-        // 强制把窗口塞进当前全屏 Space，导致"取消置顶"瞬间又被拉回）。orderFront 尊重规则：
-        // OFF 时 .normal + 仅 canJoinAllSpaces → 不进入全屏 Space（不覆盖全屏视频）；ON 时进入。
+        applyClockWindowLevel()
+        // 重显（用 orderFront 而非 orderFrontRegardless：后者无视 collectionBehavior 强制塞进
+        // 当前全屏 Space）。OFF 模式下被播放器全屏覆盖改由下方智能隐藏机制处理。
         panel.orderFront(nil)
         UserDefaults.standard.set(viewModel.alwaysOnTop, forKey: SettingsKey.alwaysOnTop.rawValue)
         // OFF：在重显后启动智能隐藏（避免立即 orderOut 与上面的 orderFront 打架）；
@@ -836,9 +1018,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     // NSPanel（nonactivatingPanel）即使 level=normal 也排在普通窗口之上，故"取消置顶"后仍会
     // 浮在 Apple TV 等播放器的伪全屏窗口（铺满副屏的普通窗口，非系统原生全屏）之上 —— level
     // 与 collectionBehavior 都治不了它（panel 的固有 z-order）。这里在 OFF 模式轮询窗口栈：
-    // 若时钟面板被其他 app 的「真全屏窗口」（layer==0、贴屏顶、近满高满宽）覆盖，就 orderOut
-    // 主动隐藏让视频干净呈现；退出该状态（窗口变最大化、留菜单栏、不贴顶）再 orderFront 恢复。
-    // ON 模式不轮询（statusBar level 最高，本就不会被盖）。用户正展开下拉详情时不隐藏，避免打断阅读。
+    // 若时钟面板被其他 app 的「大窗口」（layer≤0 且面积≥所在屏 60%，即全屏/最大化级别）覆盖，
+    // 就 orderOut 主动隐藏让视频干净呈现；退出该状态再 orderFront 恢复。ON 模式不轮询
+    //（statusBar level 最高，本就不会被盖）。用户正展开下拉详情时不隐藏，避免打断阅读。
     private func startFullscreenDetection() {
         guard fullscreenCheckTimer == nil else { return }
         // 0.5s 轮询：CGWindowListCopyWindowInfo 只读窗口元数据（非截图），开销极小；
@@ -857,7 +1039,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     private func evaluateFullscreenHide() {
-        guard !statusBarVisibility.isHidden else { return }
+        guard !statusBarVisibility.isHidden, !statusBarVisibility.isTemporarilyOnTop else { return }
         guard let panel = self.panel else { return }
         if dropdownPanel.isVisible || notificationPanel.isVisible { return }   // 用户正在看面板，不打断
         let center = NSPoint(x: panel.frame.midX, y: panel.frame.midY)
@@ -920,10 +1102,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         guard let variant = LaunchAgentHelper.detectVariant() else {
             // 路径无法识别 —— 用一个 NSAlert 提示,不要静默失败
             let alert = NSAlert()
-            alert.messageText = "无法识别当前 TokenClock 变体"
-            alert.informativeText = "开机自启动仅在通过 `tokenclock` CLI 安装的 TokenClock 上可用(路径形如 ~/.tokenclock/glass/TokenClock)。"
+            alert.messageText = L10n.shared.tr("launch.unknownVariant")
+            alert.informativeText = L10n.shared.tr("launch.cliRequired")
             alert.alertStyle = .warning
-            alert.addButton(withTitle: "好的")
+            alert.addButton(withTitle: L10n.shared.tr("common.ok"))
             alert.runModal()
             return
         }
@@ -940,10 +1122,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 viewModel.launchAtLogin = true
             } catch {
                 let alert = NSAlert()
-                alert.messageText = "启用开机自启动失败"
+                alert.messageText = L10n.shared.tr("launch.failed")
                 alert.informativeText = "\(error.localizedDescription)"
                 alert.alertStyle = .warning
-                alert.addButton(withTitle: "好的")
+                alert.addButton(withTitle: L10n.shared.tr("common.ok"))
                 alert.runModal()
             }
         }
@@ -981,6 +1163,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
               let lang = AppLanguage(rawValue: raw) else { return }
         L10n.shared.language = lang
         viewModel.language = lang
+        if viewModel.isNewsPresented || viewModel.userContent.preferences.allows(.news) {
+            viewModel.userContent.news.refreshIfDue(language: lang.rawValue)
+        }
         viewModel.refreshWeather()
         setupRightClickMenu()
         updateStatusBarItemPresentation()
@@ -988,6 +1173,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         overviewWindow?.title = L10n.shared.tr("overview.title")
         shareWindow?.title = L10n.shared.tr("share.title")
         subscriptionQuotaWindow?.title = L10n.shared.tr("quota.windowTitle")
+        localToolboxWindow?.title = toolboxText("本地工具箱", "Local Toolbox")
+        notebookWindow?.title = toolboxText("行事本", "Notebook")
+        localToolboxModel?.objectWillChange.send()
+        viewModel.userContent.notebook.objectWillChange.send()
+        networkLeakWindow?.refreshLocalization()
         modelDetectWindow?.refreshLocalization()
     }
 
@@ -1078,12 +1268,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             window.makeKeyAndOrderFront(nil)
             return
         }
-
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 840, height: 640),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
-            backing: .buffered,
-            defer: false
+            backing: .buffered, defer: false
         )
         window.title = L10n.shared.tr("overview.title")
         window.minSize = NSSize(width: 780, height: 560)
@@ -1116,7 +1304,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
 
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 470, height: 680),
+            contentRect: NSRect(x: 0, y: 0, width: 470, height: 760),
             styleMask: [.titled, .closable, .miniaturizable],
             backing: .buffered,
             defer: false
@@ -1131,6 +1319,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         shareWindow = window
     }
 
+    private func showLocalToolbox() {
+        NSApp.activate(ignoringOtherApps: true)
+        if let window = localToolboxWindow { window.makeKeyAndOrderFront(nil); return }
+        let window = NSWindow(contentRect: NSRect(x:0,y:0,width:740,height:650), styleMask:[.titled,.closable,.miniaturizable,.resizable],backing:.buffered,defer:false)
+        window.title = toolboxText("本地工具箱", "Local Toolbox")
+        window.minSize = NSSize(width:600,height:460)
+        window.isReleasedWhenClosed = false
+        let model = LocalToolboxModel()
+        localToolboxModel = model
+        window.delegate = self
+        window.contentView = NSHostingView(rootView: LocalToolboxView(model: model))
+        window.level = .floating
+        window.center(); window.makeKeyAndOrderFront(nil)
+        localToolboxWindow = window
+    }
+
+    private func showNetworkLeak() {
+        if networkLeakWindow == nil { networkLeakWindow = NetworkLeakWindow() }
+        networkLeakWindow?.show()
+    }
+
     private func showSubscriptionQuotaWindow() {
         NSApp.activate(ignoringOtherApps: true)
         if let window = subscriptionQuotaWindow {
@@ -1142,7 +1351,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 430, height: 650),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
-            backing: .buffered, defer: false
+            backing: .buffered,
+            defer: false
         )
         window.title = L10n.shared.tr("quota.windowTitle")
         window.minSize = NSSize(width: 380, height: 480)
@@ -1237,6 +1447,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         frame.size.width = targetWidth
         window.minSize = NSSize(width: twoColumns ? 700 : 380, height: 480)
         window.setFrame(frame, display: true, animate: true)
+    }
+
+    private func showNotebook(entryID: UUID? = nil) {
+        let store = viewModel.userContent.notebook
+        if let entryID { store.selectedID = entryID }
+        else if store.selectedID == nil { store.selectedID = store.entries.first?.id }
+        NSApp.activate(ignoringOtherApps: true)
+        if let notebookWindow { notebookWindow.makeKeyAndOrderFront(nil); return }
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 520, height: 640),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
+        window.title = toolboxText("行事本", "Notebook")
+        window.minSize = NSSize(width: 400, height: 460)
+        window.isReleasedWhenClosed = false
+        window.isRestorable = false
+        window.level = .floating
+        window.contentView = NSHostingView(rootView: NotebookWindowView(store: store, preferences: viewModel.userContent.preferences))
+        window.center(); notebookWindow = window; window.makeKeyAndOrderFront(nil)
     }
 
     private func showSettingsWindow() {
@@ -1355,7 +1582,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     nonisolated func windowWillClose(_ notification: Notification) {
         let closingWindow = notification.object as? NSWindow
         Task { @MainActor in
-            if let window = closingWindow, window == settingsWindow {
+            if let window = closingWindow, window == localToolboxWindow {
+                localToolboxModel?.stop(); localToolboxModel=nil; localToolboxWindow=nil
+            } else if let window = closingWindow, window == settingsWindow {
                 settingsWindow = nil
             } else if let window = closingWindow, window == overviewWindow {
                 overviewWindow = nil
@@ -1394,12 +1623,14 @@ struct MainView: View {
     @ObservedObject var viewModel: ViewModel
     let onNotificationClick: () -> Void
     let onClockDragStart: () -> Void
+    var onOpenQuota: () -> Void = {}
 
     var body: some View {
         ClockContentView(
             viewModel: viewModel,
             onNotificationClick: onNotificationClick,
-            onClockDragStart: onClockDragStart
+            onClockDragStart: onClockDragStart,
+            onOpenQuota: onOpenQuota
         )
             .frame(width: FloatingPanel.panelWidth, height: FloatingPanel.collapsedHeight)
     }
@@ -1425,7 +1656,12 @@ private struct NotificationCenterView: View {
                 .help(L10n.shared.tr("about.close"))
             }
 
-            if viewModel.notifications.isEmpty {
+            Picker(toolboxText("消息类型", "Notice type"), selection: $viewModel.notificationFilter) {
+                ForEach(NotificationPanelFilter.allCases) { filter in Text(filter.title).tag(filter) }
+            }.pickerStyle(.menu).font(.system(size: 11))
+                .onChange(of: viewModel.notificationFilter) { _ in viewModel.markNotificationsRead() }
+
+            if viewModel.filteredNotifications.isEmpty {
                 Spacer()
                 Text(L10n.shared.tr("notification.empty"))
                     .font(.system(size: 12))
@@ -1435,8 +1671,8 @@ private struct NotificationCenterView: View {
             } else {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 10) {
-                        ForEach(viewModel.notifications) { notification in
-                            if notification.route != nil || notification.subscriptionAccountID != nil || notification.releaseURL != nil {
+                        ForEach(viewModel.filteredNotifications) { notification in
+                            if notification.route != nil || notification.subscriptionAccountID != nil || notification.releaseURL != nil || notification.newsItemID != nil || notification.notebookEntryID != nil {
                                 Button { onOpen(notification) } label: {
                                     notificationRow(notification, showsDisclosure: true)
                                 }
@@ -1452,7 +1688,7 @@ private struct NotificationCenterView: View {
             }
         }
         .padding(14)
-        .frame(width: 280, height: 240)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .fill(viewModel.selectedTheme.dropdownBgColor)
@@ -1506,6 +1742,9 @@ private struct NotificationCenterView: View {
         case .monthlyReport: return "calendar"
         case .modelDetection: return "sparkle.magnifyingglass"
         case .system: return "info.circle"
+        case .news: return "newspaper"
+        case .notebookReminder: return "note.text.badge.plus"
+        case .releaseUpdate: return "arrow.down.circle"
         }
     }
 
@@ -1527,6 +1766,9 @@ private struct DropdownPanelView: View {
     let onHistoryUsage: () -> Void
     let onShareUsage: () -> Void
     let onModelDetect: () -> Void
+    let onNetworkLeak: () -> Void
+    let onLocalToolbox: () -> Void
+    let onNotebook: () -> Void
     let onModelDetectSession: (SessionInfo) -> Void
     let onNotificationClick: () -> Void
 
@@ -1550,10 +1792,18 @@ private struct DropdownPanelView: View {
                 onHistoryUsage: onHistoryUsage,
                 onShareUsage: onShareUsage,
                 onModelDetect: onModelDetect,
+                onNetworkLeak: onNetworkLeak,
+                onLocalToolbox: onLocalToolbox,
                 onModelDetectSession: onModelDetectSession,
                 onSubscriptionQuota: onSubscriptionQuota,
                 unreadNotificationCount: viewModel.unreadNotificationCount,
-                onNotificationClick: onNotificationClick
+                onNotificationClick: onNotificationClick,
+                newsService: viewModel.userContent.news,
+                isNewsPresented: viewModel.isNewsPresented,
+                focusedNewsItemID: viewModel.focusedNewsItemID,
+                hasUnreadNews: viewModel.hasUnreadNews,
+                onNewsToggle: { viewModel.isNewsPresented ? viewModel.hideNews() : viewModel.showNews() },
+                onNotebook: onNotebook
             )
             .frame(maxHeight: .infinity, alignment: .top)
 
@@ -1562,9 +1812,9 @@ private struct DropdownPanelView: View {
                 onResizeChanged: onResizeChanged,
                 onResizeEnded: onResizeEnded
             )
-            .frame(width: FloatingPanel.detailPanelWidth, height: FloatingPanel.resizeGripHeight)
+            .frame(maxWidth: .infinity).frame(height: FloatingPanel.resizeGripHeight)
         }
-        .frame(width: FloatingPanel.detailPanelWidth)
+        .frame(maxWidth: .infinity)
     }
 }
 

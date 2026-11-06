@@ -24,6 +24,7 @@ final class ClaudeConnectionController: NSObject, ObservableObject, WKNavigation
     private var connectionTask: Task<Void, Never>?
 
     static var isSelected: Bool { UserDefaults.standard.bool(forKey: enabledKey) }
+    static var selectedIdentity: String? { isSelected ? UserDefaults.standard.string(forKey: accountKey) : nil }
     private lazy var store: WKWebsiteDataStore = {
         if #available(macOS 14.0, *) { return WKWebsiteDataStore(forIdentifier: Self.profileID) }
         // Normal also supports macOS 13, which has no public named profiles.

@@ -1,0 +1,7 @@
+Zstandard 1.5.7, BSD license (LICENSE included).
+Source: https://github.com/facebook/zstd/tree/v1.5.7/lib
+Decoder-only universal macOS binary: arm64 + x86_64, minimum macOS 11.
+Built with clang -dynamiclib -O2, ZSTD_DISABLE_ASM=1, ZSTD_LEGACY_SUPPORT=0.
+Sources: common/{debug,entropy_common,error_private,fse_decompress,xxhash,zstd_common}.c
+         decompress/{huf_decompress,zstd_ddict,zstd_decompress,zstd_decompress_block}.c
+No external CLI or Homebrew installation is required by the app.

@@ -86,7 +86,7 @@ final class ClaudeAppQuotaTests: XCTestCase {
             let record = Recorder()
             if case .failure(let error) = fixtureService(record:record,status:status).fetch(.init(key:"synthetic",organizationID:nil,connected:true)) {
                 XCTAssertTrue(error.snapshot.buckets.isEmpty)
-                XCTAssertTrue(error.snapshot.requiresConnection)
+                XCTAssertEqual(error.snapshot.requiresConnection,status == 401)
             } else { XCTFail("Failed request accepted") }
             XCTAssertEqual(record.requests.count,1)
         }
@@ -165,5 +165,29 @@ final class ClaudeAppQuotaTests: XCTestCase {
         XCTAssertNil(ClaudeAppCookieReader.read(homes:[home.path],password:password))
         XCTAssertEqual(keychainCalls,0)
     }
+    func testDeclaredLimitsAreAuthoritativeAndOnePercentIsNotOneHundred() throws {
+        let data=Data(#"{"five_hour":{"utilization":99},"limits":[{"kind":"session","percent":1,"scope":null},{"kind":"weekly_all","percent":2,"scope":null,"is_active":false},{"kind":"weekly_scoped","percent":0,"scope":{"model":{"display_name":"Other model"}}}]}"#.utf8)
+        let result=try ClaudeAppQuotaService.decodeUsage(data)
+        XCTAssertEqual(result.buckets.map(\.remainingPercent),[99,98])
+        XCTAssertTrue(result.buckets.allSatisfy{$0.resetsAt == nil})
+        let legacy=Data(#"{"limits":null,"five_hour":{"utilization":8}}"#.utf8)
+        XCTAssertEqual(try ClaudeAppQuotaService.decodeUsage(legacy).buckets.first?.remainingPercent,92)
+        let ambiguous=Data(#"{"limits":[{"kind":"session","percent":1},{"kind":"session","percent":2}]}"#.utf8)
+        XCTAssertThrowsError(try ClaudeAppQuotaService.decodeUsage(ambiguous))
+        let scopedOnly=Data(#"{"limits":[{"kind":"weekly_scoped","percent":3,"scope":{"model":{"display_name":"Other model"}}}]}"#.utf8)
+        XCTAssertThrowsError(try ClaudeAppQuotaService.decodeUsage(scopedOnly))
+    }
+    func testAppKeyGrantIsReusedOnlyInMemoryAndCanBeInvalidated() {
+        let cache=ClaudeAppPasswordCache();var reads=0
+        let denied=cache.read{reads+=1;return .init(data:nil,authorizationRequired:true,cancelled:false)}
+        XCTAssertTrue(denied.result.authorizationRequired)
+        let granted=cache.read{reads+=1;return .init(data:Data("synthetic-app-key".utf8),authorizationRequired:false,cancelled:false)}
+        XCTAssertFalse(granted.cached)
+        let reused=cache.read{XCTFail("An explicit grant should not be repeated in the same process");return .init(data:nil,authorizationRequired:true,cancelled:false)}
+        XCTAssertTrue(reused.cached);XCTAssertEqual(reads,2)
+        cache.invalidate()
+        XCTAssertFalse(cache.read{.init(data:Data("rotated-app-key".utf8),authorizationRequired:false,cancelled:false)}.cached)
+    }
+
 }
 #endif

@@ -42,7 +42,7 @@ final class ModelDetectHumanResultTests: XCTestCase {
         let comparison: ModelDetectJSON = .object(["title":.string("这两次暂时不能直接比较"),"summary":.string("条件不同"),"left":.object(["title":.string("<script>历史</script>")])])
         let html = ModelDetectReadableReport.render(brief:brief,presentation:try make([:]),target:"test",suggestion:"",cost:"",comparison:comparison)
         XCTAssertTrue(html.contains("<h1>本次结论</h1>"))
-        XCTAssertTrue(html.contains("历史对照"));XCTAssertFalse(html.contains("<script>"))
+        XCTAssertTrue(html.contains(ModelDetectNativeText.localized("历史对照", "History comparison")));XCTAssertFalse(html.contains("<script>"))
     }
 }
 #endif

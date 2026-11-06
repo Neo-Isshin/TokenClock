@@ -8,15 +8,18 @@ struct ClockContentView: View {
     @State private var hoveredQuotaLabel: String?
     let onNotificationClick: () -> Void
     let onClockDragStart: () -> Void
+    let onOpenQuota: () -> Void
 
     init(
         viewModel: ViewModel,
         onNotificationClick: @escaping () -> Void = {},
-        onClockDragStart: @escaping () -> Void = {}
+        onClockDragStart: @escaping () -> Void = {},
+        onOpenQuota: @escaping () -> Void = {}
     ) {
         self.viewModel = viewModel
         self.onNotificationClick = onNotificationClick
         self.onClockDragStart = onClockDragStart
+        self.onOpenQuota = onOpenQuota
         self._clockTicker = ObservedObject(wrappedValue: viewModel.clockTicker)
         self._hoveredQuotaLabel = State(initialValue: nil)
     }
@@ -97,12 +100,12 @@ struct ClockContentView: View {
             HStack {
                 Spacer()
                 if quotaIndicators.count == 1, let indicator = quotaIndicators.first {
-                    quotaRing(indicator, size: 35 * s, lineWidth: 3 * s, fontSize: 8.5 * s)
+                    quotaRing(indicator, size: 42 * s, lineWidth: 3 * s, fontSize: 11 * s)
                         .padding(.trailing, 36 * s)
                 } else if quotaIndicators.count == 2 {
-                    VStack(alignment: .trailing, spacing: 5 * s) {
+                    VStack(alignment: .trailing, spacing: 8 * s) {
                         ForEach(quotaIndicators) { indicator in
-                            quotaRing(indicator, size: 29 * s, lineWidth: 2.5 * s, fontSize: 7.2 * s)
+                            quotaRing(indicator, size: 36 * s, lineWidth: 2.5 * s, fontSize: 9.5 * s)
                         }
                     }
                     .padding(.trailing, 28 * s)
@@ -118,7 +121,9 @@ struct ClockContentView: View {
                     viewModel.isExpanded = false
                     onClockDragStart()
                 },
-                onTooltipHover: { hoveredQuotaLabel = $0 }
+                onTooltipHover: { hoveredQuotaLabel = $0 },
+                onQuotaClick: { viewModel.advanceDialQuotaPage() },
+                onQuotaRightClick: onOpenQuota
             )
             .frame(width: d, height: d)
             .accessibilityHidden(true)
@@ -220,16 +225,23 @@ struct ClockContentView: View {
                     .inset(by: innerInset)
                     .trim(from: 0, to: inner / 100)
                     .stroke(
-                        accent.opacity(0.52),
+                        indicator.thirdRemainingPercent == nil ? accent.opacity(0.52) : Color.cyan.opacity(0.8),
                         style: StrokeStyle(lineWidth: innerLineWidth, lineCap: .round)
                     )
                     .rotationEffect(.degrees(-90))
             }
+            if let third = indicator.thirdRemainingPercent {
+                Circle().inset(by: 9 * scale).stroke(Color.orange.opacity(0.14), lineWidth: 1.2 * scale)
+                Circle().inset(by: 9 * scale).trim(from: 0, to: third / 100)
+                    .stroke(Color.orange.opacity(0.8), style: StrokeStyle(lineWidth: 1.2 * scale, lineCap: .round)).rotationEffect(.degrees(-90))
+            }
             HStack(spacing: 0) {
-                Text(String(format: "%.0f", outer))
+                Text(QuotaCenterLabel(remaining: outer).text)
                     .font(.system(size: fontSize, weight: .bold, design: .rounded))
-                Text("%")
-                    .font(.system(size: fontSize, weight: .regular, design: .rounded))
+                if QuotaCenterLabel(remaining: outer).showsPercent {
+                    Text("%")
+                        .font(.system(size: fontSize, weight: .regular, design: .rounded))
+                }
             }
             .foregroundColor(quotaPercentColor(outer))
             .lineLimit(1)

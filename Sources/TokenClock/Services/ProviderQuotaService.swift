@@ -14,6 +14,8 @@ struct ProviderQuotaGroup: Identifiable, Equatable, Codable, Sendable {
     let buckets: [CodexQuotaBucket]
 }
 
+enum LocalQuotaAuthorizationSource: Equatable, Sendable { case cursorCLI, grokBot }
+
 struct ProviderQuotaSnapshot: Equatable, Sendable {
     var status: CodexQuotaStatus
     var groups: [ProviderQuotaGroup]
@@ -23,6 +25,8 @@ struct ProviderQuotaSnapshot: Equatable, Sendable {
     var message: String?
     var account: SubscriptionAccountIdentity? = nil
     var billing: SubscriptionBillingInfo? = nil
+    var requiresLocalAuthorization = false
+    var localAuthorizationSource: LocalQuotaAuthorizationSource? = nil
 
     static func idle(source: String) -> Self {
         Self(status: .idle, groups: [], planType: nil, refreshedAt: nil, source: source, message: nil)
@@ -196,6 +200,7 @@ final class CursorQuotaService: @unchecked Sendable {
         let userID: String
         let email: String?
         let membershipType: String?
+        let machineID: String?
     }
     private let fileManager: FileManager
     init(fileManager: FileManager = .default) { self.fileManager = fileManager }
@@ -208,8 +213,28 @@ final class CursorQuotaService: @unchecked Sendable {
         guard let credential = credentialFromStateDatabase() else {
             return .unavailable("Cursor login was not found.", source: source)
         }
+        let planData = CursorDashboardRPC.read("GetPlanInfo", token: credential.token, machineID: credential.machineID)
+        let discovery = XSubscriptionQuota.discover(planData: planData, usage: {
+            CursorDashboardRPC.read("GetCurrentPeriodUsage", token: credential.token, machineID: credential.machineID,
+                                    body: Data(#"{"includePooledUsage":true}"#.utf8))
+        }, sand: {
+            CursorDashboardRPC.read("GetSandUsageStatus", token: credential.token, machineID: credential.machineID)
+        })
+        let verifiedLegacy: Bool
+        switch discovery {
+        case .unified(var snapshot):
+            snapshot.account = SubscriptionAccountIdentity(id: credential.userID, email: credential.email)
+            return snapshot
+        case .unavailable:
+            return .unavailable("X Subscription shared weekly quota was not available.", source: "X Subscription · Cursor API")
+        case .legacy: verifiedLegacy = true
+        case .unknown: verifiedLegacy = false
+        }
         guard let data = request(credential: credential), var snapshot = Self.decodeResponse(data) else {
             return .unavailable("Cursor subscription quota was not available.", source: source)
+        }
+        guard verifiedLegacy || XSubscriptionQuota.knownLegacySummary(data) else {
+            return .unavailable("Subscription type could not be verified; legacy monthly quota was not used.", source: source)
         }
         snapshot.account = SubscriptionAccountIdentity(id: credential.userID, email: credential.email)
         if snapshot.planType?.isEmpty != false { snapshot.planType = credential.membershipType }
@@ -223,6 +248,9 @@ final class CursorQuotaService: @unchecked Sendable {
     static func decodeResponse(_ data: Data, now: Date = Date()) -> ProviderQuotaSnapshot? {
         guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
         let payload = (root["usageSummary"] as? [String: Any]) ?? (root["response"] as? [String: Any]) ?? root
+        guard XSubscriptionQuota.flag(root["isUnified"]) != true,
+              XSubscriptionQuota.flag(root["isMerged"]) != true,
+              !["premium", "super", "plus"].contains((payload["membershipType"] as? String ?? "").lowercased()) else { return nil }
         let individual = payload["individualUsage"] as? [String: Any] ?? payload
         let plan = individual["plan"] as? [String: Any] ?? individual
         let used = number(plan["used"]), limit = number(plan["limit"])
@@ -275,9 +303,11 @@ final class CursorQuotaService: @unchecked Sendable {
         guard let token = itemValue(db: db, key: "cursorAuth/accessToken") else { return nil }
         guard let userID = Self.userID(from: token) else { return nil }
         return Credential(
-            token: token, userID: userID,
+            token: token,
+            userID: userID,
             email: itemValue(db: db, key: "cursorAuth/cachedEmail"),
-            membershipType: itemValue(db: db, key: "cursorAuth/stripeMembershipType")
+            membershipType: itemValue(db: db, key: "cursorAuth/stripeMembershipType"),
+            machineID: itemValue(db: db, key: "storage.serviceMachineId")
         )
     }
 
@@ -286,7 +316,8 @@ final class CursorQuotaService: @unchecked Sendable {
         guard sqlite3_prepare_v2(db, "SELECT value FROM ItemTable WHERE key=?1 LIMIT 1", -1, &statement, nil) == SQLITE_OK else { return nil }
         defer { sqlite3_finalize(statement) }
         sqlite3_bind_text(statement, 1, key, -1, Self.SQLITE_TRANSIENT)
-        guard sqlite3_step(statement) == SQLITE_ROW, let pointer = sqlite3_column_text(statement, 0) else { return nil }
+        guard sqlite3_step(statement) == SQLITE_ROW,
+              let pointer = sqlite3_column_text(statement, 0) else { return nil }
         let value = String(cString: pointer).trimmingCharacters(in: .whitespacesAndNewlines)
         return value.isEmpty ? nil : value
     }
@@ -383,7 +414,9 @@ final class ZhipuQuotaService: @unchecked Sendable {
             return .unavailable("GLM Coding Plan quota was not available.", source: source)
         }
         snapshot.account = SubscriptionAccountIdentity(
-            id: SubscriptionAccountIdentity.opaqueID(namespace: credential.providerID, secret: credential.apiKey),
+            id: SubscriptionAccountIdentity.opaqueID(
+                namespace: credential.providerID, secret: credential.apiKey
+            ),
             email: nil
         )
         return snapshot

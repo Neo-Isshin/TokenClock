@@ -49,7 +49,7 @@ final class MovedUsagePathsTests: XCTestCase {
         XCTAssertEqual(service.todayUsage().tokens,260)
         XCTAssertEqual(service.todayUsage().messages,2)
         XCTAssertEqual(service.todaySessions().count,2)
-        XCTAssertTrue(service.todaySessions().contains { $0.source == "Cowork (local)" })
+        XCTAssertTrue(service.todaySessions().contains { $0.source == ClaudeUsageSurface.coworkApp.label })
     }
     func testChangingConfiguredPathAppliesWithoutRecreatingReaders() throws {
         let defaults=UserDefaults.standard

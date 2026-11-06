@@ -56,17 +56,17 @@ enum ModelDetectNativeClientError: Error, LocalizedError, Sendable, Equatable {
 
     var errorDescription: String? {
         switch self {
-        case .invalidReadyURL: return "本地检测服务地址无效，请重新启动检测面板。"
-        case .invalidRoute: return "不支持这项本地检测操作。"
-        case .invalidJSON: return "本地检测数据不是有效的 JSON。"
-        case .invalidResponse: return "本地检测服务返回了无法识别的数据。"
-        case .requestTooLarge: return "发送的数据超出本地检测接口大小限制。"
-        case .responseTooLarge: return "检测结果超出本次读取大小限制。"
-        case .redirectRefused: return "本地检测服务尝试重定向，请重新启动检测面板。"
-        case .unexpectedOrigin: return "检测响应不属于当前本地服务。"
-        case .cancelled: return "本次本地请求已取消。"
-        case .transportUnavailable: return "暂时无法连接本地检测服务，请检查服务是否仍在运行。"
-        case .service(let status, let message): return "本地检测服务（\(status)）：\(message)"
+        case .invalidReadyURL: return ModelDetectNativeText.localized("本地检测服务地址无效，请重新启动检测面板。", "The local check address is invalid. Reopen the check panel.")
+        case .invalidRoute: return ModelDetectNativeText.localized("不支持这项本地检测操作。", "This local check operation is unsupported.")
+        case .invalidJSON: return ModelDetectNativeText.localized("本地检测数据不是有效的 JSON。", "The local check data is not valid JSON.")
+        case .invalidResponse: return ModelDetectNativeText.localized("本地检测服务返回了无法识别的数据。", "The local check service returned unrecognized data.")
+        case .requestTooLarge: return ModelDetectNativeText.localized("发送的数据超出本地检测接口大小限制。", "The request exceeds the local check size limit.")
+        case .responseTooLarge: return ModelDetectNativeText.localized("检测结果超出本次读取大小限制。", "The result exceeds the read size limit.")
+        case .redirectRefused: return ModelDetectNativeText.localized("本地检测服务尝试重定向，请重新启动检测面板。", "The local check service attempted a redirect. Reopen the panel.")
+        case .unexpectedOrigin: return ModelDetectNativeText.localized("检测响应不属于当前本地服务。", "The response does not belong to the current local service.")
+        case .cancelled: return ModelDetectNativeText.localized("本次本地请求已取消。", "The local request was cancelled.")
+        case .transportUnavailable: return ModelDetectNativeText.localized("暂时无法连接本地检测服务，请检查服务是否仍在运行。", "Cannot connect to the local check service. Check that it is running.")
+        case .service(let status, let message): return ModelDetectNativeText.localized("本地检测服务（\(status)）：\(message)", "Local check service (\(status)): \(message)")
         }
     }
 }
@@ -186,7 +186,7 @@ final class ModelDetectNativeClient: ModelDetectNativeServing {
             guard response.data.count <= maximumBytes else { throw ModelDetectNativeClientError.responseTooLarge }
             if (300...399).contains(response.statusCode) { throw ModelDetectNativeClientError.redirectRefused }
             guard (200...299).contains(response.statusCode) else {
-                var message = "请求未完成，请检查输入后重试。"
+                var message = ModelDetectNativeText.localized("请求未完成，请检查输入后重试。", "The request did not complete. Check the input and retry.")
                 if response.data.count <= 16 * 1024,
                    let value = try? JSONDecoder().decode(ModelDetectJSON.self, from: response.data),
                    let reported = value["error"].string {
@@ -207,13 +207,13 @@ final class ModelDetectNativeClient: ModelDetectNativeServing {
     }
 
     private func safeMessage(_ raw: String, secrets: [String]) -> String {
-        var text = raw.replacingOccurrences(of: baseURL.absoluteString, with: "[本地地址已隐藏]")
-        text = text.replacingOccurrences(of: baseURL.path, with: "[本地地址已隐藏]")
+        var text = raw.replacingOccurrences(of: baseURL.absoluteString, with: ModelDetectNativeText.localized("[本地地址已隐藏]", "[local address hidden]"))
+        text = text.replacingOccurrences(of: baseURL.path, with: ModelDetectNativeText.localized("[本地地址已隐藏]", "[local address hidden]"))
         if let token = baseURL.path.split(separator: "/").last {
-            text = text.replacingOccurrences(of: String(token), with: "[本地会话凭据已隐藏]")
+            text = text.replacingOccurrences(of: String(token), with: ModelDetectNativeText.localized("[本地会话凭据已隐藏]", "[local session credential hidden]"))
         }
         for secret in secrets.sorted(by: { $0.count > $1.count }) where !secret.isEmpty {
-            text = text.replacingOccurrences(of: secret, with: "[凭据已隐藏]")
+            text = text.replacingOccurrences(of: secret, with: ModelDetectNativeText.localized("[凭据已隐藏]", "[credential hidden]"))
         }
         let patterns = [
             #"https?://[^\s<>「」“”，。；]+"#,
@@ -225,7 +225,7 @@ final class ModelDetectNativeClient: ModelDetectNativeServing {
         ]
         for pattern in patterns {
             if let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive) {
-                text = regex.stringByReplacingMatches(in: text, range: NSRange(text.startIndex..., in: text), withTemplate: "[敏感信息已隐藏]")
+                text = regex.stringByReplacingMatches(in: text, range: NSRange(text.startIndex..., in: text), withTemplate: ModelDetectNativeText.localized("[敏感信息已隐藏]", "[sensitive information hidden]"))
             }
         }
         return String(text.split(whereSeparator: { $0.isWhitespace }).joined(separator: " ").prefix(500))
@@ -257,12 +257,15 @@ final class ModelDetectNativeClient: ModelDetectNativeServing {
         guard !parts.contains(where: { $0.isEmpty || $0 == "." || $0 == ".." }) else { return false }
         func job(_ value: String) -> Bool { matches(value, pattern: #"^job-[a-f0-9]{32}$"#) }
         let reportFiles = ["report.html", "report.json", "observation.json", "evidence.zip"]
-        if download { return !post && parts.count == 3 && parts[0] == "reports" && job(parts[1]) && reportFiles.contains(parts[2]) }
+        if download {
+            if !post && parts.count == 2 && parts[0] == "partial-evidence" && job(parts[1]) { return true }
+            return !post && parts.count == 3 && parts[0] == "reports" && job(parts[1]) && reportFiles.contains(parts[2])
+        }
         if post {
             if ["api/connections", "api/connections/delete", "api/model-catalog", "api/preview", "api/jobs", "api/upload", "api/combine", "api/history/compare"].contains(route) { return true }
             return parts.count == 4 && parts[0] == "api" && parts[1] == "jobs" && job(parts[2]) && ["cancel", "resume"].contains(parts[3])
         }
-        if ["api/info", "api/sessions", "api/connections", "api/probes", "api/jobs"].contains(route) { return true }
+        if ["api/info", "api/sessions", "api/connections", "api/probes", "api/jobs", "api/local-codex"].contains(route) { return true }
         if parts.count == 3 && parts[0] == "api" && parts[1] == "jobs" && job(parts[2]) { return true }
         if parts.count == 3 && parts[0] == "reports" && job(parts[1]) && ["report.json", "observation.json"].contains(parts[2]) { return true }
         return parts.count == 2 && parts[0] == "support" && job(parts[1])

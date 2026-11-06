@@ -152,6 +152,22 @@ struct ModelDetectResultPresentation {
             }
             return
         }
+        if workflow == "codex" {
+            // Acquisition coverage only: this path has no calibrated identity reference.
+            for (index, record) in result["records"].array.enumerated() {
+                let path = prefix + "/result/records/\(index)"
+                add("S01", 2, .observed, T.text("已记录所选型号与 Codex 创建会话时的声明。", "已記錄所選型號與 Codex 建立會話時的聲明。", "Selected model and Codex thread declarations recorded."), path)
+                if record["submission_attempted"].bool == true {
+                    add("R01", 2, record["usage"].object.isEmpty ? .limited : .observed,
+                        T.text("使用当前 Codex 账户；用量缺失时保留未知。", "使用目前 Codex 帳戶；用量缺失時保留未知。", "Uses the current Codex account; missing usage remains unknown."), path + "/usage")
+                    add("T03", 2, .observed, T.text("已保存本次可见事件与停止原因。", "已儲存本次可見事件與停止原因。", "Visible events and stop reasons saved."), path + "/events")
+                    add(record["task_id"].string?.hasPrefix("NFP") == true ? "N01" : "B01", 2,
+                        record["status"].string == "completed" ? .observed : .limited,
+                        T.text("仅记录本机回答；不将 API 参考直接用于型号确认。", "僅記錄本機回答；不將 API 參考直接用於型號確認。", "Local answers recorded; API references do not confirm identity on this path."), path + "/answer")
+                }
+            }
+            return
+        }
         let source = result["source"]["kind"].string ?? ""
         isControlled = isControlled || report["scope"]["synthetic"].bool == true || result["scope"]["synthetic"].bool == true || ["scripted_demo", "synthetic_fixture", "controlled_variant"].contains(source) || result["source_scope"].string == "scripted_demo"
         // Imported short answers and artifacts are passive observations, not new probe calls.
@@ -174,7 +190,7 @@ struct ModelDetectResultPresentation {
             let status = result["numeric_fingerprint"]["status"].string ?? "insufficient"
             let usable = ["likely", "reference_only", "ambiguous", "demonstration"].contains(status)
             add("N01", layer, usable ? .observed : .limited,
-                result["numeric_fingerprint"]["title"].string ?? "数字指纹未完成", prefix + "/result/numeric_fingerprint")
+                result["numeric_fingerprint"]["title"].string ?? ModelDetectNativeText.localized("数字指纹未完成", "Numeric fingerprint incomplete"), prefix + "/result/numeric_fingerprint")
         }
         for (index, sample) in result["samples"].array.enumerated() {
             let task = String((sample["task_id"].string ?? "").prefix(3)), path = prefix + "/result/samples/\(index)"
@@ -216,48 +232,48 @@ struct ModelDetectResultPresentation {
         let code = fact["code"].string ?? ""
         if code.hasPrefix("source.harness_") || code == "source.comparison_target_difference" {
             let v = fact["value"]
-            func label(_ key: String) -> String { v[key].string ?? v[key].array.compactMap(\.string).joined(separator: "、") }
+            func label(_ key: String) -> String { v[key].string ?? v[key].array.compactMap(\.string).joined(separator: ModelDetectNativeText.localized("、", ", ")) }
             let note: String
             switch code {
-            case "source.harness_model_consistent": note = "可配对轮次的型号声明一致：" + label("model") + "；仅核对本地记录。"
-            case "source.harness_model_difference": note = "同轮请求：" + label("requested") + "；响应条目：" + label("reported") + "。"
-            case "source.harness_model_change": note = "主调用型号从 " + label("from") + " 变为 " + label("to") + "。"
-            case "source.harness_default_difference": note = "会话默认：" + label("session_default") + "；最近请求：" + label("latest_request") + "。"
-            case "source.comparison_target_difference": note = "比较目标：" + label("comparison_target") + "；最近请求：" + label("latest_recorded_request") + "。"
-            case "source.harness_model_observed": note = "结构化型号字段：" + label("model") + "（" + label("owner") + " / " + label("scope") + "）。"
-            default: note = "记录中出现多个型号：" + label("models") + "；归属需结合原始位置核对。"
+            case "source.harness_model_consistent": note = ModelDetectNativeText.localized("可配对轮次的型号声明一致：", "Model claims match in paired turns: ") + label("model") + ModelDetectNativeText.localized("；仅核对本地记录。", "; local records only.")
+            case "source.harness_model_difference": note = ModelDetectNativeText.localized("同轮请求：", "Requested in this turn: ") + label("requested") + ModelDetectNativeText.localized("；响应条目：", "; response entry: ") + label("reported") + ModelDetectNativeText.localized("。", ".")
+            case "source.harness_model_change": note = ModelDetectNativeText.localized("主调用型号从 ", "Primary model changed from ") + label("from") + ModelDetectNativeText.localized(" 变为 ", " to ") + label("to") + ModelDetectNativeText.localized("。", ".")
+            case "source.harness_default_difference": note = ModelDetectNativeText.localized("会话默认：", "Session default: ") + label("session_default") + ModelDetectNativeText.localized("；最近请求：", "; latest request: ") + label("latest_request") + ModelDetectNativeText.localized("。", ".")
+            case "source.comparison_target_difference": note = ModelDetectNativeText.localized("比较目标：", "Comparison target: ") + label("comparison_target") + ModelDetectNativeText.localized("；最近请求：", "; latest request: ") + label("latest_recorded_request") + ModelDetectNativeText.localized("。", ".")
+            case "source.harness_model_observed": note = ModelDetectNativeText.localized("结构化型号字段：", "Structured model field: ") + label("model") + ModelDetectNativeText.localized("（", " (") + label("owner") + " / " + label("scope") + ModelDetectNativeText.localized("）。", ").")
+            default: note = ModelDetectNativeText.localized("记录中出现多个型号：", "Multiple models appear in the record: ") + label("models") + ModelDetectNativeText.localized("；归属需结合原始位置核对。", "; verify attribution against the original locations.")
             }
             let state: State = ["source.harness_model_difference", "source.harness_multiple_models_in_turn"].contains(code) ? .issue : .observed
             add(code == "source.harness_model_change" ? "T05" : "S01", layer, state, note, path)
             return
         }
         let rows: [String: (String, State, String)] = [
-            "source.model_claim_difference": ("S01", .issue, "同次调用的请求与响应型号声明不同。"),
-            "source.billing_claim_difference": ("S01", .issue, "计费与调用型号声明不同。"),
-            "source.binding_collision": ("S01", .issue, "同一记录标识对应不同内容。"),
-            "source.model_claim_consistent": ("S01", .aligned, "可见请求与响应的型号声明一致；这不认证后端。"),
-            "source.display_model": ("S01", .observed, "只有显示型号声明，不能确认后端。"),
-            "source.context_model_label": ("S01", .observed, "已有上下文型号标签，尚非逐调用证明。"),
-            "source.provider_change": ("T05", .observed, "供应商字段发生变化，不等于换了型号。"),
-            "process.read_visible": ("P01", .observed, "记录包含实际返回的文件内容；读取不等于理解。"),
-            "process.edit_path": ("P02", .observed, "已记录写入路径。"),
-            "process.artifact_content_changed": ("P02", .observed, "已有文件内容变化的记录。"),
-            "process.edit_outside_explicit_scope": ("P02", .issue, "写入超出任务明确允许的范围。"),
-            "process.test_result": ("P03", .observed, "已记录实际检查结果；前后结果分别保留。"),
-            "process.test_exit_mismatch": ("P03", .issue, "记录中存在检查退出码与返回内容不一致。"),
-            "process.unverified_completion_claim": ("Q01", .limited, "完成声明没有对应的可见核验记录。"),
-            "process.latest_change_unverified": ("P03", .limited, "最近修改后没有对应的可见复验记录。"),
-            "resource.reasoning_reported": ("R01", .observed, "已记录接口报告的推理用量，未推断内部步骤。"),
-            "resource.elapsed_seconds": ("R01", .observed, "已记录耗时，包含网络与排队等影响。"),
-            "resource.stream_observed": ("T03", .observed, "已记录客户端可见的流式事件。"),
-            "resource.usage_conflict_details": ("T02", .issue, "计量字段不符合所声明的计量规则。"),
-            "semantic.explicit_candidate_set": ("B03", .observed, "已提取明确列出的候选项。"),
-            "semantic.hypothesis_revision": ("P05", .observed, "已提取带原文依据的结论修订；不保证修订正确。"),
+            "source.model_claim_difference": ("S01", .issue, ModelDetectNativeText.localized("同次调用的请求与响应型号声明不同。", "Request and response model claims differ within the same call.")),
+            "source.billing_claim_difference": ("S01", .issue, ModelDetectNativeText.localized("计费与调用型号声明不同。", "Billing and invocation model claims differ.")),
+            "source.binding_collision": ("S01", .issue, ModelDetectNativeText.localized("同一记录标识对应不同内容。", "The same record identifier refers to different content.")),
+            "source.model_claim_consistent": ("S01", .aligned, ModelDetectNativeText.localized("可见请求与响应的型号声明一致；这不认证后端。", "Visible request and response model claims agree; this does not authenticate the backend.")),
+            "source.display_model": ("S01", .observed, ModelDetectNativeText.localized("只有显示型号声明，不能确认后端。", "Only a displayed model claim is available; the backend is unverified.")),
+            "source.context_model_label": ("S01", .observed, ModelDetectNativeText.localized("已有上下文型号标签，尚非逐调用证明。", "A context model label exists; it is not per-call proof.")),
+            "source.provider_change": ("T05", .observed, ModelDetectNativeText.localized("供应商字段发生变化，不等于换了型号。", "The provider field changed; this does not establish a model change.")),
+            "process.read_visible": ("P01", .observed, ModelDetectNativeText.localized("记录包含实际返回的文件内容；读取不等于理解。", "The record contains returned file content; reading does not establish understanding.")),
+            "process.edit_path": ("P02", .observed, ModelDetectNativeText.localized("已记录写入路径。", "A write path was recorded.")),
+            "process.artifact_content_changed": ("P02", .observed, ModelDetectNativeText.localized("已有文件内容变化的记录。", "File content changes were recorded.")),
+            "process.edit_outside_explicit_scope": ("P02", .issue, ModelDetectNativeText.localized("写入超出任务明确允许的范围。", "Writes exceed the task’s explicitly allowed scope.")),
+            "process.test_result": ("P03", .observed, ModelDetectNativeText.localized("已记录实际检查结果；前后结果分别保留。", "Actual check results were recorded; before and after results are retained.")),
+            "process.test_exit_mismatch": ("P03", .issue, ModelDetectNativeText.localized("记录中存在检查退出码与返回内容不一致。", "A check exit code conflicts with its returned content.")),
+            "process.unverified_completion_claim": ("Q01", .limited, ModelDetectNativeText.localized("完成声明没有对应的可见核验记录。", "The completion claim has no matching visible verification.")),
+            "process.latest_change_unverified": ("P03", .limited, ModelDetectNativeText.localized("最近修改后没有对应的可见复验记录。", "No matching visible recheck follows the latest change.")),
+            "resource.reasoning_reported": ("R01", .observed, ModelDetectNativeText.localized("已记录接口报告的推理用量，未推断内部步骤。", "API-reported reasoning usage was recorded; internal steps were not inferred.")),
+            "resource.elapsed_seconds": ("R01", .observed, ModelDetectNativeText.localized("已记录耗时，包含网络与排队等影响。", "Elapsed time was recorded, including network and queue effects.")),
+            "resource.stream_observed": ("T03", .observed, ModelDetectNativeText.localized("已记录客户端可见的流式事件。", "Client-visible streaming events were recorded.")),
+            "resource.usage_conflict_details": ("T02", .issue, ModelDetectNativeText.localized("计量字段不符合所声明的计量规则。", "Metering fields conflict with the declared accounting rules.")),
+            "semantic.explicit_candidate_set": ("B03", .observed, ModelDetectNativeText.localized("已提取明确列出的候选项。", "Explicitly listed candidates were extracted.")),
+            "semantic.hypothesis_revision": ("P05", .observed, ModelDetectNativeText.localized("已提取带原文依据的结论修订；不保证修订正确。", "Evidence-backed conclusion revisions were extracted; correctness is not established.")),
         ]
         if let (id, state, note) = rows[code] {
             add(id, layer, state, T.text(note, note.applyingTransform(StringTransform("Hans-Hant"), reverse: false) ?? note, note), path)
         }
-        if code == "resource.usage_consistency" { add("T02", layer, fact["value"].bool == true ? .aligned : fact["value"].bool == false ? .issue : .limited, "已核对可见用量字段的计量关系，不推断缓存来源。", path) }
+        if code == "resource.usage_consistency" { add("T02", layer, fact["value"].bool == true ? .aligned : fact["value"].bool == false ? .issue : .limited, ModelDetectNativeText.localized("已核对可见用量字段的计量关系，不推断缓存来源。", "Visible usage relationships were checked; cache provenance was not inferred."), path) }
     }
     private mutating func diagnostics(_ value: ModelDetectJSON, layer: Int, path: String) {
         for (index, check) in value["checks"].array.enumerated() {

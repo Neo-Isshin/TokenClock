@@ -23,12 +23,10 @@ private func primaryValueText(tokens: Int, cacheRead: Int, cost: CostEstimate,
 
 /// 次列（消息数 ↔ 占比）
 private func secondaryValueText(tokens: Int, cacheRead: Int, messages: Int,
-                                mode: DetailValueMode, grandTotal: Int, includeCacheRead: Bool) -> String {
+                                mode: DetailValueMode, grandTotal: Int, includeCacheRead: Bool, ttft: String = "—") -> String {
     switch mode {
     case .tokens: return "\(messages)"
-    case .costPercent:
-        let shown = includeCacheRead ? tokens + cacheRead : tokens
-        return formatPercent(shown, of: grandTotal)
+    case .costPercent: return ttft
     }
 }
 
@@ -73,10 +71,18 @@ struct DetailDropdownView: View {
     var onHistoryUsage: (() -> Void)? = nil
     var onShareUsage: (() -> Void)? = nil
     var onModelDetect: (() -> Void)? = nil
+    var onNetworkLeak: (() -> Void)? = nil
+    var onLocalToolbox: (() -> Void)? = nil
     var onModelDetectSession: ((SessionInfo) -> Void)? = nil
     var onSubscriptionQuota: (() -> Void)? = nil
     var unreadNotificationCount: Int = 0
     var onNotificationClick: (() -> Void)? = nil
+    var newsService: AilyreNewsService? = nil
+    var isNewsPresented = false
+    var focusedNewsItemID: String? = nil
+    var hasUnreadNews = false
+    var onNewsToggle: (() -> Void)? = nil
+    var onNotebook: (() -> Void)? = nil
 
     /// Codex 剩余额度面板。额度只在点击后按需读取，不参与 30 秒用量扫描。
     var showsCodexQuota: Bool = false
@@ -89,11 +95,12 @@ struct DetailDropdownView: View {
     @State private var percentHovered = false
     @State private var quotaHovered = false
     @State private var modelDetectHovered = false
+    @State private var networkLeakHovered = false
     @State private var cacheHovered = false
     @State private var textColorHovered = false
-    @State private var historyHovered = false
     @State private var shareHovered = false
     @State private var notificationHovered = false
+    @State private var shortcutsEditing = false
 
     private var textColor: Color { dropdownTextColorOverride ?? theme.dropdownTextColor }
     private var subtextColor: Color { dropdownTextColorOverride.map { $0.opacity(0.65) } ?? theme.dropdownSubtextColor }
@@ -127,7 +134,7 @@ struct DetailDropdownView: View {
 
     /// 数值列表头（主列：用量↔费用；次列：消息数↔占比）
     private var primaryHeaderKey: String { valueMode == .tokens ? "detail.todayUsage" : "detail.cost" }
-    private var secondaryHeaderKey: String { valueMode == .tokens ? "detail.messages" : "detail.share" }
+
 
     var body: some View {
         VStack(spacing: 0) {
@@ -137,37 +144,45 @@ struct DetailDropdownView: View {
                 Divider()
                     .background(theme.dropdownDividerColor)
                     .padding(.horizontal, 8)
+            } else {
+                HStack(alignment: .top) {
+                    Text("TokenClock").font(.system(size: 12, weight: .medium)).foregroundStyle(textColor)
+                    Spacer()
+                    VStack(spacing: 4) {
+                        forecastNotificationButton
+                        forecastShareButton
+                        forecastShortcutEditorButton
+                    }
+                }.frame(height: 60, alignment: .top).padding(.horizontal, 12).padding(.vertical, 8)
+                Divider().background(theme.dropdownDividerColor).padding(.horizontal, 8)
             }
 
-            // 第一行是会打开独立窗口的主入口，视觉上比下方 toggle 更有层次。
-            HStack(spacing: 8) {
-                launcherCard(
-                    icon: "waveform.path.ecg.rectangle",
-                    titleLine1: L10n.shared.tr("detail.modelDetectLine1"),
-                    titleLine2: L10n.shared.tr("detail.modelDetectLine2"),
-                    hovered: modelDetectHovered,
-                    enabled: onModelDetect != nil,
-                    action: { onModelDetect?() }
-                )
-                .onHover { modelDetectHovered = $0 }
-                .help(L10n.shared.tr("detail.modelDetectHint"))
-                .accessibilityIdentifier("model-detect-launcher")
+            QuickToolGrid(color: textColor, expandsOnHover: true, showsEditorButton: false) { tool in
+                switch tool {
+                case .model: onModelDetect?()
+                case .network: onNetworkLeak?()
+                case .local: onLocalToolbox?()
+                case .quota: onSubscriptionQuota?()
+                case .history: onHistoryUsage?()
+                case .notebook: onNotebook?()
+                case .share: onShareUsage?()
+                }
+            }.padding(.horizontal,12).padding(.top,7).padding(.bottom,4)
 
-                launcherCard(
-                    icon: "gauge.with.dots.needle.50percent",
-                    titleLine1: L10n.shared.tr("detail.subscriptionQuotaLine1"),
-                    titleLine2: L10n.shared.tr("detail.subscriptionQuotaLine2"),
-                    hovered: quotaHovered,
-                    enabled: true,
-                    action: { onSubscriptionQuota?() }
-                )
-                .onHover { quotaHovered = $0 }
-            }
-            .padding(.horizontal, 12)
-            .padding(.top, 7)
-            .padding(.bottom, 4)
-
-            if isLoading {
+            if isNewsPresented, let newsService {
+                HStack(spacing: 8) {
+                    Button { onNewsToggle?() } label: {
+                        Label(toolboxText("返回", "Back"), systemImage: "chevron.left")
+                            .font(.system(size: 11, weight: .medium))
+                    }.buttonStyle(.plain).instantHint(toolboxText("返回之前的用量视图", "Return to your usage view"))
+                    Spacer()
+                    AilyreNewsMark(template: true).frame(width: 12, height: 15).scaleEffect(1.6)
+                    Text(toolboxText("AI速递", "AI digest")).font(.system(size: 12, weight: .semibold))
+                }.foregroundStyle(textColor).padding(.horizontal, 14).padding(.vertical, 9)
+                Divider().overlay(textColor.opacity(0.1)).padding(.horizontal, 12)
+                AilyreNewsView(news: newsService, textColor: textColor, focusedID: focusedNewsItemID)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if isLoading {
                 // 首次数据读取中：显示加载提示（不展示 mock 占位工具，避免误导）
                 HStack(spacing: 6) {
                     ProgressView().controlSize(.small)
@@ -194,6 +209,7 @@ struct DetailDropdownView: View {
                         }
                         .buttonStyle(.plain)
                     }
+
                 }
                 .padding(3)
                 .background(
@@ -206,6 +222,19 @@ struct DetailDropdownView: View {
 
                 // 第三行均为紧凑 toggle/快捷操作。
                 HStack(spacing: 4) {
+                    Button { onNewsToggle?() } label: {
+                        HStack(spacing: 4) {
+                            AilyreNewsMark(template: true).frame(width: 20, height: 25)
+                            Text(toolboxText("AI速递", "AI digest"))
+                                .font(.system(size: 10.5, weight: .medium)).lineLimit(1)
+                        }.foregroundStyle(subtextColor)
+                            .frame(maxWidth: .infinity, minHeight: 35).padding(.horizontal, 5)
+                            .background(textColor.opacity(0.065), in: Capsule())
+                            .contentShape(Capsule())
+                    }.buttonStyle(ChipPressStyle()).frame(width: 88)
+                        .accessibilityIdentifier("ai-digest-action")
+                        .instantHint(toolboxText("在下方内容区阅读 AI速递", "Read AI digest in this panel’s content area"))
+
                     compactAction(
                         icon: usageIncludesCache ? "externaldrive.fill.badge.checkmark" : "externaldrive",
                         title: "\(L10n.shared.tr("detail.cacheDataLine1"))\n\(L10n.shared.tr("detail.cacheDataLine2"))",
@@ -230,26 +259,15 @@ struct DetailDropdownView: View {
                     .onHover { textColorHovered = $0 }
 
                     compactAction(
-                        icon: "clock.arrow.circlepath",
-                        title: "\(L10n.shared.tr("detail.historyUsageLine1"))\n\(L10n.shared.tr("detail.historyUsageLine2"))",
-                        subtitle: "",
-                        selected: false,
-                        hovered: historyHovered,
-                        action: { onHistoryUsage?() }
-                    )
-                    .frame(width: 80)
-                    .onHover { historyHovered = $0 }
-
-                    compactAction(
                         icon: "dollarsign.circle",
-                        title: valueMode == .tokens ? L10n.shared.tr("detail.byCost") : L10n.shared.tr("detail.byPercent"),
-                        subtitle: valueMode == .tokens ? L10n.shared.tr("detail.byPercent") : L10n.shared.tr("detail.todayUsage"),
+                        title: valueMode == .tokens ? toolboxText("按用量", "By\nUsage") : L10n.shared.tr("detail.byCost").replacingOccurrences(of: " ", with: "\n"),
+                        subtitle: "",
                         selected: valueMode == .costPercent,
                         hovered: percentHovered,
                         action: { onValueModeChange?(valueMode.next) }
                     )
-                    .frame(width: 82)
-                    .help(L10n.shared.tr("detail.valueModeHelp"))
+                    .frame(width: 58)
+                    .instantHint(toolboxText("切换用量/消息/占比与 API 费用/TTFT/速度", "Switch Usage/Msgs/Share and API estimate/TTFT/speed"))
                     .onHover { percentHovered = $0 }
                 }
                 .padding(.horizontal, 4)
@@ -261,7 +279,7 @@ struct DetailDropdownView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                     Text(L10n.shared.tr(primaryHeaderKey))
                         .frame(width: 62, alignment: .trailing)
-                    Text(L10n.shared.tr(secondaryHeaderKey))
+                    Text(valueMode == .tokens ? L10n.shared.tr("detail.messages") : "TTFT").instantHint(valueMode == .tokens ? L10n.shared.tr("detail.messages") : toolboxText("已记录首 token 时间的请求平均等待；缺失时为 —", "Mean first-token wait for requests with real timestamps; — if unavailable"))
                         .frame(width: 36, alignment: .trailing)
                     if groupingMode == .session {
                         Text(L10n.shared.tr("detail.cacheRate"))
@@ -269,9 +287,9 @@ struct DetailDropdownView: View {
                     } else {
                         // Numeric right edges use the same 36 pt step without
                         // expanding the message column or squeezing model names.
-                        Text("t/s")
+                        Text(valueMode == .tokens ? L10n.shared.tr("detail.share") : "t/s")
                             .frame(width: 36, alignment: .trailing)
-                            .help(L10n.shared.tr("detail.generationSpeedHelp"))
+                            .instantHint(valueMode == .tokens ? toolboxText("占当前用量总数的比例", "Share of total usage") : L10n.shared.tr("detail.generationSpeedHelp"))
                     }
                 }
                 .font(.system(size: 9, weight: .medium))
@@ -306,15 +324,7 @@ struct DetailDropdownView: View {
             }
         }
         .frame(maxHeight: .infinity, alignment: .top)
-        .environment(\.colorScheme, theme.dropdownColorScheme)
-        .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(theme.dropdownBgColor)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 12)
-                .stroke(theme.dropdownBorderColor, lineWidth: 1.5)
-        )
+        .background(theme.dropdownBgColor, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         .padding(.horizontal, 8)
         .padding(.bottom, 10)
     }
@@ -690,16 +700,20 @@ struct DetailDropdownView: View {
         .overlay(alignment: .topTrailing) {
             // Keep the header's measured height unchanged. The small share action
             // lives beneath the bell inside the existing forecast area.
-            forecastShareButton
-                .padding(.trailing, 12)
-                .padding(.top, 28)
+            VStack(spacing: 4) {
+                forecastShareButton
+                forecastShortcutEditorButton
+            }.padding(.trailing, 12).padding(.top, 28)
         }
     }
 
     private var forecastNotificationButton: some View {
         Button { onNotificationClick?() } label: {
             ZStack(alignment: .topTrailing) {
-                Image(systemName: unreadNotificationCount > 0 ? "bell.fill" : "bell")
+                Group {
+                    if hasUnreadNews { AilyreNewsMark(template: true).frame(width: 14, height: 19).scaleEffect(1.3) }
+                    else { Image(systemName: unreadNotificationCount > 0 ? "bell.fill" : "bell") }
+                }
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundColor(textColor.opacity(
                         unreadNotificationCount > 0
@@ -718,7 +732,7 @@ struct DetailDropdownView: View {
             }
         }
         .buttonStyle(ChipPressStyle())
-        .help(L10n.shared.tr("notification.open"))
+        .instantHint(L10n.shared.tr("notification.open"))
         .accessibilityLabel(Text(L10n.shared.tr("notification.open")))
         .onHover { notificationHovered = $0 }
         .offset(x: 6)
@@ -733,10 +747,19 @@ struct DetailDropdownView: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .help(L10n.shared.tr("menu.shareUsage"))
+        .instantHint(L10n.shared.tr("menu.shareUsage"))
         .accessibilityLabel(Text(L10n.shared.tr("menu.shareUsage")))
         .onHover { shareHovered = $0 }
         .offset(x: 6)
+    }
+
+    private var forecastShortcutEditorButton: some View {
+        Button { shortcutsEditing.toggle() } label: {
+            Image(systemName: "slider.horizontal.3").font(.system(size: 10, weight: .medium))
+                .foregroundStyle(textColor.opacity(0.5)).frame(width: 16, height: 16).contentShape(Rectangle())
+        }.buttonStyle(.plain).instantHint(toolboxText("编辑快捷功能按钮", "Edit shortcut buttons"))
+            .popover(isPresented: $shortcutsEditing) { QuickToolEditorView() }
+            .offset(x: 6)
     }
 
     /// 选取当前 3 小时槽 + 接下来 3 个槽（共 4 个，覆盖 12 小时）
@@ -835,7 +858,7 @@ private struct ToolExpandableRow: View {
                         .foregroundColor(textColor)
                         .frame(width: 62, alignment: .trailing)
 
-                    Text(tool.measurementUnit == .requests ? "—" : secondaryValueText(tokens: tool.todayTokens, cacheRead: tool.todayCacheReadTokens, messages: tool.todayMessages, mode: valueMode, grandTotal: grandTotal, includeCacheRead: usageIncludesCache))
+                    Text(tool.measurementUnit == .requests ? "—" : secondaryValueText(tokens: tool.todayTokens, cacheRead: tool.todayCacheReadTokens, messages: tool.todayMessages, mode: valueMode, grandTotal: grandTotal, includeCacheRead: usageIncludesCache, ttft: GenerationSpeedStore.shared.summary(provider:tool.name).formattedTTFT))
                         .font(.system(size: 10, design: .monospaced))
                         .foregroundColor(subtextColor)
                         .frame(width: 36, alignment: .trailing)
@@ -920,7 +943,7 @@ private struct SessionRow: View {
                         .truncationMode(.tail)
                         .help(session.displayName)
                 } else {
-                    // Cursor Dashboard 当前按模型聚合；其余工具展示会话名称或 ID。
+                    // 会话标签与已核实的记录来源（如 Antigravity、Claude）+ ID
                     HStack(spacing: 3) {
                         Text(session.rawId.hasPrefix("cursor:") ? "model" : "session")
                             .font(.system(size: 8, weight: .medium))
@@ -1027,15 +1050,15 @@ private struct ModelExpandableRow: View {
                         .foregroundColor(textColor)
                         .frame(width: 62, alignment: .trailing)
 
-                    Text(secondaryValueText(tokens: group.totalTokens, cacheRead: group.totalCacheReadTokens, messages: group.totalMessages, mode: valueMode, grandTotal: grandTotal, includeCacheRead: usageIncludesCache))
+                    Text(secondaryValueText(tokens: group.totalTokens, cacheRead: group.totalCacheReadTokens, messages: group.totalMessages, mode: valueMode, grandTotal: grandTotal, includeCacheRead: usageIncludesCache, ttft: group.generationSpeed.formattedTTFT))
                         .font(.system(size: 10, design: .monospaced))
                         .foregroundColor(subtextColor)
                         .frame(width: 36, alignment: .trailing)
-                    Text(group.generationSpeed.formatted)
+                    Text(valueMode == .tokens ? formatPercent(group.totalTokens + (usageIncludesCache ? group.totalCacheReadTokens : 0), of:grandTotal) : group.generationSpeed.formatted)
                         .font(.system(size: 9, design: .monospaced))
                         .foregroundColor(subtextColor)
                         .frame(width: 36, alignment: .trailing)
-                        .help(L10n.shared.tr("detail.generationSpeedHelp"))
+                        .instantHint(valueMode == .tokens ? toolboxText("占当前用量总数的比例", "Share of displayed total usage") : group.generationSpeed.helpText)
                 }
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
@@ -1099,15 +1122,15 @@ private struct ModelContributionRow: View {
                 .foregroundColor(subtextColor)
                 .frame(width: 62, alignment: .trailing)
 
-            Text(secondaryValueText(tokens: contribution.tokens, cacheRead: contribution.cacheReadTokens, messages: contribution.messages, mode: valueMode, grandTotal: grandTotal, includeCacheRead: usageIncludesCache))
+            Text(secondaryValueText(tokens: contribution.tokens, cacheRead: contribution.cacheReadTokens, messages: contribution.messages, mode: valueMode, grandTotal: grandTotal, includeCacheRead: usageIncludesCache, ttft: contribution.generationSpeed.formattedTTFT))
                 .font(.system(size: 9, design: .monospaced))
                 .foregroundColor(subtextColor)
                 .frame(width: 36, alignment: .trailing)
-            Text(contribution.generationSpeed.formatted)
+            Text(valueMode == .tokens ? formatPercent(contribution.tokens + (usageIncludesCache ? contribution.cacheReadTokens : 0), of:grandTotal) : contribution.generationSpeed.formatted)
                 .font(.system(size: 9, design: .monospaced))
                 .foregroundColor(subtextColor)
                 .frame(width: 36, alignment: .trailing)
-                .help(L10n.shared.tr("detail.generationSpeedHelp"))
+                .instantHint(valueMode == .tokens ? toolboxText("占当前用量总数的比例", "Share of displayed total usage") : contribution.generationSpeed.helpText)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 5)

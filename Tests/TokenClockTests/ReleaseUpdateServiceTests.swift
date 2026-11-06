@@ -41,6 +41,20 @@ final class ReleaseUpdateServiceTests: XCTestCase {
         }
     }
 
+    func testScheduledChecksUseRollingTwelveHoursAndPreserveNoticeReadState() throws {
+        let checker = service(#"{"tag_name":"v1.6.1","draft":false,"prerelease":false}"#)
+        check(checker)
+        let id = try XCTUnwrap(checker.notifications().first?.id)
+        checker.markRead()
+        XCTAssertEqual(checker.nextCheckDate(now: now), now.addingTimeInterval(43200))
+        XCTAssertFalse(checker.checkDaily(now: now.addingTimeInterval(43199)))
+        let done = expectation(description: "Half-day check")
+        XCTAssertTrue(checker.checkDaily(now: now.addingTimeInterval(43200)) { done.fulfill() })
+        wait(for: [done], timeout: 3)
+        XCTAssertEqual(checker.notifications().first?.id, id)
+        XCTAssertTrue(checker.notifications().first?.isRead == true)
+    }
+
     func testManualCheckBypassesDailyThrottleAndPreservesReadState() throws {
         let checker = service(#"{"tag_name":"v1.5.11","draft":false,"prerelease":false,"html_url":"https://evil.example/"}"#)
         check(checker)
@@ -145,13 +159,14 @@ final class ReleaseUpdateServiceTests: XCTestCase {
         wait(for: [finished], timeout: 2)
     }
 
-    func testLocalMidnightResetsThrottleAcrossDST() {
+    func testLocalMidnightDoesNotBypassTwelveHourThrottleAcrossDST() {
         calendar.timeZone = TimeZone(identifier: "America/Los_Angeles")!
         now = calendar.date(from: DateComponents(year: 2026, month: 11, day: 1, hour: 23, minute: 59))!
         let checker = service(nil)
         check(checker)
-        let done = expectation(description: "Next local day")
-        XCTAssertTrue(checker.checkDaily(now: now.addingTimeInterval(120), calendar: calendar) { done.fulfill() })
+        XCTAssertFalse(checker.checkDaily(now: now.addingTimeInterval(120), calendar: calendar))
+        let done = expectation(description: "Twelve hours later")
+        XCTAssertTrue(checker.checkDaily(now: now.addingTimeInterval(12 * 3600), calendar: calendar) { done.fulfill() })
         wait(for: [done], timeout: 2)
     }
 

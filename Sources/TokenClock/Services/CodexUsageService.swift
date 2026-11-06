@@ -839,7 +839,6 @@ final class CodexUsageService: @unchecked Sendable {
         defer { sqlite3_close(db) }
 
         let todayStart = Date().addingTimeInterval(-AppConfig.Scan.oneDaySeconds)
-        // `name` 是用户自定义名称；旧版数据库没有该列时退回自动标题。
         let titleColumns = [
             Self.threadsHasColumn(db, "name") ? "NULLIF(TRIM(name), '')" : nil,
             Self.threadsHasColumn(db, "title") ? "NULLIF(TRIM(title), '')" : nil,

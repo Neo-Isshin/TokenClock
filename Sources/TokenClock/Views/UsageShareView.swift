@@ -12,6 +12,10 @@ struct UsageShareWindowView: View {
     @State private var style: UsageShareStyle = .ink
     @State private var includesCacheRead = false
     @State private var showsCalendar = false
+    @State private var scene = ShareArtwork.scenes.randomElement()!
+    @State private var customArtwork: NSImage?
+    @State private var useArtwork = true
+    private var artwork: NSImage? { useArtwork ? (customArtwork ?? ShareArtwork.image(scene)) : nil }
     let onDone: () -> Void
 
     init(initialDate: Date, onDone: @escaping () -> Void) {
@@ -119,10 +123,21 @@ struct UsageShareWindowView: View {
                     .controlSize(.small)
             }
 
-            UsageShareCardView(data: data, style: style, scale: 0.60)
-                .frame(width: 360, height: 450)
+            UsageShareCardView(data: data, style: style, scale: 0.56, artwork: artwork)
+                .frame(width: 336, height: 420)
                 .clipShape(RoundedRectangle(cornerRadius: 12))
                 .shadow(color: .black.opacity(0.17), radius: 10, y: 4)
+
+            HStack(spacing:8) {
+                Button { customArtwork=nil;scene=ShareArtwork.scenes.filter{$0 != scene}.randomElement()!;useArtwork=true } label:{Label(toolboxText("换一张", "Shuffle"),systemImage:"shuffle")}
+                    .instantHint(toolboxText("随机更换内置风景，不联网下载", "Choose another bundled landscape; no download"))
+                Button(toolboxText("选择图片", "Choose image")) {
+                    let panel=NSOpenPanel();panel.allowedContentTypes=[.image];panel.canChooseDirectories=false
+                    if panel.runModal() == .OK,let url=panel.url {customArtwork=ShareArtwork.imported(url);useArtwork=true}
+                }.instantHint(toolboxText("用自己的图片作为分享背景", "Use your own background image"))
+                Toggle(toolboxText("图片背景", "Photo"),isOn:$useArtwork).toggleStyle(.checkbox)
+                Spacer()
+            }.buttonStyle(.bordered).controlSize(.small)
 
             HStack(spacing: 8) {
                 Text(L10n.shared.tr("share.style")).font(.system(size: 10)).foregroundColor(.secondary)
@@ -145,7 +160,7 @@ struct UsageShareWindowView: View {
                 }.buttonStyle(.borderedProminent)
             }.controlSize(.small)
         }
-        .padding(18).frame(width: 470, height: 680)
+        .padding(18).frame(width: 470, height: 760)
         .background(Color(nsColor: .windowBackgroundColor))
     }
 
@@ -165,7 +180,7 @@ struct UsageShareWindowView: View {
         let bounds = period.bounds
         return "\(DateFormatter.localizedString(from: bounds.start, dateStyle: .medium, timeStyle: .none)) — \(DateFormatter.localizedString(from: bounds.end, dateStyle: .medium, timeStyle: .none))"
     }
-    private func renderedImage() -> NSImage? { UsageShareImageRenderer.image(for: data, style: style) }
+    private func renderedImage() -> NSImage? { UsageShareImageRenderer.image(for: data, style: style, artwork: artwork) }
     private func copyImage() {
         guard let image = renderedImage() else { return }
         NSPasteboard.general.clearContents()
@@ -189,9 +204,9 @@ struct UsageShareWindowView: View {
 @MainActor
 enum UsageShareImageRenderer {
     private static var sharingPicker: NSSharingServicePicker?
-    static func image(for data: UsageShareData, style: UsageShareStyle = .ink) -> NSImage? {
+    static func image(for data: UsageShareData, style: UsageShareStyle = .ink, artwork: NSImage? = nil) -> NSImage? {
         let size = NSSize(width: 1_200, height: 1_500)
-        let view = NSHostingView(rootView: UsageShareCardView(data: data, style: style, scale: 2))
+        let view = NSHostingView(rootView: UsageShareCardView(data: data, style: style, scale: 2, artwork: artwork))
         view.frame = NSRect(origin: .zero, size: size)
         view.layoutSubtreeIfNeeded()
         guard let representation = NSBitmapImageRep(

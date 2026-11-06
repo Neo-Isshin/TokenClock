@@ -3,6 +3,12 @@ import PackageDescription
 
 #if os(Linux)
 let linuxSources = [
+    "Services/ProviderHTTPRequest.swift",
+    "Services/ClaudeQuotaPayload.swift",
+    "Services/ClaudeAppResponseCache.swift",
+    "Services/ZstdLibrary.swift",
+    "Services/CacheHash.swift",
+    "Services/JSONNumber.swift",
     "Config/AppConfig.swift",
     "Config/SettingsKeys.swift",
     "L10n.swift",
@@ -201,6 +207,9 @@ let package = Package(
                 .copy("Resources/pricing-snapshot.json"),
                 .copy("Resources/BrandIcons"),
                 .copy("Resources/model-integrity-worker"),
+                .copy("Resources/AilyreNews"),
+                .copy("Resources/ShareArtwork"),
+                .copy("Resources/DSHDecoder"),
                 .copy("Resources/macos-variant-switch.sh"),
             ],
             swiftSettings: [.unsafeFlags(["-parse-as-library"])]

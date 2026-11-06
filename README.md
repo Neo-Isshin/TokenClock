@@ -33,6 +33,9 @@ TokenClock is a small, always-on-top clock for your desktop. It combines the tim
 
 Click the clock for session and model details. Right-click it to change the face, size, city, timezone, language, transparency, and other preferences.
 
+
+**v1.6.3 is available for macOS Glass, macOS Normal, and Linux.** Usage, quota, digest, notebook, toolboxes and summary capabilities are aligned while native styles remain distinct. Windows stays on v1.5.12 pending self-hosted validation.
+
 ## What you get
 
 - **15+ AI coding tools in one place.** TokenClock finds their local usage data automatically and lets you correct a path in Settings when needed.

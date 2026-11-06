@@ -21,10 +21,9 @@ final class ModelDetectNativeWindow: NSWindowController, NSWindowDelegate {
     required init?(coder: NSCoder) { fatalError("Use init(model:)") }
 
     override func loadWindow() {
-        // Normal retains its wider system-native layout; only the module's behavior is shared.
         let panel = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 900, height: 480),
                              styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
-        panel.title = "Model Detect"
+        panel.title = L10n.shared.tr("menu.sessionAssessment")
         panel.minSize = NSSize(width: 860, height: 420)
         panel.level = .floating
         panel.isReleasedWhenClosed = false
@@ -97,7 +96,7 @@ final class ModelDetectNativeWindow: NSWindowController, NSWindowDelegate {
     }
 
     func refreshLocalization() {
-        window?.title = "Model Detect"
+        window?.title = L10n.shared.tr("menu.sessionAssessment")
         hostingView?.rootView = makeView()
     }
 
