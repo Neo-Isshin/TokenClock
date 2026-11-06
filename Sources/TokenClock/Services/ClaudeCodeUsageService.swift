@@ -432,9 +432,7 @@ final class ClaudeCodeUsageService: @unchecked Sendable {
 
     private func sourceLabel(for id: String) -> String? {
         guard let path = fileDailyContrib.keys.first(where: { sessionId(fromJSONLPath: $0) == id }) else { return nil }
-        if path.contains("/local-agent-mode-sessions/") { return "Cowork (local)" }
-        if path.contains("/claude-code-sessions/") { return "App Code (local)" }
-        return nil
+        return ClaudeUsageSurface.classify(path: path).label
     }
 
     private func cachedSessionUsage(for dateKey: String) -> [String: CachedSessionUsage] {

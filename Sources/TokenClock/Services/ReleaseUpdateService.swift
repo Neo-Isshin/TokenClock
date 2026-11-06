@@ -1,10 +1,11 @@
 import Foundation
 
 /// Public release metadata only; never reads credentials or installs an update.
-/// The daily-report lifecycle calls this on startup/catch-up and at settlement.
+/// Background checks are claimed at most once every twelve hours.
 final class ReleaseUpdateService: @unchecked Sendable {
     static let shared = ReleaseUpdateService()
-    private static let checkKey = "TC_releaseCheckDay"
+    static let checkInterval: TimeInterval = 12 * 3600
+    private static let checkKey = "TC_releaseLastScheduledCheckAt"
     private static let noticeKey = "TC_releaseUpdateNotice"
     private let defaults: UserDefaults
     private let installedVersion: String
@@ -65,7 +66,7 @@ final class ReleaseUpdateService: @unchecked Sendable {
         return rhs.lexicographicallyPrecedes(lhs)
     }
 
-    /// A user-initiated check bypasses the daily throttle. A failed or malformed
+    /// A user-initiated check bypasses the scheduled throttle. A failed or malformed
     /// response is never represented as "up to date" and never changes the app.
     func checkNow(completion: @escaping @Sendable (CheckResult) -> Void) {
         DispatchQueue.global(qos: .utility).async { [self] in
@@ -87,16 +88,21 @@ final class ReleaseUpdateService: @unchecked Sendable {
         }
     }
 
-    /// Claim today's attempt before starting I/O, including failures. Historical
-    /// catch-up and repeated scans cannot issue one request per old report.
+    func nextCheckDate(now: Date = Date()) -> Date {
+        lock.lock(); defer { lock.unlock() }
+        guard let last = defaults.object(forKey: Self.checkKey) as? Date, now >= last else { return now }
+        return max(now, last.addingTimeInterval(Self.checkInterval))
+    }
+
+    /// Keep the existing call signature while using a rolling half-day interval.
+    /// Claim before I/O, including failures, so catch-up cannot create a burst.
     @discardableResult
     func checkDaily(now: Date = Date(), calendar: Calendar = .current,
                     completion: @escaping @Sendable () -> Void = {}) -> Bool {
-        let day = calendar.dateComponents([.era, .year, .month, .day], from: now)
-        let key = "\(day.era ?? 0)-\(day.year ?? 0)-\(day.month ?? 0)-\(day.day ?? 0)"
         lock.lock()
-        guard defaults.string(forKey: Self.checkKey) != key else { lock.unlock(); return false }
-        defaults.set(key, forKey: Self.checkKey)
+        if let last = defaults.object(forKey: Self.checkKey) as? Date, now >= last,
+           now.timeIntervalSince(last) < Self.checkInterval { lock.unlock(); return false }
+        defaults.set(now, forKey: Self.checkKey)
         lock.unlock()
         DispatchQueue.global(qos: .utility).async { [self] in
             defer { completion() }
@@ -118,7 +124,7 @@ final class ReleaseUpdateService: @unchecked Sendable {
               let parts = Self.version(notice.tag) else { return [] }
         let version = parts.map(String.init).joined(separator: ".")
         var notification = TokenClockNotification(
-            id: notice.id, kind: .system,
+            id: notice.id, kind: .releaseUpdate,
             title: BillingText.choose("TokenClock \(version) available", "TokenClock \(version) 可更新", "TokenClock \(version) 可更新"),
             message: BillingText.choose("Current: \(installedVersion). Click to view the release.",
                                         "当前版本：\(installedVersion)。点击查看发布页。",

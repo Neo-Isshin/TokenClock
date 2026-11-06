@@ -107,7 +107,7 @@ struct SessionInfo: Identifiable, Hashable {
     let todayMessages: Int
     /// 是否活跃（最近10分钟内有活动）
     let isActive: Bool
-    /// 来源标签（如 Antigravity 的 CLI/IDE/App），显示在 "session" 标签右侧；nil 则不显示
+    /// 记录来源标签（如 Antigravity 的 CLI/IDE/App、Claude 的 Code/Cowork），nil 则不显示
     var source: String? = nil
 
     /// 该 session 使用的模型名（经 `ModelNormalizer` 归一化后的官方名，如 "claude-sonnet-4-5"）；
@@ -156,6 +156,9 @@ struct TokenClockNotification: Identifiable, Hashable {
         case monthlyReport
         case modelDetection
         case system
+        case news
+        case notebookReminder
+        case releaseUpdate
     }
 
     let id: UUID
@@ -166,6 +169,8 @@ struct TokenClockNotification: Identifiable, Hashable {
     let route: UsageOverviewRoute?
     var subscriptionAccountID: String? = nil
     var releaseURL: URL? = nil
+    var newsItemID: String? = nil
+    var notebookEntryID: UUID? = nil
     var isRead: Bool
 
     init(

@@ -39,6 +39,8 @@
 
 ---
 
+**v1.6.1 updates macOS Glass only.** Adds Ailyre AI digest, a local notebook, notification settings, a compact summary toolbox, resizable panels and safer reuse of existing Claude quota credentials. Normal and Linux remain on v1.6.0; Windows remains on v1.5.12.
+
 ## ✨ Features
 
 - 🤖 **Unified Overview for 15+ AI Coding Tools**  
@@ -61,8 +63,8 @@
   - **Linux:** GTK3 + Cairo prebuilt AppImage with automated FUSE2-free extraction fallback.
 - 🔌 **Local Loopback API**  
   Exposes read-only JSON endpoints at `127.0.0.1:9988` for seamless integration into Raycast, GeekTool, Sketchybar, or shell scripts.
-- 🔒 **100% Local-First & Zero Permission Friction**  
-  Exclusively reads local files already created on your machine. **No code, sessions, or tokens are ever uploaded.** Weather uses approximate IP lookup—**never prompting for macOS/system location permissions**.
+- 🔒 **Local Usage Accounting & Explicit Connections**  
+  Token accounting reads existing local logs. Quota checks reuse permitted login credentials; system authorization is requested only after a user click. AI digest, weather and on-demand network checks contact their respective services. External Model Detect requests require confirmation of their scope and cost; cloud chat token usage is not estimated.
 
 ---
 

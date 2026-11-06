@@ -66,6 +66,13 @@ final class NetworkLeakWindow: NSWindowController, NSWindowDelegate, WKNavigatio
         window?.makeKeyAndOrderFront(nil)
     }
 
+    func refreshLocalization() {
+        window?.title = toolboxText("网络工具箱", "Network Toolbox")
+        presentation.summary = presentation.issueSummary
+        presentation.objectWillChange.send()
+        presentation.mainland.objectWillChange.send()
+    }
+
     private func loadProbe() {
         presentation.running = true
         presentation.status = toolboxText("正在连接检测服务…", "Connecting…")

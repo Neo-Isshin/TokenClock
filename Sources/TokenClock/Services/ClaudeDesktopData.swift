@@ -67,7 +67,7 @@ enum ClaudeDesktopData {
         guard !buckets.isEmpty else { return nil }
         return ClaudeQuotaSnapshot(status: .available, buckets: buckets, planType: nil,
             refreshedAt: timestamp, source: .desktopCache,
-            message: "Claude Desktop cached usage; reset times are not available in this source.",
+            message: L10n.shared.tr("quota.claudeCacheNote"),
             account: SubscriptionAccountIdentity(id: "claude-desktop-org:" + organization, email: nil))
     }
 
@@ -80,5 +80,22 @@ enum ClaudeDesktopData {
             return decodeUsageHistory(data, now: now)
         }
         return snapshots.max { ($0.refreshedAt ?? .distantPast) < ($1.refreshedAt ?? .distantPast) }
+    }
+}
+
+/// Source of an actual local receipt, independent of the model used in it.
+enum ClaudeUsageSurface: String, CaseIterable {
+    case codeCLI, codeApp, coworkApp
+    var label: String {
+        switch self {
+        case .codeCLI: return "Code · CLI"
+        case .codeApp: return "Code · App"
+        case .coworkApp: return "Cowork · App"
+        }
+    }
+    static func classify(path: String) -> Self {
+        if path.contains("/local-agent-mode-sessions/") {return .coworkApp}
+        if path.contains("/claude-code-sessions/") {return .codeApp}
+        return .codeCLI
     }
 }

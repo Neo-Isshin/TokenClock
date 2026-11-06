@@ -10,6 +10,7 @@ ASSETS_DIR=""
 PUBLISH=0
 WITHOUT_WINDOWS=0
 LEGACY_ADHOC=0
+ONLY_GLASS=0
 
 say() { printf '%s\n' "$*"; }
 die() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
@@ -21,12 +22,13 @@ sha256_file() {
 
 usage() {
   cat <<'EOF'
-Usage: scripts/release.sh vX.Y.Z --assets-dir DIR [--publish] [--without-windows] [--legacy-adhoc]
+Usage: scripts/release.sh vX.Y.Z --assets-dir DIR [--publish] [--without-windows] [--legacy-adhoc] [--only-glass]
 
 Without --publish, validates the six locally built release assets and source pins.
 With --publish, uploads those exact files to the public VPS release directory, then
 downloads them again and verifies every byte. Source commits and tags remain manual.
 --without-windows publishes macOS/Linux only, preserving the existing Windows channel.
+--only-glass publishes only macOS Glass; other editions and source archives stay unchanged.
 --legacy-adhoc explicitly validates the historical precompiled macOS format; no Apple notarization or permission-continuity claim.
 EOF
 }
@@ -36,6 +38,7 @@ while [ "$#" -gt 0 ]; do
     --assets-dir) shift; [ "$#" -gt 0 ] || die "--assets-dir needs a directory"; ASSETS_DIR="$1" ;;
     --publish) PUBLISH=1 ;;
     --without-windows) WITHOUT_WINDOWS=1 ;;
+    --only-glass) ONLY_GLASS=1; WITHOUT_WINDOWS=1 ;;
     --legacy-adhoc) LEGACY_ADHOC=1 ;;
     -h|--help) usage; exit 0 ;;
     -*) die "unknown option: $1" ;;
@@ -62,6 +65,7 @@ TokenClock-windows-x86_64.zip.sha256
 "
 fi
 
+if [ "$ONLY_GLASS" -eq 1 ]; then FILES="TokenClock-glass-universal.tar.gz"; fi
 say "Validating local assets for $VERSION"
 for name in $FILES; do
   [ -s "$ASSETS_DIR/$name" ] || die "missing or empty asset: $ASSETS_DIR/$name"
@@ -76,7 +80,7 @@ verify_sidecar() {
 if [ "$WITHOUT_WINDOWS" -eq 0 ]; then
   verify_sidecar "$ASSETS_DIR/TokenClock-windows-x86_64.zip" "$ASSETS_DIR/TokenClock-windows-x86_64.zip.sha256"
 fi
-verify_sidecar "$ASSETS_DIR/TokenClock-x86_64.AppImage" "$ASSETS_DIR/TokenClock-x86_64.AppImage.sha256"
+if [ "$ONLY_GLASS" -eq 0 ]; then verify_sidecar "$ASSETS_DIR/TokenClock-x86_64.AppImage" "$ASSETS_DIR/TokenClock-x86_64.AppImage.sha256"; fi
 
 command -v tar >/dev/null 2>&1 || die "tar is required"
 if [ "$WITHOUT_WINDOWS" -eq 0 ]; then
@@ -88,7 +92,9 @@ fi
 
 TMP_DIR="$(mktemp -d -t tokenclock-release.XXXXXX)" || die "cannot create validation directory"
 trap 'rm -rf "$TMP_DIR"' EXIT
-for variant in glass normal; do
+variants="glass normal"
+[ "$ONLY_GLASS" -eq 0 ] || variants="glass"
+for variant in $variants; do
   out="$TMP_DIR/$variant"
   mkdir -p "$out"
   tar -xzf "$ASSETS_DIR/TokenClock-$variant-universal.tar.gz" -C "$out" \
@@ -114,33 +120,45 @@ for variant in glass normal; do
   fi
 done
 
-[ -x "$ASSETS_DIR/TokenClock-x86_64.AppImage" ] \
-  || die "Linux AppImage is not executable"
+if [ "$ONLY_GLASS" -eq 0 ]; then
+  [ -x "$ASSETS_DIR/TokenClock-x86_64.AppImage" ] || die "Linux AppImage is not executable"
+fi
 
 plain="${VERSION#v}"
 grep -q "static let version = \"$plain\"" "$ROOT/Sources/TokenClock/Config/AppConfig.swift" \
   || die "Release notification version is not $plain"
 grep -q "CLI_VERSION=\"$plain\"" "$ROOT/cli/tokenclock" || die "CLI version is not $plain"
 grep -q "glass)  echo \"$VERSION\"" "$ROOT/cli/install.sh" || die "Glass installer tag is not $VERSION"
+if [ "$ONLY_GLASS" -eq 0 ]; then
 grep -q "normal) echo \"$VERSION\"" "$ROOT/cli/install.sh" || die "Normal installer tag is not $VERSION"
+fi
+if [ "$ONLY_GLASS" -eq 0 ]; then
 grep -q "linux)  echo \"$VERSION\"" "$ROOT/cli/install.sh" || die "Linux installer tag is not $VERSION"
+fi
 grep -q "private let version = \"$VERSION\"" "$ROOT/Sources/TokenClock/Views/AboutView.swift" \
   || die "macOS About version is not $VERSION"
 if [ "$WITHOUT_WINDOWS" -eq 0 ]; then
   grep -q "\"$VERSION\"" "$ROOT/Sources/TokenClock/Windows/WindowsApp.swift" \
     || die "Windows About version is not $VERSION"
 fi
+if [ "$ONLY_GLASS" -eq 0 ]; then
 grep -q "\"$VERSION\"" "$ROOT/Sources/TokenClock/Linux/LinuxApp.swift" \
   || die "Linux About version is not $VERSION"
+fi
 bash -n "$ROOT/cli/install.sh"
 bash -n "$ROOT/cli/tokenclock"
 
 glass_sha="$(sha256_file "$ASSETS_DIR/TokenClock-glass-universal.tar.gz")"
+normal_sha=""
+if [ "$ONLY_GLASS" -eq 0 ]; then
 normal_sha="$(sha256_file "$ASSETS_DIR/TokenClock-normal-universal.tar.gz")"
+fi
 grep -q "glass)  echo \"$glass_sha\"" "$ROOT/cli/install.sh" \
   || die "Glass tarball SHA is not pinned in cli/install.sh"
+if [ "$ONLY_GLASS" -eq 0 ]; then
 grep -q "normal) echo \"$normal_sha\"" "$ROOT/cli/install.sh" \
   || die "Normal tarball SHA is not pinned in cli/install.sh"
+fi
 
 say "Local validation passed: selected assets, checksums, architectures, signatures, and source pins"
 [ "$PUBLISH" -eq 1 ] || { say "Validation only; add --publish after source and tag are pushed."; exit 0; }
@@ -152,10 +170,12 @@ git -C "$ROOT" ls-remote --exit-code gitea "refs/tags/$VERSION" >/dev/null \
 
 publisher_args=()
 [ "$WITHOUT_WINDOWS" -eq 0 ] || publisher_args+=(--without-windows)
+[ "$ONLY_GLASS" -eq 0 ] || publisher_args+=(--only-glass)
+source_args=(--source-ref glass=main)
+if [ "$ONLY_GLASS" -eq 0 ]; then source_args+=(--source-ref normal=normal --source-ref windows=windows-port --source-ref linux=codex/linux-theme-parity); fi
 python3 -B "$ROOT/scripts/publish-release.py" --version "$VERSION" \
   --assets-dir "$ASSETS_DIR" --output "$TMP_DIR/site" --repo "$ROOT" \
-  --source-ref glass=main --source-ref normal=normal \
-  --source-ref windows=windows-port --source-ref linux=codex/linux-theme-parity "${publisher_args[@]}"
+  "${source_args[@]}" "${publisher_args[@]}"
 
 remote_stage="$(ssh -o BatchMode=yes "$PUBLISH_HOST" 'mktemp -d /home/debian/tokenclock-release.XXXXXX')"
 case "$remote_stage" in /home/debian/tokenclock-release.*) ;; *) die "Invalid VPS staging directory" ;; esac

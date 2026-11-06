@@ -7,6 +7,9 @@ struct StatusSummaryLayout {
     var sectionPadding: CGFloat { isCompact ? 7 : 8 }
     var spacing: CGFloat { isCompact ? 6 : 8 }
 
+    var notebookWidth: CGFloat { max(94, min(210, (side - 2 * padding - spacing) * 0.36)) }
+    var notebookHeight: CGFloat { isCompact ? 180 : 174 }
+
     /// Sizes are logical points. Keep the glass's outer padding, popover arrow
     /// and screen margins inside the clicked screen's usable bounds.
     static func panelSide(available: CGSize) -> CGFloat {

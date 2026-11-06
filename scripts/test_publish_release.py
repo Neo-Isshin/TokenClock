@@ -98,6 +98,20 @@ class ReleasePublisherTests(unittest.TestCase):
         self.publish("v1.5.13", without_windows=True)
         self.assertFalse((self.site / "releases/latest-windows.json").exists())
 
+    def test_glass_patch_preserves_other_channels_and_does_not_relabel_them(self):
+        self.publish("v1.6.0")
+        windows_before = (self.site / "releases/latest-windows.json").read_bytes()
+        normal_before = (self.site / "releases/download/v1.6.0/TokenClock-normal-universal.tar.gz").read_bytes()
+        for file in self.assets.iterdir():
+            if file.name != "TokenClock-glass-universal.tar.gz":
+                file.unlink()
+        release = publisher.publish("v1.6.1", self.assets, self.site, self.repo, [("glass", "HEAD")], only_glass=True)
+        self.assertEqual([a["name"] for a in release["assets"]], ["TokenClock-glass-universal.tar.gz"])
+        self.assertEqual((self.site / "releases/latest-windows.json").read_bytes(), windows_before)
+        self.assertEqual((self.site / "releases/download/v1.6.0/TokenClock-normal-universal.tar.gz").read_bytes(), normal_before)
+        self.assertFalse((self.site / "releases/download/v1.6.1/TokenClock-normal-universal.tar.gz").exists())
+        self.assertIn("updates macOS Glass only", (self.site / "releases/v1.6.1/index.html").read_text())
+
 
 if __name__ == "__main__":
     unittest.main()

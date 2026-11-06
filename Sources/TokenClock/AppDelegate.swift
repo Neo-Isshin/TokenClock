@@ -18,6 +18,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var networkLeakWindow: NetworkLeakWindow?
     private var localToolboxWindow: NSWindow?
     private var localToolboxModel: LocalToolboxModel?
+    private var notebookWindow: NSWindow?
     private var themePickerPanel: NSPanel?
     private var themePickerEventMonitor: Any?
     private var statusItem: NSStatusItem?
@@ -98,6 +99,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             onModelDetect: { [weak self] in self?.showModelDetect() },
             onNetworkLeak: { [weak self] in self?.showNetworkLeak() },
             onLocalToolbox: { [weak self] in self?.showLocalToolbox() },
+            onNotebook: { [weak self] in self?.showNotebook() },
             onModelDetectSession: { [weak self] session in self?.showModelDetectSession(session) },
             onNotificationClick: { [weak self] in self?.toggleNotificationCenter() }
         )
@@ -115,6 +117,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             viewModel: viewModel,
             onClose: { [weak self] in self?.notificationPanel.hide() },
             onOpen: { [weak self] notification in
+                if let id = notification.notebookEntryID {
+                    self?.notificationPanel.hide()
+                    self?.showNotebook(entryID: id)
+                    return
+                }
+                if let id = notification.newsItemID {
+                    self?.notificationPanel.hide()
+                    self?.viewModel.showNews(itemID: id)
+                    self?.viewModel.isExpanded = true
+                    return
+                }
                 if let url = notification.releaseURL {
                     self?.notificationPanel.hide()
                     NSWorkspace.shared.open(url)
@@ -141,19 +154,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         applyClockWindowLevel()
         if !viewModel.alwaysOnTop { startFullscreenDetection() }
 
+        viewModel.userContent.news.isPresentationVisible = { [weak self] in
+            self?.dropdownPanel?.isVisible == true && !NSApp.isHidden
+        }
+
         // 绑定展开/收起直接回调，绕过 NotificationCenter 延迟
         viewModel.onExpandChanged = { [weak self] expanded in
             guard let self else { return }
             self.panel.updateSize(
                 expanded: expanded,
                 activeToolCount: self.activeToolCount,
-                showsWeather: !self.viewModel.weather.cityName.isEmpty
+                showsWeather: true
             )
             if expanded {
                 self.showDropdownPanel()
                 self.notificationPanel.hide()
             } else {
                 self.dropdownPanel.hide()
+                self.viewModel.userContent.news.setViewing(false)
             }
         }
 
@@ -164,12 +182,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             self.panel.updateSize(
                 expanded: self.viewModel.isExpanded,
                 activeToolCount: self.activeToolCount,
-                showsWeather: !self.viewModel.weather.cityName.isEmpty
+                showsWeather: true
             )
             if self.viewModel.isExpanded {
                 self.dropdownPanel.reposition(below: self.panel.frame)
             }
         }
+        viewModel.onNewsModeChanged = { [weak self] in
+            guard let self, self.viewModel.isExpanded else { return }
+            self.showDropdownPanel()
+        }
+        NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(handleUserContentWake(_:)),
+            name: NSWorkspace.didWakeNotification, object: nil)
 
         // 监听天气更新（城市解析后刷新菜单标签）
         NotificationCenter.default.addObserver(
@@ -210,8 +234,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     private var activeToolCount: Int {
-        viewModel.visibleTools.filter { $0.todayTokens > 0 }.count
+        let count = viewModel.visibleTools.filter { $0.todayTokens > 0 }.count
+        return viewModel.isNewsPresented ? max(6, count) : count
     }
+
+    @objc private func handleUserContentWake(_ notification: Notification) { viewModel?.userContent.runDueJobs() }
 
     nonisolated static func isModelDetectOnly(arguments: [String]) -> Bool {
         arguments.dropFirst().contains("--model-detect-only")
@@ -241,8 +268,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         dropdownPanel.show(
             below: panel.frame,
             activeToolCount: activeToolCount,
-            showsWeather: !viewModel.weather.cityName.isEmpty
+            showsWeather: true
         )
+        viewModel.userContent.news.setViewing(viewModel.isNewsPresented)
     }
 
     private func toggleNotificationCenter() {
@@ -251,6 +279,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             return
         }
         viewModel.isExpanded = false
+        if viewModel.hasUnreadNews { viewModel.notificationFilter = .news }
         notificationPanel.show(near: panel.frame)
         viewModel.markNotificationsRead()
     }
@@ -367,6 +396,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 case .local: self?.showLocalToolbox()
                 case .quota: self?.showSubscriptionQuotaWindow()
                 case .history: self?.showUsageOverviewWindow()
+                case .notebook: self?.showNotebook()
                 case .share: self?.showUsageShareWindow()
                 }
             }
@@ -414,6 +444,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         applyClockWindowLevel()
         NSApp.unhideWithoutActivation()
         statusSummaryHiddenWindows.restore()
+        if let viewModel { viewModel.userContent.news.setViewing(viewModel.isNewsPresented && dropdownPanel.isVisible) }
         isHiddenForFullscreen = false
         NSApp.activate(ignoringOtherApps: true)
         // Temporary level is held until Hide; a second double click always hides.
@@ -439,6 +470,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     @objc private func handleApplicationDidHide(_ notification: Notification) {
+        viewModel?.userContent.news.setViewing(false)
         statusBarClickCoordinator.cancel()
         statusSummaryPopover?.performClose(nil)
         statusBarVisibility.setHidden(true)
@@ -449,6 +481,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     @objc private func handleApplicationDidUnhide(_ notification: Notification) {
         guard !isOpeningStatusSummary else { return }
         statusSummaryHiddenWindows.restore()
+        viewModel?.userContent.news.setViewing(viewModel.isNewsPresented && dropdownPanel.isVisible)
         statusBarVisibility.setHidden(false)
         applyClockWindowLevel()
         updateStatusBarItemPresentation()
@@ -1101,10 +1134,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         guard let variant = LaunchAgentHelper.detectVariant() else {
             // 路径无法识别 —— 用一个 NSAlert 提示,不要静默失败
             let alert = NSAlert()
-            alert.messageText = "无法识别当前 TokenClock 变体"
-            alert.informativeText = "开机自启动仅在通过 `tokenclock` CLI 安装的 TokenClock 上可用(路径形如 ~/.tokenclock/glass/TokenClock)。"
+            alert.messageText = L10n.shared.tr("launch.unknownVariant")
+            alert.informativeText = L10n.shared.tr("launch.cliRequired")
             alert.alertStyle = .warning
-            alert.addButton(withTitle: "好的")
+            alert.addButton(withTitle: L10n.shared.tr("common.ok"))
             alert.runModal()
             return
         }
@@ -1121,10 +1154,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 viewModel.launchAtLogin = true
             } catch {
                 let alert = NSAlert()
-                alert.messageText = "启用开机自启动失败"
+                alert.messageText = L10n.shared.tr("launch.failed")
                 alert.informativeText = "\(error.localizedDescription)"
                 alert.alertStyle = .warning
-                alert.addButton(withTitle: "好的")
+                alert.addButton(withTitle: L10n.shared.tr("common.ok"))
                 alert.runModal()
             }
         }
@@ -1162,6 +1195,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
               let lang = AppLanguage(rawValue: raw) else { return }
         L10n.shared.language = lang
         viewModel.language = lang
+        if viewModel.isNewsPresented || viewModel.userContent.preferences.allows(.news) {
+            viewModel.userContent.news.refreshIfDue(language: lang.rawValue)
+        }
         viewModel.refreshWeather()
         setupRightClickMenu()
         updateStatusBarItemPresentation()
@@ -1169,6 +1205,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         overviewWindow?.title = L10n.shared.tr("overview.title")
         shareWindow?.title = L10n.shared.tr("share.title")
         subscriptionQuotaWindow?.title = L10n.shared.tr("quota.windowTitle")
+        localToolboxWindow?.title = toolboxText("本地工具箱", "Local Toolbox")
+        notebookWindow?.title = toolboxText("行事本", "Notebook")
+        localToolboxModel?.objectWillChange.send()
+        viewModel.userContent.notebook.objectWillChange.send()
+        networkLeakWindow?.refreshLocalization()
         modelDetectWindow?.refreshLocalization()
     }
 
@@ -1440,6 +1481,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         window.setFrame(frame, display: true, animate: true)
     }
 
+    private func showNotebook(entryID: UUID? = nil) {
+        let store = viewModel.userContent.notebook
+        if let entryID { store.selectedID = entryID }
+        else if store.selectedID == nil { store.selectedID = store.entries.first?.id }
+        NSApp.activate(ignoringOtherApps: true)
+        if let notebookWindow { notebookWindow.makeKeyAndOrderFront(nil); return }
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 520, height: 640),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
+        window.title = toolboxText("行事本", "Notebook")
+        window.minSize = NSSize(width: 400, height: 460)
+        window.isReleasedWhenClosed = false
+        window.isRestorable = false
+        window.level = .floating
+        window.contentView = NSHostingView(rootView: NotebookWindowView(store: store, preferences: viewModel.userContent.preferences))
+        window.center(); notebookWindow = window; window.makeKeyAndOrderFront(nil)
+    }
+
     private func showSettingsWindow() {
         // 时钟面板是非激活的 floating 窗；打开设置时必须显式激活 app，否则前台仍是
         // 终端等其它 app，设置窗口里的 TextField 收不到键盘输入（敲字全跑到前台 app）。
@@ -1630,7 +1688,12 @@ private struct NotificationCenterView: View {
                 .help(L10n.shared.tr("about.close"))
             }
 
-            if viewModel.notifications.isEmpty {
+            Picker(toolboxText("消息类型", "Notice type"), selection: $viewModel.notificationFilter) {
+                ForEach(NotificationPanelFilter.allCases) { filter in Text(filter.title).tag(filter) }
+            }.pickerStyle(.menu).font(.system(size: 11))
+                .onChange(of: viewModel.notificationFilter) { _, _ in viewModel.markNotificationsRead() }
+
+            if viewModel.filteredNotifications.isEmpty {
                 Spacer()
                 Text(L10n.shared.tr("notification.empty"))
                     .font(.system(size: 12))
@@ -1640,8 +1703,8 @@ private struct NotificationCenterView: View {
             } else {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 10) {
-                        ForEach(viewModel.notifications) { notification in
-                            if notification.route != nil || notification.subscriptionAccountID != nil || notification.releaseURL != nil {
+                        ForEach(viewModel.filteredNotifications) { notification in
+                            if notification.route != nil || notification.subscriptionAccountID != nil || notification.releaseURL != nil || notification.newsItemID != nil || notification.notebookEntryID != nil {
                                 Button { onOpen(notification) } label: {
                                     notificationRow(notification, showsDisclosure: true)
                                 }
@@ -1657,7 +1720,7 @@ private struct NotificationCenterView: View {
             }
         }
         .padding(14)
-        .frame(width: 280, height: 240)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .fill(viewModel.selectedTheme.dropdownBgColor)
@@ -1711,6 +1774,9 @@ private struct NotificationCenterView: View {
         case .monthlyReport: return "calendar"
         case .modelDetection: return "sparkle.magnifyingglass"
         case .system: return "info.circle"
+        case .news: return "newspaper"
+        case .notebookReminder: return "note.text.badge.plus"
+        case .releaseUpdate: return "arrow.down.circle"
         }
     }
 
@@ -1734,6 +1800,7 @@ private struct DropdownPanelView: View {
     let onModelDetect: () -> Void
     let onNetworkLeak: () -> Void
     let onLocalToolbox: () -> Void
+    let onNotebook: () -> Void
     let onModelDetectSession: (SessionInfo) -> Void
     let onNotificationClick: () -> Void
 
@@ -1762,7 +1829,13 @@ private struct DropdownPanelView: View {
                 onModelDetectSession: onModelDetectSession,
                 onSubscriptionQuota: onSubscriptionQuota,
                 unreadNotificationCount: viewModel.unreadNotificationCount,
-                onNotificationClick: onNotificationClick
+                onNotificationClick: onNotificationClick,
+                newsService: viewModel.userContent.news,
+                isNewsPresented: viewModel.isNewsPresented,
+                focusedNewsItemID: viewModel.focusedNewsItemID,
+                hasUnreadNews: viewModel.hasUnreadNews,
+                onNewsToggle: { viewModel.isNewsPresented ? viewModel.hideNews() : viewModel.showNews() },
+                onNotebook: onNotebook
             )
             .frame(maxHeight: .infinity, alignment: .top)
 
@@ -1771,9 +1844,9 @@ private struct DropdownPanelView: View {
                 onResizeChanged: onResizeChanged,
                 onResizeEnded: onResizeEnded
             )
-            .frame(width: FloatingPanel.detailPanelWidth, height: FloatingPanel.resizeGripHeight)
+            .frame(maxWidth: .infinity).frame(height: FloatingPanel.resizeGripHeight)
         }
-        .frame(width: FloatingPanel.detailPanelWidth)
+        .frame(maxWidth: .infinity)
     }
 }
 

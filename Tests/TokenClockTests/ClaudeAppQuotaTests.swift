@@ -86,7 +86,7 @@ final class ClaudeAppQuotaTests: XCTestCase {
             let record = Recorder()
             if case .failure(let error) = fixtureService(record:record,status:status).fetch(.init(key:"synthetic",organizationID:nil,connected:true)) {
                 XCTAssertTrue(error.snapshot.buckets.isEmpty)
-                XCTAssertTrue(error.snapshot.requiresConnection)
+                XCTAssertEqual(error.snapshot.requiresConnection,status == 401)
             } else { XCTFail("Failed request accepted") }
             XCTAssertEqual(record.requests.count,1)
         }

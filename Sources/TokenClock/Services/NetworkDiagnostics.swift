@@ -76,6 +76,8 @@ struct NetworkDiagnosticReply: Sendable {
 /// login state. Bounds response bodies before downloading WAF pages or redirects.
 final class NetworkDiagnosticFetcher: NSObject, URLSessionDataDelegate, @unchecked Sendable {
     static let bodyLimit = 16 * 1024
+    private let maximumBodyBytes: Int
+    private let userAgent: String
     private struct Pending {
         let continuation: CheckedContinuation<NetworkDiagnosticReply, Never>
         var data = Data()
@@ -89,7 +91,10 @@ final class NetworkDiagnosticFetcher: NSObject, URLSessionDataDelegate, @uncheck
     private var stopped = false
     private var session: URLSession!
 
-    init(configuration: URLSessionConfiguration = .ephemeral) {
+    init(configuration: URLSessionConfiguration = .ephemeral, maximumBodyBytes: Int = NetworkDiagnosticFetcher.bodyLimit,
+         userAgent: String = "TokenClock-NetworkCheck/1") {
+        self.maximumBodyBytes = maximumBodyBytes
+        self.userAgent = userAgent
         super.init()
         configuration.httpCookieStorage = nil
         configuration.httpShouldSetCookies = false
@@ -119,7 +124,7 @@ final class NetworkDiagnosticFetcher: NSObject, URLSessionDataDelegate, @uncheck
                 }
                 var request = request
                 request.httpShouldHandleCookies = false
-                request.setValue("TokenClock-NetworkCheck/1", forHTTPHeaderField: "User-Agent")
+                request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
                 let task = session.dataTask(with: request)
                 pending[task.taskIdentifier] = Pending(continuation: continuation)
                 task.resume()
@@ -138,7 +143,7 @@ final class NetworkDiagnosticFetcher: NSObject, URLSessionDataDelegate, @uncheck
         lock.lock()
         pending[dataTask.taskIdentifier]?.mime = response.mimeType
         pending[dataTask.taskIdentifier]?.status = (response as? HTTPURLResponse)?.statusCode
-        let tooLarge = response.expectedContentLength > Self.bodyLimit
+        let tooLarge = response.expectedContentLength > maximumBodyBytes
         if tooLarge { pending[dataTask.taskIdentifier]?.limited = true }
         lock.unlock()
         completionHandler(tooLarge ? .cancel : .allow)
@@ -147,7 +152,7 @@ final class NetworkDiagnosticFetcher: NSObject, URLSessionDataDelegate, @uncheck
     func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
         lock.lock()
         var row = pending[dataTask.taskIdentifier]
-        let tooLarge = (row?.data.count ?? 0) + data.count > Self.bodyLimit
+        let tooLarge = (row?.data.count ?? 0) + data.count > maximumBodyBytes
         if tooLarge { row?.limited = true }
         else { row?.data.append(data) }
         pending[dataTask.taskIdentifier] = row

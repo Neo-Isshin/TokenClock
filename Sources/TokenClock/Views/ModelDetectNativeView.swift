@@ -70,6 +70,7 @@ struct ModelDetectNativeView: View {
               .onChange(of: model.brief?.title) { _ in proxy.scrollTo("model-detect-scroll-top", anchor: .top) }
             }
         }
+        .environment(\.locale, Locale(identifier:L10n.shared.language.rawValue))
         .frame(minWidth: 720, idealWidth: 740, maxWidth: .infinity,
                minHeight: 390, idealHeight: model.phase == .result ? 690 : 480, maxHeight: .infinity, alignment: .topLeading)
         .background(Color(nsColor: .windowBackgroundColor))
@@ -85,7 +86,7 @@ struct ModelDetectNativeView: View {
     private var header: some View {
         HStack(alignment: .top) {
             VStack(alignment: .leading, spacing: 3) {
-                Text("Model Detect")
+                Text(L10n.shared.tr("menu.sessionAssessment"))
                     .font(.system(size: 19, weight: .bold, design: .rounded))
                 Text(headerSubtitle)
                     .font(.caption)
@@ -727,6 +728,13 @@ struct ModelDetectNativeView: View {
 
 @MainActor
 enum ModelDetectNativeText {
+    nonisolated static func localized(_ simplified: String, _ english: String) -> String {
+        switch L10n.shared.language {
+        case .zhHans: return simplified
+        case .zhHant: return simplified.applyingTransform(StringTransform("Hans-Hant"), reverse: false) ?? simplified
+        case .en: return english
+        }
+    }
     static func text(_ simplified: String, _ traditional: String, _ english: String) -> String {
         switch L10n.shared.language {
         case .zhHans: return simplified

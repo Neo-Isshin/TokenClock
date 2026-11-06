@@ -21,10 +21,11 @@ struct ClaudeWebOrganization: Equatable, Sendable, Identifiable {
 }
 
 enum ClaudeAppQuotaError: Error, Sendable {
-    case signIn, chooseOrganization([ClaudeWebOrganization]), noSubscription, network, rateLimited, blocked, malformed
+    case signIn, chooseOrganization([ClaudeWebOrganization]), noSubscription, network, rateLimited, blocked, malformed, permissionDenied
 
     var messageKey: String {
         switch self {
+        case .permissionDenied: return "quota.claudePermissionDenied"
         case .signIn: return "quota.claudeConnectRequired"
         case .chooseOrganization: return "quota.claudeChooseOrganization"
         case .noSubscription: return "quota.claudeNoSubscription"
@@ -37,7 +38,8 @@ enum ClaudeAppQuotaError: Error, Sendable {
 
     var snapshot: ClaudeQuotaSnapshot {
         var value = ClaudeQuotaSnapshot.unavailable(L10n.shared.tr(messageKey))
-        value.requiresConnection = true
+        value.requiresConnection = ["quota.claudeConnectRequired", "quota.claudeChooseOrganization"].contains(messageKey)
+        value.readFailure = ClaudeQuotaReadFailure.messageKey(messageKey)
         return value
     }
 }
@@ -55,7 +57,7 @@ final class ClaudeAppQuotaService: @unchecked Sendable {
 
     init(transport: @escaping Transport = ClaudeQuotaHTTP.get) { self.transport = transport }
 
-    func fetch(_ session: ClaudeAppSession) -> Result<ClaudeQuotaSnapshot, ClaudeAppQuotaError> {
+    func fetch(_ session: ClaudeAppSession, onVerifiedIdentity: ((ClaudeQuotaIdentity) -> Void)? = nil) -> Result<ClaudeQuotaSnapshot, ClaudeAppQuotaError> {
         guard ClaudeAppSession.validKey(session.key) else { return .failure(.signIn) }
         let deadline = Date().addingTimeInterval(8)
         func get(_ path: String) throws -> Data {
@@ -72,7 +74,8 @@ final class ClaudeAppQuotaService: @unchecked Sendable {
             guard let response = transport(request) else { throw ClaudeAppQuotaError.network }
             if response.challenge { throw ClaudeAppQuotaError.blocked }
             if response.status == 429 { throw ClaudeAppQuotaError.rateLimited }
-            if response.status == 401 || response.status == 403 { throw ClaudeAppQuotaError.signIn }
+            if response.status == 401 { throw ClaudeAppQuotaError.signIn }
+            if response.status == 403 { throw ClaudeAppQuotaError.permissionDenied }
             guard response.status == 200 else { throw ClaudeAppQuotaError.network }
             guard response.data.count <= 1_048_576 else { throw ClaudeAppQuotaError.malformed }
             return response.data
@@ -91,9 +94,12 @@ final class ClaudeAppQuotaService: @unchecked Sendable {
             let org = try Self.selectOrganization(organizations, preferred: session.organizationID)
             let verifiedID = "claude-web:" + identity.lowercased() + ":" + org.id
             if let expected = session.expectedIdentity, expected != verifiedID { throw ClaudeAppQuotaError.signIn }
+            let verifiedOwner=ClaudeQuotaIdentity(accountID:identity,organizationID:org.id)
+            onVerifiedIdentity?(verifiedOwner)
             let usage = try get("organizations/" + org.id + "/usage")
             var snapshot = try Self.decodeUsage(usage)
             snapshot.source = session.connected ? .connectedWeb : .desktopWeb
+            snapshot.verifiedIdentity = verifiedOwner
             // Same account in two organizations may have different limits.
             snapshot.account = SubscriptionAccountIdentity(id: verifiedID,
                                                          email: email?.isEmpty == false ? email : nil)

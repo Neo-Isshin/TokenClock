@@ -2,7 +2,38 @@
 import SwiftUI
 
 @MainActor final class NetworkToolboxPresentation: ObservableObject {
-    struct Card: Identifiable { let id: String; var title: String; var status: String; var text: String; var state: String }
+    struct Card: Identifiable {
+        let id: String; var title: String; var status: String; var text: String; var state: String
+        var localizedTitle: String {
+            switch id {
+            case "exit": return toolboxText("网页出口", "Web connection")
+            case "dns": return toolboxText("DNS 解析器", "DNS resolvers")
+            case "rtc": return toolboxText("WebRTC 地址", "WebRTC addresses")
+            case "consistency": return toolboxText("出口与地区一致性", "Exit & location consistency")
+            case "ipv6": return toolboxText("IPv6 暴露", "IPv6 exposure")
+            case "ai": return toolboxText("AI 域名分流", "AI domain routing")
+            case "doh": return toolboxText("DoH 参考检测", "DoH reference check")
+            default: return title
+            }
+        }
+        var localizedStatus: String {
+            if ["ai","doh"].contains(id), let range = status.range(of:#"\d+/\d+"#,options:.regularExpression) {
+                return (id == "ai" ? toolboxText("已观测 ", "Observed ") : toolboxText("DNS 已验证 ", "DNS verified ")) + status[range]
+            }
+            switch state {
+            case "risk": return ["dns","rtc","ipv6"].contains(id) ? toolboxText("可能泄漏", "Possible leak") : toolboxText("需核对", "Review")
+            case "review": return id == "dns" ? toolboxText("待设置预期", "Set expected DNS") : toolboxText("需核对", "Review")
+            case "match": return toolboxText("一致", "Matches")
+            case "observed": return toolboxText("已观测", "Observed")
+            case "notObserved": return toolboxText("未观测到", "Not observed")
+            case "incomplete": return toolboxText("未完成", "Incomplete")
+            case "running": return toolboxText("检测中", "Checking")
+            case "idle": return toolboxText("尚未检测", "Not checked")
+            case "invalid": return toolboxText("预期输入无效", "Invalid expected input")
+            default: return status
+            }
+        }
+    }
     @Published var status = ""
     @Published var summary = ""
     @Published var running = false
@@ -11,13 +42,43 @@ import SwiftUI
     @Published var ipv4Only = false
     @Published var observedExitIP: String?
     let mainland = MainlandReachabilityModel()
+    var issueSummary: String {
+        guard !cards.isEmpty else { return toolboxText("点击检测，核对当前连接的出口与泄漏风险。", "Run checks to review this connection’s exit and leak risks.") }
+        if running { return toolboxText("正在检测，结论将在完成后显示。", "Checking; the summary will appear when finished.") }
+        let issues = cards.compactMap { card -> String? in
+            if card.state == "risk" {
+                switch card.id {
+                case "dns": return toolboxText("DNS泄漏：可能泄漏", "DNS: possible leak")
+                case "rtc": return toolboxText("WebRTC：可能泄漏", "WebRTC: possible leak")
+                case "ipv6": return toolboxText("IPv6：可能泄漏", "IPv6: possible leak")
+                default: return card.localizedTitle + toolboxText("：需核对", ": review needed")
+                }
+            }
+            // DNS “review” means the user has not supplied expected resolver IPs.
+            if card.state == "review", ["rtc", "ipv6", "consistency", "ai", "doh"].contains(card.id) {
+                return card.localizedTitle + toolboxText("：需核对", ": review needed")
+            }
+            return nil
+        }
+        let completed = cards.contains { ["match", "observed", "none"].contains($0.state) }
+        if issues.isEmpty {
+            return completed ? toolboxText("已完成项目未检出泄漏风险。", "No leak risk detected in completed checks.") : toolboxText("暂未取得可判断的结果。", "No conclusive results yet.")
+        }
+        return issues.joined(separator: toolboxText("；", "; ")) + (completed ? toolboxText("。其余已完成项目未检出风险。", ". Other completed checks found no risk.") : toolboxText("。", "."))
+    }
+    var pendingSummary: String {
+        let pending = cards.filter { !["risk", "match", "observed", "none"].contains($0.state) && !($0.state == "review" && ["rtc", "ipv6", "consistency", "ai", "doh"].contains($0.id)) }
+        guard !pending.isEmpty, !running else { return "" }
+        return toolboxText("另有 \(pending.count) 项未完成或待核对：", "\(pending.count) incomplete or awaiting review: ") + pending.map(\.localizedTitle).joined(separator: toolboxText("、", ", "))
+    }
     func update(_ data: [String: Any]) {
         status = String((data["status"] as? String ?? "").prefix(400))
-        summary = String((data["summary"] as? String ?? "").prefix(800))
+
         running = data["running"] as? Bool ?? false
         if let items = data["cards"] as? [[String: String]] {
             cards = items.prefix(7).map { Card(id: $0["id"] ?? "", title: $0["title"] ?? "", status: $0["status"] ?? "", text: String(($0["text"] ?? "").prefix(10000)), state: $0["state"] ?? "") }
         }
+        summary = issueSummary
     }
 }
 struct NetworkToolboxView: View {
@@ -35,8 +96,19 @@ struct NetworkToolboxView: View {
         self.onRun = onRun; self.onStop = onStop; self.onBrowser = onBrowser; self.onOptions = onOptions
     }
     private var combinedSummary: String {
-        [model.summary, mainland.report.map { toolboxText("大陆可达性：", "Mainland reachability: ") + $0.summary }]
+        [model.issueSummary, mainland.report.flatMap { $0.verdict == .suspectedRestriction ? toolboxText("大陆可达性：", "Mainland reachability: ") + $0.summary : nil }]
             .compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: "\n")
+    }
+    private func cardIcon(_ id: String) -> String {
+        switch id {
+        case "dns": return "server.rack"
+        case "rtc": return "video"
+        case "consistency": return "globe"
+        case "ipv6": return "network"
+        case "ai": return "point.3.connected.trianglepath.dotted"
+        case "doh": return "lock.shield"
+        default: return "wifi"
+        }
     }
     var body: some View {
         VStack(spacing: 0) {
@@ -54,11 +126,12 @@ struct NetworkToolboxView: View {
             HStack(spacing: 7) {
                 if model.running { ProgressView().controlSize(.mini) }
                 VStack(alignment:.leading,spacing:3) {
-                    if !combinedSummary.isEmpty {Text(combinedSummary).font(.system(size:11,weight:.semibold)).lineLimit(5)}
+                    if !combinedSummary.isEmpty {Text(combinedSummary).font(.system(size:12,weight:.semibold)).fixedSize(horizontal:false,vertical:true)}
+                    if !model.pendingSummary.isEmpty { Text(model.pendingSummary).font(.system(size:10)).foregroundStyle(.secondary).fixedSize(horizontal:false,vertical:true) }
                     Text(model.status.isEmpty ? toolboxText("等待检测", "Ready") : model.status).font(.system(size:10)).foregroundStyle(.secondary)
                 }
                 Spacer()
-            }.padding(.horizontal, 20).padding(.vertical, 10)
+            }.toolboxCard().padding(.horizontal,16).padding(.top,12)
             ScrollView {
                 MainlandReachabilityCard(model: mainland, observedExitIP: model.observedExitIP)
                     .padding(.horizontal, 16).padding(.top, 16)
@@ -66,9 +139,9 @@ struct NetworkToolboxView: View {
                     ForEach(model.cards) { card in
                         VStack(alignment: .leading, spacing: 9) {
                             HStack(alignment: .top) {
-                                Text(card.title).font(.system(size: 12, weight: .semibold))
+                                Label(card.localizedTitle, systemImage: cardIcon(card.id)).font(.system(size: 12, weight: .semibold))
                                 Spacer()
-                                Text(card.status).font(.system(size: 10, weight: .medium)).foregroundStyle(card.state == "risk" || card.state == "review" ? Color.orange : .secondary)
+                                Text(card.localizedStatus).font(.system(size: 10, weight: .medium)).foregroundStyle(card.state == "risk" ? Color.orange : Color.secondary).padding(.horizontal,6).padding(.vertical,3).background(.primary.opacity(0.045), in:Capsule())
                             }
                             if card.text.components(separatedBy: .newlines).count > 10 {
                                 ScrollView {
@@ -76,7 +149,7 @@ struct NetworkToolboxView: View {
                                         .fixedSize(horizontal:false,vertical:true).frame(maxWidth:.infinity,alignment:.leading)
                                 }.frame(height:150)
                             } else {
-                                Text(card.text.isEmpty ? "—" : card.text).font(.system(size:10.5,design:.monospaced)).textSelection(.enabled)
+                                Text(card.text.isEmpty ? toolboxText("尚未取得数据", "No data yet") : card.text).font(.system(size:10.5,design:.monospaced)).textSelection(.enabled)
                                     .frame(maxWidth:.infinity,alignment:.leading)
                             }
                         }.toolboxCard()

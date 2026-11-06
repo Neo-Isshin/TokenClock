@@ -305,7 +305,7 @@ final class ModelDetectNativeFlowTests: XCTestCase {
         let (model, service) = makeModel(); model.sourceURL = try source(); service.jobReply = job("completed"); service.reportReply = .object(["result":.object(["status":.string("completed")])])
         await model.prepareNow(); try await wait { model.phase == .result }
         XCTAssertNotEqual(model.brief?.title, "型号正常")
-        XCTAssertEqual(model.brief?.primaryActionTitle, "重新读取结果")
+        XCTAssertEqual(model.brief?.primaryActionTitle, ModelDetectNativeText.localized("重新读取结果", "Reload results"))
         let route = "reports/" + Self.jobID + "/report.json"
         let reads = service.count(route, post: false)
         model.performPrimaryAction()

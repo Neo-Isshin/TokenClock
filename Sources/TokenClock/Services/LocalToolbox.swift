@@ -35,10 +35,10 @@ enum LocalToolPaths {
             + [("Shell",NSHomeDirectory()+"/.zshrc"),("Shell",NSHomeDirectory()+"/.zprofile"),("Shell",NSHomeDirectory()+"/.bash_profile"),("Shell",NSHomeDirectory()+"/.profile")]
     }
 }
-struct LocalFinding: Identifiable, Sendable {
-    let id = UUID(); let title: String; let detail: String; var path: String? = nil
+struct LocalFinding: Identifiable, Sendable, Codable {
+    var id = UUID(); let title: String; let detail: String; var path: String? = nil
 }
-struct LocalLogFile: Identifiable, Sendable {
+struct LocalLogFile: Identifiable, Sendable, Codable {
     var id: String { path }; let tool: String; let path: String; let size: Int64; let modified: Date; var fileID: String = ""
     var eligible: Bool { modified < Date().addingTimeInterval(-30 * 86400) && ["jsonl","log"].contains(URL(fileURLWithPath: path).pathExtension.lowercased()) }
 }
@@ -46,7 +46,68 @@ struct APIProbeCredential: Sendable {
     let source: String; let provider: String; let key: String; let base: String; let model: String?
     var masked: String { key.count > 12 ? String(key.prefix(4)) + "••••••" + String(key.suffix(4)) : "••••••••" }
 }
-struct APIProbeResult: Identifiable, Sendable { let id = UUID(); let source: String; let endpoint: String; let masked: String; let status: String }
+struct APIProbeResult: Identifiable, Sendable, Codable { var id = UUID(); let source: String; let endpoint: String; let masked: String; let status: String }
+
+enum LocalToolboxResultText {
+    private static let phrases: [String:String] = [
+        "尚未检查":"Not checked", "上次完整结果":"Last completed check",
+        "已停止，保留上次结果":"Stopped; last results kept", "正在更新，保留上次结果…":"Updating; last results kept…",
+        "检查完成":"Complete", "读取失败":"Read failed", "扫描未完成":"Scan incomplete", "正则无效":"Invalid regular expression",
+        "结果已截断":"Results truncated", "日志未检查":"Log not checked", "已取消":"Cancelled",
+        "目录不可读，结果不完整":"Directory unreadable; results are incomplete",
+        "文件较多，请缩小路径后重试":"Too many files; narrow the paths and retry",
+        "请检查自定义表达式":"Check the custom expression",
+        "达到 2000 条，请按工具缩小扫描范围":"Reached 2,000 findings; narrow the tool scope",
+        "文件不可读取":"File unreadable", "表达式耗时过长，部分内容未完成":"Expression timed out; some content was not checked",
+        "匹配内容已隐藏，仅保留文件与行号":"Matching content hidden; only the file and line are kept",
+        "读取中断，结果不完整":"Read interrupted; results are incomplete",
+        "NTP 未完成":"NTP incomplete", "NTP 不可达":"NTP unreachable", "NTP 超时":"NTP timed out",
+        "请求失败，未更改系统时钟":"Request failed; the system clock was not changed",
+        "回包不可验证，不能据此判断时钟异常":"Reply could not be verified; clock drift cannot be determined",
+        "UDP 可能被阻止，未更改系统时钟":"UDP may be blocked; the system clock was not changed",
+        "未获取到可信回包，未更改系统时钟":"No verified reply; the system clock was not changed",
+        "接口可用":"Accepted", "余额/额度不足":"Billing / quota", "区域拒绝":"Region denied",
+        "凭据失效":"Invalid credentials", "限流，稍后重试":"Rate limited",
+        "权限拒绝，未确认失效":"Permission denied; validity unknown", "未能确认":"Inconclusive",
+        "连接失败 / 超时":"Connection failed / timed out"
+    ]
+    static func localized(_ raw: String) -> String {
+        let english = L10n.shared.language == .en
+        if let text = phrases[raw] { return english ? text : raw }
+        if !english, let pair = phrases.first(where: { $0.value == raw }) { return pair.key }
+        var result = raw
+        if english {
+            result = result.replacingOccurrences(of:#"疑似密钥 · 第 (\d+) 行"#,with:"Suspected key · line $1",options:.regularExpression)
+                .replacingOccurrences(of:" · 多处值不同",with:" · Conflicting values")
+                .replacingOccurrences(of:#"时钟偏差 ([+\-0-9.]+) 秒"#,with:"Clock offset $1 s",options:.regularExpression)
+
+        } else {
+            result = result.replacingOccurrences(of:#"^(.*) · (\d+) files$"#,with:"$1 · $2 个文件",options:.regularExpression)
+        }
+        if english && raw.hasPrefix("NTP · ") { result = result.replacingOccurrences(of:"仅检测，不校时",with:"Check only; clock unchanged") }
+        return result
+    }
+    static func status(_ raw: String) -> String {
+        var result = raw
+        let english = L10n.shared.language == .en
+        for (cn,en) in phrases.sorted(by: { $0.key.count > $1.key.count }) {
+            result = result.replacingOccurrences(of:english ? cn : en,with:english ? en : cn)
+        }
+        if english {
+            result = result.replacingOccurrences(of:#"扫描 (\d+) 个文件 · 复用 (\d+) 个文件"#,with:"Scanned $1 files · reused $2",options:.regularExpression)
+        } else {
+            result = result.replacingOccurrences(of:#"Scanned (\d+) files · reused (\d+)"#,with:"扫描 $1 个文件 · 复用 $2 个文件",options:.regularExpression)
+        }
+        return result
+    }
+}
+extension LocalFinding {
+    var localizedTitle: String { LocalToolboxResultText.localized(title) }
+    var localizedDetail: String { LocalToolboxResultText.localized(detail) }
+}
+extension APIProbeResult {
+    var localizedStatus: String { LocalToolboxResultText.status(status) }
+}
 
 enum LocalConfigReader {
     static func read(_ path: String) -> String? {
@@ -213,15 +274,19 @@ enum LocalLogScanner {
             defer { try? handle.close() }
             var carry = Data(); var line = 1
             func scan(_ bytes: Data) {
-                let text = String(decoding: bytes, as: UTF8.self); let began = Date(); var hit = false
+                let text = String(decoding: bytes, as: UTF8.self); let began = Date(); var hit = false; var expired = false
                 regex.enumerateMatches(in: text, options: [.reportProgress], range: NSRange(text.startIndex..., in: text)) { match,_,stop in
-                    if cancelled() || Date().timeIntervalSince(began) > 0.1 { stop.pointee = true }
+                    if cancelled() || Date().timeIntervalSince(began) > 0.1 { expired = true; stop.pointee = true }
                     if match != nil { hit = true; stop.pointee = true }
                 }
+                if expired && !cancelled() { findings.append(.init(title: "日志未检查", detail: "表达式耗时过长，部分内容未完成", path: file.path)) }
                 if hit { findings.append(.init(title: "疑似密钥 · 第 \(line) 行", detail: "匹配内容已隐藏，仅保留文件与行号", path: file.path)) }
             }
             while !cancelled(), findings.count < 2000 {
-                guard let data = try? handle.read(upToCount: 65536), !data.isEmpty else { if !carry.isEmpty { scan(carry) }; break }
+                let data: Data
+                do { data = try handle.read(upToCount: 65536) ?? Data() }
+                catch { findings.append(.init(title: "日志未检查", detail: "读取中断，结果不完整", path: file.path)); break }
+                if data.isEmpty { if !carry.isEmpty { scan(carry) }; break }
                 carry.append(data)
                 while let newline = carry.firstIndex(of: 10) {
                     let segment = carry.prefix(upTo: newline)
@@ -248,11 +313,40 @@ enum LocalLogScanner {
     @Published var findings: [LocalFinding] = []
     @Published var files: [LocalLogFile] = []
     @Published var keys: [APIProbeResult] = []
+    @Published private(set) var checkedAt: Date?
+    @Published private(set) var selectedMode = "environment"
+    @Published private(set) var cacheError = ""
+    private let resultsURL: URL
+    private let secretCacheURL: URL
+    private var snapshots: [String: LocalToolboxSnapshot] = [:]
     private var task: Task<Void,Never>?
-    func stop() { task?.cancel(); task = nil; busy = false; status = toolboxText("已停止", "Stopped") }
-    func run(_ mode: String, pattern: String = "") {
-        stop(); busy = true; findings = []; keys = []; status = toolboxText("正在检查…", "Checking…")
+    private var runID: UUID?
+    init(directory: URL = URL(fileURLWithPath: NSHomeDirectory()+"/.tokenclock")) {
+        resultsURL = directory.appendingPathComponent("local-toolbox-results.json")
+        secretCacheURL = directory.appendingPathComponent("local-toolbox-secrets.json")
+        if let data = try? Data(contentsOf: resultsURL), let saved = try? JSONDecoder().decode(LocalToolboxResults.self, from: data) {
+            snapshots = saved.snapshots; selectedMode = saved.selectedMode
+        }
+        selectMode(selectedMode)
+    }
+    func selectMode(_ mode: String) {
+        stop(); selectedMode = mode
+        let saved = snapshots[mode]
+        checkedAt = saved?.checkedAt; findings = saved?.findings ?? []; files = saved?.files ?? []; keys = saved?.keys ?? []
+        status = saved == nil ? toolboxText("尚未检查", "Not checked") : toolboxText("上次完整结果", "Last completed check")
+    }
+    func stop() {
+        task?.cancel(); task = nil; runID = nil
+        if busy { status = toolboxText("已停止，保留上次结果", "Stopped; last results kept") }
+        busy = false
+    }
+    func run(_ mode: String, pattern: String = "", full: Bool = false) {
+        if mode != selectedMode { selectMode(mode) }
+        stop(); busy = true; cacheError = ""; status = toolboxText("正在更新，保留上次结果…", "Updating; last results kept…")
+        let id = UUID(); runID = id
         task = Task {
+            var nextFindings: [LocalFinding] = [], nextFiles: [LocalLogFile] = [], nextKeys: [APIProbeResult] = []
+            var scanDetail = ""
             let roots = LocalToolPaths.roots()
             if mode == "keys" {
                 let collection = Task.detached { () -> [APIProbeCredential] in
@@ -282,36 +376,44 @@ enum LocalLogScanner {
                     while next < min(3,entries.count) { let e=entries[next]; group.addTask { await LocalConfigReader.probe(e) }; next += 1 }
                     for await result in group {
                         if Task.isCancelled { group.cancelAll(); break }
-                        keys.append(result)
+                        nextKeys.append(result)
                         if next < entries.count { let e=entries[next]; group.addTask { await LocalConfigReader.probe(e) }; next += 1 }
                     }
                 }
             } else if mode == "environment" {
                 let job = Task.detached { Self.environment(roots: roots) }
                 let result = await withTaskCancellationHandler { await job.value } onCancel: { job.cancel() }
-                guard !Task.isCancelled else { return }; findings = result
+                guard !Task.isCancelled else { return }; nextFindings = result
             } else if mode == "clock" {
                 let result = await NTPClockCheck.check()
-                guard !Task.isCancelled else { return }; findings = [result]
+                guard !Task.isCancelled else { return }; nextFindings = [result]
             } else {
                 let job = Task.detached { LocalLogScanner.inventory(roots: roots, cancelled: { Task.isCancelled }) }
                 let result = await withTaskCancellationHandler { await job.value } onCancel: { job.cancel() }
                 guard !Task.isCancelled else { return }
-                files = result.0
+                nextFiles = result.0
                 if mode == "secrets" {
-                    let logs = files
-                    let job = Task.detached { LocalLogScanner.leaks(files: logs, pattern: pattern, cancelled: { Task.isCancelled }) }
+                    let logs = nextFiles
+                    let cacheURL = self.secretCacheURL
+                    let job = Task.detached { LocalSecretCache.scan(files: logs, pattern: pattern, full: full, url: cacheURL, cancelled: { Task.isCancelled }) }
                     let result = await withTaskCancellationHandler { await job.value } onCancel: { job.cancel() }
-                    guard !Task.isCancelled else { return }; findings = result
+                    guard !Task.isCancelled else { return }; nextFindings = result.findings
+                    scanDetail = toolboxText("扫描 \(result.scanned) 个文件 · 复用 \(result.reused) 个文件", "Scanned \(result.scanned) files · reused \(result.reused)")
                 } else {
-                    findings = Dictionary(grouping: files, by: \.tool).map { name,logs in
+                    nextFindings = Dictionary(grouping: nextFiles, by: \.tool).map { name,logs in
                         LocalFinding(title: name, detail: ByteCountFormatter.string(fromByteCount: logs.reduce(0){$0+$1.size}, countStyle: .file)+" · \(logs.count) files")
                     }.sorted { $0.title < $1.title }
                 }
-                findings += result.1
+                nextFindings += result.1
             }
-            guard !Task.isCancelled else { return }
-            busy = false; status = toolboxText("检查完成", "Complete") + (mode == "keys" && keys.isEmpty ? " · 未发现可验证的 API Key（OAuth/订阅登录不属于 API Key）" : "")
+            guard !Task.isCancelled, runID == id else { return }
+            findings = nextFindings; files = nextFiles; keys = nextKeys; checkedAt = Date()
+            snapshots[mode] = .init(checkedAt: checkedAt!, findings: findings, files: files, keys: keys)
+            do { try LocalToolboxPersistence.save(LocalToolboxResults(selectedMode: mode, snapshots: snapshots), to: resultsURL) }
+            catch { cacheError = toolboxText("结果已显示，但本次未能保存到磁盘。", "Results shown, but could not save this check.") }
+            busy = false; runID = nil; task = nil
+            status = toolboxText("检查完成", "Complete") + (scanDetail.isEmpty ? "" : " · " + scanDetail)
+            if mode == "keys" && keys.isEmpty { status += toolboxText(" · 未发现 API Key（订阅登录不属于 API Key）", " · No API keys found (subscription logins are excluded)") }
         }
     }
     nonisolated private static func safeValue(_ value: String) -> String {

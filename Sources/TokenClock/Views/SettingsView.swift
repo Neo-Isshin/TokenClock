@@ -52,6 +52,7 @@ struct SettingsView: View {
     @State private var rateThresholdExpanded = false
     @State private var customThemeExpanded = false
     @State private var toolSelectionExpanded = false
+    @State private var notificationsExpanded = false
 
     // MARK: - 费用估算状态
     @State private var pricingExpanded = false
@@ -89,6 +90,10 @@ struct SettingsView: View {
                 VStack(alignment: .leading, spacing: 12) {
                     // 自动探测（始终可见）
                     autoDetectSection()
+
+                    collapsibleSection(title: toolboxText("通知", "Notifications"), isExpanded: $notificationsExpanded) {
+                        NotificationSettingsView(preferences: viewModel.userContent.preferences)
+                    }
 
                     // 工具选择
                     collapsibleSection(title: L10n.shared.tr("settings.toolSelection"), isExpanded: $toolSelectionExpanded) {
@@ -1537,7 +1542,7 @@ struct SettingsView: View {
         panel.canChooseFiles = false
         panel.allowsMultipleSelection = false
         panel.title = title
-        panel.prompt = "选择"
+        panel.prompt = L10n.shared.tr("common.choose")
 
         if !currentPath.isEmpty {
             panel.directoryURL = URL(fileURLWithPath: currentPath)

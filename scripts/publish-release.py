@@ -49,11 +49,11 @@ def atomic_write(path, body):
             temporary.unlink(missing_ok=True)
 
 
-def publish(version, assets_dir, output, repo, source_refs=(), without_windows=False):
+def publish(version, assets_dir, output, repo, source_refs=(), without_windows=False, only_glass=False):
     version_key(version)
     assets_dir, output, repo = Path(assets_dir), Path(output), Path(repo)
     assets = []
-    files = tuple(name for name in FILES if not (without_windows and "windows" in name))
+    files = ("TokenClock-glass-universal.tar.gz",) if only_glass else tuple(name for name in FILES if not (without_windows and "windows" in name))
     for name in files:
         source = assets_dir / name
         if not source.is_file() or source.stat().st_size == 0:
@@ -85,10 +85,11 @@ def publish(version, assets_dir, output, repo, source_refs=(), without_windows=F
                       f'{html.escape(a["name"])}</a><br><small>{a["digest"]}</small></li>' for a in assets)
     windows_note = ('<p>Windows build pending. The Windows installer continues to provide '
                     'the previous verified build.</p>' if without_windows else '')
+    scope_note = ('<p>This patch updates macOS Glass only. Other editions keep their previous verified releases.</p>' if only_glass else '')
     page = (f'<!doctype html><html lang="en"><meta charset="utf-8">'
             f'<meta name="viewport" content="width=device-width,initial-scale=1">'
             f'<title>TokenClock {version}</title><body><h1>TokenClock {version}</h1>'
-            f'<p>Official downloads · SHA-256 verified packages</p>{windows_note}<ul>{links}</ul>'
+            f'<p>Official downloads · SHA-256 verified packages</p>{scope_note}{windows_note}<ul>{links}</ul>'
             f'<p><a href="{BASE_URL}/install.sh">macOS / Linux installer</a> · '
             f'<a href="{BASE_URL}/install.ps1">Windows installer</a></p></body></html>')
     atomic_write(output / "releases" / version / "index.html", page.encode())
@@ -108,7 +109,7 @@ def publish(version, assets_dir, output, repo, source_refs=(), without_windows=F
     latest = output / "releases" / "latest.json"
     if not latest.exists() or version_key(json.loads(latest.read_bytes())["tag_name"]) <= version_key(version):
         atomic_write(latest, metadata)
-        if not without_windows:
+        if not without_windows and not only_glass:
             atomic_write(output / "releases" / "latest-windows.json", metadata)
         atomic_write(output / "releases" / "index.html", page.encode())
     print(f"Staged {version}: {len(assets)} assets; committed source only")
@@ -124,9 +125,10 @@ def main():
     parser.add_argument("--source-ref", action="append", default=[], metavar="CHANNEL=REF")
     parser.add_argument("--without-windows", action="store_true",
                         help="Publish macOS/Linux only; do not change the Windows latest pointer")
+    parser.add_argument("--only-glass", action="store_true", help="Publish only the Glass patch; preserve all other channel artifacts and pointers")
     args = parser.parse_args()
     publish(args.version, args.assets_dir, args.output, args.repo,
-            [value.split("=", 1) for value in args.source_ref], args.without_windows)
+            [value.split("=", 1) for value in args.source_ref], args.without_windows, args.only_glass)
 
 
 if __name__ == "__main__":

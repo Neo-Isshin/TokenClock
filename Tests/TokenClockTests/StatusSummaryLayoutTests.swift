@@ -35,9 +35,14 @@ final class StatusSummaryLayoutTests: XCTestCase {
                         resetsAt: Date(timeIntervalSince1970: 1_800_000_000 + Double(index * 3_600)), source: "fixture")
                 })
         }
+        let notesDirectory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: notesDirectory) }
+        let notebook = NotebookStore(url: notesDirectory.appendingPathComponent("notes.json"))
+        for index in 0..<4 { let id = notebook.add(); notebook.update(id, title: "A longer notebook entry \(index)", body: "Line one\nLine two") }
+        notebook.flush()
         func content(_ values: [ToolUsage]) -> StatusSummaryContent {
             StatusSummaryContent(snapshot: StatusSummarySnapshot(tools: values, includesCache: false),
-                models: [], date: "Wednesday, Oct 28", tokens: "36K", cost: "$3.60", side: side, quotas: quotas,
+                models: [], date: "Wednesday, Oct 28", tokens: "36K", cost: "$3.60", side: side, quotas: quotas, notebook: notebook,
                 onHistory: {}, onQuota: {}, onShare: {})
         }
         let host = NSHostingView(rootView: content(Array(tools.prefix(1))))

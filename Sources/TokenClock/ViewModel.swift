@@ -143,7 +143,28 @@ final class ViewModel: ObservableObject {
             && defaults.object(forKey: SettingsKey.dialQuotaProvider.rawValue) == nil
     }()
     @Published private(set) var notifications: [TokenClockNotification] = []
-    var unreadNotificationCount: Int { notifications.filter { !$0.isRead }.count }
+    let userContent = UserContentCenter()
+    @Published var notificationFilter = NotificationPanelFilter.all
+    @Published private(set) var isNewsPresented = false
+    @Published private(set) var focusedNewsItemID: String?
+    var onNewsModeChanged: (() -> Void)?
+    var visibleNotifications: [TokenClockNotification] { notifications.filter { userContent.preferences.allows($0) } }
+    var filteredNotifications: [TokenClockNotification] { visibleNotifications.filter { notificationFilter.includes($0) } }
+    var unreadNotificationCount: Int { visibleNotifications.filter { !$0.isRead }.count }
+    var hasUnreadNews: Bool { userContent.preferences.allows(.news) && userContent.news.unreadCount > 0 }
+
+    func showNews(itemID: String? = nil) {
+        focusedNewsItemID = itemID
+        isNewsPresented = true
+        userContent.news.setViewing(true)
+        userContent.news.refreshIfDue(language: L10n.shared.language.rawValue)
+        onNewsModeChanged?()
+    }
+    func hideNews() {
+        isNewsPresented = false; focusedNewsItemID = nil
+        userContent.news.setViewing(false)
+        onNewsModeChanged?()
+    }
 
     /// One indicator per provider: weekly outside and five-hour inside. Cursor's API uses
     /// model groups instead, so Other Models is outside and Cursor Models is inside.
@@ -541,6 +562,8 @@ final class ViewModel: ObservableObject {
         runInitialPathDetection()
         setupPricingObservers()
         startTimers()
+        userContent.onChange = { [weak self] in self?.refreshBillingNotices() }
+        userContent.start()
         refreshBillingIfNeeded()
         if !dialQuotaProviders.isEmpty {
             refreshSubscriptionQuotas(providers: Set(dialQuotaProviders))
@@ -554,6 +577,7 @@ final class ViewModel: ObservableObject {
     }
 
     func shutdown() {
+        userContent.stop()
         stopTimers()
         codexQuotaTask?.cancel()
         codexQuotaTask = nil
@@ -570,21 +594,24 @@ final class ViewModel: ObservableObject {
     }
 
     func markNotificationsRead() {
-        BillingReminderStore.markRead()
-        ReleaseUpdateService.shared.markRead()
-        guard unreadNotificationCount > 0 else { return }
+        let visible = filteredNotifications
+        let ids = Set(visible.map(\.id))
+        if visible.contains(where: { $0.subscriptionAccountID != nil }) { BillingReminderStore.markRead() }
+        if visible.contains(where: { $0.releaseURL != nil }) { ReleaseUpdateService.shared.markRead() }
+        userContent.notebook.markRead(ids: Set(visible.compactMap(\.notebookEntryID)))
         notifications = notifications.map {
             var notification = $0
-            notification.isRead = true
+            if ids.contains($0.id), $0.kind != .news { notification.isRead = true }
             return notification
         }
+        refreshBillingNotices()
     }
 
     private var lastBillingFetch = Date.distantPast
     private func refreshBillingNotices() {
         let billing = BillingReminderStore.notifications(accounts: subscriptionAccounts)
-        notifications = (notifications.filter { $0.subscriptionAccountID == nil && $0.releaseURL == nil }
-                         + billing + ReleaseUpdateService.shared.notifications())
+        notifications = (notifications.filter { $0.subscriptionAccountID == nil && $0.releaseURL == nil && $0.newsItemID == nil && $0.notebookEntryID == nil }
+                         + billing + ReleaseUpdateService.shared.notifications() + userContent.notices())
             .sorted { $0.createdAt > $1.createdAt }
     }
     private func refreshBillingIfNeeded() {
@@ -601,13 +628,9 @@ final class ViewModel: ObservableObject {
         message: String,
         route: UsageOverviewRoute? = nil
     ) {
-        notifications.insert(
-            TokenClockNotification(kind: kind, title: title, message: message, route: route),
-            at: 0
-        )
-        if notifications.count > 20 {
-            notifications = Array(notifications.prefix(20))
-        }
+        let stored = notifications.filter { $0.subscriptionAccountID == nil && $0.releaseURL == nil && $0.newsItemID == nil && $0.notebookEntryID == nil }
+        notifications = [TokenClockNotification(kind: kind, title: title, message: message, route: route)] + Array(stored.prefix(19))
+        refreshBillingNotices()
     }
 
     // MARK: - 价格目录
@@ -663,13 +686,15 @@ final class ViewModel: ObservableObject {
         }
         if providers.contains(.claude), claudeQuota.status != .loading {
             claudeQuotaTask?.cancel()
-            claudeQuota = .loading(previous: claudeQuota)
+            let previous = claudeQuota
+            claudeQuota = .loading(previous: previous)
             let service = claudeQuotaService
             claudeQuotaTask = Task { [weak self] in
                 let selected = ClaudeConnectionController.isSelected
+                let identity = ClaudeConnectionController.selectedIdentity
                 let session = await ClaudeConnectionController.shared.currentSession()
                 let result = await Task.detached(priority: .utility) {
-                    service.fetch(connectedSession: session, connectionSelected: selected)
+                    service.fetch(connectedSession: session, connectionSelected: selected, expectedIdentity: identity, previous: previous)
                 }.value
                 guard !Task.isCancelled else { return }
                 self?.claudeQuota = result
@@ -713,6 +738,21 @@ final class ViewModel: ObservableObject {
                 self?.rememberProviderQuota(result, provider: .zhipu)
                 self?.selectAutomaticDialQuotaProviderIfReady()
             }
+        }
+    }
+
+    func authorizeClaudeLocal() {
+        guard claudeQuota.status != .loading else { return }
+        let previous=claudeQuota,service=claudeQuotaService
+        claudeQuotaTask?.cancel();claudeQuota = .loading(previous:previous)
+        claudeQuotaTask=Task { [weak self] in
+            let selected=ClaudeConnectionController.isSelected,identity=ClaudeConnectionController.selectedIdentity
+            let session=await ClaudeConnectionController.shared.currentSession()
+            let value=await Task.detached(priority:.userInitiated) {
+                service.fetch(connectedSession:session,connectionSelected:selected,expectedIdentity:identity,previous:previous,userInitiatedCredentialAccess:true)
+            }.value
+            guard !Task.isCancelled else { return }
+            self?.claudeQuota=value;self?.rememberClaudeQuota(value);self?.selectAutomaticDialQuotaProviderIfReady()
         }
     }
 
@@ -1435,9 +1475,6 @@ final class ViewModel: ObservableObject {
 
     private func generatePendingReports(through completedDate: Date) {
         refreshBillingNotices()
-        ReleaseUpdateService.shared.checkDaily { [weak self] in
-            Task { @MainActor [weak self] in self?.refreshBillingNotices() }
-        }
         generatePendingDailyReports(through: completedDate)
         generatePendingWeeklyReports(through: completedDate)
         generatePendingMonthlyReports(through: completedDate)

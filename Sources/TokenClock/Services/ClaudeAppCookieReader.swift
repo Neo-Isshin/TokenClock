@@ -12,10 +12,14 @@ enum ClaudeSilentKeychain {
     /// LAContext alone does not suppress legacy login-keychain ACL dialogs.
     /// Disable legacy interaction in a short-lived copy of this signed executable,
     /// so concurrent interactive connections in the main app remain unaffected.
-    static func read(service: String, account: String? = nil,
-                     executable: URL? = Bundle.main.executableURL) -> Data? {
+    struct ReadResult { let data: Data?; let authorizationRequired: Bool }
+    static func read(service: String, account: String? = nil, executable: URL? = Bundle.main.executableURL) -> Data? {
+        readResult(service: service, account: account, executable: executable).data
+    }
+    static func readResult(service: String, account: String? = nil,
+                     executable: URL? = Bundle.main.executableURL) -> ReadResult {
         guard accepts(service: service), let executable,
-              executable.lastPathComponent == "TokenClock" else { return nil }
+              executable.lastPathComponent == "TokenClock" else { return ReadResult(data:nil,authorizationRequired:false) }
         let process = Process(), output = Pipe(), completed = DispatchSemaphore(value: 0)
         process.executableURL = executable
         process.arguments = [helperArgument, service] + (account.map { [$0] } ?? [])
@@ -23,16 +27,17 @@ enum ClaudeSilentKeychain {
         process.standardOutput = output
         process.standardError = FileHandle.nullDevice
         process.terminationHandler = { _ in completed.signal() }
-        do { try process.run() } catch { return nil }
+        do { try process.run() } catch { return ReadResult(data:nil,authorizationRequired:false) }
         try? output.fileHandleForWriting.close()
         defer { try? output.fileHandleForReading.close() }
         guard completed.wait(timeout: .now() + 2) == .success else {
             if process.isRunning { process.terminate() }
-            return nil
+            return ReadResult(data:nil,authorizationRequired:false)
         }
         let data = output.fileHandleForReading.readDataToEndOfFile()
-        guard process.terminationStatus == 0, !data.isEmpty, data.count <= 16_384 else { return nil }
-        return data
+        if process.terminationStatus == 77 {return ReadResult(data:nil,authorizationRequired:true)}
+        guard process.terminationStatus == 0, !data.isEmpty, data.count <= 16_384 else { return ReadResult(data:nil,authorizationRequired:false) }
+        return ReadResult(data:data,authorizationRequired:false)
     }
 
     static func accepts(service: String) -> Bool {
@@ -52,7 +57,9 @@ enum ClaudeSilentKeychain {
             kSecReturnData: true, kSecMatchLimit: kSecMatchLimitOne, kSecUseAuthenticationContext: context]
         if arguments.count == 3 { query[kSecAttrAccount] = arguments[2] }
         var result: CFTypeRef?
-        guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess,
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        if status == errSecInteractionNotAllowed || status == errSecAuthFailed { return 77 }
+        guard status == errSecSuccess,
               let data = result as? Data, !data.isEmpty, data.count <= 16_384 else { return 1 }
         FileHandle.standardOutput.write(data)
         return 0

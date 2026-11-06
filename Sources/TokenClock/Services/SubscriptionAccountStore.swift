@@ -265,7 +265,7 @@ struct SubscriptionAccountRecord: Identifiable, Equatable, Codable, Sendable {
     }
 
     var displayName: String {
-        trimmedNote ?? email?.nonEmpty ?? "Account"
+        trimmedNote ?? email?.nonEmpty ?? L10n.shared.tr("quota.accountFallbackName")
     }
 
     var revealsEmailOnDemand: Bool {

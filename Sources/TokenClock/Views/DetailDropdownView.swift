@@ -77,6 +77,12 @@ struct DetailDropdownView: View {
     var onSubscriptionQuota: (() -> Void)? = nil
     var unreadNotificationCount: Int = 0
     var onNotificationClick: (() -> Void)? = nil
+    var newsService: AilyreNewsService? = nil
+    var isNewsPresented = false
+    var focusedNewsItemID: String? = nil
+    var hasUnreadNews = false
+    var onNewsToggle: (() -> Void)? = nil
+    var onNotebook: (() -> Void)? = nil
 
     /// Codex 剩余额度面板。额度只在点击后按需读取，不参与 30 秒用量扫描。
     var showsCodexQuota: Bool = false
@@ -94,6 +100,7 @@ struct DetailDropdownView: View {
     @State private var textColorHovered = false
     @State private var shareHovered = false
     @State private var notificationHovered = false
+    @State private var shortcutsEditing = false
 
     private var textColor: Color { dropdownTextColorOverride ?? theme.dropdownTextColor }
     private var subtextColor: Color { dropdownTextColorOverride.map { $0.opacity(0.65) } ?? theme.dropdownSubtextColor }
@@ -137,20 +144,45 @@ struct DetailDropdownView: View {
                 Divider()
                     .background(theme.dropdownDividerColor)
                     .padding(.horizontal, 8)
+            } else {
+                HStack(alignment: .top) {
+                    Text("TokenClock").font(.system(size: 12, weight: .medium)).foregroundStyle(textColor)
+                    Spacer()
+                    VStack(spacing: 4) {
+                        forecastNotificationButton
+                        forecastShareButton
+                        forecastShortcutEditorButton
+                    }
+                }.frame(height: 60, alignment: .top).padding(.horizontal, 12).padding(.vertical, 8)
+                Divider().background(theme.dropdownDividerColor).padding(.horizontal, 8)
             }
 
-            QuickToolGrid(color: textColor, expandsOnHover: true) { tool in
+            QuickToolGrid(color: textColor, expandsOnHover: true, showsEditorButton: false) { tool in
                 switch tool {
                 case .model: onModelDetect?()
                 case .network: onNetworkLeak?()
                 case .local: onLocalToolbox?()
                 case .quota: onSubscriptionQuota?()
                 case .history: onHistoryUsage?()
+                case .notebook: onNotebook?()
                 case .share: onShareUsage?()
                 }
             }.padding(.horizontal,12).padding(.top,7).padding(.bottom,4)
 
-            if isLoading {
+            if isNewsPresented, let newsService {
+                HStack(spacing: 8) {
+                    Button { onNewsToggle?() } label: {
+                        Label(toolboxText("返回", "Back"), systemImage: "chevron.left")
+                            .font(.system(size: 11, weight: .medium))
+                    }.buttonStyle(.plain).instantHint(toolboxText("返回之前的用量视图", "Return to your usage view"))
+                    Spacer()
+                    AilyreNewsMark(template: true).frame(width: 12, height: 15).scaleEffect(1.6)
+                    Text(toolboxText("AI速递", "AI digest")).font(.system(size: 12, weight: .semibold))
+                }.foregroundStyle(textColor).padding(.horizontal, 14).padding(.vertical, 9)
+                Divider().overlay(textColor.opacity(0.1)).padding(.horizontal, 12)
+                AilyreNewsView(news: newsService, textColor: textColor, focusedID: focusedNewsItemID)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if isLoading {
                 // 首次数据读取中：显示加载提示（不展示 mock 占位工具，避免误导）
                 HStack(spacing: 6) {
                     ProgressView().controlSize(.small)
@@ -177,6 +209,7 @@ struct DetailDropdownView: View {
                         }
                         .buttonStyle(.plain)
                     }
+
                 }
                 .padding(3)
                 .background(
@@ -189,6 +222,19 @@ struct DetailDropdownView: View {
 
                 // 第三行均为紧凑 toggle/快捷操作。
                 HStack(spacing: 4) {
+                    Button { onNewsToggle?() } label: {
+                        HStack(spacing: 4) {
+                            AilyreNewsMark(template: true).frame(width: 20, height: 25)
+                            Text(toolboxText("AI速递", "AI digest"))
+                                .font(.system(size: 10.5, weight: .medium)).lineLimit(1)
+                        }.foregroundStyle(subtextColor)
+                            .frame(maxWidth: .infinity, minHeight: 35).padding(.horizontal, 5)
+                            .background(textColor.opacity(0.065), in: Capsule())
+                            .contentShape(Capsule())
+                    }.buttonStyle(ChipPressStyle()).frame(width: 88)
+                        .accessibilityIdentifier("ai-digest-action")
+                        .instantHint(toolboxText("在下方内容区阅读 AI速递", "Read AI digest in this panel’s content area"))
+
                     compactAction(
                         icon: usageIncludesCache ? "externaldrive.fill.badge.checkmark" : "externaldrive",
                         title: "\(L10n.shared.tr("detail.cacheDataLine1"))\n\(L10n.shared.tr("detail.cacheDataLine2"))",
@@ -214,13 +260,13 @@ struct DetailDropdownView: View {
 
                     compactAction(
                         icon: "dollarsign.circle",
-                        title: valueMode == .tokens ? L10n.shared.tr("detail.byCost") : L10n.shared.tr("detail.todayUsage"),
-                        subtitle: valueMode == .tokens ? "TTFT · t/s" : (groupingMode == .model ? "Msgs · Share" : "Msgs · Cache"),
+                        title: valueMode == .tokens ? toolboxText("按用量", "By\nUsage") : L10n.shared.tr("detail.byCost").replacingOccurrences(of: " ", with: "\n"),
+                        subtitle: "",
                         selected: valueMode == .costPercent,
                         hovered: percentHovered,
                         action: { onValueModeChange?(valueMode.next) }
                     )
-                    .frame(width: 82)
+                    .frame(width: 58)
                     .instantHint(toolboxText("切换用量/消息/占比与 API 费用/TTFT/速度", "Switch Usage/Msgs/Share and API estimate/TTFT/speed"))
                     .onHover { percentHovered = $0 }
                 }
@@ -657,16 +703,20 @@ struct DetailDropdownView: View {
         .overlay(alignment: .topTrailing) {
             // Keep the header's measured height unchanged. The small share action
             // lives beneath the bell inside the existing forecast area.
-            forecastShareButton
-                .padding(.trailing, 12)
-                .padding(.top, 28)
+            VStack(spacing: 4) {
+                forecastShareButton
+                forecastShortcutEditorButton
+            }.padding(.trailing, 12).padding(.top, 28)
         }
     }
 
     private var forecastNotificationButton: some View {
         Button { onNotificationClick?() } label: {
             ZStack(alignment: .topTrailing) {
-                Image(systemName: unreadNotificationCount > 0 ? "bell.fill" : "bell")
+                Group {
+                    if hasUnreadNews { AilyreNewsMark(template: true).frame(width: 14, height: 19).scaleEffect(1.3) }
+                    else { Image(systemName: unreadNotificationCount > 0 ? "bell.fill" : "bell") }
+                }
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundColor(textColor.opacity(
                         unreadNotificationCount > 0
@@ -685,7 +735,7 @@ struct DetailDropdownView: View {
             }
         }
         .buttonStyle(ChipPressStyle())
-        .help(L10n.shared.tr("notification.open"))
+        .instantHint(L10n.shared.tr("notification.open"))
         .accessibilityLabel(Text(L10n.shared.tr("notification.open")))
         .onHover { notificationHovered = $0 }
         .offset(x: 6)
@@ -700,10 +750,19 @@ struct DetailDropdownView: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .help(L10n.shared.tr("menu.shareUsage"))
+        .instantHint(L10n.shared.tr("menu.shareUsage"))
         .accessibilityLabel(Text(L10n.shared.tr("menu.shareUsage")))
         .onHover { shareHovered = $0 }
         .offset(x: 6)
+    }
+
+    private var forecastShortcutEditorButton: some View {
+        Button { shortcutsEditing.toggle() } label: {
+            Image(systemName: "slider.horizontal.3").font(.system(size: 10, weight: .medium))
+                .foregroundStyle(textColor.opacity(0.5)).frame(width: 16, height: 16).contentShape(Rectangle())
+        }.buttonStyle(.plain).instantHint(toolboxText("编辑快捷功能按钮", "Edit shortcut buttons"))
+            .popover(isPresented: $shortcutsEditing) { QuickToolEditorView() }
+            .offset(x: 6)
     }
 
     /// 选取当前 3 小时槽 + 接下来 3 个槽（共 4 个，覆盖 12 小时）
@@ -887,7 +946,7 @@ private struct SessionRow: View {
                         .truncationMode(.tail)
                         .help(session.displayName)
                 } else {
-                    // 其他工具：session 标签（+ 来源，仅 Antigravity）+ ID
+                    // 会话标签与已核实的记录来源（如 Antigravity、Claude）+ ID
                     HStack(spacing: 3) {
                         Text(session.rawId.hasPrefix("cursor:") ? "model" : "session")
                             .font(.system(size: 8, weight: .medium))

@@ -1,8 +1,31 @@
 #if os(macOS)
 import SwiftUI
 import AppKit
+import CoreTransferable
+import UniformTypeIdentifiers
 
 func toolboxText(_ cn: String, _ en: String) -> String { L10n.shared.language.rawValue.hasPrefix("zh") ? cn : en }
+
+@MainActor
+enum InstantHintTextLayout {
+    static func label(for text: String, maximumWidth: CGFloat) -> NSTextField {
+        let label = NSTextField(wrappingLabelWithString: text)
+        label.font = .systemFont(ofSize: 11)
+        label.textColor = .labelColor
+        label.lineBreakMode = .byWordWrapping
+        label.maximumNumberOfLines = 0
+        label.cell?.wraps = true
+        label.cell?.usesSingleLineMode = false
+        // NSTextField's cell includes text insets that NSString.size omits.
+        let naturalWidth = ceil(label.cell?.cellSize.width ?? label.fittingSize.width)
+        let width = min(260, max(1, maximumWidth), max(110, naturalWidth))
+        label.preferredMaxLayoutWidth = width
+        let measured = label.cell?.cellSize(forBounds: NSRect(x: 0, y: 0, width: width, height: 100_000))
+        let height = ceil(measured?.height ?? label.fittingSize.height) + 2
+        label.frame = NSRect(x: 10, y: 8, width: width, height: height)
+        return label
+    }
+}
 
 private struct InstantHint: ViewModifier {
     let text: String
@@ -41,20 +64,8 @@ private struct InstantHint: ViewModifier {
                 ?? source.screen ?? NSScreen.main
             guard let screen else { close(); return }
             let visible = screen.visibleFrame.insetBy(dx: 8, dy: 8)
-            let font = NSFont.systemFont(ofSize: 11)
-            let naturalWidth = text.components(separatedBy: "\n").map {
-                ($0 as NSString).size(withAttributes: [.font: font]).width
-            }.max() ?? 0
-            let width = min(260, max(110, ceil(naturalWidth)), max(1, visible.width - 20))
-            let label = NSTextField(wrappingLabelWithString: text)
-            label.font = font
-            label.textColor = .labelColor
-            label.lineBreakMode = .byWordWrapping
-            label.maximumNumberOfLines = 0
-            label.preferredMaxLayoutWidth = width
-            let height = ceil(label.fittingSize.height)
-            let size = NSSize(width: width + 20, height: height + 16)
-            label.frame = NSRect(x: 10, y: 8, width: width, height: height)
+            let label = InstantHintTextLayout.label(for: text, maximumWidth: visible.width - 20)
+            let size = NSSize(width: label.frame.width + 20, height: label.frame.height + 16)
 
             let background = NSVisualEffectView(frame: NSRect(origin: .zero, size: size))
             background.material = .toolTip
@@ -112,15 +123,16 @@ extension View {
 }
 
 enum QuickTool: String, CaseIterable, Identifiable, Codable {
-    case model, network, local, quota, history, share
+    case model, network, local, quota, history, notebook, share
     var id: String { rawValue }
     var title: String {
         switch self {
-        case .model: return "Model Detect"
+        case .model: return toolboxText("模型检测", "Model Detect")
         case .network: return toolboxText("网络工具箱", "Network Tools")
         case .local: return toolboxText("本地工具箱", "Local Tools")
-        case .quota: return "Subscription Quota"
-        case .history: return "History Usage"
+        case .quota: return toolboxText("订阅额度", "Subscription Quota")
+        case .history: return toolboxText("用量历史", "History Usage")
+        case .notebook: return toolboxText("行事本", "Notebook")
         case .share: return toolboxText("分享用量", "Share Usage")
         }
     }
@@ -131,6 +143,7 @@ enum QuickTool: String, CaseIterable, Identifiable, Codable {
         case .local: return "externaldrive.badge.checkmark"
         case .quota: return "gauge.with.dots.needle.50percent"
         case .history: return "clock.arrow.circlepath"
+        case .notebook: return "note.text"
         case .share: return "square.and.arrow.up"
         }
     }
@@ -144,29 +157,52 @@ enum QuickTool: String, CaseIterable, Identifiable, Codable {
 }
 @MainActor final class QuickToolPreferences: ObservableObject {
     static let shared = QuickToolPreferences()
-    static let defaults: [QuickTool] = [.model, .network, .local, .quota, .history]
-    @Published var order: [QuickTool] { didSet { UserDefaults.standard.set(order.map(\.rawValue), forKey: "toolbox.quickOrder") } }
-    init() {
-        var seen = Set<QuickTool>()
-        let stored = UserDefaults.standard.stringArray(forKey: "toolbox.quickOrder")?.compactMap(QuickTool.init(rawValue:))
-        let previousDefaults: [QuickTool] = [.model, .network, .local, .quota]
-        order = (stored == previousDefaults ? Self.defaults : stored ?? Self.defaults).filter { seen.insert($0).inserted }
-        if stored == previousDefaults {
-            UserDefaults.standard.set(order.map(\.rawValue), forKey: "toolbox.quickOrder")
+    static let defaults: [QuickTool] = [.model, .network, .local, .quota, .history, .notebook]
+    private let store: UserDefaults
+    @Published var order: [QuickTool] {
+        didSet {
+            store.set(order.map(\.rawValue), forKey: "toolbox.quickOrder")
+            store.set(1, forKey: "toolbox.quickOrderVersion")
         }
+    }
+    init(defaults: UserDefaults = .standard) {
+        store = defaults
+        var seen = Set<QuickTool>()
+        let stored = defaults.stringArray(forKey: "toolbox.quickOrder")?.compactMap(QuickTool.init(rawValue:))
+        let previousDefaults: [QuickTool] = [.model, .network, .local, .quota]
+        let previousFive: [QuickTool] = previousDefaults + [.history]
+        let migrate = defaults.integer(forKey: "toolbox.quickOrderVersion") < 1 && (stored == previousDefaults || stored == previousFive)
+        order = (migrate ? Self.defaults : stored ?? Self.defaults).filter { seen.insert($0).inserted }
+        if migrate { defaults.set(order.map(\.rawValue), forKey: "toolbox.quickOrder") }
+        defaults.set(1, forKey: "toolbox.quickOrderVersion")
     }
     func toggle(_ item: QuickTool) { if order.contains(item) { order.removeAll { $0 == item } } else { order.append(item) } }
     func move(_ item: QuickTool, by step: Int) {
         guard let index = order.firstIndex(of: item), order.indices.contains(index + step) else { return }
         order.swapAt(index, index + step)
     }
+    func move(_ item: QuickTool, to target: QuickTool) {
+        guard item != target, let from = order.firstIndex(of: item), let to = order.firstIndex(of: target) else { return }
+        var values = order
+        values.remove(at: from); values.insert(item, at: to)
+        order = values
+    }
 }
+private struct QuickToolOrderDrag: Codable, Transferable {
+    let tool: QuickTool
+    let editorID: UUID
+    static var transferRepresentation: some TransferRepresentation {
+        CodableRepresentation(contentType: .data)
+    }
+}
+
 struct QuickToolGrid: View {
     @ObservedObject private var preferences = QuickToolPreferences.shared
     var color: Color = .primary
     var showHeading = false
     var compactIcons = false
     var expandsOnHover = false
+    var showsEditorButton = true
     let action: (QuickTool) -> Void
     @State private var editing = false
     @State private var availableWidth: CGFloat = 310
@@ -184,12 +220,14 @@ struct QuickToolGrid: View {
             }
         } else {
         VStack(alignment: .leading, spacing: 6) {
+            if showHeading || showsEditorButton {
             HStack {
                 if showHeading { Text(toolboxText("工具箱", "Toolboxes")).font(.system(size: 11, weight: .semibold)) }
                 Spacer()
-                Button { editing.toggle() } label: { Image(systemName: "slider.horizontal.3").font(.system(size: 10)) }
+                if showsEditorButton { Button { editing.toggle() } label: { Image(systemName: "slider.horizontal.3").font(.system(size: 10)) }
                     .buttonStyle(.plain).instantHint(toolboxText("编辑快捷按钮：显示、排序、恢复默认", "Edit shortcuts: visibility, order and defaults"))
-                    .popover(isPresented: $editing) { editor }
+                    .popover(isPresented: $editing) { editor } }
+            }
             }
             if expandsOnHover {
                 QuickToolHoverStrip(items: preferences.order, color: color, action: action)
@@ -211,17 +249,40 @@ struct QuickToolGrid: View {
         }
     }
     }
-    private var editor: some View {
+    private var editor: some View { QuickToolEditorView() }
+}
+struct QuickToolEditorView: View {
+    @ObservedObject private var preferences = QuickToolPreferences.shared
+    @State private var editorID = UUID()
+    @State private var dropTarget: QuickTool?
+    var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text(toolboxText("快捷按钮", "Quick actions")).font(.headline)
+            Text(toolboxText("勾选显示；拖动左侧手柄或使用箭头排序。", "Choose visible actions; drag a handle or use the arrows to reorder."))
+                .font(.system(size: 10)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             ForEach(preferences.order + QuickTool.allCases.filter { !preferences.order.contains($0) }) { item in
                 HStack {
+                    Image(systemName: "line.3.horizontal").font(.system(size: 10)).foregroundStyle(.secondary)
+                        .frame(width: 18, height: 22).contentShape(Rectangle())
+                        .draggable(QuickToolOrderDrag(tool: item, editorID: editorID))
+                        .allowsHitTesting(preferences.order.contains(item)).opacity(preferences.order.contains(item) ? 1 : 0.25)
+                        .instantHint(toolboxText("拖动调整从左到右的顺序", "Drag to change the left-to-right order"))
                     Toggle(item.title, isOn: Binding(get: { preferences.order.contains(item) }, set: { _ in preferences.toggle(item) })).toggleStyle(.checkbox)
                     Spacer()
                     Button { preferences.move(item, by: -1) } label: { Image(systemName: "chevron.up") }.disabled(preferences.order.first == item || !preferences.order.contains(item)).instantHint(toolboxText("向前移", "Move earlier"))
                     Button { preferences.move(item, by: 1) } label: { Image(systemName: "chevron.down") }.disabled(preferences.order.last == item || !preferences.order.contains(item)).instantHint(toolboxText("向后移", "Move later"))
                 }
+                .padding(.vertical, 2)
+                .background(Color.accentColor.opacity(dropTarget == item ? 0.08 : 0), in: RoundedRectangle(cornerRadius: 5))
+                .dropDestination(for: QuickToolOrderDrag.self) { payload, _ in
+                    guard payload.count == 1, let drag = payload.first, drag.editorID == editorID,
+                          preferences.order.contains(item), preferences.order.contains(drag.tool) else { return false }
+                    preferences.move(drag.tool, to: item); dropTarget = nil
+                    return true
+                } isTargeted: { targeted in dropTarget = targeted && preferences.order.contains(item) ? item : nil }
             }
+            Text(toolboxText("顺序从左到右生效，自动保存。", "Applied left to right and saved automatically."))
+                .font(.system(size: 10)).foregroundStyle(.secondary)
             Button(toolboxText("恢复默认", "Reset to defaults")) { preferences.order = QuickToolPreferences.defaults }
         }.buttonStyle(.bordered).controlSize(.small).padding(16).frame(width: 330)
     }

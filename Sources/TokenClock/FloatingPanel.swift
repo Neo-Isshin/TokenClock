@@ -130,17 +130,18 @@ extension FloatingPanel {
     }
 }
 
-final class DropdownPanel: NSPanel {
+final class DropdownPanel: NSPanel, NSWindowDelegate {
     private var resizeStartHeight: CGFloat = 0
     private var resizeTopY: CGFloat = 0
     private var minPanelHeight: CGFloat = 0
     private var maxPanelHeight: CGFloat = 0
     private var preferredPanelHeight: CGFloat?
+    private var preferredPanelWidth: CGFloat?
 
     init() {
         super.init(
             contentRect: NSRect(x: 0, y: 0, width: FloatingPanel.detailPanelWidth, height: FloatingPanel.collapsedHeight),
-            styleMask: [.borderless, .nonactivatingPanel],
+            styleMask: [.borderless, .nonactivatingPanel, .resizable],
             backing: .buffered,
             defer: false
         )
@@ -152,6 +153,7 @@ final class DropdownPanel: NSPanel {
         isMovableByWindowBackground = false
         becomesKeyOnlyIfNeeded = true
         collectionBehavior = []
+        delegate = self
     }
 
     override var canBecomeKey: Bool { false }
@@ -202,12 +204,18 @@ final class DropdownPanel: NSPanel {
         let newHeight = min(max(requestedHeight, minPanelHeight), maxPanelHeight)
         preferredPanelHeight = newHeight
         setFrame(
-            NSRect(x: frame.minX, y: resizeTopY - newHeight, width: FloatingPanel.detailPanelWidth, height: newHeight),
+            NSRect(x: frame.minX, y: resizeTopY - newHeight, width: frame.width, height: newHeight),
             display: true
         )
     }
 
     func endResize() {}
+
+    func windowDidEndLiveResize(_ notification: Notification) {
+        guard (notification.object as? NSWindow) === self else { return }
+        preferredPanelWidth = frame.width
+        preferredPanelHeight = frame.height
+    }
 
     /// 额度卡片通常比单个工具列表更高；首次打开时只向下扩展到舒适高度，
     /// 不覆盖用户已经调得更大的尺寸，也始终受当前屏幕可用空间限制。
@@ -220,7 +228,7 @@ final class DropdownPanel: NSPanel {
             NSRect(
                 x: frame.minX,
                 y: frame.maxY - targetHeight,
-                width: FloatingPanel.detailPanelWidth,
+                width: frame.width,
                 height: targetHeight
             ),
             display: true
@@ -235,27 +243,35 @@ final class DropdownPanel: NSPanel {
         if let activeToolCount, let showsWeather {
             minPanelHeight = requiredHeight(activeToolCount: activeToolCount, showsWeather: showsWeather)
         }
-        let screenFrame = (screen ?? NSScreen.main)?.visibleFrame
+        let screenFrame = targetScreen(for: clockFrame)?.visibleFrame
         let availableHeight = max(80, clockFrame.minY - (screenFrame?.minY ?? 0))
         minPanelHeight = min(minPanelHeight, availableHeight)
         maxPanelHeight = availableHeight
+        let availableWidth = max(1, (screenFrame?.width ?? FloatingPanel.detailPanelWidth) - 16)
+        minSize = NSSize(width: min(FloatingPanel.detailPanelWidth, availableWidth), height: minPanelHeight)
+        maxSize = NSSize(width: availableWidth, height: maxPanelHeight)
+    }
+
+    private func targetScreen(for clockFrame: NSRect) -> NSScreen? {
+        NSScreen.screens.first { $0.frame.contains(NSPoint(x: clockFrame.midX, y: clockFrame.midY)) } ?? screen ?? NSScreen.main
     }
 
     private func frame(below clockFrame: NSRect, height: CGFloat) -> NSRect {
-        NSRect(
-            x: clockFrame.midX - FloatingPanel.detailPanelWidth / 2,
-            y: clockFrame.minY - height,
-            width: FloatingPanel.detailPanelWidth,
-            height: height
-        )
+        let width = min(max(preferredPanelWidth ?? FloatingPanel.detailPanelWidth, minSize.width), maxSize.width)
+        let visible = targetScreen(for: clockFrame)?.visibleFrame
+        let centeredX = clockFrame.midX - width/2
+        let x = visible.map { min(max(centeredX,$0.minX+8),$0.maxX-width-8) } ?? centeredX
+        return NSRect(x: x, y: clockFrame.minY-height, width: width, height: height)
     }
 }
 
-final class NotificationPanel: NSPanel {
+final class NotificationPanel: NSPanel, NSWindowDelegate {
+    private var preferredSize: NSSize?
+
     init() {
         super.init(
             contentRect: NSRect(x: 0, y: 0, width: 280, height: 240),
-            styleMask: [.borderless, .nonactivatingPanel],
+            styleMask: [.borderless, .nonactivatingPanel, .resizable],
             backing: .buffered,
             defer: false
         )
@@ -267,6 +283,7 @@ final class NotificationPanel: NSPanel {
         isMovableByWindowBackground = false
         becomesKeyOnlyIfNeeded = true
         collectionBehavior = []
+        delegate = self
     }
 
     override var canBecomeKey: Bool { false }
@@ -283,18 +300,28 @@ final class NotificationPanel: NSPanel {
     }
 
     func show(near clockFrame: NSRect) {
-        let targetSize = NSSize(width: 280, height: 240)
-        let screenFrame = (screen ?? NSScreen.main)?.visibleFrame ?? .zero
+        let screenFrame = (NSScreen.screens.first { $0.frame.contains(NSPoint(x: clockFrame.midX, y: clockFrame.midY)) } ?? screen ?? NSScreen.main)?.visibleFrame ?? NSRect(x:0,y:0,width:280,height:240)
+        let available = screenFrame.insetBy(dx: 8, dy: 8)
+        minSize = NSSize(width: min(280, max(1,available.width)), height: min(200, max(1,available.height)))
+        maxSize = NSSize(width: max(minSize.width,available.width), height: max(minSize.height,available.height))
+        let preferred = preferredSize ?? NSSize(width: 280, height: 240)
+        let targetSize = NSSize(width: min(max(preferred.width,minSize.width),maxSize.width),
+                                height: min(max(preferred.height,minSize.height),maxSize.height))
         let margin: CGFloat = 10
         var x = clockFrame.maxX - targetSize.width
         var y = clockFrame.minY - targetSize.height - margin
         if y < screenFrame.minY {
             y = clockFrame.maxY + margin
         }
-        x = min(max(x, screenFrame.minX), screenFrame.maxX - targetSize.width)
-        y = min(max(y, screenFrame.minY), screenFrame.maxY - targetSize.height)
+        x = min(max(x, available.minX), available.maxX - targetSize.width)
+        y = min(max(y, available.minY), available.maxY - targetSize.height)
         setFrame(NSRect(origin: NSPoint(x: x, y: y), size: targetSize), display: true)
         orderFront(nil)
+    }
+
+    func windowDidEndLiveResize(_ notification: Notification) {
+        guard (notification.object as? NSWindow) === self else { return }
+        preferredSize = frame.size
     }
 
     func hide() {

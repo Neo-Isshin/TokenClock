@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 /// A menu-bar overview of existing usage snapshots.
 struct StatusSummarySnapshot {
@@ -71,6 +72,7 @@ struct StatusSummaryView: View {
                 records: viewModel.subscriptionAccounts, activeIDs: viewModel.activeSubscriptionAccountIDs),
             quotas: viewModel.statusSummaryQuotaIndicators, isQuotaLoading: viewModel.statusSummaryQuotaLoading,
             harnessSpeeds: Dictionary(uniqueKeysWithValues: snapshot.rankedTools.map { ($0.name, speedStore.summary(provider: $0.name)) }),
+            notebook: viewModel.userContent.notebook,
             onHistory: onHistory, onQuota: onQuota, onShare: onShare, onTool: onTool
         )
         .task(id: hourlyKey) { history.reload(day: day, tools: hourlyTools) }
@@ -100,6 +102,7 @@ struct StatusSummaryContent: View {
     var quotas: [StatusSummaryQuota] = []
     var isQuotaLoading = false
     var harnessSpeeds: [String: GenerationSpeed] = [:]
+    var notebook: NotebookStore? = nil
     let onHistory: () -> Void
     let onQuota: () -> Void
     let onShare: () -> Void
@@ -135,7 +138,14 @@ struct StatusSummaryContent: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: layout.spacing) {
-                    tokenCard
+                    if let notebook {
+                        HStack(alignment: .top, spacing: layout.spacing) {
+                            tokenCard.frame(maxWidth: .infinity)
+                            StatusSummaryNotebookCard(store: notebook, height: layout.notebookHeight,
+                                compact: layout.isCompact, onOpen: { onTool(.notebook) })
+                                .frame(width: layout.notebookWidth)
+                        }.accessibilityIdentifier("summary-usage-notebook-row")
+                    } else { tokenCard }
                     if layout.isCompact {
                         quotaStrip
                         summaryUsage
@@ -145,42 +155,18 @@ struct StatusSummaryContent: View {
                             summaryUsage.frame(maxWidth: .infinity, alignment: .topLeading)
                         }
                     }
-
+                    if layout.isCompact { summaryToolbox }
                 }
                 .frame(maxWidth: .infinity, alignment: .topLeading)
             }
             .scrollIndicators(.automatic)
             .accessibilityIdentifier("summary-content-scroll")
 
-            if layout.isCompact {
-                QuickToolGrid(compactIcons:true,action:onTool)
-            } else {
-                QuickToolGrid(showHeading:true,action:onTool)
-                    .padding(8).background(.primary.opacity(0.025),in:RoundedRectangle(cornerRadius:12))
-            }
+            if !layout.isCompact { summaryToolbox }
+            Text(L10n.shared.tr(snapshot.includesCache ? "status.cacheIncluded" : "status.cacheExcluded"))
+                .font(.system(size: 9)).foregroundStyle(.secondary)
+                .lineLimit(2).multilineTextAlignment(.center).frame(maxWidth: .infinity)
 
-            VStack(spacing: 6) {
-                GlassEffectContainer(spacing: 10) {
-                    if layout.isCompact {
-                        VStack(spacing: 8) {
-                            HStack(spacing: 8) {
-                                action("detail.historyUsage", icon: "clock.arrow.circlepath", color: .teal, perform: onHistory)
-                                action("detail.subscriptionQuota", icon: "gauge.with.dots.needle.50percent", color: .indigo, perform: onQuota)
-                            }
-                            action("status.share", icon: "square.and.arrow.up", color: .orange, perform: onShare)
-                        }
-                    } else {
-                        HStack(spacing: 10) {
-                            action("detail.historyUsage", icon: "clock.arrow.circlepath", color: .teal, perform: onHistory)
-                            action("detail.subscriptionQuota", icon: "gauge.with.dots.needle.50percent", color: .indigo, perform: onQuota)
-                            action("status.share", icon: "square.and.arrow.up", color: .orange, perform: onShare)
-                        }
-                    }
-                }
-                Text(L10n.shared.tr(snapshot.includesCache ? "status.cacheIncluded" : "status.cacheExcluded"))
-                    .font(.system(size: 9)).foregroundStyle(.secondary)
-                    .lineLimit(2).multilineTextAlignment(.center)
-            }
         }
         .padding(layout.padding)
         .frame(width: side, height: side)
@@ -190,11 +176,11 @@ struct StatusSummaryContent: View {
     }
 
     private var tokenCard: some View {
-        VStack(alignment: .leading, spacing: 5) {
+        VStack(alignment: .leading, spacing: notebook == nil ? 5 : 4) {
             HStack(alignment: .firstTextBaseline) {
                 VStack(alignment: .leading, spacing: 3) {
                     Label(L10n.shared.tr("clock.todayTokens"), systemImage: "chart.bar.fill")
-                        .font(.system(size: 12, weight: .medium)).foregroundStyle(.secondary)
+                        .font(.system(size: notebook == nil ? 12 : 10, weight: .medium)).foregroundStyle(.secondary)
                     Text(comparisonCaption + " " + deltaText(comparison.tokenDelta, money: false)
                          + (comparison.isPartial ? " · " + L10n.shared.tr("status.comparisonPartial") : ""))
                         .font(.system(size: 9, weight: .medium))
@@ -202,15 +188,15 @@ struct StatusSummaryContent: View {
                         .help(comparisonHelp)
                 }
                 Spacer()
-                Text(tokens).font(.system(size: 29, weight: .semibold, design: .rounded))
+                Text(tokens).font(.system(size: notebook == nil ? 29 : 24, weight: .semibold, design: .rounded))
                     .monospacedDigit().lineLimit(1).minimumScaleFactor(0.6)
             }
             usageMetrics
                 .font(.system(size: 10)).foregroundStyle(.secondary).lineLimit(1).minimumScaleFactor(0.75)
             hourlyChart
         }
-        .padding(10)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(notebook == nil ? 10 : 8)
+        .frame(maxWidth: .infinity, minHeight: notebook == nil ? nil : layout.notebookHeight, alignment: .topLeading)
         .background {
             RoundedRectangle(cornerRadius: 18)
                 .fill(LinearGradient(colors: [.cyan.opacity(0.17), .blue.opacity(0.08), .purple.opacity(0.12)],
@@ -220,7 +206,12 @@ struct StatusSummaryContent: View {
     }
 
     @ViewBuilder private var usageMetrics: some View {
-        if layout.isCompact {
+        if notebook != nil {
+            VStack(alignment: .leading, spacing: 3) {
+                HStack { messageMetric; Spacer(minLength: 3); costMetric }
+                cacheMetric
+            }
+        } else if layout.isCompact {
             VStack(alignment: .leading, spacing: 5) {
                 HStack { messageMetric; Spacer(); costMetric }
                 cacheMetric
@@ -260,14 +251,14 @@ struct StatusSummaryContent: View {
                     Text(showsFullDay ? HourlyOverviewLabels.title + " · 24h" : L10n.shared.tr("status.recentHours"))
                     Spacer(minLength: 0)
                     if partial {
-                        if layout.isCompact {
+                        if layout.isCompact || notebook != nil {
                             Image(systemName: "info.circle").help(HourlyOverviewLabels.partial)
                         } else {
                             Label(L10n.shared.tr("status.partialHourly"), systemImage: "info.circle")
                                 .help(HourlyOverviewLabels.partial)
                         }
                     }
-                    Text(showsFullDay ? "6h" : "24h").monospacedDigit()
+                    Text(showsFullDay ? "24h" : "6h").monospacedDigit()
                     Image(systemName: showsFullDay ? "chevron.up" : "chevron.down")
                         .font(.system(size: 8, weight: .semibold))
                 }
@@ -311,7 +302,7 @@ struct StatusSummaryContent: View {
         let accessibility: String = label + ": " + (hour.hasRecords ? "\(value) tokens" : L10n.shared.tr("status.noHourlyRecord"))
         return RoundedRectangle(cornerRadius: 2)
             .fill(hour.hasRecords ? Color.cyan.opacity(0.75).gradient : Color.primary.opacity(0.07).gradient)
-            .frame(width: showsFullDay ? nil : 14)
+            .frame(width: showsFullDay ? nil : (notebook == nil ? 14 : 10))
             .frame(height: value > 0 ? max(2, height * Double(value) / Double(maximum)) : 1)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
             .contentShape(Rectangle())
@@ -560,15 +551,184 @@ struct StatusSummaryContent: View {
         }
     }
 
-    private func action(_ title: String, icon: String, color: Color, perform: @escaping () -> Void) -> some View {
-        Button(action: perform) {
-            HStack(spacing: 6) {
-                Image(systemName: icon).foregroundStyle(color)
-                Text(L10n.shared.tr(title)).lineLimit(1).minimumScaleFactor(0.75)
-            }
-            .font(.system(size: 11, weight: .medium))
-            .frame(maxWidth: .infinity).padding(.vertical, 7)
+    private var summaryToolbox: some View {
+        StatusSummaryToolbox(side: side, onHistory: onHistory, onQuota: onQuota, onShare: onShare, onTool: onTool)
+    }
+
+}
+
+
+enum StatusSummaryToolboxAction: String, CaseIterable, Identifiable {
+    case model, network, local, quota, history, notebook, news, share
+    var id: String { rawValue }
+    var tool: QuickTool? { QuickTool(rawValue: rawValue) }
+    var title: String { tool?.title ?? toolboxText("Ailyre速递", "Ailyre AI digest") }
+    var hint: String { tool?.hint ?? toolboxText("在默认浏览器打开 Ailyre 新闻页", "Open the Ailyre news page in your default browser") }
+    static func normalized(_ values: [String]) -> [Self] {
+        var seen = Set<Self>()
+        return values.compactMap(Self.init(rawValue:)).filter { seen.insert($0).inserted }
+    }
+    static func initialOrder(from tools: [QuickTool]) -> [Self] {
+        // History, quota and sharing previously appeared in the fixed footer.
+        normalized(tools.map(\.rawValue) + ["quota", "history", "news", "share"])
+    }
+}
+
+@MainActor
+private struct StatusSummaryToolbox: View {
+    let side: CGFloat
+    let onHistory: () -> Void
+    let onQuota: () -> Void
+    let onShare: () -> Void
+    let onTool: (QuickTool) -> Void
+    @ObservedObject private var inherited = QuickToolPreferences.shared
+    @AppStorage("TC_statusSummaryToolboxOrder.v1") private var storedOrder = ""
+    @State private var editing = false
+    private var items: [StatusSummaryToolboxAction] {
+        guard let data = storedOrder.data(using: .utf8), let values = try? JSONDecoder().decode([String].self, from: data) else {
+            return StatusSummaryToolboxAction.initialOrder(from: inherited.order)
         }
-        .buttonStyle(.glass)
+        return StatusSummaryToolboxAction.normalized(values)
+    }
+    private var columns: Int { side < 320 ? 1 : side < 480 ? 2 : 4 }
+    private var rows: [[StatusSummaryToolboxAction]] {
+        stride(from: 0, to: items.count, by: columns).map { Array(items[$0..<min($0+columns,items.count)]) }
+    }
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text(toolboxText("工具箱", "Toolboxes")).font(.system(size: 11, weight: .semibold))
+                Spacer()
+                Button { editing.toggle() } label: { Image(systemName: "slider.horizontal.3").font(.system(size: 10)) }
+                    .buttonStyle(.plain).instantHint(toolboxText("编辑总结面板的快捷按钮", "Edit summary shortcuts"))
+                    .popover(isPresented: $editing) { editor }
+            }
+            GlassEffectContainer(spacing: 10) {
+                VStack(spacing: 6) {
+                    ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
+                        HStack(spacing: 6) {
+                            ForEach(row) { item in
+                                Button { open(item) } label: {
+                                    HStack(spacing: 5) {
+                                        if item == .news {
+                                            AilyreNewsMark(template: true).frame(width: 16, height: 20).foregroundStyle(.orange)
+                                        } else {
+                                            Image(systemName: item.tool?.symbol ?? "square.grid.2x2").foregroundStyle(accent(item))
+                                        }
+                                        Text(item.title).lineLimit(1).minimumScaleFactor(0.75)
+                                    }.font(.system(size: 10.5, weight: .medium))
+                                        .frame(maxWidth: .infinity, minHeight: 20).padding(.vertical, 3)
+                                }.buttonStyle(.glass).instantHint(item.hint)
+                                    .accessibilityIdentifier("summary-tool.\(item.rawValue)")
+                            }
+                        }
+                    }
+                }
+            }
+        }.accessibilityIdentifier("summary-toolbox")
+    }
+    private func open(_ item: StatusSummaryToolboxAction) {
+        switch item {
+        case .history: onHistory()
+        case .quota: onQuota()
+        case .share: onShare()
+        case .news: NSWorkspace.shared.open(URL(string: "https://www.ailyre.com/news/")!)
+        default: if let tool = item.tool { onTool(tool) }
+        }
+    }
+    private func accent(_ item: StatusSummaryToolboxAction) -> Color {
+        switch item {
+        case .model: return .cyan
+        case .network, .history: return .teal
+        case .local: return .mint
+        case .quota: return .indigo
+        case .notebook, .news, .share: return .orange
+        }
+    }
+    private func setItems(_ values: [StatusSummaryToolboxAction]) {
+        if let data = try? JSONEncoder().encode(values.map(\.rawValue)), let text = String(data: data, encoding: .utf8) { storedOrder = text }
+    }
+    private func move(_ item: StatusSummaryToolboxAction, by step: Int) {
+        var values = items
+        guard let index = values.firstIndex(of: item), values.indices.contains(index+step) else { return }
+        values.swapAt(index,index+step);setItems(values)
+    }
+    private var editor: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(toolboxText("总结面板快捷按钮", "Summary shortcuts")).font(.headline)
+            ForEach(items + StatusSummaryToolboxAction.allCases.filter { !items.contains($0) }) { item in
+                HStack {
+                    Toggle(item.title, isOn: Binding(get: { items.contains(item) }, set: { enabled in
+                        var values = items;values.removeAll { $0 == item };if enabled { values.append(item) };setItems(values)
+                    })).toggleStyle(.checkbox)
+                    Spacer()
+                    Button { move(item, by: -1) } label: { Image(systemName: "chevron.up") }.disabled(items.first == item || !items.contains(item)).instantHint(toolboxText("向前移", "Move earlier"))
+                    Button { move(item, by: 1) } label: { Image(systemName: "chevron.down") }.disabled(items.last == item || !items.contains(item)).instantHint(toolboxText("向后移", "Move later"))
+                }
+            }
+            Button(toolboxText("恢复默认", "Reset to defaults")) { setItems(StatusSummaryToolboxAction.allCases) }
+        }.buttonStyle(.bordered).controlSize(.small).padding(16).frame(width: 330)
+    }
+}
+
+
+@MainActor
+private struct StatusSummaryNotebookCard: View {
+    @ObservedObject var store: NotebookStore
+    var height: CGFloat
+    var compact: Bool
+    let onOpen: () -> Void
+    private var entries: [NotebookEntry] { Array(store.pendingSummaryEntries.prefix(compact ? 2 : 3)) }
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Button(action: onOpen) {
+                HStack(spacing: 4) {
+                    Image(systemName: "note.text").foregroundStyle(.orange)
+                    Text(toolboxText("行事本", "Notebook")).fontWeight(.semibold).lineLimit(1)
+                    Spacer(minLength: 0)
+                    Image(systemName: "arrow.up.right").font(.system(size: 8)).foregroundStyle(.secondary)
+                }.font(.system(size: 11)).contentShape(Rectangle())
+            }.buttonStyle(.plain).instantHint(toolboxText("打开行事本，记录想法或设置提醒", "Open your notebook to write or set a reminder"))
+            if entries.isEmpty {
+                Button(action: onOpen) {
+                    VStack(alignment: .leading, spacing: 5) {
+                        Image(systemName: "square.and.pencil").font(.system(size: 18)).foregroundStyle(.orange.opacity(0.65))
+                        Text(toolboxText("随手记下想法与待办", "Capture a thought or task"))
+                            .font(.system(size: 10)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading).contentShape(Rectangle())
+                }.buttonStyle(.plain)
+            } else {
+                ForEach(entries) { entry in
+                    HStack(alignment: .top, spacing: 5) {
+                        Button { store.setCompleted(entry.id, true) } label: {
+                            Image(systemName: "circle").font(.system(size: 11)).foregroundStyle(.secondary).frame(width: 15, height: 17)
+                        }.buttonStyle(.plain).instantHint(toolboxText("标记为已完成", "Mark complete"))
+                        Button { store.selectedID = entry.id; onOpen() } label: {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(entry.title.isEmpty ? toolboxText("未命名记录", "Untitled entry") : entry.title)
+                                    .font(.system(size: 10, weight: .medium)).lineLimit(1)
+                                if let date = entry.remindAt {
+                                    Text(date, format: .dateTime.month().day().hour().minute())
+                                        .font(.system(size: 8)).foregroundStyle(.secondary).lineLimit(1)
+                                } else if !entry.body.isEmpty {
+                                    Text(entry.body).font(.system(size: 9)).foregroundStyle(.secondary).lineLimit(1)
+                                }
+                            }.frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
+                        }.buttonStyle(.plain).instantHint(toolboxText("打开这条记录", "Open this entry"))
+                    }
+                    if entry.id != entries.last?.id { Divider().opacity(0.5) }
+                }
+                Spacer(minLength: 0)
+                Button(action: onOpen) {
+                    Text(toolboxText("全部记录", "All entries") + " · \(store.pendingSummaryEntries.count)")
+                        .font(.system(size: 9)).foregroundStyle(.secondary).lineLimit(1)
+                }.buttonStyle(.plain)
+            }
+        }
+        .padding(9).frame(maxWidth: .infinity, minHeight: height, maxHeight: height, alignment: .topLeading)
+        .background(LinearGradient(colors: [.orange.opacity(0.08), .yellow.opacity(0.04)], startPoint: .topLeading, endPoint: .bottomTrailing), in: RoundedRectangle(cornerRadius: 18))
+        .overlay(RoundedRectangle(cornerRadius: 18).strokeBorder(.orange.opacity(0.12), lineWidth: 0.7))
+        .environment(\.locale, Locale(identifier: L10n.shared.language.rawValue))
+        .accessibilityIdentifier("summary-notebook")
     }
 }
