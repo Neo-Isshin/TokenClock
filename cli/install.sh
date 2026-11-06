@@ -52,87 +52,6 @@ sha256_file() {
   fi
 }
 
-# BEGIN RESOURCE_BUNDLE_FUNCTIONS
-# Content-address resource entries independently, then sort only fixed-width
-# hex hashes. Names/targets containing spaces or newlines remain unambiguous;
-# no Python, GNU sort -z, directory mtimes, or symlink target traversal is used.
-resource_hash_stream() {
-  if command -v sha256sum >/dev/null 2>&1; then sha256sum | cut -d' ' -f1
-  else shasum -a 256 | cut -d' ' -f1
-  fi
-}
-
-resource_bundle_hash() {
-  local resource_root="$1" resource_entry resource_relative resource_executable
-  [ -d "$resource_root" ] && [ ! -L "$resource_root" ] || return 1
-  resource_root="$(cd "$resource_root" && pwd -P)" || return 1
-  find "$resource_root" -mindepth 1 -print0 | while IFS= read -r -d '' resource_entry; do
-    resource_relative="${resource_entry#"$resource_root"/}"
-    if [ -L "$resource_entry" ]; then
-      { printf 'link\0%s\0' "$resource_relative"; readlink "$resource_entry"; } | resource_hash_stream || return 1
-    elif [ -f "$resource_entry" ]; then
-      resource_executable=0; [ ! -x "$resource_entry" ] || resource_executable=1
-      { printf 'file\0%s\0%s\0' "$resource_relative" "$resource_executable"; cat "$resource_entry"; } | resource_hash_stream || return 1
-    elif [ -d "$resource_entry" ]; then
-      printf 'directory\0%s\0' "$resource_relative" | resource_hash_stream || return 1
-    else
-      printf 'Unsupported resource entry: %s\n' "$resource_entry" >&2
-      return 1
-    fi
-  done | LC_ALL=C sort | resource_hash_stream
-}
-
-deploy_resource_bundle() {
-  local resource_source="$1" resource_destination="$2" resource_parent
-  local resource_new_hash resource_old_hash resource_stage resource_stage_hash
-  RESOURCE_BUNDLE_CHANGED=0
-  resource_new_hash="$(resource_bundle_hash "$resource_source")" || return 1
-  if [ -d "$resource_destination" ] && [ ! -L "$resource_destination" ]; then
-    resource_old_hash="$(resource_bundle_hash "$resource_destination")" || return 1
-    [ "$resource_new_hash" != "$resource_old_hash" ] || return 0
-  fi
-  resource_parent="$(dirname "$resource_destination")"
-  mkdir -p "$resource_parent" || return 1
-  resource_stage="$(mktemp -d "$resource_parent/.tokenclock-resources.XXXXXX")" || return 1
-  if ! cp -R "$resource_source" "$resource_stage/bundle"; then
-    rm -rf "$resource_stage"
-    return 1
-  fi
-  resource_stage_hash="$(resource_bundle_hash "$resource_stage/bundle")" || {
-    rm -rf "$resource_stage"; return 1;
-  }
-  if [ "$resource_stage_hash" != "$resource_new_hash" ]; then
-    printf 'Resource copy changed during staging; previous bundle retained.\n' >&2
-    rm -rf "$resource_stage"
-    return 1
-  fi
-  # Preserve the previous directory until the complete staged bundle is active.
-  # A worker already running uses its verified immutable cache, not this path.
-  if [ -e "$resource_destination" ] || [ -L "$resource_destination" ]; then
-    if ! mv "$resource_destination" "$resource_stage/previous"; then
-      rm -rf "$resource_stage"
-      return 1
-    fi
-  fi
-  if ! mv "$resource_stage/bundle" "$resource_destination"; then
-    if [ -e "$resource_stage/previous" ] || [ -L "$resource_stage/previous" ]; then
-      if ! mv "$resource_stage/previous" "$resource_destination"; then
-        printf 'Resource activation failed; previous bundle preserved at %s\n' "$resource_stage/previous" >&2
-        return 1
-      fi
-    fi
-    rm -rf "$resource_stage"
-    return 1
-  fi
-  RESOURCE_BUNDLE_CHANGED=1
-  DEPLOYED_ANYTHING=1
-  if ! rm -rf "$resource_stage"; then
-    printf 'Resources activated; old staging cleanup remains at %s\n' "$resource_stage" >&2
-  fi
-  return 0
-}
-# END RESOURCE_BUNDLE_FUNCTIONS
-
 # Color output: only colorize on a TTY (curl|bash and other pipes strip it, avoiding escape codes polluting logs).
 if [ -t 1 ]; then
   C_GREEN=$'\033[1;32m'; C_YELLOW=$'\033[1;33m'; C_RED=$'\033[1;31m'; C_CYAN=$'\033[1;36m'; C_RESET=$'\033[0m'
@@ -141,6 +60,57 @@ else
 fi
 warn() { printf '\n%b⚠ %s%b\n' "$C_YELLOW" "$*" "$C_RESET"; }
 die()  { printf '\n%b❌ %s%b\n' "$C_RED" "$*" "$C_RESET" >&2; exit 1; }
+
+# BEGIN MACOS SIGNATURE POLICY
+# Keep a stable certificate-backed identity across updates. Local signing is
+# explicitly enrolled by the developer; never generate a certificate on install.
+macos_prepare_signature() {
+  local staged="$1" installed="$2" variant="$3" profile identity schema expected details previous requirement
+  expected="com.tokenclock.app.$variant"
+  case "$variant" in glass|normal) ;; *) return 1 ;; esac
+  profile="$HOME_DIR/signing/local-identity.json"
+  previous=""
+  if [ -f "$installed" ]; then
+    previous=$(/usr/bin/codesign -dv --verbose=4 "$installed" 2>&1 || true)
+  fi
+  if [ -f "$profile" ]; then
+    schema=$(/usr/bin/plutil -extract schema raw -o - "$profile" 2>/dev/null) || return 1
+    identity=$(/usr/bin/plutil -extract identity_sha1 raw -o - "$profile" 2>/dev/null) || return 1
+    [ "$schema" = tokenclock-local-signing/v1 ] || return 1
+    [[ "$identity" =~ ^[[:xdigit:]]{40}$ ]] || return 1
+    # A missing/locked key is an error, not permission to revert to ad-hoc.
+    /usr/bin/codesign --force --sign "$identity" --identifier "$expected" --timestamp=none \
+      --requirements "=designated => identifier \"$expected\" and certificate leaf = H\"$identity\"" "$staged" || return 1
+    /usr/bin/codesign --verify --strict -R "=identifier \"$expected\" and certificate leaf = H\"$identity\"" "$staged" || return 1
+  else
+    /usr/bin/codesign --verify --strict "$staged" || return 1
+    details=$(/usr/bin/codesign -dv --verbose=4 "$staged" 2>&1) || return 1
+    case "$details" in
+      *Signature=adhoc*)
+        # Development/legacy packages remain supported, but are never described
+        # as preserving privacy grants. This legacy release format is ad-hoc signed.
+        warn "[$variant] Development/ad-hoc package: privacy access may be requested again after updates."
+        /usr/bin/codesign --force --sign - --identifier "$expected" "$staged" || return 1
+        ;;
+      *)
+        # Preserve the vendor's signed bytes, especially Developer ID signatures.
+        printf '%s\n' "$details" | grep -Fx "Identifier=$expected" >/dev/null || return 1
+        ;;
+    esac
+  fi
+  case "$previous" in
+    *Signature=adhoc*|'') ;; # One-time migration from an old development build.
+    *)
+      /usr/bin/codesign --verify --strict "$installed" || return 1
+      requirement=$(/usr/bin/codesign -d -r- "$installed" 2>&1 | sed -n 's/^[# ]*designated => //p')
+      [ -n "$requirement" ] || return 1
+      # Reject signer changes and signed-to-ad-hoc downgrades, even with --force.
+      /usr/bin/codesign --verify --strict -R "=$requirement" "$staged" || return 1
+      ;;
+  esac
+  /usr/bin/codesign --verify --strict "$staged"
+}
+# END MACOS SIGNATURE POLICY
 
 # Invoked by tokenclock update? (it sets TOKENCLOCK_STATUS_FILE) → skip the long summary at the end;
 # the wrapper prints a one-line conclusion itself. Distinguishes "fresh install" from "upgrade".
@@ -333,9 +303,9 @@ release_tag_for_variant() {
     return
   fi
   case "$1" in
-    glass)  echo "v1.5.13" ;;
-    normal) echo "v1.5.13" ;;
-    linux)  echo "v1.5.13" ;;
+    glass)  echo "v1.6.0" ;;
+    normal) echo "v1.6.0" ;;
+    linux)  echo "v1.6.0" ;;
   esac
 }
 release_base_for_tag() {
@@ -352,8 +322,8 @@ tarball_name() {
 }
 tarball_sha256() {
   case "$1" in
-    glass)  echo "8de5df9a157ce1fce8e7674f30e68583bc085919d9b6cb1979a331024fbaa64b" ;;
-    normal) echo "79956382f8072878e4c6a12b56c24708eb0f23b9662ee67523a22704dbe2c608" ;;
+    glass)  echo "06c5680a312db7bd547121357c829426528dd8fb44867883cb0014b1a24e8845" ;;
+    normal) echo "49e1dccb98d95734c547543e3f0afb81cd7c8f9f0051272dfbc8136c33d5497d" ;;
   esac
 }
 
@@ -489,12 +459,11 @@ for entry in "${BUILT_BINS[@]}"; do
     dest_tmp="$HOME_DIR/$variant/.TokenClock.new.$$"
     cp "$bin_path" "$dest_tmp" || { rm -f "$dest_tmp"; die "Failed to stage [$variant] binary"; }
     chmod +x "$dest_tmp" || { rm -f "$dest_tmp"; die "Failed to make [$variant] binary executable"; }
-    # Ad-hoc re-sign safety net: prebuilt downloads or source-fallback artifacts may still be
-    # linker-signed adhoc (flags=0x20002), which taskgated kills on macOS 27. `--force --sign -`
-    # produces a proper adhoc (0x2). release.sh already signs before packaging; this re-signs
-    # $dest_bin to cover the source-fallback path and self-heal any signing damage from transfer/extraction.
     if [ "$PLATFORM" = macos ]; then
-      codesign --force --sign - "$dest_tmp" >/dev/null 2>&1 || warn "[$variant] ad-hoc re-sign failed: $dest_tmp (may crash on launch under macOS 27)"
+      macos_prepare_signature "$dest_tmp" "$dest_bin" "$variant" || {
+        rm -f "$dest_tmp"
+        die "[$variant] signing identity validation failed; the installed clock was not replaced."
+      }
     fi
     mv -f "$dest_tmp" "$dest_bin" || { rm -f "$dest_tmp"; die "Failed to activate [$variant] binary"; }
     say "  ✓ $dest_bin"
@@ -503,18 +472,17 @@ for entry in "${BUILT_BINS[@]}"; do
     say "  · [$variant] binary unchanged, skipping"
   fi
 
-  # Resources live beside the standalone binary. Changes in worker code or
-  # references also require the ordinary CLI update/restart path, even when the
-  # Swift executable itself did not change.
+  # Resource bundle: if present next to the build artifact, deploy it beside the binary (so the
+  # runtime Bundle.module mainPath resolves; otherwise switching to the .glass theme on a non-dev
+  # machine fatalError's because the bundle is missing). Count as deployed when missing → triggers restart.
   bundle_src="$(dirname "$bin_path")/TokenClock_TokenClock.bundle"
   if [ -d "$bundle_src" ]; then
     dest_bundle="$HOME_DIR/$variant/TokenClock_TokenClock.bundle"
-    deploy_resource_bundle "$bundle_src" "$dest_bundle" || die "Failed to deploy [$variant] resources; previous bundle was retained or its recovery path was printed."
-    if [ "$RESOURCE_BUNDLE_CHANGED" -eq 1 ]; then
-      say "  ✓ $dest_bundle (resources changed)"
-    else
-      say "  · [$variant] resources unchanged, skipping"
-    fi
+    bundle_missing=0; [ -d "$dest_bundle" ] || bundle_missing=1
+    rm -rf "$dest_bundle"
+    cp -R "$bundle_src" "$dest_bundle"
+    say "  ✓ $dest_bundle (resources)"
+    [ "$bundle_missing" -eq 1 ] && DEPLOYED_ANYTHING=1
   fi
 done
 

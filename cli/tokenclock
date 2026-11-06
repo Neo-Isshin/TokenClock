@@ -9,7 +9,7 @@
 #
 set -u
 
-CLI_VERSION="1.5.13"
+CLI_VERSION="1.6.0"
 # Process name (comm) of the running clock. **The executable of every variant must be named TokenClock**
 # (placed in a glass/ or normal/ subdir to distinguish variants), so that no matter which variant is
 # launched the process name is TokenClock — the pgrep/pkill -x below hits it precisely and never
@@ -377,6 +377,24 @@ cmd_update() {
     say "Checked (no upgrade performed)"
     rm -f "$tmp_script"
     return 0
+  fi
+
+  # An old downloaded installer must not silently strip an enrolled/local or
+  # vendor certificate signature before the new installer policy is published.
+  if [ "$PLATFORM" = Darwin ]; then
+    local protected_signature=0 signature_info installed_variant
+    if [ -f "${TOKENCLOCK_HOME:-$HOME/.tokenclock}/signing/local-identity.json" ]; then
+      protected_signature=1
+    else
+      for installed_variant in glass normal; do
+        signature_info=$(/usr/bin/codesign -dv --verbose=4 "$HOME/.tokenclock/$installed_variant/TokenClock" 2>&1 || true)
+        case "$signature_info" in *Signature=adhoc*) ;; *Authority=*) protected_signature=1 ;; esac
+      done
+    fi
+    if [ "$protected_signature" = 1 ] && ! grep -q '^# BEGIN MACOS SIGNATURE POLICY$' "$tmp_script"; then
+      rm -f "$tmp_script"
+      die "The downloaded installer cannot preserve this signing identity. No files were replaced; use the signing-aware installer when available."
+    fi
   fi
 
   # Don't stop up front: install.sh stages a sibling file and atomically replaces the installed

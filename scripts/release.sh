@@ -9,6 +9,7 @@ VERSION=""
 ASSETS_DIR=""
 PUBLISH=0
 WITHOUT_WINDOWS=0
+LEGACY_ADHOC=0
 
 say() { printf '%s\n' "$*"; }
 die() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
@@ -20,12 +21,13 @@ sha256_file() {
 
 usage() {
   cat <<'EOF'
-Usage: scripts/release.sh vX.Y.Z --assets-dir DIR [--publish] [--without-windows]
+Usage: scripts/release.sh vX.Y.Z --assets-dir DIR [--publish] [--without-windows] [--legacy-adhoc]
 
 Without --publish, validates the six locally built release assets and source pins.
 With --publish, uploads those exact files to the public VPS release directory, then
 downloads them again and verifies every byte. Source commits and tags remain manual.
 --without-windows publishes macOS/Linux only, preserving the existing Windows channel.
+--legacy-adhoc explicitly validates the historical precompiled macOS format; no Apple notarization or permission-continuity claim.
 EOF
 }
 
@@ -34,6 +36,7 @@ while [ "$#" -gt 0 ]; do
     --assets-dir) shift; [ "$#" -gt 0 ] || die "--assets-dir needs a directory"; ASSETS_DIR="$1" ;;
     --publish) PUBLISH=1 ;;
     --without-windows) WITHOUT_WINDOWS=1 ;;
+    --legacy-adhoc) LEGACY_ADHOC=1 ;;
     -h|--help) usage; exit 0 ;;
     -*) die "unknown option: $1" ;;
     *) [ -z "$VERSION" ] || die "only one version may be supplied"; VERSION="$1" ;;
@@ -91,15 +94,23 @@ for variant in glass normal; do
   tar -xzf "$ASSETS_DIR/TokenClock-$variant-universal.tar.gz" -C "$out" \
     || die "$variant tarball cannot be extracted"
   [ -x "$out/TokenClock" ] || die "$variant tarball has no executable TokenClock"
-  [ -d "$out/TokenClock_TokenClock.bundle" ] \
-    || die "$variant tarball has no sibling TokenClock_TokenClock.bundle"
   if command -v lipo >/dev/null 2>&1; then
     archs="$(lipo -archs "$out/TokenClock" 2>/dev/null || true)"
     echo "$archs" | grep -qw arm64 || die "$variant binary is missing arm64"
     echo "$archs" | grep -qw x86_64 || die "$variant binary is missing x86_64"
   fi
   if command -v codesign >/dev/null 2>&1; then
-    codesign --verify "$out/TokenClock" 2>/dev/null || die "$variant binary signature is invalid"
+    if [ "$LEGACY_ADHOC" -eq 1 ]; then
+      codesign --verify --strict "$out/TokenClock" || die "$variant binary signature is invalid"
+      signature_details="$(codesign -dv --verbose=2 "$out/TokenClock" 2>&1)"
+      case "$signature_details" in
+        *Signature=adhoc*) ;;
+        *) die "legacy distribution requires ad-hoc artifacts; a local signing identity must not be published" ;;
+      esac
+    else
+      python3 "$ROOT/scripts/macos-signing.py" verify-release --binary "$out/TokenClock" --variant "$variant" >/dev/null \
+        || die "$variant requires Apple Developer ID signing (historical ad-hoc packages require explicit --legacy-adhoc)"
+    fi
   fi
 done
 
