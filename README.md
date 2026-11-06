@@ -39,7 +39,7 @@
 
 ---
 
-**v1.6.3 updates macOS Glass only.** Reads recent real quota records saved by Claude App, repairs notification unread acknowledgement, and adds reliable edge/corner resizing for the dropdown and notification panels. Normal and Linux remain on v1.6.0; Windows remains on v1.5.12.
+**v1.6.3 is available for macOS Glass, macOS Normal, and Linux.** Shared usage, quota, digest, notebook, toolboxes and summary capabilities are aligned while native styles remain distinct. Windows stays on v1.5.12 pending self-hosted validation.
 
 ## ✨ Features
 
