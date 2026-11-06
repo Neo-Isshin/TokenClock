@@ -152,6 +152,22 @@ struct ModelDetectResultPresentation {
             }
             return
         }
+        if workflow == "codex" {
+            // Acquisition coverage only: this path has no calibrated identity reference.
+            for (index, record) in result["records"].array.enumerated() {
+                let path = prefix + "/result/records/\(index)"
+                add("S01", 2, .observed, T.text("已记录所选型号与 Codex 创建会话时的声明。", "已記錄所選型號與 Codex 建立會話時的聲明。", "Selected model and Codex thread declarations recorded."), path)
+                if record["submission_attempted"].bool == true {
+                    add("R01", 2, record["usage"].object.isEmpty ? .limited : .observed,
+                        T.text("使用当前 Codex 账户；用量缺失时保留未知。", "使用目前 Codex 帳戶；用量缺失時保留未知。", "Uses the current Codex account; missing usage remains unknown."), path + "/usage")
+                    add("T03", 2, .observed, T.text("已保存本次可见事件与停止原因。", "已儲存本次可見事件與停止原因。", "Visible events and stop reasons saved."), path + "/events")
+                    add(record["task_id"].string?.hasPrefix("NFP") == true ? "N01" : "B01", 2,
+                        record["status"].string == "completed" ? .observed : .limited,
+                        T.text("仅记录本机回答；不将 API 参考直接用于型号确认。", "僅記錄本機回答；不將 API 參考直接用於型號確認。", "Local answers recorded; API references do not confirm identity on this path."), path + "/answer")
+                }
+            }
+            return
+        }
         let source = result["source"]["kind"].string ?? ""
         isControlled = isControlled || report["scope"]["synthetic"].bool == true || result["scope"]["synthetic"].bool == true || ["scripted_demo", "synthetic_fixture", "controlled_variant"].contains(source) || result["source_scope"].string == "scripted_demo"
         // Imported short answers and artifacts are passive observations, not new probe calls.

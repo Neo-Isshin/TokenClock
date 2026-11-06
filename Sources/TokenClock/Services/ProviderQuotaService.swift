@@ -14,6 +14,8 @@ struct ProviderQuotaGroup: Identifiable, Equatable, Codable, Sendable {
     let buckets: [CodexQuotaBucket]
 }
 
+enum LocalQuotaAuthorizationSource: Equatable, Sendable { case cursorCLI, grokBot }
+
 struct ProviderQuotaSnapshot: Equatable, Sendable {
     var status: CodexQuotaStatus
     var groups: [ProviderQuotaGroup]
@@ -23,6 +25,8 @@ struct ProviderQuotaSnapshot: Equatable, Sendable {
     var message: String?
     var account: SubscriptionAccountIdentity? = nil
     var billing: SubscriptionBillingInfo? = nil
+    var requiresLocalAuthorization = false
+    var localAuthorizationSource: LocalQuotaAuthorizationSource? = nil
 
     static func idle(source: String) -> Self {
         Self(status: .idle, groups: [], planType: nil, refreshedAt: nil, source: source, message: nil)

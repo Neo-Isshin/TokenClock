@@ -114,6 +114,9 @@ class Handler(BaseHTTPRequestHandler):
                             'external_default':False,'api_key_in_profile_json':False,'capabilities':capabilities(),'references':overview()});return
             if route=='api/connections':
                 self._send(self.server.connections.list());return
+            if route=='api/local-codex':
+                from ..probes.codex_local import discover
+                self._send(discover());return
             if route.startswith('support/'):
                 from .capabilities import support_summary
                 job=self.server.manager.get(route.split('/')[-1])
@@ -137,6 +140,8 @@ class Handler(BaseHTTPRequestHandler):
                     # Derive the current compact presentation in memory only.
                     # Downloaded originals and frozen evidence remain byte-identical.
                     value=json.loads(report.read_bytes())
+                    if value.get('workflow_mode')=='codex':
+                        self._send(value);return
                     from ..probes.user_summary import summarize
                     from ..probes.result_brief import build_brief
                     previous=value.get('user_summary') if isinstance(value.get('user_summary'),dict) else {}
@@ -252,9 +257,11 @@ class Handler(BaseHTTPRequestHandler):
                 semantic=self.server.connections.resolve(semantic)
                 from ..probes.workflow import validate_config
                 semantic=validate_config(semantic)
+                if semantic.get('workflow_mode')=='codex' and body.get('allow_external') is not True:
+                    raise ValueError('请确认使用本机 Codex 账户额度。')
                 if (semantic.get('transport_mode')=='live' or (semantic.get('assessment',{}).get('enabled') and semantic.get('assessment',{}).get('transport_mode')=='live')) and body.get('allow_external') is not True:raise ValueError('真实探针调用需要明确同意本次外发和预算')
                 if not source:
-                    if semantic.get('workflow_mode') not in {'l2','l3'} or semantic.get('transport_mode') not in {'live','demo'}:raise ValueError('请选择输入文件')
+                    if semantic.get('workflow_mode') not in {'l2','l3','codex'} or semantic.get('transport_mode') not in {'live','demo','codex'}:raise ValueError('请选择输入文件')
                     controls=self.server.state_dir/'controls';controls.mkdir(exist_ok=True,mode=0o700)
                     source=str(controls/(uuid.uuid4().hex+'.json'))
                     from ..probes.common import write_json

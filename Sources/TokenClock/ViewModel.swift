@@ -291,8 +291,10 @@ final class ViewModel: ObservableObject {
             return true
         }
         return grokBotQuota.status == .unavailable
+            && grokBotQuota.requiresLocalAuthorization
             && grokBotQuota.groups.isEmpty
-            && (grokBotNativeAccessState == .authorizationRequired
+            && (grokBotQuota.localAuthorizationSource == .cursorCLI
+                || grokBotNativeAccessState == .authorizationRequired
                 || grokBotNativeAccessState == .authorizing)
     }
 
@@ -766,8 +768,8 @@ final class ViewModel: ObservableObject {
         }
     }
 
-    private func refreshGrokBotQuota(silentCLI: Bool = false) {
-        guard grokBotQuota.status != .loading else { return }
+    private func refreshGrokBotQuota(silentCLI: Bool = false, force: Bool = false) {
+        guard force || grokBotQuota.status != .loading else { return }
         grokBotQuotaTask?.cancel()
         grokBotQuota = .loading(previous: grokBotQuota)
         grokBotNativeAccessState = GrokBotNativeCredentialStore.shared.accessState
@@ -795,15 +797,28 @@ final class ViewModel: ObservableObject {
     func authorizeGrokBotNativeAccess() {
         guard grokBotNativeAccessState != .authorizing else { return }
         grokBotNativeAccessState = .authorizing
+        let target = grokBotQuota.localAuthorizationSource ?? .grokBot
+        let service = grokBotQuotaService
         Task { [weak self] in
             let authorized = await Task.detached(priority: .userInitiated) {
-                GrokBotNativeCredentialStore.shared.authorize()
+                target == .cursorCLI ? service.authorizeCursorCLI() : GrokBotNativeCredentialStore.shared.authorize()
             }.value
             guard let self else { return }
             self.grokBotNativeAccessState = GrokBotNativeCredentialStore.shared.accessState
-            guard authorized else { return }
+            guard authorized else {
+                if target == .cursorCLI {
+                    self.grokBotQuota = .unavailable(L10n.shared.tr("quota.grokBotCursorAuthorizationBody"), source: "Cursor Agent CLI")
+                    self.grokBotQuota.requiresLocalAuthorization = true
+                    self.grokBotQuota.localAuthorizationSource = .cursorCLI
+                } else if let key = GrokBotNativeCredentialStore.shared.failureMessageKey {
+                    self.grokBotQuota = .unavailable(L10n.shared.tr(key), source: "Grok Bot")
+                    self.grokBotQuota.requiresLocalAuthorization = self.grokBotNativeAccessState == .authorizationRequired
+                    if self.grokBotQuota.requiresLocalAuthorization { self.grokBotQuota.localAuthorizationSource = .grokBot }
+                }
+                return
+            }
             self.cursorAgentService.resetCredentials()
-            self.refreshGrokBotQuota()
+            self.refreshGrokBotQuota(force: true)
             self.refreshUsageData()
         }
     }

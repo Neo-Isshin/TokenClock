@@ -48,6 +48,18 @@ final class GrokBotQuotaService: @unchecked Sendable {
     private let stateDatabasePath: String
     private let environment: [String: String]
     private let homeDirectory: String
+    struct HTTPResponse: Sendable {
+        let statusCode: Int
+        let data: Data
+    }
+    typealias Transport = @Sendable (URLRequest) -> HTTPResponse?
+    private let transport: Transport?
+    typealias CursorCredentialReader = @Sendable (Bool) -> GrokBotNativeCredentialStore.PasswordReadResult
+    private let cursorCredentialReader: CursorCredentialReader
+    private let cursorReaderInjected: Bool
+    private let credentialLock = NSLock()
+    private var authorizedCLIToken: String?
+    private var authorizedCLIIdentityMetadata: Data?
     private let nativeCredentialStore: GrokBotNativeCredentialStore
 
     init(
@@ -57,46 +69,109 @@ final class GrokBotQuotaService: @unchecked Sendable {
         ),
         environment: [String: String] = ProcessInfo.processInfo.environment,
         homeDirectory: String = NSHomeDirectory(),
-        nativeCredentialStore: GrokBotNativeCredentialStore = .shared
+        nativeCredentialStore: GrokBotNativeCredentialStore = .shared,
+        transport: Transport? = nil,
+        cursorCredentialReader: CursorCredentialReader? = nil
     ) {
         self.fileManager = fileManager
         self.stateDatabasePath = stateDatabasePath
         self.environment = environment
         self.homeDirectory = homeDirectory
         self.nativeCredentialStore = nativeCredentialStore
+        self.transport = transport
+        self.cursorReaderInjected = cursorCredentialReader != nil
+        self.cursorCredentialReader = cursorCredentialReader ?? { GrokBotNativeCredentialStore.readCursorToken(allowInteraction: $0) }
     }
 
     func fetch() -> ProviderQuotaSnapshot {
         guard UserDefaults.standard.bool(for: .cursorCloudFetchEnabled, default: true) else {
-            return .unavailable("Cursor cloud access is disabled in Settings.", source: Self.source)
+            return failure("quota.grokBotCloudDisabled")
         }
-        let credentials = credentialCandidates()
-        guard !credentials.isEmpty else {
-            return .unavailable("Cursor login was not found.", source: Self.source)
-        }
-        for credential in credentials {
-            guard let data = request(credential: credential),
-                  var snapshot = Self.decodeResponse(data) else { continue }
-            snapshot.account = SubscriptionAccountIdentity(
-                id: credential.userID,
-                email: credential.email
-            )
-            if XSubscriptionQuota.contains(snapshot.groups) {
-                snapshot.source += " · \(credential.origin.sourceLabel)"
-            } else {
-                if snapshot.planType == nil { snapshot.planType = credential.membershipType }
-                snapshot.source = "\(Self.source) · \(credential.origin.sourceLabel)"
+        // Native secrets are a lazy fallback: a working Cursor login never
+        // probes a second app's protected key, and a network failure is not a grant failure.
+        let candidates = credentialCandidates()
+        for credential in candidates.values {
+            let response = request(credential: credential)
+            if response?.statusCode == 401, credential.origin == .cli {
+                credentialLock.withLock { if authorizedCLIToken == credential.token { authorizedCLIToken = nil; authorizedCLIIdentityMetadata = nil } }
             }
-            return snapshot
+            guard nativeCredentialStore.acceptsCursorToken(credential.token) else { return failure("quota.grokBotAccountChanged") }
+            if let result = snapshot(response, credential: credential) { return result }
+            if let response, response.statusCode == 429 { return failure("quota.grokBotRateLimited") }
+            if response == nil || (response?.statusCode ?? 0) >= 500 { return failure("quota.grokBotNetworkFailed") }
+            if let response, response.statusCode == 200 {
+                return failure(Self.hasNoIncludedAllowance(response.data) ? "quota.grokBotNoIncludedAllowance" : "quota.grokBotResponseInvalid")
+            }
+            if let status = response?.statusCode, ![401, 403, 404].contains(status) {
+                return failure(status < 400 ? "quota.grokBotNetworkFailed" : "quota.grokBotResponseInvalid")
+            }
         }
-        return .unavailable("Grok Bot quota request failed.", source: Self.source)
+        if candidates.cursorAuthorizationRequired && !nativeCredentialStore.hasSignedInInstance {
+            var result = failure("quota.grokBotCursorAuthorizationBody")
+            result.requiresLocalAuthorization = true
+            result.localAuthorizationSource = .cursorCLI
+            return result
+        }
+        guard let native = nativeCredentialStore.currentCredential else {
+            var result = failure(nativeCredentialStore.failureMessageKey ?? "quota.grokBotLoginUnavailable")
+            result.requiresLocalAuthorization = nativeCredentialStore.accessState == .authorizationRequired
+            if result.requiresLocalAuthorization { result.localAuthorizationSource = .grokBot }
+            return result
+        }
+        let credential = Credential(token: native.accessToken, userID: native.userID,
+            email: native.email, machineID: native.machineID, membershipType: nil, origin: .grokBot)
+        let response = request(credential: credential)
+        // An in-flight result from the previous App account must not become the
+        // current account's quota after the user signs out or switches accounts.
+        guard nativeCredentialStore.currentCredential?.userID == credential.userID else {
+            return failure("quota.grokBotAccountChanged")
+        }
+        if let result = snapshot(response, credential: credential) { return result }
+        if response?.statusCode == 429 { return failure("quota.grokBotRateLimited") }
+        if [401, 403].contains(response?.statusCode ?? 0) { return failure("quota.grokBotLoginRejected") }
+        if let response, response.statusCode == 200 {
+            return failure(Self.hasNoIncludedAllowance(response.data) ? "quota.grokBotNoIncludedAllowance" : "quota.grokBotResponseInvalid")
+        }
+        return failure("quota.grokBotNetworkFailed")
+    }
+
+    /// Called only by the explicit local-access button when Cursor CLI is the
+    /// existing credential source. "Allow once" is useful for this process too.
+    func authorizeCursorCLI() -> Bool {
+        let identity = cliIdentityMetadata()
+        return credentialLock.withLock {
+            if authorizedCLIToken != nil, authorizedCLIIdentityMetadata == identity { return true }
+            let result = cursorCredentialReader(true)
+            guard let token = result.password, CursorQuotaService.userID(from: token) != nil else { return false }
+            authorizedCLIToken = token
+            authorizedCLIIdentityMetadata = identity
+            return true
+        }
+    }
+
+    private func failure(_ key: String) -> ProviderQuotaSnapshot {
+        .unavailable(L10n.shared.tr(key), source: Self.source)
+    }
+
+    private func snapshot(_ response: HTTPResponse?, credential: Credential) -> ProviderQuotaSnapshot? {
+        guard let response, response.statusCode == 200,
+              var result = Self.decodeResponse(response.data) else { return nil }
+        result.account = SubscriptionAccountIdentity(id: credential.userID, email: credential.email)
+        if XSubscriptionQuota.contains(result.groups) {
+            result.source += " · \(credential.origin.sourceLabel)"
+        } else {
+            if result.planType == nil { result.planType = credential.membershipType }
+            result.source = "\(Self.source) · \(credential.origin.sourceLabel)"
+        }
+        return result
     }
 
     static func decodeResponse(_ data: Data, now: Date = Date()) -> ProviderQuotaSnapshot? {
         if XSubscriptionQuota.flag(XSubscriptionQuota.object(data)?["isUnified"]) == true {
             return XSubscriptionQuota.decodeSand(data, now: now)
         }
-        guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+        guard !hasNoIncludedAllowance(data),
+              let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let usedPercent = number(root["usagePercent"]) else { return nil }
         let reset = date(root["nextResetTimestampUtc"])
         let start = date(root["currentPeriodStart"])
@@ -122,6 +197,13 @@ final class GrokBotQuotaService: @unchecked Sendable {
         )
     }
 
+    private static func hasNoIncludedAllowance(_ data: Data) -> Bool {
+        guard let root = XSubscriptionQuota.object(data), XSubscriptionQuota.flag(root["isUnified"]) != true else { return false }
+        return XSubscriptionQuota.flag(root["hasNonZeroIncludedLimit"]) == false
+            && XSubscriptionQuota.flag(root["hasAvailableUsage"]) == false
+            && number(root["usagePercent"]) == 0
+    }
+
     /// Reproduces the checksum generated by Grok Bot's current Sand client.
     /// The prefix is time-bounded; the stable machine identifier is read from
     /// Cursor's ordinary state database rather than any protected keychain item.
@@ -143,32 +225,35 @@ final class GrokBotQuotaService: @unchecked Sendable {
         return prefix + machineID
     }
 
-    private func credentialCandidates() -> [Credential] {
+    private func credentialCandidates() -> (values: [Credential], cursorAuthorizationRequired: Bool) {
         var values: [Credential] = []
+        var cursorAuthorizationRequired = false
         if environment["TOKENCLOCK_DISABLE_CURSOR_CREDENTIALS"] != "1" {
-            if let cli = credentialFromCLI() { values.append(cli) }
-            if let ide = credentialFromIDE(), !values.contains(where: { $0.token == ide.token }) {
+            if let cli = credentialFromCLI(onDenied: { cursorAuthorizationRequired = $0 }), nativeCredentialStore.acceptsCursorToken(cli.token) { values.append(cli) }
+            if let ide = credentialFromIDE(), nativeCredentialStore.acceptsCursorToken(ide.token),
+               !values.contains(where: { $0.token == ide.token }) {
                 values.append(ide)
             }
         }
-        if let native = nativeCredentialStore.currentCredential,
-           !values.contains(where: { $0.token == native.accessToken }) {
-            values.append(Credential(
-                token: native.accessToken,
-                userID: native.userID,
-                email: native.email,
-                machineID: native.machineID,
-                membershipType: nil,
-                origin: .grokBot
-            ))
-        }
-        return values
+        return (values, cursorAuthorizationRequired)
     }
 
-    private func credentialFromCLI() -> Credential? {
-        let token = Self.nonEmpty(environment["CURSOR_AUTH_TOKEN"])
-            ?? cliAccessTokenFromFile()
-            ?? macOSCLIKeychainAccessToken()
+    private func credentialFromCLI(onDenied: (Bool) -> Void) -> Credential? {
+        var token = Self.nonEmpty(environment["CURSOR_AUTH_TOKEN"]) ?? cliAccessTokenFromFile()
+        if token == nil {
+            let identity = cliIdentityMetadata()
+            let read = macOSCLIKeychainAccessToken()
+            token = credentialLock.withLock {
+                if let value = read.password {
+                    authorizedCLIToken = value; authorizedCLIIdentityMetadata = identity
+                    return value
+                }
+                if read.authorizationRequired, authorizedCLIIdentityMetadata == identity { return authorizedCLIToken }
+                authorizedCLIToken = nil; authorizedCLIIdentityMetadata = nil // Removed/unavailable source, never a stale-account fallback.
+                return nil
+            }
+            onDenied(token == nil && read.authorizationRequired)
+        }
         guard let token, let userID = CursorQuotaService.userID(from: token) else { return nil }
         let metadata = cliMetadata()
         return Credential(
@@ -225,6 +310,12 @@ final class GrokBotQuotaService: @unchecked Sendable {
         return Self.decodeCLIAuthFile(data)
     }
 
+    private func cliIdentityMetadata() -> Data? {
+        guard let root = jsonObject(at: homeDirectory + "/.cursor/cli-config.json", maximumBytes: 2_097_152),
+              let identity = root["authInfo"] as? [String: Any] else { return nil }
+        return try? JSONSerialization.data(withJSONObject: identity, options: [.sortedKeys])
+    }
+
     private func cliMetadata() -> (email: String?, membershipType: String?) {
         let cliRoot = homeDirectory + "/.cursor"
         var email: String?
@@ -261,40 +352,15 @@ final class GrokBotQuotaService: @unchecked Sendable {
         return fileManager.contents(atPath: path)
     }
 
-    private func macOSCLIKeychainAccessToken() -> String? {
+    private func macOSCLIKeychainAccessToken() -> GrokBotNativeCredentialStore.PasswordReadResult {
         #if os(macOS)
         guard environment["TOKENCLOCK_DISABLE_CURSOR_CLI_KEYCHAIN"] != "1",
-              fileManager.isExecutableFile(atPath: "/usr/bin/security") else { return nil }
-        let process = Process()
-        let output = Pipe()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/security")
-        process.arguments = [
-            "find-generic-password", "-a", "cursor-user",
-            "-s", "cursor-access-token", "-w",
-        ]
-        process.standardOutput = output
-        process.standardError = Pipe()
-        do {
-            try process.run()
-            let deadline = Date().addingTimeInterval(2)
-            while process.isRunning, Date() < deadline {
-                Thread.sleep(forTimeInterval: 0.02)
-            }
-            guard !process.isRunning else {
-                process.terminate()
-                return nil
-            }
-            guard process.terminationStatus == 0 else { return nil }
-            let data = output.fileHandleForReading.readDataToEndOfFile()
-            guard data.count <= 16_384,
-                  let token = String(data: data, encoding: .utf8) else { return nil }
-            return Self.nonEmpty(token.trimmingCharacters(in: .whitespacesAndNewlines))
-        } catch {
-            if process.isRunning { process.terminate() }
-            return nil
+              cursorReaderInjected || fileManager.fileExists(atPath: homeDirectory + "/.cursor/cli-config.json") else {
+            return .init(password: nil)
         }
+        return cursorCredentialReader(false)
         #else
-        return nil
+        return .init(password: nil)
         #endif
     }
 
@@ -316,15 +382,17 @@ final class GrokBotQuotaService: @unchecked Sendable {
         )
     }
 
-    private func request(credential: Credential) -> Data? {
+    private func request(credential: Credential) -> HTTPResponse? {
         for attempt in 0..<2 {
-            if let data = requestOnce(credential: credential) { return data }
+            if let response = requestOnce(credential: credential) {
+                if response.statusCode < 500 || attempt == 1 { return response }
+            }
             if attempt == 0 { Thread.sleep(forTimeInterval: 0.25) }
         }
         return nil
     }
 
-    private func requestOnce(credential: Credential) -> Data? {
+    private func requestOnce(credential: Credential) -> HTTPResponse? {
         var headers = [
             "Accept": "application/json",
             "Authorization": "Bearer \(credential.token)",
@@ -342,6 +410,12 @@ final class GrokBotQuotaService: @unchecked Sendable {
             headers["x-sand-box-namespace"] = "prod"
         }
         let body = Data("{}".utf8)
+        guard let endpoint = URL(string: Self.endpoint) else { return nil }
+        var request = URLRequest(url: endpoint)
+        request.httpMethod = "POST"; request.httpBody = body; request.timeoutInterval = 15
+        request.httpShouldHandleCookies = false; request.cachePolicy = .reloadIgnoringLocalCacheData
+        for (name, value) in headers { request.setValue(value, forHTTPHeaderField: name) }
+        if let transport { return transport(request) }
         #if os(Windows)
         guard let response = try? WindowsNativeHTTP.request(
             url: Self.endpoint,
@@ -351,28 +425,32 @@ final class GrokBotQuotaService: @unchecked Sendable {
             connectTimeout: 8,
             sendTimeout: 8,
             receiveTimeout: 15
-        ), response.statusCode == 200 else { return nil }
-        return response.body
+        ) else { return nil }
+        return HTTPResponse(statusCode: response.statusCode, data: response.body)
         #else
-        guard let endpoint = URL(string: Self.endpoint) else { return nil }
-        var request = URLRequest(url: endpoint)
-        request.httpMethod = "POST"
-        request.httpBody = body
-        request.timeoutInterval = 15
-        for (name, value) in headers { request.setValue(value, forHTTPHeaderField: name) }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.httpCookieStorage = nil; configuration.urlCache = nil
+        let session = URLSession(configuration: configuration, delegate: NoRedirect(), delegateQueue: nil)
+        defer { session.invalidateAndCancel() }
         let semaphore = DispatchSemaphore(value: 0)
         let box = HTTPResultBox()
-        URLSession.shared.dataTask(with: request) { data, response, _ in
+        session.dataTask(with: request) { data, response, _ in
             box.store(data: data, response: response)
             semaphore.signal()
         }.resume()
         guard semaphore.wait(timeout: .now() + 16) == .success,
-              let response = box.load(), response.statusCode == 200 else { return nil }
-        return response.data
+              let response = box.load(), response.data.count <= 1_048_576 else { return nil }
+        return HTTPResponse(statusCode: response.statusCode, data: response.data)
         #endif
     }
 
     #if !os(Windows)
+    private final class NoRedirect: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
+        func urlSession(_ session: URLSession, task: URLSessionTask,
+                        willPerformHTTPRedirection response: HTTPURLResponse,
+                        newRequest request: URLRequest,
+                        completionHandler: @escaping @Sendable (URLRequest?) -> Void) { completionHandler(nil) }
+    }
     private final class HTTPResultBox: @unchecked Sendable {
         private let lock = NSLock()
         private var result: (data: Data, statusCode: Int)?

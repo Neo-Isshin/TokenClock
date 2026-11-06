@@ -54,7 +54,8 @@ final class GrokBotQuotaServiceTests: XCTestCase {
         let snapshot = GrokBotQuotaService(
             stateDatabasePath: "/tokenclock/no-cursor-ide-state.vscdb",
             environment: ["TOKENCLOCK_DISABLE_CURSOR_CREDENTIALS": "1"],
-            homeDirectory: "/tokenclock/no-cursor-home"
+            homeDirectory: "/tokenclock/no-cursor-home",
+            nativeCredentialStore: GrokBotNativeCredentialStore(supportDirectory: "/tokenclock/no-grok-bot-home")
         ).fetch()
         XCTAssertEqual(snapshot.status, .unavailable)
         XCTAssertLessThan(Date().timeIntervalSince(started), 1)

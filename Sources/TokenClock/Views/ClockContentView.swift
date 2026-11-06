@@ -239,6 +239,7 @@ struct ClockContentView: View {
         .accessibilityLabel(Text(accessibilitySummary))
         .accessibilityHint(Text(L10n.shared.tr("a11y.clockHint")))
         .accessibilityAddTraits(.isButton)
+        .accessibilityAction { viewModel.isExpanded.toggle() }
     }
 
     private func quotaRing(

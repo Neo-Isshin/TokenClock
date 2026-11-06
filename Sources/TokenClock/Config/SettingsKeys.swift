@@ -43,6 +43,7 @@ enum SettingsKey: String {
     // MARK: - 工具路径（每工具一个）
     case openclawPath = "TC_openclawPath"
     case claudeCodePath = "TC_claudeCodePath"
+    case claudeQuotaRequireProxy = "TC_claudeQuotaRequireProxy"
     case geminiPath = "TC_geminiPath"
     case codexPath = "TC_codexPath"
     case hermesPath = "TC_hermesPath"

@@ -39,7 +39,7 @@
 
 ---
 
-**v1.6.1 本轮仅更新 macOS Glass。** 新增 Ailyre AI速递、行事本、通知设置，优化紧凑总结面板、工具箱、面板拉伸与 Claude 额度凭据复用。Normal 与 Linux 仍为 v1.6.0，Windows 仍为 v1.5.12。
+**v1.6.2 本轮仅更新 macOS Glass。** 修复 Claude 本机授权入口与 Grok Bot 授权、账号处理，补交付本机 Codex 检测、Claude 网络策略和表盘点击修复。Normal 与 Linux 仍为 v1.6.0，Windows 仍为 v1.5.12。
 
 ## ✨ 核心特性
 

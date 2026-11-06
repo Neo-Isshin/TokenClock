@@ -679,6 +679,8 @@ class JobManager:
             return str(source),admitted
 
     def resume(self, job_id, semantic_config=None, *, allow_external=False):
+        if self.get(job_id).get('semantic_config',{}).get('workflow_mode')=='codex':
+            raise ValueError('本机 Codex 检测不自动续跑；请查看已完成记录，另建检测并确认额度。')
         with self._condition:
             if self._closed:
                 raise ValueError('任务管理器已关闭')

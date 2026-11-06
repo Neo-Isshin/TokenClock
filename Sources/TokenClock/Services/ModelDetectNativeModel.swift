@@ -6,7 +6,7 @@ import Combine
 @MainActor
 final class ModelDetectNativeModel: ObservableObject {
     enum Phase { case input, running, result }
-    enum Mode: String, CaseIterable { case session, api }
+    enum Mode: String, CaseIterable { case session, api, codex }
     struct Session: Identifiable { let id: String; let title: String; let url: URL; var model: String? = nil }
     struct ModelField: Identifiable {
         let id: String; let model: String; let scope: String; let owner: String; let location: String
@@ -67,6 +67,10 @@ final class ModelDetectNativeModel: ObservableObject {
     @Published var judgeImageTokens = "" { didSet { configurationChanged() } }
     @Published var judgeOutputLimit = "24576" { didSet { configurationChanged() } }
     @Published var models: [String] = []
+    @Published var localCodex: ModelDetectJSON = .null
+    @Published var localCodexLoading = false
+    @Published var localCodexModel = "" { didSet { configurationChanged() } }
+    @Published var localCodexMethod = "numeric" { didSet { configurationChanged() } }
     @Published var preview: Preview?
     @Published var targetConsent = false
     @Published var judgeConsent = false
@@ -123,6 +127,11 @@ final class ModelDetectNativeModel: ObservableObject {
     private var comparisonSelection = UUID()
 
     var comparisonCandidates: [History] { history.filter { $0.status == "completed" && $0.id != currentJobID } }
+    var isCodexSession: Bool {
+        guard let url = sourceURL else { return false }
+        let root = URL(fileURLWithPath: PathConfig.codexHome()).resolvingSymlinksInPath().path + "/"
+        return url.resolvingSymlinksInPath().path.hasPrefix(root)
+    }
     var selectedFollowUp: FollowUp? { followUps.first { $0.id == selectedFollowUpID } }
     var canCompareHistory: Bool { phase == .result && lastJob["status"].string == "completed" && !lastReport.object.isEmpty }
     var needsReferenceChoice: Bool { mode == .api && probeDepth == "l2" && l2Method != "numeric" && advancedFamily == "auto" && !modelID.isEmpty && (try? resolvedFamily()) == nil }
@@ -149,14 +158,15 @@ final class ModelDetectNativeModel: ObservableObject {
     private var judgeIdentity: String { judgeEndpoint.trimmingCharacters(in: .whitespacesAndNewlines) + "|" + judgeFormat }
     private var fullIdentity: String { identity + "|" + modelID }
     private var hasTargetCredential: Bool {
+        if mode == .codex { return localCodex["binding"].string != nil && localCodex["models"].array.contains { $0["id"].string == localCodexModel } }
         let state = profiles[selectedConnectionID]?["credential_state"].string ?? ""
         return (!selectedConnectionID.isEmpty && profileBinding == fullIdentity && ["session", "system_store"].contains(state)) || (!apiKey.isEmpty && keyBinding == identity)
     }
     private var hasJudgeCredential: Bool {
         mode == .api && reuseTargetForAssessment ? hasTargetCredential : !judgeKey.isEmpty && judgeKeyBinding == judgeIdentity
     }
-    private var wantsExternal: Bool { mode == .api || assessmentEnabled }
-    var canPrepare: Bool { service != nil && !isBusy && phase == .input && (mode == .api || sourceURL != nil || resumeID != nil) }
+    private var wantsExternal: Bool { mode == .api || mode == .codex || assessmentEnabled }
+    var canPrepare: Bool { service != nil && !isBusy && phase == .input && (mode == .codex ? hasTargetCredential && !localCodexLoading : (mode == .api || sourceURL != nil || resumeID != nil)) }
     var canStart: Bool {
         guard !isBusy, phase == .input, let preparedRevision, preparedRevision == revision, let p = preparedResult, p["valid"].bool == true else { return false }
         let roles = p["roles"].array
@@ -176,7 +186,7 @@ final class ModelDetectNativeModel: ObservableObject {
         guard !isBusy, phase == .input, preparedRevision == revision,
               let p = preparedResult, p["valid"].bool == true else { return false }
         let roles = p["roles"].array
-        let expectedRoles: Set<String> = Set((mode == .api ? ["target"] : []) + (assessmentEnabled ? ["judge"] : []))
+        let expectedRoles: Set<String> = Set((mode == .api || mode == .codex ? ["target"] : []) + (assessmentEnabled && mode != .codex ? ["judge"] : []))
         guard Set(roles.compactMap { $0["role"].string }) == expectedRoles, roles.count == expectedRoles.count else { return false }
         if wantsExternal {
             guard p["local_only"].bool == false,
@@ -194,6 +204,7 @@ final class ModelDetectNativeModel: ObservableObject {
         confirmStart()
     }
     var planSummary: String {
+        if mode == .codex { return ModelDetectNativeText.localized("本机 Codex", "Local Codex") + " · \(localCodexMethod == "numeric" ? 3 : 6) " + ModelDetectNativeText.localized("次独立回答 · 使用当前账户额度", "independent answers · uses the current account allowance") }
         if mode == .session {
             return filePurpose == "session" ? ModelDetectNativeText.localized("快速检测 · 型号记录、工作过程与可见异常 · 本地处理", "Quick check · model records, workflow and visible anomalies · processed locally") : ModelDetectNativeText.localized("核验已有内容 · 不生成新的待测回答", "Review existing content · no new target responses are generated")
         }
@@ -203,6 +214,7 @@ final class ModelDetectNativeModel: ObservableObject {
         return ModelDetectNativeText.localized("快速检测 · \(count == 0 ? 3 : count) 道短题，各独立重复 2 次 · 原始型号字段同步核对", "Quick check · \(count == 0 ? 3 : count) short tasks, each repeated twice · original model fields checked")
     }
     var targetDescription: String {
+        if mode == .codex { return localCodexModel + " · " + ModelDetectNativeText.localized("本机 Codex", "Local Codex") }
         let url = URL(string: endpoint)
         let host = (url?.host ?? ModelDetectNativeText.localized("未填写接口", "No endpoint")) + (url?.port.map { ":\($0)" } ?? "")
         return (modelID.isEmpty ? ModelDetectNativeText.localized("未选择型号", "No model selected") : modelID) + " · " + host
@@ -244,10 +256,34 @@ final class ModelDetectNativeModel: ObservableObject {
             }
             errorMessage = nil
             await refreshSessionsNow(); await refreshConnectionsNow(); await refreshHistoryNow()
+            if mode == .codex { await refreshLocalCodexNow() }
             if phase == .running, let id = currentJobID { beginPolling(id) }
         } catch { isBusy = false; canReconnect = true; errorMessage = message(error) }
     }
     func refreshSessions() { Task { await refreshSessionsNow(); await refreshHistoryNow() } }
+    func useLocalCodex() {
+        guard phase != .running else { return }
+        let suggested = isCodexSession ? comparisonModel : ""
+        newDetection(); assessmentEnabled = false; mode = .codex
+        if !suggested.isEmpty { localCodexModel = suggested }
+        refreshLocalCodex()
+    }
+    func refreshLocalCodex() { Task { await refreshLocalCodexNow() } }
+    func refreshLocalCodexNow() async {
+        guard !localCodexLoading else { return }
+        localCodexLoading = true; errorMessage = nil
+        defer { localCodexLoading = false }
+        do {
+            let info = try await request("api/local-codex")
+            guard info["schema"].string == "tokenclock-codex-local/v1", info["binding"].string != nil else { throw Failure(message: ModelDetectNativeText.localized("无法读取本机 Codex 配置。", "Could not read the local Codex configuration.")) }
+            localCodex = info
+            let available = info["models"].array.compactMap { $0["id"].string }
+            if !available.contains(localCodexModel) {
+                localCodexModel = localCodexModel.isEmpty ? (info["selected_model"].string ?? "") : ""
+            }
+            configurationChanged()
+        } catch { localCodex = .null; localCodexModel = ""; errorMessage = message(error) }
+    }
     func refreshReferenceOverview() {
         guard !referenceLoading else { return }; referenceLoading = true; referenceError = nil; referenceOverview = .null
         Task {
@@ -407,6 +443,11 @@ final class ModelDetectNativeModel: ObservableObject {
         return name.hasPrefix("claude-") ? "anthropic" : "openai"
     }
     func configuration(secrets: Bool, authorized: Bool) throws -> ModelDetectJSON {
+        if mode == .codex {
+            guard hasTargetCredential, let binding = localCodex["binding"].string else { throw Failure(message: ModelDetectNativeText.localized("请先读取本机 Codex 并选择型号。", "Read the local Codex configuration and choose a model first.")) }
+            return .object(["workflow_mode": .string("codex"), "mode": .string("external"), "transport_mode": .string("codex"),
+                "allow_live": .bool(authorized), "codex": .object(["binding": .string(binding), "model": .string(localCodexModel), "method": .string(localCodexMethod)])])
+        }
         var c: [String: ModelDetectJSON] = [:]
         let lane = mode == .api ? probeDepth : ["session": "l1", "answers": "l2", "artifact": "l3", "diagnostics": "diagnostics"][filePurpose] ?? "l1"
         c["workflow_mode"] = .string(lane); c["mode"] = .string("local")
@@ -448,6 +489,7 @@ final class ModelDetectNativeModel: ObservableObject {
     }
     private func body(_ config: ModelDetectJSON) -> ModelDetectJSON {
         var value: [String: ModelDetectJSON] = ["semantic_config": config]
+        if mode == .codex { value["input_name"] = .string(ModelDetectNativeText.localized("本机 Codex", "Local Codex") + " · " + localCodexModel) }
         if mode == .session && filePurpose == "session" && !comparisonModel.isEmpty { value["comparison_model"] = .string(comparisonModel) }
         if mode == .session, let sourceURL { value["source_path"] = .string(sourceURL.path); value["input_name"] = .string(sourceURL.lastPathComponent) }
         if let resumeID { value["resume_job_id"] = .string(resumeID) }
@@ -469,6 +511,16 @@ final class ModelDetectNativeModel: ObservableObject {
             guard p["valid"].bool == true else { throw Failure(message: p["errors"].array.compactMap(\.string).joined(separator: "\n")) }
             preparedConfiguration = config; preparedResult = p; preparedRevision = stamp; targetConsent = false; judgeConsent = false
             let roles = p["roles"].array
+            if mode == .codex {
+                guard p["billing_mode"].string == "codex_account", roles.count == 1, roles[0]["role"].string == "target",
+                      p["limits"]["requests"].number == Double(localCodexMethod == "numeric" ? 3 : 6), p["local_only"].bool == false else {
+                    throw Failure(message: ModelDetectNativeText.localized("本机检测范围不一致，请重新读取配置。", "The local test scope does not match. Read the configuration again."))
+                }
+                // The native Start button already displays account usage and the fixed request count.
+                targetConsent = true
+                try await submitPrepared(external: true)
+                return
+            }
             func description(_ row: ModelDetectJSON) -> String {
                 let count = row["max_requests"].number.map { ModelDetectNativeText.localized("，最多 \(Int($0)) 次请求", ", up to \(Int($0)) requests") } ?? ""
                 return row["sends"].array.compactMap(\.string).joined(separator: "、") + count + ModelDetectNativeText.localized("；费用上限 ", "; cost limit ") + dollars(row["budget_usd"])
@@ -492,8 +544,8 @@ final class ModelDetectNativeModel: ObservableObject {
     private func submitPrepared(external: Bool) async throws {
         guard preparedRevision == revision, preparedConfiguration != nil else { throw Failure(message: ModelDetectNativeText.localized("请重新确认配置与费用。", "Confirm the configuration and cost again.")) }
         if external {
-            if mode == .api && !targetConsent { throw Failure(message: "请确认待测请求的发送范围。") }
-            if assessmentEnabled && !judgeConsent { throw Failure(message: "请确认解析请求的发送范围。") }
+            if (mode == .api || mode == .codex) && !targetConsent { throw Failure(message: "请确认待测请求的发送范围。") }
+            if assessmentEnabled && mode != .codex && !judgeConsent { throw Failure(message: "请确认解析请求的发送范围。") }
         }
         let config = try configuration(secrets: external, authorized: external)
         var payload = body(config).object; payload["allow_external"] = .bool(external)
@@ -541,7 +593,7 @@ final class ModelDetectNativeModel: ObservableObject {
         progressFraction = job["progress"]["fraction"].number
         let totals = job["probe_billing"]["totals"].object.isEmpty ? job["semantic_billing"]["totals"] : job["probe_billing"]["totals"]
         if !totals.object.isEmpty { costSummary = ModelDetectNativeText.localized("已报告 ", "Reported ") + dollars(totals["reported_actual_cost_usd"]) + ModelDetectNativeText.localized(" · 估算 ", " · Estimated ") + dollars(totals["estimated_only_cost_usd"]) + ModelDetectNativeText.localized(" · 待结 ", " · Pending ") + dollars(totals["pending_reserved_cost_usd"]) }
-        else { costSummary = "" }
+        else { costSummary = job["semantic_config"]["workflow_mode"].string == "codex" ? ModelDetectNativeText.localized("使用本机 Codex 账户额度；美元费用未提供。", "Uses the local Codex account allowance; dollar cost is unavailable.") : "" }
     }
     private func finish(_ job: ModelDetectJSON) async {
         if job["status"].string == "completed", let id = job["id"].string {
@@ -558,6 +610,10 @@ final class ModelDetectNativeModel: ObservableObject {
         brief = Brief(title: complete ? ModelDetectNativeText.localized("结果已保存，暂无法显示摘要", "Results saved; summary unavailable") : job["status"].string == "cancelled" ? ModelDetectNativeText.localized("检测已停止", "Check stopped") : ModelDetectNativeText.localized("本次检测未完成", "Check incomplete"),
             summary: complete ? ModelDetectNativeText.localized("可以保存原始报告查看；原任务不会重新执行。", "Save the original report to inspect it; the task will not run again.") : ModelDetectNativeText.localized("已有记录与费用会保留。", "Existing records and costs are retained."), reasons: [],
             caveat: complete ? ModelDetectNativeText.localized("重新读取不会再次调用模型。", "Reloading does not call the model again.") : ModelDetectNativeText.localized("停止不代表模型有问题。再次测试前会确认剩余费用。", "Stopping does not indicate a model issue. Remaining cost is confirmed before another check."), primaryActionTitle: complete ? ModelDetectNativeText.localized("重新读取结果", "Reload results") : ModelDetectNativeText.localized("查看继续方案", "View continuation options"))
+        if !complete && job["semantic_config"]["workflow_mode"].string == "codex" {
+            brief = Brief(title: ModelDetectNativeText.localized("本次检测已停止", "This check stopped"), summary: ModelDetectNativeText.localized("已有回答与运行记录已保留，可以在详情中保存证据。", "Existing answers and run records are retained. Save the evidence from details."), reasons: [],
+                caveat: ModelDetectNativeText.localized("不会自动续跑。重新检测会再次使用此账户额度。", "It will not resume automatically. A new test uses this account allowance again."), primaryActionTitle: nil)
+        }
         detailText = jsonText(complete && !lastReport.object.isEmpty ? lastReport : job)
     }
     private func loadReport(_ id: String) async throws {
@@ -579,6 +635,7 @@ final class ModelDetectNativeModel: ObservableObject {
                               location: file + line + " " + (pointer["json_pointer"].string ?? row["field"].string ?? ""))
         }
         resultObjectLabel = lastJob["input_name"].string ?? report["result"]["subject"]["label"].string ?? ModelDetectNativeText.localized("本次结果", "Current results")
+        if report["workflow_mode"].string == "codex" { resultObjectLabel = ModelDetectNativeText.localized("本机 Codex", "Local Codex") + " · " + (report["result"]["requested_model"].string ?? "") }
         let human = value["display"]
         let action = human["next_action"].object.isEmpty ? value["next_action"] : human["next_action"]
         resultSuggestion = human["suggestion"].string ?? ""
@@ -639,6 +696,10 @@ final class ModelDetectNativeModel: ObservableObject {
         }
     }
     func retry() {
+        if lastJob["semantic_config"]["workflow_mode"].string == "codex", lastJob["status"].string != "completed" {
+            errorMessage = ModelDetectNativeText.localized("本机 Codex 检测不会续跑；已完成记录保留，请另建检测。", "Local Codex tests do not resume. Completed records are kept; start a new test.")
+            return
+        }
         if let id = currentJobID, lastJob["status"].string == "completed" {
             Task { do { try await loadReport(id); errorMessage = nil } catch { errorMessage = message(error) } }
             return
@@ -703,7 +764,12 @@ final class ModelDetectNativeModel: ObservableObject {
             return
         }
         Task {
-            do { guard let service else { return }; let bytes = try await service.download("reports/" + id + "/" + kind); try bytes.write(to: destination, options: .atomic) }
+            do {
+                guard let service else { return }
+                let partial = kind == "evidence.zip" && lastJob["semantic_config"]["workflow_mode"].string == "codex" && lastJob["status"].string != "completed"
+                let route = partial ? "partial-evidence/" + id : "reports/" + id + "/" + kind
+                let bytes = try await service.download(route); try bytes.write(to: destination, options: .atomic)
+            }
             catch { errorMessage = ModelDetectNativeText.localized("无法保存此文件，请检查报告是否完整及目标位置是否可写。", "Could not save the file. Check the report and destination permissions.") }
         }
     }

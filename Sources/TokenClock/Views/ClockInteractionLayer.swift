@@ -148,8 +148,12 @@ final class ClockInteractionNSView: NSView {
         if (onQuotaClick != nil || onQuotaRightClick != nil), !isHiddenOrHasHiddenAncestor,
            super.hitTest(point) != nil,
            tooltipRegions.contains(where: { $0.rect.contains(convert(point, from: superview)) }) { return self }
-        let dx = point.x - bounds.midX
-        let dy = point.y - bounds.midY
+        guard !isHiddenOrHasHiddenAncestor, super.hitTest(point) != nil else { return nil }
+        // AppKit supplies the point in superview coordinates; the circular
+        // region is defined in this view's bounds, including a shifted origin.
+        let localPoint = convert(point, from: superview)
+        let dx = localPoint.x - bounds.midX
+        let dy = localPoint.y - bounds.midY
         let radius = min(bounds.width, bounds.height) / 2
         return dx * dx + dy * dy <= radius * radius ? self : nil
     }

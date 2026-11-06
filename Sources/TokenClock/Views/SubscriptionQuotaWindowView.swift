@@ -10,6 +10,7 @@ struct SubscriptionQuotaWindowView: View {
     @State private var expandedEmails: Set<String> = []
     @State private var costModesExpanded = false
     @State private var legacyClaudeExpanded = false
+    @AppStorage(SettingsKey.claudeQuotaRequireProxy.rawValue) private var claudeRequireProxy = false
 
     init(
         viewModel: ViewModel,
@@ -155,6 +156,19 @@ struct SubscriptionQuotaWindowView: View {
                     .padding(18)
                 }
             }
+            Divider()
+            DisclosureGroup(L10n.shared.tr("quota.claudeNetworkSettings")) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Toggle(L10n.shared.tr("quota.claudeRequireProxy"), isOn: $claudeRequireProxy)
+                        .toggleStyle(.checkbox)
+                        .accessibilityIdentifier("claude-quota-require-proxy")
+                    Text(L10n.shared.tr("quota.claudeNetworkPolicyHelp"))
+                        .font(.system(size: 10)).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }.padding(.top, 6)
+            }
+            .font(.system(size: 11))
+            .padding(.horizontal, 20).padding(.vertical, 10)
         }
         .frame(minWidth: isTwoColumn ? 700 : 380,
                idealWidth: isTwoColumn ? 760 : 430,
@@ -239,9 +253,17 @@ struct SubscriptionQuotaWindowView: View {
                 Text(viewModel.claudeQuota.message ?? L10n.shared.tr("quota.claudeRecoveryHelp"))
                     .font(.system(size: 11)).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
-                Button { viewModel.connectClaude() } label: {
-                    Label(L10n.shared.tr("quota.claudeConnect"), systemImage: "person.crop.circle.badge.checkmark")
-                }.buttonStyle(.bordered).controlSize(.small)
+                Button {
+                    NSApp.activate(ignoringOtherApps: true)
+                    viewModel.authorizeClaudeLocal()
+                } label: {
+                    Label(L10n.shared.tr("quota.claudeReadLocal"), systemImage: "key")
+                }
+                .buttonStyle(.bordered).controlSize(.small)
+                .disabled(providerIsLoading(provider))
+                .instantHint(L10n.shared.tr("quota.claudeLocalAuthHint"))
+                Button(L10n.shared.tr("quota.claudeWebFallback")) { viewModel.connectClaude() }
+                    .buttonStyle(.plain).font(.system(size: 10)).foregroundStyle(.secondary)
                 Text(L10n.shared.tr("quota.claudeNoBackgroundPrompts"))
                     .font(.system(size: 9.5)).foregroundStyle(.secondary)
             }.sectionContainer()
@@ -256,9 +278,9 @@ struct SubscriptionQuotaWindowView: View {
                 VStack(spacing: 8) {
                     Image(systemName: "lock.shield")
                         .font(.system(size: 19, weight: .semibold))
-                    Text(L10n.shared.tr("quota.grokBotAuthorizationTitle"))
+                    Text(L10n.shared.tr(viewModel.grokBotQuota.localAuthorizationSource == .cursorCLI ? "quota.grokBotCursorAuthorizationTitle" : "quota.grokBotAuthorizationTitle"))
                         .font(.system(size: 12, weight: .bold, design: .rounded))
-                    Text(L10n.shared.tr("quota.grokBotAuthorizationBody"))
+                    Text(L10n.shared.tr(viewModel.grokBotQuota.localAuthorizationSource == .cursorCLI ? "quota.grokBotCursorAuthorizationBody" : "quota.grokBotAuthorizationBody"))
                         .font(.system(size: 9.5))
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
@@ -324,7 +346,9 @@ struct SubscriptionQuotaWindowView: View {
     }
 
     private func hasQuotaData(_ provider: SubscriptionProvider) -> Bool {
-        if viewModel.isHiddenUnifiedQuotaAlias(provider), viewModel.subscriptionAccounts(for: provider).isEmpty { return false }
+        let needsGrokRecovery = provider == .grokBot && (viewModel.grokBotQuota.requiresLocalAuthorization
+            || (viewModel.grokBotQuota.status == .unavailable && viewModel.grokBotNativeAccessState != .unavailable))
+        if !needsGrokRecovery, viewModel.isHiddenUnifiedQuotaAlias(provider), viewModel.subscriptionAccounts(for: provider).isEmpty { return false }
         switch provider {
         case .codex: return !viewModel.codexQuota.buckets.isEmpty
         case .claude: return true // Connect must be reachable without App/CLI credentials.
@@ -332,6 +356,7 @@ struct SubscriptionQuotaWindowView: View {
         case .cursor: return !viewModel.cursorQuota.groups.isEmpty
         case .grokBot:
             return !viewModel.grokBotQuota.groups.isEmpty || viewModel.grokBotAuthorizationVisible
+                || viewModel.grokBotNativeAccessState != .unavailable
         case .zhipu: return !viewModel.zhipuQuota.groups.isEmpty
         }
     }
@@ -382,8 +407,15 @@ struct SubscriptionQuotaWindowView: View {
                         .buttonStyle(.plain).font(.system(size:10)).foregroundStyle(.secondary)
                 }
             }
+            if provider == .grokBot, !accounts.isEmpty, viewModel.grokBotQuota.status == .unavailable,
+               !viewModel.grokBotAuthorizationVisible, let message = viewModel.grokBotQuota.message {
+                Text(message).font(.system(size: 10)).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             if accounts.isEmpty {
-                unavailableRow(provider == .claude && viewModel.claudeQuota.status != .loading
+                unavailableRow(provider == .grokBot && viewModel.grokBotQuota.status == .unavailable
+                    ? (viewModel.grokBotQuota.message ?? L10n.shared.tr("quota.grokBotCredentialReadFailed"))
+                    : provider == .claude && viewModel.claudeQuota.status != .loading
                     ? (viewModel.claudeQuota.message ?? L10n.shared.tr("quota.claudePassiveUnavailable"))
                     : provider == .codex && !viewModel.codexQuota.buckets.isEmpty
                         ? QuotaAccountLabels.unverified : L10n.shared.tr("quota.loadingProvider", title))

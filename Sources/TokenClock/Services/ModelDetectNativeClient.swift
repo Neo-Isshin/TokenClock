@@ -257,12 +257,15 @@ final class ModelDetectNativeClient: ModelDetectNativeServing {
         guard !parts.contains(where: { $0.isEmpty || $0 == "." || $0 == ".." }) else { return false }
         func job(_ value: String) -> Bool { matches(value, pattern: #"^job-[a-f0-9]{32}$"#) }
         let reportFiles = ["report.html", "report.json", "observation.json", "evidence.zip"]
-        if download { return !post && parts.count == 3 && parts[0] == "reports" && job(parts[1]) && reportFiles.contains(parts[2]) }
+        if download {
+            if !post && parts.count == 2 && parts[0] == "partial-evidence" && job(parts[1]) { return true }
+            return !post && parts.count == 3 && parts[0] == "reports" && job(parts[1]) && reportFiles.contains(parts[2])
+        }
         if post {
             if ["api/connections", "api/connections/delete", "api/model-catalog", "api/preview", "api/jobs", "api/upload", "api/combine", "api/history/compare"].contains(route) { return true }
             return parts.count == 4 && parts[0] == "api" && parts[1] == "jobs" && job(parts[2]) && ["cancel", "resume"].contains(parts[3])
         }
-        if ["api/info", "api/sessions", "api/connections", "api/probes", "api/jobs"].contains(route) { return true }
+        if ["api/info", "api/sessions", "api/connections", "api/probes", "api/jobs", "api/local-codex"].contains(route) { return true }
         if parts.count == 3 && parts[0] == "api" && parts[1] == "jobs" && job(parts[2]) { return true }
         if parts.count == 3 && parts[0] == "reports" && job(parts[1]) && ["report.json", "observation.json"].contains(parts[2]) { return true }
         return parts.count == 2 && parts[0] == "support" && job(parts[1])

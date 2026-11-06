@@ -57,6 +57,7 @@ final class ClaudeSilentKeychainTests: XCTestCase {
         XCTAssertTrue(services.allSatisfy { ClaudeSilentKeychain.accepts(service: $0) })
         XCTAssertTrue(ClaudeSilentKeychain.accepts(service: "Claude Safe Storage"))
         XCTAssertTrue(ClaudeSilentKeychain.accepts(service: "cursor-access-token"))
+        XCTAssertTrue(ClaudeSilentKeychain.accepts(service: "Grok Bot Safe Storage"))
     }
 
     func testHelperCannotExportCredentialsToAnUnrelatedParentProcess() {

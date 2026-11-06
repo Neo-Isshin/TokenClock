@@ -22,6 +22,7 @@ struct ClaudeWebOrganization: Equatable, Sendable, Identifiable {
 
 enum ClaudeAppQuotaError: Error, Sendable {
     case signIn, chooseOrganization([ClaudeWebOrganization]), noSubscription, network, rateLimited, blocked, malformed, permissionDenied
+    case proxyRequired, proxyRequestFailed
 
     var messageKey: String {
         switch self {
@@ -33,6 +34,8 @@ enum ClaudeAppQuotaError: Error, Sendable {
         case .rateLimited: return "quota.claudeRateLimited"
         case .blocked: return "quota.claudeWebBlocked"
         case .malformed: return "quota.claudeInvalidResponse"
+        case .proxyRequired: return "quota.claudeProxyRequired"
+        case .proxyRequestFailed: return "quota.claudeProxyRequestFailed"
         }
     }
 
@@ -51,6 +54,7 @@ final class ClaudeAppQuotaService: @unchecked Sendable {
         let status: Int
         let data: Data
         var challenge = false
+        var networkFailure: ClaudeQuotaNetwork.Failure? = nil
     }
     typealias Transport = @Sendable (URLRequest) -> Response?
     private let transport: Transport
@@ -72,6 +76,9 @@ final class ClaudeAppQuotaService: @unchecked Sendable {
             request.setValue("sessionKey=" + session.key, forHTTPHeaderField: "Cookie")
             request.setValue("application/json", forHTTPHeaderField: "Accept")
             guard let response = transport(request) else { throw ClaudeAppQuotaError.network }
+            if let failure = response.networkFailure {
+                throw failure == .proxyRequired ? ClaudeAppQuotaError.proxyRequired : ClaudeAppQuotaError.proxyRequestFailed
+            }
             if response.challenge { throw ClaudeAppQuotaError.blocked }
             if response.status == 429 { throw ClaudeAppQuotaError.rateLimited }
             if response.status == 401 { throw ClaudeAppQuotaError.signIn }
@@ -155,48 +162,13 @@ final class ClaudeAppQuotaService: @unchecked Sendable {
     }
 }
 
-/// Ephemeral, bounded, GET-only transport. Refuse redirects rather than forwarding
-/// a credential to an authentication/SSO/CDN host. No shared browser cookie jar.
-private final class ClaudeQuotaHTTP: NSObject, URLSessionDataDelegate, @unchecked Sendable {
-    private let lock = NSLock()
-    private let completed = DispatchSemaphore(value: 0)
-    private var body = Data()
-    private var response: HTTPURLResponse?
-    private var failed = false
-
+/// Both desktop-cookie and connected-Web quota reads use the same strict proxy transport.
+private enum ClaudeQuotaHTTP {
     static func get(_ request: URLRequest) -> ClaudeAppQuotaService.Response? {
-        guard request.url?.scheme == "https", request.url?.host == "claude.ai", request.httpMethod == "GET" else { return nil }
-        let delegate = ClaudeQuotaHTTP()
-        let config = URLSessionConfiguration.ephemeral
-        config.urlCache = nil; config.httpCookieStorage = nil; config.httpShouldSetCookies = false
-        let session = URLSession(configuration: config, delegate: delegate, delegateQueue: nil)
-        defer { session.invalidateAndCancel() }
-        session.dataTask(with: request).resume()
-        guard delegate.completed.wait(timeout: .now() + request.timeoutInterval) == .success else { return nil }
-        return delegate.lock.withLock {
-            guard !delegate.failed, let response = delegate.response else { return nil }
-            let challenge = response.value(forHTTPHeaderField: "cf-mitigated") == "challenge"
-                || (response.statusCode == 403 && String(decoding: delegate.body.prefix(4096), as: UTF8.self).contains("Just a moment"))
-            return .init(status: response.statusCode, data: delegate.body, challenge: challenge)
+        switch ClaudeQuotaNetwork.get(request, claudeHome: PathConfig.claudeCodeHome()) {
+        case .success(let result): return .init(status: result.status, data: result.data, challenge: result.challenge)
+        case .failure(let failure): return .init(status: 0, data: Data(), networkFailure: failure)
         }
-    }
-    func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
-                    newRequest request: URLRequest, completionHandler: @escaping @Sendable (URLRequest?) -> Void) { completionHandler(nil) }
-    func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive response: URLResponse,
-                    completionHandler: @escaping @Sendable (URLSession.ResponseDisposition) -> Void) {
-        lock.withLock { self.response = response as? HTTPURLResponse }
-        completionHandler(response.expectedContentLength > 1_048_576 ? .cancel : .allow)
-    }
-    func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
-        let cancel = lock.withLock {
-            if body.count + data.count > 1_048_576 { failed = true; return true }
-            body.append(data); return false
-        }
-        if cancel { dataTask.cancel() }
-    }
-    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
-        lock.withLock { if error != nil { failed = true } }
-        completed.signal()
     }
 }
 #endif

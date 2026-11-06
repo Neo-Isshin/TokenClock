@@ -43,8 +43,8 @@
     },
     {
       "path": "scripts/model_integrity/l1/jobs.py",
-      "sha256": "a991bb870599a66c11a3eb53922f740454e5a65c3945a8ce2ddd092286a416cd",
-      "bytes": 53922
+      "sha256": "bbb182f7cdfa03006a8ba4ad04deb68a9e7ac7c00d80318028a234a67b82f925",
+      "bytes": 54134
     },
     {
       "path": "scripts/model_integrity/l1/model_catalog.py",
@@ -63,8 +63,8 @@
     },
     {
       "path": "scripts/model_integrity/l1/preview.py",
-      "sha256": "e3cb07406c284946500743456d132de8b2c0cd215319dd56ddfd7708b74013d0",
-      "bytes": 17312
+      "sha256": "daeed9dbb6af8084db12f0cb853ada91c7437faea26b755aee9497ece2890045",
+      "bytes": 17488
     },
     {
       "path": "scripts/model_integrity/l1/references.py",
@@ -113,8 +113,8 @@
     },
     {
       "path": "scripts/model_integrity/l1/webui.py",
-      "sha256": "bc0c46627606e0327956e64f96aa0a33086320f39ed3a29131c0ba41c17620ba",
-      "bytes": 18931
+      "sha256": "cb1776d5646a5f4208f49bea3ce0c92eeb44079de338a478080b770dabf27956",
+      "bytes": 19387
     },
     {
       "path": "scripts/model_integrity/m10_features.py",
@@ -165,6 +165,11 @@
       "path": "scripts/model_integrity/probes/catalog.py",
       "sha256": "224ba31d1906eecfc36912044f15d08f33eaa576d59329f4deff7a9665f0adc7",
       "bytes": 1450
+    },
+    {
+      "path": "scripts/model_integrity/probes/codex_local.py",
+      "sha256": "78c4add28584d30f6241ef437da488f89bf47d2846156a3a4a1359cb3448e9be",
+      "bytes": 25188
     },
     {
       "path": "scripts/model_integrity/probes/common.py",
@@ -393,8 +398,8 @@
     },
     {
       "path": "scripts/model_integrity/probes/workflow.py",
-      "sha256": "ea92c82b26798b110a48b2c439141d04232bd6aa15c5f58d6839ae4928872932",
-      "bytes": 24769
+      "sha256": "9a51f7e33b1d60825e0b0dc3b6dd3981160612a6fe8ab83c20e76cbe1689f153",
+      "bytes": 25171
     }
   ],
   "research_raw_records_included": false,
@@ -405,5 +410,5 @@
     "h01_h03": "verified OS sandbox",
     "h02_h04": "Node.js + Playwright + verified OS network guard"
   },
-  "runtime_sha256": "c5380bde7a4d59e9a1e7ca1cc24d331eb32ed5a9ede7a2febfbd8197a2f4ab7c"
+  "runtime_sha256": "eef375380887ae634c80df3a33d1cc7e7cb305bb35f695b05afdb25e91ed97c3"
 }

@@ -23,6 +23,7 @@ final class ModelDetectNativeFlowTests: XCTestCase {
         var historyRows: [ModelDetectJSON] = []
         var historyReply: ModelDetectJSON = .object([:])
         var infoReply: ModelDetectJSON = .object([:])
+        var localCodexReply: ModelDetectJSON = .null
         var submitError: Error?
         var pollError: Error?
 
@@ -37,6 +38,7 @@ final class ModelDetectNativeFlowTests: XCTestCase {
             if route == "api/jobs", body == nil { return .object(["jobs": .array(historyRows)]) }
             if route == "api/history/compare" { return historyReply }
             if route == "api/info" { return infoReply }
+            if route == "api/local-codex" { return localCodexReply }
             if route == "api/preview" { return previewReply }
             if route == "api/jobs" {
                 if let submitError { throw submitError }
@@ -136,6 +138,42 @@ final class ModelDetectNativeFlowTests: XCTestCase {
         let url = try source(); model.prefillSource(url)
         XCTAssertEqual(model.sourceURL, url); XCTAssertEqual(model.phase, .input)
         XCTAssertEqual(service.count("api/preview"), 0); XCTAssertEqual(service.count("api/jobs"), 0)
+    }
+
+    func testLocalCodexDiscoveryAndOneClickAreSeparate() async throws {
+        let (model, service) = makeModel()
+        service.localCodexReply = .object(["schema": .string("tokenclock-codex-local/v1"), "binding": .string("account-binding"),
+            "selected_model": .string("test-model"), "models": .array([.object(["id": .string("test-model")])])])
+        model.mode = .codex
+        await model.refreshLocalCodexNow()
+        XCTAssertEqual(service.count("api/jobs"), 0)
+        XCTAssertEqual(model.localCodexModel, "test-model")
+        XCTAssertTrue(model.canPrepare)
+        service.previewReply = .object(["valid": .bool(true), "local_only": .bool(false), "billing_mode": .string("codex_account"),
+            "limits": .object(["requests": .number(3)]), "roles": .array([role("target")])])
+        await model.prepareNow()
+        XCTAssertEqual(service.count("api/jobs"), 1)
+        let payload = try XCTUnwrap(service.calls.last { $0.route == "api/jobs" && $0.body != nil }?.body)
+        XCTAssertEqual(payload["allow_external"].bool, true)
+        XCTAssertEqual(payload["semantic_config"]["workflow_mode"].string, "codex")
+        XCTAssertEqual(payload["semantic_config"]["codex"]["model"].string, "test-model")
+        XCTAssertNil(payload["semantic_config"]["provider"]["api_key"].string)
+        XCTAssertNil(payload["source_path"].string)
+    }
+
+    func testLocalCodexWillNotFallbackToAnUnlistedModelOrWrongRequestCount() async throws {
+        let (model, service) = makeModel()
+        model.mode = .codex
+        service.localCodexReply = .object(["schema": .string("tokenclock-codex-local/v1"), "binding": .string("account-binding"),
+            "selected_model": .string(""), "models": .array([.object(["id": .string("test-model")])])])
+        await model.refreshLocalCodexNow()
+        XCTAssertFalse(model.canPrepare)
+        model.localCodexModel = "test-model"
+        service.previewReply = .object(["valid": .bool(true), "local_only": .bool(false), "billing_mode": .string("codex_account"),
+            "limits": .object(["requests": .number(9)]), "roles": .array([role("target")])])
+        await model.prepareNow()
+        XCTAssertEqual(service.count("api/jobs"), 0)
+        XCTAssertNotNil(model.errorMessage)
     }
 
     func testLocalOneClickPreviewsThenSubmitsWithoutExternalAuthority() async throws {

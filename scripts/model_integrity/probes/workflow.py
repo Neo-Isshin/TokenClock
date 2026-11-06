@@ -12,6 +12,9 @@ from .scoring import score_checks
 
 
 def validate_config(config):
+    if isinstance(config,dict) and config.get('workflow_mode')=='codex':
+        from .codex_local import validate
+        return validate(config)
     config=copy.deepcopy(config or {'mode':'local'})
     from .review_config import resolve_shared_review
     config=resolve_shared_review(config)
@@ -257,6 +260,9 @@ def _role_progress(callback,purpose):
 
 
 def run_analysis(source_path,comparison_model=None,semantic_config=None,progress=None,cancelled=None,output_dir=None):
+    if isinstance(semantic_config,dict) and semantic_config.get('workflow_mode')=='codex':
+        from .codex_local import run_analysis as local_codex
+        return local_codex(source_path,comparison_model,semantic_config,progress,cancelled,output_dir)
     config=validate_config(semantic_config);mode=config.get('workflow_mode','l1')
     from .reference_release import overview
     release=overview()  # Verify before constructing a paid target or judge client.

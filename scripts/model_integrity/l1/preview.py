@@ -59,6 +59,9 @@ def _role(name,provider,quotes,count,sends,*,complete=True,kind='exact_first_req
 
 
 def preview(config,source_path=None):
+    if isinstance(config,dict) and config.get('workflow_mode')=='codex':
+        from ..probes.codex_local import preview as local_preview
+        return local_preview(config)
     result={'schema':'tokenclock-task-preview/v1','valid':False,'errors':[],'warnings':[],
             'roles':[],'local_only':True,'total_upper_usd':None,'total_budget_usd':'0',
             'network_requests':0,'model_requests':0,'creates_job':False}

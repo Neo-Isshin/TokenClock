@@ -147,6 +147,7 @@ final class ClaudeQuotaService: @unchecked Sendable {
             if let desktop { return desktop }
             return .unavailable("Claude quota request failed.")
         }
+        if let messageKey = response.networkFailureKey { return .unavailable(L10n.shared.tr(messageKey)) }
         guard (200..<300).contains(response.statusCode) else {
             if let desktop { return desktop }
             return .unavailable("Claude quota request returned HTTP \(response.statusCode).")
@@ -535,12 +536,22 @@ final class ClaudeQuotaService: @unchecked Sendable {
             maximumResponseBytes: 1_048_576
         ) else { return nil }
         return HTTPResponse(statusCode: response.statusCode, body: response.body)
-        #else
+        #elseif os(macOS)
         guard let endpoint = URL(string: url) else { return nil }
         var request = URLRequest(url: endpoint)
         request.httpMethod = "GET"
         request.httpShouldHandleCookies = false
         request.cachePolicy = .reloadIgnoringLocalCacheData
+        request.timeoutInterval = AppConfig.Scan.claudeQuotaTimeoutSeconds
+        for (name, value) in headers { request.setValue(value, forHTTPHeaderField: name) }
+        switch ClaudeQuotaNetwork.get(request, claudeHome: claudeHome, environment: environment) {
+        case .success(let result): return HTTPResponse(statusCode: result.status, body: result.data)
+        case .failure(let failure): return HTTPResponse(statusCode: 0, body: Data(), networkFailureKey: failure.rawValue)
+        }
+        #else
+        guard let endpoint = URL(string: url) else { return nil }
+        var request = URLRequest(url: endpoint)
+        request.httpMethod = "GET"
         request.timeoutInterval = AppConfig.Scan.claudeQuotaTimeoutSeconds
         for (name, value) in headers { request.setValue(value, forHTTPHeaderField: name) }
 

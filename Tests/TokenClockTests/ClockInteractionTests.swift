@@ -129,6 +129,53 @@ final class ClockInteractionTests: XCTestCase {
         XCTAssertEqual(window.frame.origin.y, 130, accuracy: 0.001)
     }
 
+    func testHitUsesSuperviewCoordinatesForTranslatedCircleCenter() {
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: 600, height: 600))
+        let view = ClockInteractionNSView(onClick: {})
+        view.frame = NSRect(x: 150, y: 150, width: 240, height: 240)
+        container.addSubview(view)
+        let center = NSPoint(x: 270, y: 270)
+
+        XCTAssertTrue(view.hitTest(center) === view)
+        XCTAssertTrue(container.hitTest(center) === view, "Normal AppKit traversal must reach the translated clock")
+    }
+
+    func testHitRejectsOutsideTranslatedFrameAndTransparentCorners() {
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: 600, height: 600))
+        let view = ClockInteractionNSView(onClick: {})
+        view.frame = NSRect(x: 150, y: 150, width: 240, height: 240)
+        container.addSubview(view)
+
+        XCTAssertNil(view.hitTest(NSPoint(x: 120, y: 120)), "The old local center is outside the translated frame")
+        XCTAssertNil(view.hitTest(NSPoint(x: 151, y: 151)), "Transparent circle corners remain click-through")
+        XCTAssertFalse(container.hitTest(NSPoint(x: 120, y: 120)) === view)
+    }
+
+    func testHitRespectsHiddenViewAndHiddenAncestor() {
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: 240, height: 240))
+        let view = ClockInteractionNSView(onClick: {})
+        view.frame = container.bounds
+        container.addSubview(view)
+        let center = NSPoint(x: 120, y: 120)
+
+        view.isHidden = true
+        XCTAssertNil(view.hitTest(center))
+        view.isHidden = false
+        container.isHidden = true
+        XCTAssertNil(view.hitTest(center))
+    }
+
+    func testHitConvertsTranslatedFrameWithNonzeroBoundsOrigin() {
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: 600, height: 600))
+        let view = ClockInteractionNSView(onClick: {})
+        view.frame = NSRect(x: 150, y: 150, width: 240, height: 240)
+        view.bounds = NSRect(x: 20, y: 35, width: 240, height: 240)
+        container.addSubview(view)
+
+        XCTAssertTrue(view.hitTest(NSPoint(x: 270, y: 270)) === view)
+        XCTAssertNil(view.hitTest(NSPoint(x: 151, y: 151)))
+    }
+
     private func makeWindow(
         onClick: @escaping () -> Void,
         onDragStart: @escaping () -> Void = {}

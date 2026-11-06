@@ -39,7 +39,7 @@
 
 ---
 
-**v1.6.1 updates macOS Glass only.** Adds Ailyre AI digest, a local notebook, notification settings, a compact summary toolbox, resizable panels and safer reuse of existing Claude quota credentials. Normal and Linux remain on v1.6.0; Windows remains on v1.5.12.
+**v1.6.2 updates macOS Glass only.** Fixes Claude local-access entry points and Grok Bot authorization/account handling; includes the completed local Codex detection, Claude networking and clock click fixes. Normal and Linux remain on v1.6.0; Windows remains on v1.5.12.
 
 ## ✨ Features
 

@@ -41,7 +41,7 @@ enum ClaudeSilentKeychain {
     }
 
     static func accepts(service: String) -> Bool {
-        ["Claude Safe Storage", "Claude Code", "cursor-access-token"].contains(service)
+        ["Claude Safe Storage", "Claude Code", "cursor-access-token", "Grok Bot Safe Storage"].contains(service)
             || service.range(of: "^Claude Code(?:-custom-oauth)?-credentials(?:-[0-9a-f]{8})?$",
                              options: .regularExpression) != nil
     }
