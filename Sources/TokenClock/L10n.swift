@@ -159,6 +159,7 @@ final class L10n: @unchecked Sendable {
         "menu.launchAtLogin":    [.zhHans: "开机自启",              .zhHant: "開機自啟",              .en: "Launch at Login"],
         "menu.dialTextColor":    [.zhHans: "文字颜色",             .zhHant: "文字顏色",              .en: "Text Color"],
         "detail.generationSpeedHelp": [.zhHans: "最近一次有效采样前10分钟内已完成响应的平均生成速度，每3分钟检查；停产时保留该值，空闲时间不计入。含思考输出，不含输入、缓存和可识别的工具等待。Codex 由请求计时估算；归属不清时不计算。", .zhHant: "最近一次有效採樣前10分鐘內已完成回應的平均生成速度，每3分鐘檢查；停產時保留該值，閒置時間不計入。含思考輸出，不含輸入、快取和可辨識的工具等待。Codex 由請求計時估算；歸屬不清時不計算。", .en: "Generation speed over the 10 minutes ending at the last valid sample, checked every 3 minutes. Retained while idle; idle time is not counted. Includes reasoning; excludes input, cache, and identifiable tool waits. Codex uses estimated request timings; ambiguous attribution is omitted."],
+        "detail.generationSpeedAsOf": [.zhHans: "最近有效采样：%@（停产后保留）", .zhHant: "最近有效採樣：%@（停產後保留）", .en: "Last valid sample: %@ (retained while idle)"],
         "menu.dialTextTheme":    [.zhHans: "跟随主题",             .zhHant: "跟隨主題",              .en: "Follow Theme"],
         "menu.dialTextWhite":    [.zhHans: "白色",                 .zhHant: "白色",                  .en: "White"],
         "menu.dialTextBlack":    [.zhHans: "黑色",                 .zhHant: "黑色",                  .en: "Black"],
@@ -194,7 +195,7 @@ final class L10n: @unchecked Sendable {
         "status.cacheIncluded":   [.zhHans: "Token 用量包含缓存读 · 与表盘口径一致", .zhHant: "Token 用量包含快取讀取 · 與錶盤口徑一致", .en: "Cache reads included · Same basis as the dial"],
         "status.cacheExcluded":   [.zhHans: "Token 用量不含缓存读 · 与表盘口径一致", .zhHant: "Token 用量不含快取讀取 · 與錶盤口徑一致", .en: "Cache reads excluded · Same basis as the dial"],
 
-        "status.interactionHint": [.zhHans: "单击：今日总结\n双击：隐藏或圆盘遮挡达到85%时临时置顶显示，否则隐藏\n右键：更多选项", .zhHant: "單擊：今日總結\n雙擊：隱藏或圓盤遮擋達到85%時暫時置頂顯示，否則隱藏\n右鍵：更多選項", .en: "Click: today's summary\nDouble-click: raise/show if hidden or at least 85% of the dial is covered; otherwise hide\nRight-click: more options"],
+        "status.interactionHint": [.zhHans: "单击：今日总结\n双击：临时置顶→隐藏；隐藏或遮挡≥85%→临时置顶，其他情况隐藏\n不更改 Always on Top 选项\n右键：更多选项", .zhHant: "單擊：今日總結\n雙擊：暫時置頂→隱藏；隱藏或遮擋≥85%→暫時置頂，其他情況隱藏\n不更改 Always on Top 選項\n右鍵：更多選項", .en: "Click: today's summary\nDouble-click: temporary top → hide; hidden/≥85% covered → temporary top; otherwise hide\nAlways on Top preference stays unchanged\nRight-click: more options"],
         "status.partialHourly": [.zhHans: "仅已记录部分", .zhHant: "僅已記錄部分", .en: "Recorded data only"],
         "status.recentHours": [.zhHans: "近 6 小时", .zhHant: "近 6 小時", .en: "Last 6 hours"],
         "status.expandHourly": [.zhHans: "展开今日 24 小时", .zhHant: "展開今日 24 小時", .en: "Show today's 24 hours"],
@@ -203,7 +204,6 @@ final class L10n: @unchecked Sendable {
         "status.noReadableQuota": [.zhHans: "暂无可读取额度 · 打开订阅面板", .zhHant: "暫無可讀取額度 · 開啟訂閱面板", .en: "No readable quota · Open subscriptions"],
         "status.harnesses": [.zhHans: "Harness 工具", .zhHant: "Harness 工具", .en: "Harnesses"],
         "status.modelList": [.zhHans: "模型", .zhHant: "模型", .en: "Models"],
-        "detail.generationSpeedAsOf": [.zhHans: "最近有效采样：%@（停产后保留）", .zhHant: "最近有效採樣：%@（停產後保留）", .en: "Last valid sample: %@ (retained while idle)"],
 
         "status.comparedYesterday": [.zhHans: "较昨日同期", .zhHant: "較昨日同期", .en: "vs. yesterday"],
         "status.comparisonPartial": [.zhHans: "部分来源", .zhHant: "部分來源", .en: "partial sources"],
@@ -220,7 +220,6 @@ final class L10n: @unchecked Sendable {
         "status.timeline.renewal": [.zhHans: "订阅续费", .zhHant: "訂閱續費", .en: "renews"],
         "status.timeline.expiry": [.zhHans: "订阅到期", .zhHant: "訂閱到期", .en: "expires"],
         "status.timeline.date": [.zhHans: "订阅日期", .zhHant: "訂閱日期", .en: "subscription date"],
-
         "status.nextQuotaReset": [.zhHans: "下次重置", .zhHant: "下次重置", .en: "Next reset"],
         "status.quotaResetUnknown": [.zhHans: "尚未提供重置时间", .zhHant: "尚未提供重置時間", .en: "Reset time not reported"],
         "status.quotaPeriod": [.zhHans: "周期", .zhHant: "週期", .en: "Period"],

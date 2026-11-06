@@ -338,7 +338,8 @@ struct ClockContentView: View {
     }
 
     private func quotaTooltipText(for indicator: DialQuotaIndicator) -> String {
-        var lines = ["\(indicator.provider.emoji) \(indicator.provider.displayName)"]
+        let emoji = indicator.subscriptionName == nil ? indicator.provider.emoji : "𝕏"
+        var lines = ["\(emoji) \(indicator.displayName)"]
         if let name = indicator.accountName { lines.append(name) }
         for detail in indicator.details {
             lines.append(
@@ -374,7 +375,7 @@ struct ClockContentView: View {
         let quotas = viewModel.dialQuotaIndicators.map {
             L10n.shared.tr(
                 "quota.dialAccessibility",
-                $0.provider.displayName,
+                $0.displayName,
                 Int($0.outerRemainingPercent.rounded())
             )
         }

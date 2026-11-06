@@ -95,6 +95,17 @@ enum MacVariantSwitcher {
             throw Failure("The package does not support edition switching. Please retry after the hot update is available.")
         }
         _ = try run("/usr/bin/codesign", ["--verify", newBinary.path])
+        let existingBinary = binaryURL(target)
+        if fm.fileExists(atPath: existingBinary.path) {
+            let details = try run("/usr/bin/codesign", ["-dv", "--verbose=4", existingBinary.path])
+            if !details.contains("Signature=adhoc") {
+                let output = try run("/usr/bin/codesign", ["-d", "-r-", existingBinary.path])
+                let requirement = try replacementRequirement(details: details, output: output)
+                if let requirement {
+                    _ = try run("/usr/bin/codesign", ["--verify", "--strict", "-R", "=" + requirement, newBinary.path])
+                }
+            }
+        }
         let destination = binaryURL(target).deletingLastPathComponent()
         try fm.createDirectory(at: destination, withIntermediateDirectories: true)
         let backup = destination.appendingPathComponent("edition-backup-\(UUID().uuidString)")
@@ -116,6 +127,18 @@ enum MacVariantSwitcher {
             for name in saved { try? fm.moveItem(at: backup.appendingPathComponent(name), to: destination.appendingPathComponent(name)) }
             throw error
         }
+    }
+
+    static func replacementRequirement(details: String, output: String) throws -> String? {
+        if details.contains("Signature=adhoc") { return nil }
+        let prefixes = ["# designated => ", "designated => "]
+        guard let line = output.split(separator: "\n").first(where: { line in prefixes.contains(where: { line.hasPrefix($0) }) }),
+              let prefix = prefixes.first(where: { line.hasPrefix($0) }) else {
+            throw Failure("The installed edition has no verifiable signing identity; it was not replaced.")
+        }
+        let requirement = String(line.dropFirst(prefix.count))
+        guard !requirement.isEmpty else { throw Failure("The installed signing identity is empty.") }
+        return requirement
     }
 
     static func launchHandoff(to target: LaunchAgentHelper.Variant, from source: LaunchAgentHelper.Variant, sourcePath: String, sourcePID: Int32, launchAtLogin: Bool) throws {

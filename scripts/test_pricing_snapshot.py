@@ -1,134 +1,83 @@
-"""Offline safeguards for unattended catalog publication."""
+"""Offline Ailyre-to-TokenClock conversion and billing safeguards."""
 import importlib.util
+import json
 from pathlib import Path
 import unittest
-from unittest.mock import patch
-import json
-import tempfile
-from datetime import datetime, timezone
 
-spec = importlib.util.spec_from_file_location("pricing", Path(__file__).with_name("update-pricing-snapshot.py"))
-pricing = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(pricing)
+spec = importlib.util.spec_from_file_location('pricing', Path(__file__).with_name('update-pricing-snapshot.py'))
+pricing = importlib.util.module_from_spec(spec); spec.loader.exec_module(pricing)
+
+
+def row(provider='openai', model='gpt-6.1-sol', **values):
+    return dict(provider=provider, model=model, native_id=model, category='api', original=True,
+                currency='USD', unit='USD / 1M tokens', tier='standard', input=2., output=10.,
+                cache_read=.1, cache_write=None, **values)
+
 
 def feed():
-    return {f"fixture-{i}": {"litellm_provider": "openai", "mode": "chat",
-                           "input_cost_per_token": 0.000002, "output_cost_per_token": 0.000010}
-            for i in range(120)}
+    rows = [row(model=f'gpt-fixture-{i}') for i in range(50)]
+    rows += [row('anthropic', 'claude-sonnet-5-5'), row('google', 'gemini-4-argon')]
+    return {'schema':4, 'unit':'USD / 1M tokens', 'generated_at':'2026-11-04T06:00:00Z', 'rows':rows}
+
 
 class SnapshotTests(unittest.TestCase):
-    def test_october_models_have_official_fallback_rates_when_feed_lags(self):
-        models = pricing.validated_models(feed(), {})
-        argon = models["gemini-4-argon"]
-        self.assertEqual((argon["in"], argon["out"], argon["cr"], argon["pm"]), (2, 10, 0.1, 1.8))
-        haiku = models["claude-haiku-5-5"]
-        self.assertEqual((haiku["in"], haiku["out"], haiku["cr"], haiku["cw"]), (0.1, 0.5, 0.01, 0.125))
-        self.assertEqual((haiku["lt"], haiku["lin"], haiku["lout"], haiku["lcr"], haiku["lcw"]),
-                         (100_000, 0.5, 2.5, 0.05, 0.625))
-        self.assertEqual(models["claude-sonnet-5-5"]["cr"], 0.1)
-        self.assertEqual(models["gemini-robotics-er-2-preview"]["out"], 5)
-        self.assertEqual(models["gpt-rosalind-discovery"]["out"], 25)
+    def test_existing_prices_and_cache_rates_update_and_history_is_retained(self):
+        data=feed();current={'models':pricing.validated_models(data,{})}
+        current['models']['retired']={'in':1.,'out':3.}
+        data['rows'][0].update(input=3.,output=12.,cache_read=.2)
+        changed=pricing.validated_models(data,current)
+        self.assertEqual((changed['gpt-fixture-0']['in'],changed['gpt-fixture-0']['out'],changed['gpt-fixture-0']['cr']),(3,12,.2))
+        self.assertEqual(changed['retired'],current['models']['retired'])
 
-    def test_argon_published_rates_can_replace_introductory_defaults(self):
-        changed = feed()
-        changed["gemini-4-argon"] = {
-            "litellm_provider": "gemini", "mode": "chat",
-            "input_cost_per_token": 0.000004, "output_cost_per_token": 0.000020,
-            "cache_read_input_token_cost": 0.0000002,
-            "input_cost_per_token_priority": 0.0000072, "output_cost_per_token_priority": 0.000036,
-        }
-        previous = {"models": pricing.validated_models(feed(), {})}
-        argon = pricing.validated_models(changed, previous)["gemini-4-argon"]
-        self.assertEqual((argon["in"], argon["out"], argon["cr"], argon["pm"]), (4, 20, 0.2, 1.8))
+    def test_standard_is_not_overwritten_by_batch_fast_ultrafast_cny_or_resellers(self):
+        data=feed();base=row();data['rows']+=[base]
+        for tier,value in [('batch',.5),('fast',4),('flex',.5)]:
+            item=dict(base,tier=tier,input=value,output=value*5,cache_read=value/20)
+            if tier=='fast':item['variant']='fast'
+            data['rows'].append(item)
+        data['rows'] += [dict(base,tier='fast',variant='ultrafast',input=12,output=60,cache_read=.6),
+                         dict(base,currency='CNY',input=14),dict(base,provider='openrouter',input=.1)]
+        price=pricing.validated_models(data,{})['gpt-6.1-sol']
+        self.assertEqual((price['in'],price['out'],price['cr'],price['pm']),(2,10,.1,2))
 
-    def test_retains_historical_rows_and_applies_official_rates(self):
-        result = pricing.validated_models(feed(), {"models": {"retired": {"in": 1, "out": 2}}})
-        self.assertIn("retired", result)
-        self.assertEqual(result["gpt-6-sol"]["in"], 2)
-        self.assertEqual(result["gpt-6-luna"]["lout"], 0.75)
-        self.assertEqual(result["claude-opus-5-5"]["cr"], 0.2)
+    def test_long_context_threshold_and_uniform_priority_are_preserved(self):
+        data=feed();base=row();data['rows'] += [base,dict(base,tier='long',variant='> 272k input tokens',input=4.,output=15.,cache_read=.2)]
+        p=pricing.validated_models(data,{})['gpt-6.1-sol']
+        self.assertEqual((p['lt'],p['lin'],p['lout'],p['lcr']),(272000,4,15,.2))
 
-    def test_rejects_partial_feed_even_with_official_overrides(self):
-        with self.assertRaises(ValueError):
-            pricing.validated_models({}, {})
+    def test_missing_fields_do_not_turn_unknown_cache_or_tiers_into_free(self):
+        data=feed();data['rows'][0]['cache_read']=None
+        old={'models':{'gpt-fixture-0':{'in':1.,'out':5.,'cr':.25,'cw':1.,'lt':272000,'lin':2.,'lout':8.,'pm':2.}}}
+        price=pricing.validated_models(data,old)['gpt-fixture-0']
+        self.assertEqual((price['in'],price['cr'],price['cw'],price['lt'],price['pm']),(2,.25,1,272000,2))
 
-    def test_rejects_invalid_prices(self):
-        for invalid in (-1, float("nan"), float("inf"), 100):
-            data = feed()
-            data["fixture-0"]["input_cost_per_token"] = invalid
-            with self.subTest(invalid=invalid), self.assertRaises(ValueError):
-                pricing.validated_models(data, {})
+    def test_ambiguous_variants_do_not_choose_cheapest_or_delete_previous_rate(self):
+        data=feed();base=row();data['rows'] += [base,dict(base,input=1.)]
+        old={'models':{'gpt-6.1-sol':{'in':3.,'out':15.}}}
+        self.assertEqual(pricing.validated_models(data,old)['gpt-6.1-sol'],old['models']['gpt-6.1-sol'])
 
-    def test_no_timestamp_only_changes(self):
-        models = pricing.validated_models(feed(), {})
-        import json
-        current = json.loads(pricing.render_snapshot(models))
-        current["_meta"]["generatedAt"] = "2000-01-01T00:00:00Z"
-        self.assertFalse(pricing.snapshot_changed(current, models))
-        models["fixture-0"]["in"] = 3
-        self.assertTrue(pricing.snapshot_changed(current, models))
+    def test_partial_wrong_units_and_invalid_numeric_prices_are_rejected(self):
+        for data in [{},dict(feed(),unit='CNY / 1M tokens'),dict(feed(),rows=[]),dict(feed(),rows=feed()['rows'][:3])]:
+            with self.assertRaises(ValueError):pricing.validated_models(data,{})
+        for bad in [-1,True,float('inf'),float('nan'),10001]:
+            data=feed();data['rows'][0]['input']=bad
+            with self.subTest(value=bad),self.assertRaises(ValueError):pricing.validated_models(data,{})
 
-    def test_existing_prices_update_without_adding_models(self):
-        current = {"models": pricing.validated_models(feed(), {})}
-        changed = feed()
-        changed["fixture-0"].update(input_cost_per_token=0.000001, output_cost_per_token=0.000004,
-                                  cache_read_input_token_cost=0.0000001)
-        result = pricing.validated_models(changed, current)
-        self.assertEqual(set(result), set(current["models"]))
-        self.assertEqual(result["fixture-0"]["in"], 1)
-        self.assertEqual(result["fixture-0"]["out"], 4)
-        self.assertEqual(result["fixture-0"]["cr"], 0.1)
-        self.assertTrue(pricing.snapshot_changed(current, result))
+    def test_only_changed_prices_or_source_need_publication(self):
+        models=pricing.validated_models(feed(),{});current=json.loads(pricing.render_snapshot(models))
+        current['_meta']['generatedAt']='2000-01-01T00:00:00Z'
+        self.assertFalse(pricing.snapshot_changed(current,models))
+        self.assertTrue(pricing.snapshot_changed({'models':models},models))
+        models['gpt-fixture-0']['in']=3
+        self.assertTrue(pricing.snapshot_changed(current,models))
 
-    def test_official_defaults_do_not_block_updated_prices_or_tiers(self):
-        changed = feed()
-        changed["gpt-6-sol"] = {
-            "litellm_provider": "openai", "mode": "chat",
-            "input_cost_per_token": 0.000001, "output_cost_per_token": 0.000005,
-            "cache_read_input_token_cost": 0.00000005,
-            "input_cost_per_token_above_272k_tokens": 0.000003,
-            "output_cost_per_token_above_272k_tokens": 0.000012,
-            "cache_read_input_token_cost_above_272k_tokens": 0.00000015,
-            "input_cost_per_token_priority": 0.000003,
-            "output_cost_per_token_priority": 0.000015,
-        }
-        result = pricing.validated_models(changed, {})["gpt-6-sol"]
-        self.assertEqual((result["in"], result["out"], result["cr"]), (1, 5, 0.05))
-        self.assertEqual((result["lt"], result["lin"], result["lout"], result["lcr"]), (272000, 3, 12, 0.15))
-        self.assertEqual(result["pm"], 3)
+    def test_native_ids_and_stable_human_names_are_available_without_numeric_collisions(self):
+        data=feed();data['rows'] += [row('deepseek','deepseek-flash') | {'model':'DeepSeek-V4.1-Flash-1017'},
+            row('anthropic','claude-opus-5-5') | {'model':'Claude Opus 5.5'},
+            row('qwen','qwen3.8-max') | {'model':'Qwen3.8 Max'}]
+        models=pricing.validated_models(data,{})
+        for key in ['deepseek-flash','deepseek-v4.1-flash','claude-opus-5-5','dashscope/qwen3.8-max']:
+            self.assertIn(key,models)
 
-    def test_wrong_provider_and_invalid_official_prices_fail(self):
-        for provider, rate in (("anthropic", 0.000001), ("openai", -1), ("openai", True)):
-            changed = feed()
-            changed["gpt-6-sol"] = {"litellm_provider": provider, "mode": "chat",
-                                    "input_cost_per_token": rate, "output_cost_per_token": 0.000010}
-            with self.subTest(provider=provider, rate=rate), self.assertRaises(ValueError):
-                pricing.validated_models(changed, {})
 
-    def test_missing_feed_row_does_not_revert_a_previously_updated_price(self):
-        current = {"models": pricing.validated_models(feed(), {})}
-        current["models"]["gpt-6-sol"].update({"in": 1, "out": 5, "cr": 0.05, "lin": 3})
-        result = pricing.validated_models(feed(), current)
-        self.assertEqual(result["gpt-6-sol"], current["models"]["gpt-6-sol"])
-
-    def test_future_routine_price_updates_do_not_require_manual_review(self):
-        class FutureDateTime(datetime):
-            @classmethod
-            def now(cls, tz=None):
-                return cls(2026, 12, 1, tzinfo=timezone.utc)
-        with tempfile.TemporaryDirectory() as directory:
-            snapshot = Path(directory) / "snapshot.json"
-            current = {"models": pricing.validated_models(feed(), {})}
-            snapshot.write_text(json.dumps(current))
-            changed = feed()
-            changed["fixture-0"]["input_cost_per_token"] = 0.000003
-            with patch.object(pricing, "datetime", FutureDateTime), \
-                 patch.object(pricing, "REPO_ROOT", Path(directory)), \
-                 patch.object(pricing, "SNAPSHOT_PATH", snapshot), \
-                 patch.object(pricing, "fetch_upstream", return_value=changed), \
-                 patch("sys.argv", ["update-pricing-snapshot.py"]):
-                self.assertEqual(pricing.main(), 0)
-            self.assertEqual(json.loads(snapshot.read_text())["models"]["fixture-0"]["in"], 3)
-
-if __name__ == "__main__":
-    unittest.main()
+if __name__=='__main__':unittest.main()

@@ -307,14 +307,16 @@ struct StatusSummaryContent: View {
         let hour = bucket.usage
         let value = hour.displayedTokens(includingCache: snapshot.includesCache)
         let label = HourlyOverviewLabels.label(bucket.id)
+        let tooltip: String = label + " · " + (hour.hasRecords ? "\(TokenFormat.compact(value)) tokens" : L10n.shared.tr("status.noHourlyRecord"))
+        let accessibility: String = label + ": " + (hour.hasRecords ? "\(value) tokens" : L10n.shared.tr("status.noHourlyRecord"))
         return RoundedRectangle(cornerRadius: 2)
             .fill(hour.hasRecords ? Color.cyan.opacity(0.75).gradient : Color.primary.opacity(0.07).gradient)
             .frame(width: showsFullDay ? nil : 14)
             .frame(height: value > 0 ? max(2, height * Double(value) / Double(maximum)) : 1)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
             .contentShape(Rectangle())
-            .help(label + " · " + (hour.hasRecords ? "\(TokenFormat.compact(value)) tokens" : L10n.shared.tr("status.noHourlyRecord")))
-            .accessibilityLabel(label + ": " + (hour.hasRecords ? "\(value) tokens" : L10n.shared.tr("status.noHourlyRecord")))
+            .help(tooltip)
+            .accessibilityLabel(accessibility)
     }
 
     @ViewBuilder private var summaryUsage: some View {

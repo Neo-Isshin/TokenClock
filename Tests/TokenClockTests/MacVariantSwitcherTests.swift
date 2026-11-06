@@ -4,6 +4,14 @@ import XCTest
 @testable import TokenClock
 
 final class MacVariantSwitcherTests: XCTestCase {
+    func testCertificateBackedEditionKeepsItsPreviousSigningRequirement() throws {
+        let requirement = "identifier \"com.tokenclock.app.normal\" and certificate leaf = H\"0123456789012345678901234567890123456789\""
+        XCTAssertEqual(try MacVariantSwitcher.replacementRequirement(details: "Identifier=com.tokenclock.app.normal\nAuthority=Developer ID Application: Example",
+            output: "Executable=/example/TokenClock\n# designated => " + requirement), requirement)
+        XCTAssertNil(try MacVariantSwitcher.replacementRequirement(details: "Signature=adhoc", output: ""))
+        XCTAssertEqual(try MacVariantSwitcher.replacementRequirement(details: "Authority=Example", output: "designated => " + requirement), requirement)
+        XCTAssertThrowsError(try MacVariantSwitcher.replacementRequirement(details: "Authority=Example", output: ""))
+    }
 
     func testHandoffTransfersAutostartWithoutKeepingBothEnabled() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("tc-autostart-\(UUID().uuidString)")

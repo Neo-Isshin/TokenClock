@@ -2,9 +2,21 @@
 
 Last verified: 2026-08-23. Catalog values are USD per million tokens unless noted.
 
-TokenClock generates the broad model list from LiteLLM, then applies first-party
-sentinel overrides in `scripts/update-pricing-snapshot.py`. The override layer is
-intentional: aggregation feeds can lag launches, promotions, or provider price cuts.
+Since 2026-11-04, TokenClock derives its compact catalog from Ailyre's official-source
+price board at `https://www.ailyre.com/prices/data.json`. All platforms refresh from
+`https://www.ailyre.com/prices/tokenclock.json`; the previous TokenClock URL remains
+an alias to the same artifact for already installed clients. GitHub Actions and
+LiteLLM are no longer in the publication chain.
+
+The adapter keeps first-party USD text-token input/output/cache rates, unambiguous
+long-context tiers and uniform Priority/Fast multipliers. It excludes CNY rows,
+reseller/Batch/Flex rates, ambiguous variants and non-token pricing. Missing rows
+retain historical prices, while published changes replace existing rates. User
+price overrides retain priority. The VPS watches Ailyre's atomic data file and
+also checks every six hours; invalid data leaves the last good catalog intact.
+
+The table below records historical source verification examples, not today's
+complete price list. Current rates are in the Ailyre catalog linked above.
 
 | Provider | Verified sentinels | Official source | Important rule |
 |---|---|---|---|

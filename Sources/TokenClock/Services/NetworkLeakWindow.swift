@@ -98,6 +98,7 @@ final class NetworkLeakWindow: NSWindowController, NSWindowDelegate, WKNavigatio
     }
 
     func windowWillClose(_ notification: Notification) {
+        presentation.mainland.stop()
         stopDiagnostics()
         // Navigation teardown cancels fetches and destroys RTCPeerConnections,
         // including when the page is unresponsive and cannot execute stop().
@@ -131,6 +132,7 @@ final class NetworkLeakWindow: NSWindowController, NSWindowDelegate, WKNavigatio
     }
 
     private func stopProbe() {
+        presentation.mainland.stop()
         browser?.evaluateJavaScript("window.TokenClockLeak?.stop()", completionHandler:nil)
         if browser?.isLoading == true { browser?.stopLoading() }
         stopDiagnostics()
@@ -221,6 +223,7 @@ final class NetworkLeakWindow: NSWindowController, NSWindowDelegate, WKNavigatio
         diagnosticFetcher = fetcher
         diagnosticRunID = runID
         let baseline = NetworkDiagnosticParser.address(body["baselineIP"] as? String)
+        presentation.observedExitIP = baseline
         let dnsToken = (body["dnsToken"] as? String).flatMap { $0.range(of:"^[a-f0-9]{32}$", options:.regularExpression) != nil ? $0 : nil }
         diagnosticsTask = Task { [weak self] in
             let result = await NetworkDiagnostics.run(runID: runID, baselineIP: baseline, fetcher: fetcher, dnsToken: dnsToken)

@@ -17,7 +17,13 @@ final class ProviderQuotaServiceTests: XCTestCase {
         let snapshot = CursorQuotaService().fetch()
         XCTAssertEqual(snapshot.status, .available, snapshot.message ?? "")
         let buckets = snapshot.groups.flatMap(\.buckets)
-        XCTAssertEqual(buckets.map(\.name), ["Cursor Models", "Other Models"])
+        if XSubscriptionQuota.contains(snapshot.groups) {
+            XCTAssertEqual(buckets.count, 1)
+            XCTAssertEqual(buckets.first?.windowMinutes, 10_080)
+            XCTAssertNil(snapshot.billing)
+        } else {
+            XCTAssertEqual(buckets.map(\.name), ["Cursor Models", "Other Models"])
+        }
         let resetDiagnostics = buckets.map {
             $0.name + "=" + String(describing: $0.resetsAt)
         }

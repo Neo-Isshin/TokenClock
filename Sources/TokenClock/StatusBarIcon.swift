@@ -74,15 +74,36 @@ enum StatusBarIcon {
 
 struct StatusBarVisibilityState: Equatable {
     private(set) var isHidden = false
+    private(set) var isTemporarilyOnTop = false
 
     @discardableResult
     mutating func toggle() -> Bool {
-        isHidden.toggle()
+        setHidden(!isHidden)
         return isHidden
     }
 
     mutating func setHidden(_ hidden: Bool) {
         isHidden = hidden
+        if hidden { isTemporarilyOnTop = false }
+    }
+
+    mutating func showTemporarilyOnTop() {
+        isHidden = false
+        isTemporarilyOnTop = true
+    }
+
+    func shouldShowOnDoubleClick(windowVisible: Bool, coveredFraction: Double?) -> Bool {
+        if isHidden || !windowVisible { return true }
+        if isTemporarilyOnTop { return false }
+        return DialOcclusion.shouldShow(hidden: false, coveredFraction: coveredFraction)
+    }
+
+    /// Temporary presentation is in-memory only; the preference remains owned
+    /// by ViewModel. Hiding restores the caller's current persistent setting.
+    @MainActor func apply(to window: NSWindow, alwaysOnTop: Bool) {
+        let onTop = alwaysOnTop || isTemporarilyOnTop
+        window.level = onTop ? .statusBar : .normal
+        window.collectionBehavior = onTop ? [.canJoinAllSpaces, .fullScreenAuxiliary] : []
     }
 }
 
@@ -112,8 +133,42 @@ final class StatusSummaryHiddenWindows {
 final class StatusBarClickCoordinator {
     private var pending: Task<Void, Never>?
     private let interval: TimeInterval
+    private var firstClick: (time: TimeInterval, point: NSPoint, window: Int)?
 
     init(interval: TimeInterval = NSEvent.doubleClickInterval) { self.interval = interval }
+
+    /// AppKit action callbacks may expose the mouse-down event, and menu-bar
+    /// tracking can restart the system click count. Pair actual clicks on this
+    /// button by monotonic time and position as well as honoring native counts.
+    func click(event: NSEvent?, single: @escaping @MainActor () -> Void, double: () -> Void) {
+        if event == nil || event?.type == .applicationDefined {
+            // This coordinator belongs to one button. A relayed activation has
+            // no reliable event position; the current cursor may already move.
+            recognize(time: ProcessInfo.processInfo.systemUptime, point: .zero,
+                window: -1, reportedCount: 1, single: single, double: double)
+            return
+        }
+        guard let event, event.type == .leftMouseDown || event.type == .leftMouseUp else {
+            click(count: 1, single: single, double: double)
+            return
+        }
+        recognize(time: event.timestamp > 0 && event.timestamp.isFinite ? event.timestamp : ProcessInfo.processInfo.systemUptime,
+            point: event.locationInWindow, window: event.windowNumber, reportedCount: event.clickCount, single: single, double: double)
+    }
+
+    private func recognize(time: TimeInterval, point: NSPoint, window: Int, reportedCount: Int,
+                           single: @escaping @MainActor () -> Void, double: () -> Void) {
+        let previous = firstClick
+        let paired = previous.map {
+            let dx = point.x - $0.point.x, dy = point.y - $0.point.y
+            return $0.window == window && time >= $0.time
+                && time - $0.time <= interval && dx * dx + dy * dy <= 16
+        } ?? false
+        let reportedDouble = reportedCount > 0 && reportedCount.isMultiple(of: 2)
+        let isDouble = reportedDouble || paired
+        click(count: isDouble ? 2 : 1, single: single, double: double)
+        if !isDouble { firstClick = (time, point, window) }
+    }
 
     func click(count: Int, single: @escaping @MainActor () -> Void, double: () -> Void) {
         cancel()
@@ -129,5 +184,5 @@ final class StatusBarClickCoordinator {
         }
     }
 
-    func cancel() { pending?.cancel(); pending = nil }
+    func cancel() { pending?.cancel(); pending = nil; firstClick = nil }
 }

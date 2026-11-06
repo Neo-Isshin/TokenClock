@@ -50,7 +50,7 @@
 - 📊 **Honest, Accurate Token Accounting**  
   Accurately separates input, output, reasoning, and cache creation tokens. Prompt cache hits (read-only reuse) are excluded from the primary dial figure to avoid misleading spikes.
 - 💳 **API-Equivalent Cost Translation**  
-  Converts daily token consumption into an equivalent USD value according to LiteLLM's public pricing catalog with official provider overrides. Supports custom proxy pricing in Settings.
+  Converts daily token consumption into API-equivalent USD estimates using the independently updated Ailyre pricing catalog. Supports custom proxy pricing in Settings.
 - 🎴 **Aesthetic Usage Share Cards**  
   Export beautiful, high-res usage summary cards with a single click to share your daily AI milestones on social media or team channels.
 - 🎨 **8 Handcrafted Themes + Aurora Dynamic Glow**  

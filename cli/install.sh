@@ -61,6 +61,57 @@ fi
 warn() { printf '\n%b⚠ %s%b\n' "$C_YELLOW" "$*" "$C_RESET"; }
 die()  { printf '\n%b❌ %s%b\n' "$C_RED" "$*" "$C_RESET" >&2; exit 1; }
 
+# BEGIN MACOS SIGNATURE POLICY
+# Keep a stable certificate-backed identity across updates. Local signing is
+# explicitly enrolled by the developer; never generate a certificate on install.
+macos_prepare_signature() {
+  local staged="$1" installed="$2" variant="$3" profile identity schema expected details previous requirement
+  expected="com.tokenclock.app.$variant"
+  case "$variant" in glass|normal) ;; *) return 1 ;; esac
+  profile="$HOME_DIR/signing/local-identity.json"
+  previous=""
+  if [ -f "$installed" ]; then
+    previous=$(/usr/bin/codesign -dv --verbose=4 "$installed" 2>&1 || true)
+  fi
+  if [ -f "$profile" ]; then
+    schema=$(/usr/bin/plutil -extract schema raw -o - "$profile" 2>/dev/null) || return 1
+    identity=$(/usr/bin/plutil -extract identity_sha1 raw -o - "$profile" 2>/dev/null) || return 1
+    [ "$schema" = tokenclock-local-signing/v1 ] || return 1
+    [[ "$identity" =~ ^[[:xdigit:]]{40}$ ]] || return 1
+    # A missing/locked key is an error, not permission to revert to ad-hoc.
+    /usr/bin/codesign --force --sign "$identity" --identifier "$expected" --timestamp=none \
+      --requirements "=designated => identifier \"$expected\" and certificate leaf = H\"$identity\"" "$staged" || return 1
+    /usr/bin/codesign --verify --strict -R "=identifier \"$expected\" and certificate leaf = H\"$identity\"" "$staged" || return 1
+  else
+    /usr/bin/codesign --verify --strict "$staged" || return 1
+    details=$(/usr/bin/codesign -dv --verbose=4 "$staged" 2>&1) || return 1
+    case "$details" in
+      *Signature=adhoc*)
+        # Development/legacy packages remain supported, but are never described
+        # as preserving privacy grants. This legacy release format is ad-hoc signed.
+        warn "[$variant] Development/ad-hoc package: privacy access may be requested again after updates."
+        /usr/bin/codesign --force --sign - --identifier "$expected" "$staged" || return 1
+        ;;
+      *)
+        # Preserve the vendor's signed bytes, especially Developer ID signatures.
+        printf '%s\n' "$details" | grep -Fx "Identifier=$expected" >/dev/null || return 1
+        ;;
+    esac
+  fi
+  case "$previous" in
+    *Signature=adhoc*|'') ;; # One-time migration from an old development build.
+    *)
+      /usr/bin/codesign --verify --strict "$installed" || return 1
+      requirement=$(/usr/bin/codesign -d -r- "$installed" 2>&1 | sed -n 's/^[# ]*designated => //p')
+      [ -n "$requirement" ] || return 1
+      # Reject signer changes and signed-to-ad-hoc downgrades, even with --force.
+      /usr/bin/codesign --verify --strict -R "=$requirement" "$staged" || return 1
+      ;;
+  esac
+  /usr/bin/codesign --verify --strict "$staged"
+}
+# END MACOS SIGNATURE POLICY
+
 # Invoked by tokenclock update? (it sets TOKENCLOCK_STATUS_FILE) → skip the long summary at the end;
 # the wrapper prints a one-line conclusion itself. Distinguishes "fresh install" from "upgrade".
 UPDATE_MODE=0; [ -n "${TOKENCLOCK_STATUS_FILE:-}" ] && UPDATE_MODE=1
@@ -252,9 +303,9 @@ release_tag_for_variant() {
     return
   fi
   case "$1" in
-    glass)  echo "v1.5.13" ;;
-    normal) echo "v1.5.13" ;;
-    linux)  echo "v1.5.13" ;;
+    glass)  echo "v1.6.0" ;;
+    normal) echo "v1.6.0" ;;
+    linux)  echo "v1.6.0" ;;
   esac
 }
 release_base_for_tag() {
@@ -271,8 +322,8 @@ tarball_name() {
 }
 tarball_sha256() {
   case "$1" in
-    glass)  echo "8de5df9a157ce1fce8e7674f30e68583bc085919d9b6cb1979a331024fbaa64b" ;;
-    normal) echo "79956382f8072878e4c6a12b56c24708eb0f23b9662ee67523a22704dbe2c608" ;;
+    glass)  echo "06c5680a312db7bd547121357c829426528dd8fb44867883cb0014b1a24e8845" ;;
+    normal) echo "49e1dccb98d95734c547543e3f0afb81cd7c8f9f0051272dfbc8136c33d5497d" ;;
   esac
 }
 
@@ -408,12 +459,11 @@ for entry in "${BUILT_BINS[@]}"; do
     dest_tmp="$HOME_DIR/$variant/.TokenClock.new.$$"
     cp "$bin_path" "$dest_tmp" || { rm -f "$dest_tmp"; die "Failed to stage [$variant] binary"; }
     chmod +x "$dest_tmp" || { rm -f "$dest_tmp"; die "Failed to make [$variant] binary executable"; }
-    # Ad-hoc re-sign safety net: prebuilt downloads or source-fallback artifacts may still be
-    # linker-signed adhoc (flags=0x20002), which taskgated kills on macOS 27. `--force --sign -`
-    # produces a proper adhoc (0x2). release.sh already signs before packaging; this re-signs
-    # $dest_bin to cover the source-fallback path and self-heal any signing damage from transfer/extraction.
     if [ "$PLATFORM" = macos ]; then
-      codesign --force --sign - "$dest_tmp" >/dev/null 2>&1 || warn "[$variant] ad-hoc re-sign failed: $dest_tmp (may crash on launch under macOS 27)"
+      macos_prepare_signature "$dest_tmp" "$dest_bin" "$variant" || {
+        rm -f "$dest_tmp"
+        die "[$variant] signing identity validation failed; the installed clock was not replaced."
+      }
     fi
     mv -f "$dest_tmp" "$dest_bin" || { rm -f "$dest_tmp"; die "Failed to activate [$variant] binary"; }
     say "  ✓ $dest_bin"

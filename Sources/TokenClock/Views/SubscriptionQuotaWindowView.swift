@@ -102,7 +102,7 @@ struct SubscriptionQuotaWindowView: View {
                                     Circle()
                                         .fill(provider.dialQuotaColor.opacity(0.72))
                                         .frame(width: 7, height: 7)
-                                    Text(provider.displayName)
+                                    Text(viewModel.quotaDisplayName(for: provider))
                                         .lineLimit(1)
                                     dialGroupBadge(for: provider)
                                 }
@@ -322,6 +322,7 @@ struct SubscriptionQuotaWindowView: View {
     }
 
     private func hasQuotaData(_ provider: SubscriptionProvider) -> Bool {
+        if viewModel.isHiddenUnifiedQuotaAlias(provider), viewModel.subscriptionAccounts(for: provider).isEmpty { return false }
         switch provider {
         case .codex: return !viewModel.codexQuota.buckets.isEmpty
         case .claude: return true // Connect must be reachable without App/CLI credentials.
@@ -347,8 +348,9 @@ struct SubscriptionQuotaWindowView: View {
         return VStack(alignment: .leading, spacing: 11) {
             HStack(spacing: 7) {
                 if providerIsLoading(provider) { ProgressView().controlSize(.small) }
-                BrandIconView(name: provider.displayName, fallback: provider.emoji, size: 18)
-                Text(provider.displayName).font(.system(size: 13, weight: .bold, design: .rounded))
+                let name = viewModel.quotaDisplayName(for: provider)
+                BrandIconView(name: name, fallback: name == XSubscriptionQuota.title ? "𝕏" : provider.emoji, size: 18)
+                Text(name).font(.system(size: 13, weight: .bold, design: .rounded))
                 Spacer()
                 if provider == .claude {
                     Button(L10n.shared.tr("quota.claudeConnect")) { viewModel.connectClaude() }
@@ -407,6 +409,13 @@ struct SubscriptionQuotaWindowView: View {
                     .buttonStyle(.plain)
                     .help(L10n.shared.tr("quota.showEmail"))
                 }
+            }
+            if account.isUnifiedSubscription {
+                Text(XSubscriptionQuota.title + " · " + (account.detectedPlan ?? ""))
+                    .font(.system(size: 10, weight: .medium)).foregroundStyle(.secondary)
+                Text(XSubscriptionQuota.scopeLabel)
+                    .font(.system(size: 9.5)).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             Text(BillingText.summary(account.effectiveBilling))
                 .font(.system(size: 9.5)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)

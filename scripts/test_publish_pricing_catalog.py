@@ -19,9 +19,12 @@ pricing = publisher.load_generator()
 
 
 def feed():
-    return {f"fixture-{i}": {"litellm_provider": "openai", "mode": "chat",
-                           "input_cost_per_token": 0.000002, "output_cost_per_token": 0.000010}
-            for i in range(160)}
+    rows = [{"provider":"openai", "model":f"fixture-{i}", "category":"api", "original":True,
+             "currency":"USD", "unit":"USD / 1M tokens", "tier":"standard", "input":2., "output":10.}
+            for i in range(60)]
+    for provider, model in [("anthropic","claude-sonnet-5-5"),("google","gemini-4-argon")]:
+        rows.append({**rows[0],"provider":provider,"model":model})
+    return {"unit":"USD / 1M tokens","generated_at":"2026-11-04T06:00:00Z","rows":rows}
 
 
 class PublisherTests(unittest.TestCase):
@@ -40,7 +43,7 @@ class PublisherTests(unittest.TestCase):
             target = Path(directory) / "pricing-catalog.json"
             target.write_text(json.dumps({"models": {"retired": {"in": 1, "out": 2}}}))
             changed = feed()
-            changed["fixture-0"]["input_cost_per_token"] = 0.000003
+            changed["rows"][0]["input"] = 3.
             with patch.object(pricing, "fetch_upstream", return_value=changed):
                 publisher.publish(target, pricing)
             models = json.loads(target.read_bytes())["models"]
@@ -53,7 +56,7 @@ class PublisherTests(unittest.TestCase):
             original = b'{"models":{"retired":{"in":1,"out":2}}}'
             target.write_bytes(original)
             invalid = feed()
-            invalid["fixture-0"]["input_cost_per_token"] = -1
+            invalid["rows"][0]["input"] = -1
             for data in [{}, invalid]:
                 with patch.object(pricing, "fetch_upstream", return_value=data), self.assertRaises(ValueError):
                     publisher.publish(target, pricing)

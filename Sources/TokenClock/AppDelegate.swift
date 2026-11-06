@@ -138,19 +138,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         notificationContentView.autoresizingMask = [.width, .height]
         notificationPanel.contentView = notificationContentView
 
-        // 同步 alwaysOnTop 状态到面板
-        if viewModel.alwaysOnTop {
-            panel.level = .statusBar
-            panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        } else {
-            // 非置顶 = 普通窗口：NSPanel 即使 level=normal 也排在普通窗口之上，故 Apple TV 等
-            // 播放器的伪全屏（铺屏普通窗口）盖不住它。这里启用智能隐藏：被大面积覆盖就隐藏。
-            panel.level = .normal
-            panel.collectionBehavior = []
-            startFullscreenDetection()
-        }
-        dropdownPanel.configureLevel(alwaysOnTop: viewModel.alwaysOnTop)
-        notificationPanel.configureLevel(alwaysOnTop: viewModel.alwaysOnTop)
+        applyClockWindowLevel()
+        if !viewModel.alwaysOnTop { startFullscreenDetection() }
 
         // 绑定展开/收起直接回调，绕过 NotificationCenter 延迟
         viewModel.onExpandChanged = { [weak self] expanded in
@@ -306,12 +295,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     @objc private func statusBarClicked(_ sender: NSStatusBarButton) {
         let event = NSApp.currentEvent
-        if event?.type == .rightMouseUp || event?.modifierFlags.contains(.control) == true {
+        if event?.type == .rightMouseUp || event?.type == .rightMouseDown || event?.modifierFlags.contains(.control) == true {
             statusBarClickCoordinator.cancel()
             showStatusBarMenu(sender)
         } else {
-            let clickCount = event?.type == .leftMouseUp ? (event?.clickCount ?? 1) : 1
-            statusBarClickCoordinator.click(count: clickCount,
+            statusBarClickCoordinator.click(event: event,
                 single: { [weak self, weak sender] in
                     guard let sender else { return }
                     self?.toggleStatusSummary(sender)
@@ -324,8 +312,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         guard let panel else { toggleStatusBarVisibility(sender); return }
         statusSummaryPopover?.performClose(nil)
         let hidden = statusBarVisibility.isHidden || !panel.isVisible
-        let coverage = hidden ? nil : dialCoveredFraction(panel)
-        if DialOcclusion.shouldShow(hidden: hidden, coveredFraction: coverage) {
+        let coverage = hidden || statusBarVisibility.isTemporarilyOnTop ? nil : dialCoveredFraction(panel)
+        if statusBarVisibility.shouldShowOnDoubleClick(windowVisible: panel.isVisible, coveredFraction: coverage) {
             showStatusBarClock()
         } else { hideStatusBarClock() }
     }
@@ -419,12 +407,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     private func showStatusBarClock() {
         statusSummaryPopover?.performClose(nil)
-        statusBarVisibility.setHidden(false)
+        // Re-evaluate Space membership as well as z-order, even when a covered
+        // clock is already visible. This does not write the Always on Top option.
+        panel?.orderOut(nil)
+        statusBarVisibility.showTemporarilyOnTop()
+        applyClockWindowLevel()
         NSApp.unhideWithoutActivation()
         statusSummaryHiddenWindows.restore()
         isHiddenForFullscreen = false
         NSApp.activate(ignoringOtherApps: true)
-        // Raise once, without changing the user's persistent window level.
+        // Temporary level is held until Hide; a second double click always hides.
         panel?.orderFrontRegardless()
         if panel == nil { showModelDetect() }
         updateStatusBarItemPresentation()
@@ -435,13 +427,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         statusBarVisibility.setHidden(true)
         hideThemePicker()
         NSApp.hide(nil)
+        applyClockWindowLevel()
         updateStatusBarItemPresentation()
+    }
+
+    private func applyClockWindowLevel() {
+        guard let viewModel, let panel else { return }
+        statusBarVisibility.apply(to: panel, alwaysOnTop: viewModel.alwaysOnTop)
+        if let dropdownPanel { statusBarVisibility.apply(to: dropdownPanel, alwaysOnTop: viewModel.alwaysOnTop) }
+        if let notificationPanel { statusBarVisibility.apply(to: notificationPanel, alwaysOnTop: viewModel.alwaysOnTop) }
     }
 
     @objc private func handleApplicationDidHide(_ notification: Notification) {
         statusBarClickCoordinator.cancel()
         statusSummaryPopover?.performClose(nil)
         statusBarVisibility.setHidden(true)
+        applyClockWindowLevel()
         updateStatusBarItemPresentation()
     }
 
@@ -449,6 +450,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         guard !isOpeningStatusSummary else { return }
         statusSummaryHiddenWindows.restore()
         statusBarVisibility.setHidden(false)
+        applyClockWindowLevel()
         updateStatusBarItemPresentation()
     }
 
@@ -995,19 +997,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         panel.orderOut(nil)
         if sender.state == .on {
             sender.state = .off
-            panel.level = .normal
-            panel.collectionBehavior = []
-            dropdownPanel.configureLevel(alwaysOnTop: false)
-            notificationPanel.configureLevel(alwaysOnTop: false)
             viewModel.alwaysOnTop = false
         } else {
             sender.state = .on
-            panel.level = .statusBar
-            panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-            dropdownPanel.configureLevel(alwaysOnTop: true)
-            notificationPanel.configureLevel(alwaysOnTop: true)
             viewModel.alwaysOnTop = true
         }
+        applyClockWindowLevel()
         // 重显（用 orderFront 而非 orderFrontRegardless：后者无视 collectionBehavior 强制塞进
         // 当前全屏 Space）。OFF 模式下被播放器全屏覆盖改由下方智能隐藏机制处理。
         panel.orderFront(nil)
@@ -1043,7 +1038,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     private func evaluateFullscreenHide() {
-        guard !statusBarVisibility.isHidden else { return }
+        guard !statusBarVisibility.isHidden, !statusBarVisibility.isTemporarilyOnTop else { return }
         guard let panel = self.panel else { return }
         if dropdownPanel.isVisible || notificationPanel.isVisible { return }   // 用户正在看面板，不打断
         let center = NSPoint(x: panel.frame.midX, y: panel.frame.midY)

@@ -81,14 +81,21 @@ final class GrokBotQuotaService: @unchecked Sendable {
                 id: credential.userID,
                 email: credential.email
             )
-            if snapshot.planType == nil { snapshot.planType = credential.membershipType }
-            snapshot.source = "\(Self.source) · \(credential.origin.sourceLabel)"
+            if XSubscriptionQuota.contains(snapshot.groups) {
+                snapshot.source += " · \(credential.origin.sourceLabel)"
+            } else {
+                if snapshot.planType == nil { snapshot.planType = credential.membershipType }
+                snapshot.source = "\(Self.source) · \(credential.origin.sourceLabel)"
+            }
             return snapshot
         }
         return .unavailable("Grok Bot quota request failed.", source: Self.source)
     }
 
     static func decodeResponse(_ data: Data, now: Date = Date()) -> ProviderQuotaSnapshot? {
+        if XSubscriptionQuota.flag(XSubscriptionQuota.object(data)?["isUnified"]) == true {
+            return XSubscriptionQuota.decodeSand(data, now: now)
+        }
         guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let usedPercent = number(root["usagePercent"]) else { return nil }
         let reset = date(root["nextResetTimestampUtc"])

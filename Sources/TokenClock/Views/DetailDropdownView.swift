@@ -92,7 +92,6 @@ struct DetailDropdownView: View {
     @State private var networkLeakHovered = false
     @State private var cacheHovered = false
     @State private var textColorHovered = false
-    @State private var historyHovered = false
     @State private var shareHovered = false
     @State private var notificationHovered = false
 
@@ -140,7 +139,7 @@ struct DetailDropdownView: View {
                     .padding(.horizontal, 8)
             }
 
-            QuickToolGrid(color: textColor) { tool in
+            QuickToolGrid(color: textColor, expandsOnHover: true) { tool in
                 switch tool {
                 case .model: onModelDetect?()
                 case .network: onNetworkLeak?()
@@ -212,17 +211,6 @@ struct DetailDropdownView: View {
                     )
                     .frame(width: 58)
                     .onHover { textColorHovered = $0 }
-
-                    compactAction(
-                        icon: "clock.arrow.circlepath",
-                        title: "\(L10n.shared.tr("detail.historyUsageLine1"))\n\(L10n.shared.tr("detail.historyUsageLine2"))",
-                        subtitle: "",
-                        selected: false,
-                        hovered: historyHovered,
-                        action: { onHistoryUsage?() }
-                    )
-                    .frame(width: 80)
-                    .onHover { historyHovered = $0 }
 
                     compactAction(
                         icon: "dollarsign.circle",

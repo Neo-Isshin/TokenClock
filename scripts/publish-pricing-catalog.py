@@ -21,11 +21,12 @@ def publish(destination, generator=None):
     destination = Path(destination)
     generator = generator or load_generator()
     current = json.loads(destination.read_text()) if destination.exists() else {}
-    models = generator.validated_models(generator.fetch_upstream(), current)
+    upstream = generator.fetch_upstream()
+    models = generator.validated_models(upstream, current)
     if not generator.snapshot_changed(current, models):
         print("Catalog unchanged")
         return False
-    body = generator.render_snapshot(models).encode("utf-8")
+    body = generator.render_snapshot(models, upstream.get("generated_at")).encode("utf-8")
     destination.parent.mkdir(parents=True, exist_ok=True)
     temporary = None
     try:

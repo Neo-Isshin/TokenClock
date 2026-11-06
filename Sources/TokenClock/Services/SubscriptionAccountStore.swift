@@ -39,6 +39,8 @@ struct DialQuotaIndicator: Identifiable, Equatable, Sendable {
     var thirdRemainingPercent: Double? = nil
     let details: [DialQuotaDetail]
     var accountName: String? = nil
+    var subscriptionName: String? = nil
+    var displayName: String { subscriptionName ?? provider.displayName }
     var id: SubscriptionProvider { provider }
 }
 
@@ -81,6 +83,14 @@ enum DialQuotaResolver {
         provider: SubscriptionProvider,
         groups: [ProviderQuotaGroup]
     ) -> DialQuotaIndicator? {
+        if XSubscriptionQuota.contains(groups) {
+            guard let bucket = groups.first(where: { $0.id == XSubscriptionQuota.groupID })?.buckets.first,
+                  bucket.usedPercent.isFinite, bucket.windowMinutes == 10_080 else { return nil }
+            return DialQuotaIndicator(provider: provider, outerRemainingPercent: bucket.remainingPercent,
+                innerRemainingPercent: nil,
+                details: [DialQuotaDetail(labelKey: "quota.dial.weekly", remainingPercent: bucket.remainingPercent)],
+                subscriptionName: XSubscriptionQuota.title)
+        }
         switch provider {
         case .claude:
             // Overall subscription windows win over model-specific weekly
@@ -239,7 +249,8 @@ struct SubscriptionAccountRecord: Identifiable, Equatable, Codable, Sendable {
     var detectedBilling: SubscriptionBillingInfo? = nil
     var manualBilling: SubscriptionBillingInfo? = nil
     var billingReminders: BillingReminderSettings? = nil
-    var effectiveBilling: SubscriptionBillingInfo? { manualBilling ?? detectedBilling }
+    var isUnifiedSubscription: Bool { XSubscriptionQuota.contains(groups) }
+    var effectiveBilling: SubscriptionBillingInfo? { manualBilling ?? (isUnifiedSubscription ? nil : detectedBilling) }
 
     var id: String { "\(provider.rawValue)::\(accountID)" }
 
@@ -334,7 +345,7 @@ final class SubscriptionAccountStore: @unchecked Sendable {
                 }
             }
             if let existing = recordsByID[incoming.id] ?? sameEmail {
-                value.detectedBilling = incoming.detectedBilling ?? existing.detectedBilling
+                value.detectedBilling = incoming.isUnifiedSubscription ? nil : (incoming.detectedBilling ?? existing.detectedBilling)
                 value.manualBilling = existing.manualBilling
                 value.billingReminders = existing.billingReminders
                 value.note = existing.note
@@ -388,7 +399,7 @@ final class SubscriptionAccountStore: @unchecked Sendable {
         lock.withLock {
             guard let identity, let info,
                   var value = recordsByID[provider.rawValue + "::" + identity.id],
-                  value.hasVerifiedIdentity else { return visibleLocked() }
+                  value.hasVerifiedIdentity, !value.isUnifiedSubscription else { return visibleLocked() }
             if value.detectedBilling != info {
                 value.detectedBilling = info
                 recordsByID[value.id] = value

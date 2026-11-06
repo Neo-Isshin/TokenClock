@@ -148,7 +148,7 @@ final class ViewModel: ObservableObject {
     /// One indicator per provider: weekly outside and five-hour inside. Cursor's API uses
     /// model groups instead, so Other Models is outside and Cursor Models is inside.
     private var availableDialQuotaIndicators: [DialQuotaIndicator] {
-        dialQuotaProviders.compactMap { provider in
+        normalizedDialQuotaProviders.compactMap { provider in
             DialQuotaAccountSelection.indicator(
                 provider: provider, selectedID: DialQuotaAccountSelection.selectedID(for: provider),
                 activeID: activeSubscriptionAccountIDs[provider], records: subscriptionAccounts,
@@ -227,9 +227,42 @@ final class ViewModel: ObservableObject {
 
     var dialQuotaProviderOptions: [SubscriptionProvider] {
         SubscriptionProvider.allCases.filter {
-            dialQuotaProviders.contains($0)
+            !isHiddenUnifiedQuotaAlias($0) && (dialQuotaProviders.contains($0)
                 || DialQuotaResolver.resolve(provider: $0, groups: quotaGroups(for: $0)) != nil
+            )
         }
+    }
+
+    private var normalizedDialQuotaProviders: [SubscriptionProvider] {
+        let selected = Dictionary(uniqueKeysWithValues: SubscriptionProvider.allCases.compactMap { provider in
+            DialQuotaAccountSelection.selectedID(for: provider).map { (provider, $0) }
+        })
+        return XSubscriptionQuota.dialProviders(dialQuotaProviders, records: subscriptionAccounts,
+            activeIDs: activeSubscriptionAccountIDs, selectedIDs: selected)
+    }
+
+    private var displayedSubscriptionAccounts: [SubscriptionAccountRecord] {
+        XSubscriptionQuota.visibleAccounts(subscriptionAccounts, activeIDs: activeSubscriptionAccountIDs,
+                                           selected: normalizedDialQuotaProviders)
+    }
+
+    func isHiddenUnifiedQuotaAlias(_ provider: SubscriptionProvider) -> Bool {
+        guard let id = activeSubscriptionAccountIDs[provider],
+              subscriptionAccounts.first(where: { $0.id == id })?.isUnifiedSubscription == true else { return false }
+        return !displayedSubscriptionAccounts.contains { $0.id == id }
+    }
+
+    func quotaDisplayName(for provider: SubscriptionProvider) -> String {
+        let records = subscriptionAccounts(for: provider)
+        return !records.isEmpty && records.allSatisfy(\.isUnifiedSubscription) ? XSubscriptionQuota.title : provider.displayName
+    }
+
+    private func normalizeUnifiedDialSelection() {
+        let providers = normalizedDialQuotaProviders
+        guard providers != dialQuotaProviders else { return }
+        dialQuotaProviders = providers
+        UserDefaults.standard.setStringArray(providers.map(\.rawValue), for: .dialQuotaProviders)
+        UserDefaults.standard.setString(providers.first?.rawValue, for: .dialQuotaProvider)
     }
 
     var grokBotAuthorizationVisible: Bool {
@@ -251,6 +284,7 @@ final class ViewModel: ObservableObject {
             dialQuotaProviders.append(provider)
             refreshSubscriptionQuotas(providers: [provider])
         }
+        normalizeUnifiedDialSelection()
         UserDefaults.standard.setStringArray(
             dialQuotaProviders.map(\.rawValue), for: .dialQuotaProviders
         )
@@ -774,7 +808,7 @@ final class ViewModel: ObservableObject {
 
     func subscriptionAccounts(for provider: SubscriptionProvider) -> [SubscriptionAccountRecord] {
         let current = activeSubscriptionAccountIDs[provider]
-        return subscriptionAccounts.filter { $0.provider == provider }.sorted {
+        return displayedSubscriptionAccounts.filter { $0.provider == provider }.sorted {
             if $0.id == current { return true }
             if $1.id == current { return false }
             return ($0.refreshedAt ?? .distantPast) > ($1.refreshedAt ?? .distantPast)
@@ -908,6 +942,7 @@ final class ViewModel: ObservableObject {
         )
         subscriptionAccounts = subscriptionAccountStore.merge(record)
         activeSubscriptionAccountIDs[provider] = record.hasVerifiedIdentity ? record.id : nil
+        normalizeUnifiedDialSelection()
     }
 
     // MARK: - 首次启动路径探测

@@ -257,8 +257,8 @@ final class GenerationSpeedStore: GenerationSpeedObservable, @unchecked Sendable
     }
 }
 
-/// New Codex app-server records expose item timing. Only complete, tool-free
-/// output batches are paired with advancing usage; ambiguous batches are omitted.
+/// Prefer request-scoped native usage records. Legacy counters remain a
+/// conservative fallback only for files without native request identities.
 struct CodexGenerationParser {
     var minimumDate = Date.distantPast
     private struct Span {
@@ -270,21 +270,189 @@ struct CodexGenerationParser {
     private var spans: [Span] = []
     private var ambiguous = false
     private var previousOutput: Int?
-    private(set) var samples: [GenerationSample] = []
+    private var legacySamples: [GenerationSample] = []
+    private struct Scope: Hashable {
+        let thread: String
+        let turn: String
+    }
+    private struct Request: Hashable {
+        let scope: Scope
+        let response: String
+        var id: String {
+            "codex-response:\(scope.thread.utf8.count):\(scope.thread)\(scope.turn.utf8.count):\(scope.turn)\(response)"
+        }
+    }
+    private struct NativeState {
+        var spans: [Span] = []
+        var invalid = false
+        var lastOutput: Int?
+        var boundary: Date?
+    }
+    private struct NativeRequest {
+        let key: Request
+        let model: String
+        let completedAt: Date
+        let output: Int
+        let spans: [Span]
+    }
+    private var fileThread: String?
+    private var nativeSeen = false
+    private var turnModels: [Scope: String] = [:]
+    private var currentTurns: [String: Scope] = [:]
+    private var nativeStates: [Scope: NativeState] = [:]
+    private var nativeRequests: [Request: NativeRequest] = [:]
+    private var seenRequests: [Request: Date] = [:]
+    private var consumedItems: [Scope: [String: Date]] = [:]
+    private var tools: [Scope: [Span]] = [:]
+
+    var samples: [GenerationSample] {
+        guard nativeSeen else { return legacySamples }
+        return nativeRequests.values.compactMap { request -> GenerationSample? in
+            guard let first = request.spans.map(\.start).min() else { return nil }
+            let end = request.completedAt.timeIntervalSince1970 * 1000
+            let modelIntervals = Self.merged(request.spans.map { ($0.start, $0.end) })
+            let toolIntervals = Self.merged((tools[request.key.scope] ?? []).compactMap { span in
+                let a = max(first, span.start), b = min(end, span.end)
+                return b > a ? (a, b) : nil
+            })
+            // Timed model output protects concurrent generation from being
+            // subtracted as tool wait. Never union time across request scopes.
+            let toolTime = toolIntervals.reduce(0.0) { $0 + $1.1 - $1.0 }
+            let simultaneous = toolIntervals.reduce(0.0) { sum, tool in
+                sum + modelIntervals.reduce(0.0) { value, item in
+                    value + max(0, min(tool.1, item.1) - max(tool.0, item.0))
+                }
+            }
+            let seconds = (end - first - toolTime + simultaneous) / 1000
+            let sample = GenerationSample(id: request.key.id, model: request.model,
+                completedAt: request.completedAt, outputTokens: request.output,
+                seconds: seconds, estimated: true)
+            return sample.valid ? sample : nil
+        }.sorted { ($0.completedAt, $0.id) < ($1.completedAt, $1.id) }
+    }
+
+    private static func merged(_ intervals: [(Double, Double)]) -> [(Double, Double)] {
+        var result: [(Double, Double)] = []
+        for item in intervals.sorted(by: { $0.0 < $1.0 }) {
+            if let last = result.last, item.0 <= last.1 {
+                result[result.count - 1].1 = max(last.1, item.1)
+            } else { result.append(item) }
+        }
+        return result
+    }
+
+    private mutating func nativeContext(_ payload: [String: Any], type: String, model: String?) {
+        guard let model = ModelNormalizer.normalize(model) else { return }
+        if type == "thread_settings_applied", fileThread == nil {
+            fileThread = payload["thread_id"] as? String
+        }
+        guard type == "turn_context", let thread = payload["thread_id"] as? String ?? fileThread,
+              let turn = payload["turn_id"] as? String, !thread.isEmpty, !turn.isEmpty else { return }
+        let scope = Scope(thread: thread, turn: turn)
+        if let previous = turnModels[scope], previous != model,
+           var state = nativeStates[scope], !state.spans.isEmpty {
+            state.invalid = true
+            nativeStates[scope] = state
+        }
+        turnModels[scope] = model
+        currentTurns[thread] = scope
+    }
+
+    private mutating func nativeItem(_ payload: [String: Any]) {
+        guard let item = payload["item"] as? [String: Any], let kind = item["type"] as? String,
+              let thread = payload["thread_id"] as? String, !thread.isEmpty,
+              let turn = payload["turn_id"] as? String, !turn.isEmpty,
+              let id = item["id"] as? String, !id.isEmpty else { return }
+        let scope = Scope(thread: thread, turn: turn)
+        let isModel = ["Reasoning", "AgentMessage"].contains(kind)
+        let isTool = ["CommandExecution", "McpToolCall", "FileChange", "WebSearch", "ImageView"].contains(kind)
+        guard isModel || isTool else { return } // User messages are not generation or tool waits.
+        guard let start = payload["started_at_ms"] as? Double,
+              let end = payload["completed_at_ms"] as? Double,
+              start.isFinite, end.isFinite, end > start else {
+            if isModel { nativeStates[scope, default: NativeState()].invalid = true }
+            return
+        }
+        guard end / 1000 >= minimumDate.timeIntervalSince1970 else { return }
+        let span = Span(id: id, start: start, end: end)
+        if isTool {
+            if !(tools[scope] ?? []).contains(where: { $0.id == id }) { tools[scope, default: []].append(span) }
+            return
+        }
+        guard consumedItems[scope]?[id] == nil else { return }
+        var state = nativeStates[scope] ?? NativeState()
+        if let boundary = state.boundary {
+            if end / 1000 <= boundary.timeIntervalSince1970 { return }
+            if start / 1000 < boundary.timeIntervalSince1970 { state.invalid = true }
+        }
+        if !state.spans.contains(where: { $0.id == id }) { state.spans.append(span) }
+        nativeStates[scope] = state
+    }
+
+    private mutating func nativeUsage(_ payload: [String: Any], recordedAt: Date?) {
+        if !nativeSeen { nativeSeen = true; legacySamples.removeAll(); spans.removeAll() }
+        guard let recordedAt, let thread = payload["thread_id"] as? String, !thread.isEmpty,
+              let turn = payload["turn_id"] as? String, !turn.isEmpty,
+              let response = payload["response_id"] as? String, !response.isEmpty else { return }
+        let scope = Scope(thread: thread, turn: turn), key = Request(scope: Scope(thread: thread, turn: turn), response: response)
+        guard seenRequests[key] == nil else { return }
+        seenRequests[key] = recordedAt
+        var state = nativeStates[scope] ?? NativeState()
+        guard state.boundary.map({ recordedAt > $0 }) ?? true else { return }
+        let end = recordedAt.timeIntervalSince1970 * 1000
+        let eligible = state.spans.filter { $0.end <= end + 0.005 * 1000 }
+        let crossesBoundary = state.spans.contains { $0.start < end && $0.end > end + 5 }
+        state.spans.removeAll { $0.end <= end + 5 }
+        for span in eligible { consumedItems[scope, default: [:]][span.id] = recordedAt }
+        let output = (payload["usage"] as? [String: Any])?["output_tokens"] as? Int
+        let total = (payload["turn_token_usage"] as? [String: Any])?["output_tokens"] as? Int
+        let previous = state.lastOutput
+        state.lastOutput = total
+        state.boundary = recordedAt
+        let invalid = state.invalid || crossesBoundary
+        state.invalid = false
+        nativeStates[scope] = state
+        guard recordedAt >= minimumDate, !invalid, !eligible.isEmpty, let output, output > 0,
+              let model = turnModels[scope] else { return }
+        if let total {
+            guard total >= output else { return }
+            if let previous {
+                let (advance, overflow) = total.subtractingReportingOverflow(previous)
+                guard !overflow, advance == output else { return } // A missing request must not borrow its neighbour's items.
+            } else { guard total == output else { return } }
+        }
+        // Without item response IDs, overlapping model intervals within one
+        // scope cannot safely be divided between concurrent requests.
+        let ordered = eligible.sorted { $0.start < $1.start }
+        for (a, b) in zip(ordered, ordered.dropFirst()) where a.end > b.start { return }
+        nativeRequests[key] = NativeRequest(key: key, model: model, completedAt: recordedAt,
+                                             output: output, spans: eligible)
+    }
 
     mutating func consume(_ line: String) {
         guard let data = line.data(using: .utf8),
               let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let payload = object["payload"] as? [String: Any] else { return }
         let type = payload["type"] as? String ?? object["type"] as? String
+        if type == "session_meta" {
+            fileThread = payload["id"] as? String ?? payload["session_id"] as? String
+            return
+        }
+        if type == "token_usage_record" {
+            nativeUsage(payload, recordedAt: (object["timestamp"] as? String).flatMap(DateHelper.parseISO8601))
+            return
+        }
         if type == "turn_context" || type == "thread_settings_applied" {
             let raw = payload["model"] as? String ?? (payload["thread_settings"] as? [String: Any])?["model"] as? String
+            nativeContext(payload, type: type ?? "", model: raw)
             if let next = ModelNormalizer.normalize(raw), next != model {
                 spans.removeAll(); ambiguous = false; model = next
             }
             return
         }
         if type == "item_completed" {
+            nativeItem(payload)
+            if nativeSeen { return }
             guard let item = payload["item"] as? [String: Any] else { ambiguous = true; return }
             guard let kind = item["type"] as? String, ["Reasoning", "AgentMessage"].contains(kind) else {
                 ambiguous = true; return
@@ -299,7 +467,7 @@ struct CodexGenerationParser {
             if !spans.contains(where: { $0.id == key }) { spans.append(Span(id: key, start: start, end: end)) }
             return
         }
-        guard type == "token_count", let info = payload["info"] as? [String: Any] else { return }
+        guard !nativeSeen, type == "token_count", let info = payload["info"] as? [String: Any] else { return }
         defer { spans.removeAll(); ambiguous = false }
         let total = (info["total_token_usage"] as? [String: Any])?["output_tokens"] as? Int
         let last = (info["last_token_usage"] as? [String: Any])?["output_tokens"] as? Int
@@ -328,10 +496,17 @@ struct CodexGenerationParser {
               recordedAt.timeIntervalSince(end) <= 10 else { return }
         let sample = GenerationSample(id: spans.map(\.id).sorted().joined(separator: "|"), model: model,
             completedAt: end, outputTokens: output, seconds: duration / 1000, estimated: true)
-        if sample.valid { samples.append(sample) }
+        if sample.valid { legacySamples.append(sample) }
     }
     mutating func prune(now: Date) {
-        samples.removeAll { $0.completedAt < now.addingTimeInterval(-600) }
+        let cutoff = now.addingTimeInterval(-600)
+        legacySamples.removeAll { $0.completedAt < cutoff }
+        nativeRequests = nativeRequests.filter { $0.value.completedAt >= cutoff }
+        seenRequests = seenRequests.filter { $0.value >= cutoff }
+        consumedItems = consumedItems.mapValues { $0.filter { $0.value >= cutoff } }
+        tools = tools.mapValues { $0.filter { $0.end / 1000 >= cutoff.timeIntervalSince1970 } }
+        nativeStates = nativeStates.filter { currentTurns[$0.key.thread] == $0.key || ($0.value.boundary ?? now) >= cutoff }
+        turnModels = turnModels.filter { currentTurns[$0.key.thread] == $0.key || nativeStates[$0.key] != nil }
     }
 }
 
@@ -357,7 +532,8 @@ final class CodexGenerationReader {
     private var root: String?
     private var states: [String: State] = [:]
     private static let needles = ["\"type\":\"item_completed\"", "\"type\":\"token_count\"",
-                                   "\"type\":\"turn_context\"", "\"type\":\"thread_settings_applied\""].map { Data($0.utf8) }
+                                   "\"type\":\"turn_context\"", "\"type\":\"thread_settings_applied\"",
+                                   "\"type\":\"session_meta\"", "\"type\":\"token_usage_record\""].map { Data($0.utf8) }
 
     func scan(home: String, now: Date) -> [GenerationSample] {
         if root != home { root = home; states.removeAll() }

@@ -232,7 +232,7 @@ final class PricingService: @unchecked Sendable {
 
     /// 四个平台共享的 VPS 刷新源；无需 Git 托管账号或登录。
     private static let refreshURL = URL(string:
-        "https://www.ailyre.com/tokenclock/pricing-catalog.json")!
+        "https://www.ailyre.com/prices/tokenclock.json")!
 
     private var catalog: [String: ModelPrice] = [:]
     /// 带路由前缀的 key（如 dashscope/glm-5.2）→ 后缀索引；后缀唯一才收录，歧义即弃用
