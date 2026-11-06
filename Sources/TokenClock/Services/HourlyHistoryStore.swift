@@ -74,6 +74,7 @@ final class HourlyHistoryStore: @unchecked Sendable {
     private let emitsUpdates: Bool
     private let queue = DispatchQueue(label: "com.tokenclock.hourly-history")
     private var savedAt: [String: Date] = [:]
+    private var notificationPending = false
     private static let transient = unsafeBitCast(OpaquePointer(bitPattern: -1), to: sqlite3_destructor_type.self)
 
     init(path: URL? = nil) {
@@ -94,33 +95,74 @@ final class HourlyHistoryStore: @unchecked Sendable {
             guard sqlite3_exec(db, "BEGIN IMMEDIATE", nil,nil,nil) == SQLITE_OK else { return false }
             var committed = false
             defer { if !committed { sqlite3_exec(db, "ROLLBACK", nil,nil,nil) } }
+            // Compare canonical payloads inside the same write transaction, so
+            // concurrent Cursor and local scanners cannot race a read/modify/write.
+            var query: OpaquePointer?
+            guard sqlite3_prepare_v2(db, "SELECT hour_key,payload FROM event_hours WHERE tool=?1 AND hour_key >= ?2 AND hour_key <= ?3", -1, &query, nil) == SQLITE_OK else { return false }
+            defer { sqlite3_finalize(query) }
+            var existing: [String: Data] = [:]
+            for day in Set(rows.keys.map { String($0.prefix(10)) }) {
+                sqlite3_reset(query)
+                sqlite3_bind_text(query, 1, tool, -1, Self.transient)
+                sqlite3_bind_text(query, 2, day + "-00", -1, Self.transient)
+                sqlite3_bind_text(query, 3, day + "-23", -1, Self.transient)
+                var step = sqlite3_step(query)
+                while step == SQLITE_ROW {
+                    guard let key = sqlite3_column_text(query, 0), let bytes = sqlite3_column_blob(query, 1) else { return false }
+                    existing[String(cString: key)] = Data(bytes: bytes, count: Int(sqlite3_column_bytes(query, 1)))
+                    step = sqlite3_step(query)
+                }
+                guard step == SQLITE_DONE else { return false }
+            }
+            let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
+            var encoded: [String: Data] = [:]
+            for (key, value) in rows {
+                guard let data = try? encoder.encode(value) else { return false }
+                encoded[key] = data
+            }
+            let removed = existing.keys.filter { encoded[$0] == nil }
+            let updates = encoded.filter { existing[$0.key] != $0.value }
+            guard !removed.isEmpty || !updates.isEmpty else {
+                savedAt[tool] = now
+                return false // The deferred rollback releases the lock without a write.
+            }
             var delete: OpaquePointer?, insert: OpaquePointer?
-            guard sqlite3_prepare_v2(db, "DELETE FROM event_hours WHERE tool=?1 AND hour_key >= ?2 AND hour_key <= ?3", -1,&delete,nil) == SQLITE_OK,
-                  sqlite3_prepare_v2(db, "INSERT INTO event_hours VALUES (?1,?2,?3)", -1,&insert,nil) == SQLITE_OK else {
+            guard sqlite3_prepare_v2(db, "DELETE FROM event_hours WHERE tool=?1 AND hour_key=?2", -1, &delete, nil) == SQLITE_OK,
+                  sqlite3_prepare_v2(db, "INSERT INTO event_hours VALUES (?1,?2,?3) ON CONFLICT(hour_key,tool) DO UPDATE SET payload=excluded.payload", -1, &insert, nil) == SQLITE_OK else {
                 sqlite3_finalize(delete); sqlite3_finalize(insert); return false
             }
             defer { sqlite3_finalize(delete); sqlite3_finalize(insert) }
-            for day in Set(rows.keys.map { String($0.prefix(10)) }) {
+            for key in removed {
                 sqlite3_reset(delete)
-                sqlite3_bind_text(delete,1,tool,-1,Self.transient)
-                sqlite3_bind_text(delete,2,day+"-00",-1,Self.transient)
-                sqlite3_bind_text(delete,3,day+"-23",-1,Self.transient)
+                sqlite3_bind_text(delete, 1, tool, -1, Self.transient)
+                sqlite3_bind_text(delete, 2, key, -1, Self.transient)
                 guard sqlite3_step(delete) == SQLITE_DONE else { return false }
             }
-            let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
-            for (key,value) in rows {
-                guard let data = try? encoder.encode(value) else { return false }
+            for (key, data) in updates {
                 sqlite3_reset(insert)
-                sqlite3_bind_text(insert,1,key,-1,Self.transient)
-                sqlite3_bind_text(insert,2,tool,-1,Self.transient)
-                _ = data.withUnsafeBytes { sqlite3_bind_blob(insert,3,$0.baseAddress,Int32(data.count),Self.transient) }
+                sqlite3_bind_text(insert, 1, key, -1, Self.transient)
+                sqlite3_bind_text(insert, 2, tool, -1, Self.transient)
+                _ = data.withUnsafeBytes { sqlite3_bind_blob(insert, 3, $0.baseAddress, Int32(data.count), Self.transient) }
                 guard sqlite3_step(insert) == SQLITE_DONE else { return false }
             }
+
             guard sqlite3_exec(db, "COMMIT", nil,nil,nil) == SQLITE_OK else { return false }
             committed = true; savedAt[tool] = now
             return true
         }
-        if changed && emitsUpdates { DispatchQueue.main.async { NotificationCenter.default.post(name: Self.updated, object: nil) } }
+        if changed && emitsUpdates {
+            let schedule = queue.sync { () -> Bool in
+                guard !notificationPending else { return false }
+                notificationPending = true
+                return true
+            }
+            if schedule {
+                DispatchQueue.main.async {
+                    self.queue.sync { self.notificationPending = false }
+                    NotificationCenter.default.post(name: Self.updated, object: nil)
+                }
+            }
+        }
     }
 
     func query(day: String) -> [DaySnapshot] {

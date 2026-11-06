@@ -61,6 +61,8 @@ struct ToolUsage: Identifiable, Hashable {
 
     /// 今日活跃的 session/agent 列表（用于展开展示）
     var sessions: [SessionInfo] = []
+    /// Today's local Codex cost split, never attributed to a subscription account.
+    var costModes: CostModeBreakdown? = nil
 
     /// 计量值（tokens/credits/requests 的统一出口；today 口径回退 todayTokens）
     var value: Int { measurementValue ?? todayTokens }
@@ -81,6 +83,15 @@ struct ToolUsage: Identifiable, Hashable {
     }
 }
 
+/// Exact model-level usage within a session that may switch models.
+struct SessionModelUsage: Hashable {
+    let model: String
+    let tokens: Int
+    let messages: Int
+    var cost: CostEstimate = .unavailable
+    var cacheReadTokens: Int = 0
+}
+
 /// 单个 session 或 agent 的今日数据
 struct SessionInfo: Identifiable, Hashable {
     var id: String { rawId }
@@ -96,7 +107,7 @@ struct SessionInfo: Identifiable, Hashable {
     let todayMessages: Int
     /// 是否活跃（最近10分钟内有活动）
     let isActive: Bool
-    /// 来源标签（如 Antigravity 的 CLI/IDE/App），显示在 "session" 标签右侧；nil 则不显示
+    /// 记录来源标签（如 Antigravity 的 CLI/IDE/App、Claude 的 Code/Cowork），nil 则不显示
     var source: String? = nil
 
     /// 该 session 使用的模型名（经 `ModelNormalizer` 归一化后的官方名，如 "claude-sonnet-4-5"）；
@@ -109,6 +120,15 @@ struct SessionInfo: Identifiable, Hashable {
     /// 该 session 今日的缓存读 token 数（「包含缓存读」口径用）
     var cacheReadTokens: Int = 0
 
+    /// Exact request-model breakdown when available; never substitute a
+    /// session's dominant model for a different model's generation speed.
+    var modelBreakdown: [SessionModelUsage] = []
+
+    /// Exact log source supplied by the provider's index or scan. Not a path
+    /// inferred from the display name, project directory, model, or session ID.
+    /// Ambiguous or aggregate sessions leave this nil and require file selection.
+    var sourceLogPath: String? = nil
+
     /// 格式化的 token 数
     var formattedTokens: String { TokenFormat.compact(todayTokens) }
 
@@ -118,7 +138,6 @@ struct SessionInfo: Identifiable, Hashable {
     }
 }
 
-/// Historical Usage navigation target carried by report notifications.
 enum UsageOverviewRoute: Hashable {
     case last30Days(selectedDateKey: String)
     case custom(startDateKey: String, endDateKey: String)
@@ -129,7 +148,7 @@ enum UsageOverviewRoute: Hashable {
     }
 }
 
-/// Lightweight report notification shared by all platform implementations.
+/// 表盘铃铛里的轻量通知。报告通知可携带 Historical Usage 导航目标。
 struct TokenClockNotification: Identifiable, Hashable {
     enum Kind: String {
         case dailyReport
@@ -137,6 +156,9 @@ struct TokenClockNotification: Identifiable, Hashable {
         case monthlyReport
         case modelDetection
         case system
+        case news
+        case notebookReminder
+        case releaseUpdate
     }
 
     let id: UUID
@@ -147,11 +169,17 @@ struct TokenClockNotification: Identifiable, Hashable {
     let route: UsageOverviewRoute?
     var subscriptionAccountID: String? = nil
     var releaseURL: URL? = nil
+    var newsItemID: String? = nil
+    var notebookEntryID: UUID? = nil
     var isRead: Bool
 
     init(
-        id: UUID = UUID(), kind: Kind, title: String, message: String,
-        createdAt: Date = Date(), route: UsageOverviewRoute? = nil,
+        id: UUID = UUID(),
+        kind: Kind,
+        title: String,
+        message: String,
+        createdAt: Date = Date(),
+        route: UsageOverviewRoute? = nil,
         isRead: Bool = false
     ) {
         self.id = id

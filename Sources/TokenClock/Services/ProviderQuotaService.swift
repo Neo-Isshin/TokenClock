@@ -14,6 +14,8 @@ struct ProviderQuotaGroup: Identifiable, Equatable, Codable, Sendable {
     let buckets: [CodexQuotaBucket]
 }
 
+enum LocalQuotaAuthorizationSource: Equatable, Sendable { case cursorCLI, grokBot }
+
 struct ProviderQuotaSnapshot: Equatable, Sendable {
     var status: CodexQuotaStatus
     var groups: [ProviderQuotaGroup]
@@ -23,6 +25,8 @@ struct ProviderQuotaSnapshot: Equatable, Sendable {
     var message: String?
     var account: SubscriptionAccountIdentity? = nil
     var billing: SubscriptionBillingInfo? = nil
+    var requiresLocalAuthorization = false
+    var localAuthorizationSource: LocalQuotaAuthorizationSource? = nil
 
     static func idle(source: String) -> Self {
         Self(status: .idle, groups: [], planType: nil, refreshedAt: nil, source: source, message: nil)
@@ -45,7 +49,7 @@ struct ProviderQuotaSnapshot: Equatable, Sendable {
 /// Reads Antigravity's local, authenticated Models & Usage summary on demand.
 /// The short-lived loopback token remains in memory and is never logged or persisted.
 final class AntigravityQuotaService: @unchecked Sendable {
-    private struct Endpoint { let port: Int; let csrfToken: String }
+    private typealias Endpoint = AntigravityLocalEndpointDiscovery.Endpoint
     private let fileManager: FileManager
     private let environment: [String: String]
     private let homeDirectory: String
@@ -58,13 +62,19 @@ final class AntigravityQuotaService: @unchecked Sendable {
 
     func fetch() -> ProviderQuotaSnapshot {
         let source = "Antigravity local service"
-        guard let endpoint = endpointFromLatestLog() else {
-            return .unavailable("Antigravity is not running or its local quota service was not found.", source: source)
+        let endpoints = AntigravityLocalEndpointDiscovery.discover()
+        for endpoint in endpoints {
+            if let data = request(endpoint: endpoint), let snapshot = Self.decodeResponse(data) { return snapshot }
         }
-        guard let data = request(endpoint: endpoint), let snapshot = Self.decodeResponse(data) else {
-            return .unavailable("Antigravity quota response was not available.", source: source)
+        // New standalone apps no longer update the IDE's ls-main.log. Only
+        // scan historical IDE logs if no running service answered successfully.
+        guard let legacy = endpointFromLatestLog() else {
+            return .unavailable(endpoints.isEmpty
+                ? "Antigravity is not running or its local quota service was not found."
+                : "Antigravity quota response was not available.", source: source)
         }
-        return snapshot
+        if !endpoints.contains(legacy), let data = request(endpoint: legacy), let snapshot = Self.decodeResponse(data) { return snapshot }
+        return .unavailable("Antigravity quota response was not available.", source: source)
     }
 
     static func decodeResponse(_ data: Data, now: Date = Date()) -> ProviderQuotaSnapshot? {
@@ -142,15 +152,21 @@ final class AntigravityQuotaService: @unchecked Sendable {
         return response.body
         #else
         guard let executable = ["/usr/bin/curl", "/usr/local/bin/curl"].first(where: fileManager.isExecutableFile(atPath:)) else { return nil }
-        let process = Process(); let output = Pipe()
+        let process = Process(); let output = Pipe(); let input = Pipe()
         process.executableURL = URL(fileURLWithPath: executable)
-        process.arguments = ["-ksS", "--max-time", "12", "-X", "POST", "-H", "Content-Type: application/json",
-            "-H", "x-codeium-csrf-token: \(endpoint.csrfToken)", "--data-binary", "{\"forceRefresh\":true}", url]
-        process.standardOutput = output; process.standardError = Pipe()
+        process.arguments = ["-fksS", "--noproxy", "*", "--max-time", "4", "-X", "POST", "-H", "Content-Type: application/json",
+            "--config", "-", "--data-binary", "{\"forceRefresh\":true}", url]
+        process.standardOutput = output; process.standardError = FileHandle.nullDevice
+        process.standardInput = input
         do {
-            try process.run(); process.waitUntilExit()
+            try process.run()
+            let token = endpoint.csrfToken.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
+            try input.fileHandleForWriting.write(contentsOf: Data("header = \"x-codeium-csrf-token: \(token)\"\n".utf8))
+            try input.fileHandleForWriting.close()
+            let data = output.fileHandleForReading.readDataToEndOfFile()
+            process.waitUntilExit()
             guard process.terminationStatus == 0 else { return nil }
-            return output.fileHandleForReading.readDataToEndOfFile()
+            return data
         } catch { return nil }
         #endif
     }
@@ -176,8 +192,16 @@ final class AntigravityQuotaService: @unchecked Sendable {
 /// Reads Cursor's authenticated dashboard summary. Unknown response shapes fail closed;
 /// TokenClock never estimates plan limits from sticker prices.
 final class CursorQuotaService: @unchecked Sendable {
-    private static let SQLITE_TRANSIENT = unsafeBitCast(OpaquePointer(bitPattern: -1), to: sqlite3_destructor_type.self)
-    private struct Credential { let token: String; let userID: String; let email: String?; let membershipType: String? }
+    private static let SQLITE_TRANSIENT = unsafeBitCast(
+        OpaquePointer(bitPattern: -1), to: sqlite3_destructor_type.self
+    )
+    private struct Credential {
+        let token: String
+        let userID: String
+        let email: String?
+        let membershipType: String?
+        let machineID: String?
+    }
     private let fileManager: FileManager
     init(fileManager: FileManager = .default) { self.fileManager = fileManager }
 
@@ -189,8 +213,28 @@ final class CursorQuotaService: @unchecked Sendable {
         guard let credential = credentialFromStateDatabase() else {
             return .unavailable("Cursor login was not found.", source: source)
         }
+        let planData = CursorDashboardRPC.read("GetPlanInfo", token: credential.token, machineID: credential.machineID)
+        let discovery = XSubscriptionQuota.discover(planData: planData, usage: {
+            CursorDashboardRPC.read("GetCurrentPeriodUsage", token: credential.token, machineID: credential.machineID,
+                                    body: Data(#"{"includePooledUsage":true}"#.utf8))
+        }, sand: {
+            CursorDashboardRPC.read("GetSandUsageStatus", token: credential.token, machineID: credential.machineID)
+        })
+        let verifiedLegacy: Bool
+        switch discovery {
+        case .unified(var snapshot):
+            snapshot.account = SubscriptionAccountIdentity(id: credential.userID, email: credential.email)
+            return snapshot
+        case .unavailable:
+            return .unavailable("X Subscription shared weekly quota was not available.", source: "X Subscription · Cursor API")
+        case .legacy: verifiedLegacy = true
+        case .unknown: verifiedLegacy = false
+        }
         guard let data = request(credential: credential), var snapshot = Self.decodeResponse(data) else {
             return .unavailable("Cursor subscription quota was not available.", source: source)
+        }
+        guard verifiedLegacy || XSubscriptionQuota.knownLegacySummary(data) else {
+            return .unavailable("Subscription type could not be verified; legacy monthly quota was not used.", source: source)
         }
         snapshot.account = SubscriptionAccountIdentity(id: credential.userID, email: credential.email)
         if snapshot.planType?.isEmpty != false { snapshot.planType = credential.membershipType }
@@ -204,6 +248,9 @@ final class CursorQuotaService: @unchecked Sendable {
     static func decodeResponse(_ data: Data, now: Date = Date()) -> ProviderQuotaSnapshot? {
         guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
         let payload = (root["usageSummary"] as? [String: Any]) ?? (root["response"] as? [String: Any]) ?? root
+        guard XSubscriptionQuota.flag(root["isUnified"]) != true,
+              XSubscriptionQuota.flag(root["isMerged"]) != true,
+              !["premium", "super", "plus"].contains((payload["membershipType"] as? String ?? "").lowercased()) else { return nil }
         let individual = payload["individualUsage"] as? [String: Any] ?? payload
         let plan = individual["plan"] as? [String: Any] ?? individual
         let used = number(plan["used"]), limit = number(plan["limit"])
@@ -255,16 +302,22 @@ final class CursorQuotaService: @unchecked Sendable {
         defer { sqlite3_close(db) }
         guard let token = itemValue(db: db, key: "cursorAuth/accessToken") else { return nil }
         guard let userID = Self.userID(from: token) else { return nil }
-        return Credential(token: token, userID: userID,
+        return Credential(
+            token: token,
+            userID: userID,
             email: itemValue(db: db, key: "cursorAuth/cachedEmail"),
-            membershipType: itemValue(db: db, key: "cursorAuth/stripeMembershipType"))
+            membershipType: itemValue(db: db, key: "cursorAuth/stripeMembershipType"),
+            machineID: itemValue(db: db, key: "storage.serviceMachineId")
+        )
     }
+
     private func itemValue(db: OpaquePointer?, key: String) -> String? {
         var statement: OpaquePointer?
         guard sqlite3_prepare_v2(db, "SELECT value FROM ItemTable WHERE key=?1 LIMIT 1", -1, &statement, nil) == SQLITE_OK else { return nil }
         defer { sqlite3_finalize(statement) }
         sqlite3_bind_text(statement, 1, key, -1, Self.SQLITE_TRANSIENT)
-        guard sqlite3_step(statement) == SQLITE_ROW, let pointer = sqlite3_column_text(statement, 0) else { return nil }
+        guard sqlite3_step(statement) == SQLITE_ROW,
+              let pointer = sqlite3_column_text(statement, 0) else { return nil }
         let value = String(cString: pointer).trimmingCharacters(in: .whitespacesAndNewlines)
         return value.isEmpty ? nil : value
     }
@@ -361,7 +414,9 @@ final class ZhipuQuotaService: @unchecked Sendable {
             return .unavailable("GLM Coding Plan quota was not available.", source: source)
         }
         snapshot.account = SubscriptionAccountIdentity(
-            id: SubscriptionAccountIdentity.opaqueID(namespace: credential.providerID, secret: credential.apiKey),
+            id: SubscriptionAccountIdentity.opaqueID(
+                namespace: credential.providerID, secret: credential.apiKey
+            ),
             email: nil
         )
         return snapshot

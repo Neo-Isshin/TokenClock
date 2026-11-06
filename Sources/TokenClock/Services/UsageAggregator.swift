@@ -58,38 +58,58 @@ enum UsageAggregator {
     ///   - tools: 全部工具（今日消耗为 0 的会跳过）。
     ///   - unknownLabel: 取不到模型名时占位桶的显示名（由调用方从 L10n 取）。
     /// - Returns: 模型分组，按 totalTokens 降序，「未知」桶固定垫底。
-    static func groupedByModel(_ tools: [ToolUsage], unknownLabel: String) -> [ModelGroup] {
+    static func groupedByModel(_ tools: [ToolUsage], unknownLabel: String,
+                               generationSpeedStore: GenerationSpeedStore = .shared,
+                               now: Date = Date()) -> [ModelGroup] {
         var bucket: [String: ModelGroup] = [:]
         for tool in tools {
             guard tool.measurementUnit == .tokens, tool.measurementScope == .today else { continue }
             guard tool.todayTokens > 0 || tool.todayMessages > 0 else { continue }
             for session in tool.sessions {
-                let name = ModelNormalizer.normalize(session.model) ?? unknownLabel
-                var group = bucket[name] ?? ModelGroup(
-                    name: name,
-                    emoji: name == unknownLabel ? "❓" : ModelEmoji.emoji(for: name))
-                group.totalTokens += session.todayTokens
-                group.totalMessages += session.todayMessages
-                group.totalCost.merge(session.todayCost)
-                group.totalCacheReadTokens += session.cacheReadTokens
-                if let idx = group.contributions.firstIndex(where: { $0.tool == tool.name }) {
-                    group.contributions[idx].tokens += session.todayTokens
-                    group.contributions[idx].messages += session.todayMessages
-                    group.contributions[idx].cost.merge(session.todayCost)
-                    group.contributions[idx].cacheReadTokens += session.cacheReadTokens
-                } else {
-                    var contribution = ToolContribution(
-                        tool: tool.name, emoji: tool.emoji,
-                        tokens: session.todayTokens, messages: session.todayMessages)
-                    contribution.cost = session.todayCost
-                    contribution.cacheReadTokens = session.cacheReadTokens
-                    group.contributions.append(contribution)
+                let fallback = SessionModelUsage(model: session.model ?? unknownLabel,
+                    tokens: session.todayTokens, messages: session.todayMessages,
+                    cost: session.todayCost, cacheReadTokens: session.cacheReadTokens)
+                // Only use complete splits. Partial provider metadata must not
+                // drop usage, change totals, or attribute unknown usage to a model.
+                let split = session.modelBreakdown
+                let complete = !split.isEmpty
+                    && split.reduce(0) { $0 + $1.tokens } == session.todayTokens
+                    && split.reduce(0) { $0 + $1.messages } == session.todayMessages
+                    && split.reduce(0) { $0 + $1.cacheReadTokens } == session.cacheReadTokens
+                for usage in complete ? split : [fallback] {
+                    let name = ModelNormalizer.normalize(usage.model) ?? unknownLabel
+                    var group = bucket[name] ?? ModelGroup(
+                        name: name,
+                        emoji: name == unknownLabel ? "❓" : ModelEmoji.emoji(for: name))
+                    group.totalTokens += usage.tokens
+                    group.totalMessages += usage.messages
+                    group.totalCost.merge(usage.cost)
+                    group.totalCacheReadTokens += usage.cacheReadTokens
+                    if let idx = group.contributions.firstIndex(where: { $0.tool == tool.name }) {
+                        group.contributions[idx].tokens += usage.tokens
+                        group.contributions[idx].messages += usage.messages
+                        group.contributions[idx].cost.merge(usage.cost)
+                        group.contributions[idx].cacheReadTokens += usage.cacheReadTokens
+                    } else {
+                        var contribution = ToolContribution(
+                            tool: tool.name, emoji: tool.emoji,
+                            tokens: usage.tokens, messages: usage.messages)
+                        contribution.cost = usage.cost
+                        contribution.cacheReadTokens = usage.cacheReadTokens
+                        group.contributions.append(contribution)
+                    }
+                    bucket[name] = group
                 }
-                bucket[name] = group
             }
         }
         var result = bucket.values.map { g -> ModelGroup in
             var g = g
+            g.generationSpeed = generationSpeedStore.summary(
+                model: g.name, providers: Set(g.contributions.map(\.tool)), now: now)
+            for i in g.contributions.indices {
+                g.contributions[i].generationSpeed = generationSpeedStore.summary(
+                    model: g.name, providers: [g.contributions[i].tool], now: now)
+            }
             g.contributions.sort { $0.tokens > $1.tokens }
             return g
         }
@@ -104,6 +124,8 @@ enum UsageAggregator {
 }
 /// 「按模型」视图：某个模型下，各工具对其的消耗贡献
 struct ModelGroup: Identifiable, Hashable {
+    /// Stored in the row value so SwiftUI also detects speed-only changes.
+    var generationSpeed = GenerationSpeed()
     var id: String { name }
     /// 归一化后的模型名（或「未知」占位名）
     let name: String
@@ -126,6 +148,7 @@ struct ModelGroup: Identifiable, Hashable {
 
 /// 单个工具对某个模型的贡献
 struct ToolContribution: Identifiable, Hashable {
+    var generationSpeed = GenerationSpeed()
     var id: String { tool }
     let tool: String
     let emoji: String

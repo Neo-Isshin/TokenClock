@@ -32,11 +32,15 @@ final class MockUsageService {
             ("Continue", "CN", "▶️"),
             ("Cursor Agent", "CA", "💎"),
             ("Grok Bot", "GB", "😶"),
+            ("ZCode", "ZC", "🅉"),
         ]
         let tools: [(name: String, abbr: String, emoji: String, unit: UsageMeasurementUnit, scope: UsageMeasurementScope)] =
             tokenTools.map { ($0.name, $0.abbr, $0.emoji, .tokens, .today) }
         #endif
-        return tools.map { tool in
+        let additional = AdditionalHarness.allCases.filter { harness in !tools.contains { $0.name == harness.name } }.map { harness in
+            (name: harness.name, abbr: harness.abbreviation, emoji: harness.emoji, unit: harness.unit, scope: UsageMeasurementScope.today)
+        }
+        return (tools + additional).map { tool in
             ToolUsage(
                 name: tool.name,
                 abbreviation: tool.abbr,

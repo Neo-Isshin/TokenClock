@@ -118,7 +118,9 @@ final class AntigravityUsageService: @unchecked Sendable {
 
     private func scanDatabase(dbPath: String) {
         var db: OpaquePointer?
-        guard sqlite3_open(dbPath, &db) == SQLITE_OK else { return }
+        guard sqlite3_open_v2(dbPath, &db, SQLITE_OPEN_READONLY, nil) == SQLITE_OK else {
+            if let db { sqlite3_close(db) }; return
+        }
         defer { sqlite3_close(db) }
         let model = sessionModel(db: db)
 
@@ -129,23 +131,33 @@ final class AntigravityUsageService: @unchecked Sendable {
         defer { sqlite3_finalize(stmt) }
 
         while sqlite3_step(stmt) == SQLITE_ROW {
-            let spPtr = sqlite3_column_blob(stmt, 0)
-            let spLen = sqlite3_column_bytes(stmt, 0)
-            guard spLen > 0, let spPtr = spPtr else { continue }
-            let stepPayload = Data(bytes: spPtr, count: Int(spLen))
+            Self.withRowTemporaries {
+                let spPtr = sqlite3_column_blob(stmt, 0)
+                let spLen = sqlite3_column_bytes(stmt, 0)
+                guard spLen > 0, let spPtr = spPtr else { return }
+                let stepPayload = Data(bytes: spPtr, count: Int(spLen))
 
-            // metadata 可能为 NULL
-            var timestamp: Date? = nil
-            if let metaPtr = sqlite3_column_blob(stmt, 1) {
-                let metaLen = sqlite3_column_bytes(stmt, 1)
-                if metaLen > 0 {
-                    let metaBlob = Data(bytes: metaPtr, count: Int(metaLen))
-                    timestamp = parseTimestamp(from: metaBlob)
+                // metadata 可能为 NULL
+                var timestamp: Date? = nil
+                if let metaPtr = sqlite3_column_blob(stmt, 1) {
+                    let metaLen = sqlite3_column_bytes(stmt, 1)
+                    if metaLen > 0 {
+                        let metaBlob = Data(bytes: metaPtr, count: Int(metaLen))
+                        timestamp = parseTimestamp(from: metaBlob)
+                    }
                 }
-            }
 
-            processStepPayload(stepPayload, timestamp: timestamp, model: model)
+                processStepPayload(stepPayload, timestamp: timestamp, model: model)
+            }
         }
+    }
+
+    private static func withRowTemporaries(_ body: () -> Void) {
+#if canImport(ObjectiveC)
+        autoreleasepool(invoking: body)
+#else
+        body()
+#endif
     }
 
     // MARK: - Protobuf 解析

@@ -67,6 +67,7 @@ final class CodexUsageService: @unchecked Sendable {
         let usage: RawUsage
         let model: String?
         let serviceTier: PricingServiceTier
+        let tierEvidence: PricingTierEvidence
     }
 
     private struct ReplaySignature: Equatable, Sendable {
@@ -104,6 +105,7 @@ final class CodexUsageService: @unchecked Sendable {
         var trailingData = Data()
         var currentModel: String?
         var currentServiceTier: PricingServiceTier = .standard
+        var currentTierEvidence: PricingTierEvidence = .configuration
         var previousTotalUsage: RawUsage?
         /// Derived usage sequence includes replayed events so descendants can match it.
         var usageSequence: [TimestampedUsage] = []
@@ -129,12 +131,14 @@ final class CodexUsageService: @unchecked Sendable {
     private var sessionMetadataCache: [String: SessionMetadataCacheEntry] = [:]
 
     private let fm = FileManager.default
-    private let codexHome: String
-    private let configuredServiceTier: PricingServiceTier
+    private let overrideHome: String?
+    private var codexHome: String { overrideHome ?? PathConfig.codexHome() }
+    private var configuredServiceTier: PricingServiceTier
+    private var scannedHome: String?
 
     init(codexHome: String? = nil) {
         let resolvedHome = codexHome ?? PathConfig.codexHome()
-        self.codexHome = resolvedHome
+        self.overrideHome = codexHome
         self.configuredServiceTier = Self.readConfiguredServiceTier(codexHome: resolvedHome)
     }
 
@@ -176,6 +180,12 @@ final class CodexUsageService: @unchecked Sendable {
     // MARK: - JSONL 扫描（tokens + messages + cache）
 
     private func scanJSONL() {
+        if scannedHome != codexHome {
+            jsonlCache.removeAll()
+            sessionMetadataCache.removeAll()
+            configuredServiceTier = Self.readConfiguredServiceTier(codexHome: codexHome)
+            scannedHome = codexHome
+        }
         let calendar = Calendar.current
         let startOfToday = calendar.startOfDay(for: Date())
         let cutoff = calendar.date(
@@ -345,6 +355,18 @@ final class CodexUsageService: @unchecked Sendable {
             if state.replaySignature.parentSessionId == nil || state.replayFallbackResolved,
                let tier = codexServiceTier(fromPayload: payload) {
                 state.currentServiceTier = tier
+                let raw = (payload["thread_settings"] as? [String: Any])?["service_tier"] as? String
+                    ?? payload["service_tier"] as? String
+                state.currentTierEvidence = ["fast", "priority", "default", "standard"].contains(raw?.lowercased() ?? "")
+                    ? .recorded : .unknown
+            }
+            let settings = payload["thread_settings"] as? [String: Any]
+            if state.replaySignature.parentSessionId == nil || state.replayFallbackResolved {
+                if let value = settings?["service_tier"] ?? payload["service_tier"], !(value is String) {
+                    // Preserve the previous estimator's fallback, but never
+                    // present a malformed/null setting as a recorded mode.
+                    state.currentTierEvidence = .unknown
+                }
             }
             return
         }
@@ -364,7 +386,7 @@ final class CodexUsageService: @unchecked Sendable {
             timestamp: date,
             usage: usage,
             model: modelForTurn,
-            serviceTier: state.currentServiceTier
+            serviceTier: state.currentServiceTier, tierEvidence: state.currentTierEvidence
         )
         let sequenceEvent = TimestampedUsage(timestamp: date, usage: usage)
         let eventIndex = state.usageSequence.count
@@ -454,7 +476,7 @@ final class CodexUsageService: @unchecked Sendable {
                 model: model,
                 buckets: buckets,
                 contextInputTokens: usage.input,
-                serviceTier: event.serviceTier
+                serviceTier: event.serviceTier, tierEvidence: event.tierEvidence
             ))
         }
     }
@@ -472,7 +494,7 @@ final class CodexUsageService: @unchecked Sendable {
             var isDirectory: ObjCBool = false
             guard fm.fileExists(atPath: directory, isDirectory: &isDirectory), isDirectory.boolValue,
                   let enumerator = fm.enumerator(
-                    at: URL(fileURLWithPath: directory, isDirectory: true),
+                    at: URL(fileURLWithPath: directory, isDirectory: true).resolvingSymlinksInPath(),
                     includingPropertiesForKeys: [.isRegularFileKey],
                     options: [.skipsHiddenFiles]
                   ) else { continue }
@@ -564,9 +586,8 @@ final class CodexUsageService: @unchecked Sendable {
     }
 
     private func topologicallySorted(_ descriptors: [RolloutDescriptor]) -> [RolloutDescriptor] {
-        // A resumed rollout can retain the original session_meta id while its filename
-        // carries a new suffix. Multiple descriptors may therefore share sessionId;
-        // never use uniqueKeysWithValues here because it traps on that valid input.
+        // Resumed rollout 文件的文件名带新 id，但 session_meta 里保留原会话 id，
+        // 两个 descriptor 可能共享 session.sessionId，不能再用 uniqueKeysWithValues（会 trap）。
         let byId = Dictionary(
             descriptors.map { ($0.session.sessionId, $0) },
             uniquingKeysWith: { first, _ in first }
@@ -576,7 +597,7 @@ final class CodexUsageService: @unchecked Sendable {
         var result: [RolloutDescriptor] = []
 
         func visit(_ descriptor: RolloutDescriptor) {
-            // Path is the physical rollout identity; sessionId is not unique for resumes.
+            // 以 path 为去重键（sessionId 会重复），保证共享 id 的文件不会被静默丢弃
             guard !visited.contains(descriptor.path),
                   visiting.insert(descriptor.path).inserted else { return }
             if let parent = descriptor.session.parentSessionId,
@@ -732,6 +753,13 @@ final class CodexUsageService: @unchecked Sendable {
         PricingService.shared.cost(of: dailyRequests[DateHelper.todayKey()] ?? [])
     }
 
+    func todayCostModes() -> CostModeBreakdown {
+        let key = DateHelper.todayKey()
+        let requests = dailyRequests[key] ?? []
+        return CostModeBreakdown.make(requests,
+            missingModels: max(0, (dailyData[key]?.messages ?? 0) - requests.count))
+    }
+
     /// 今日缓存读 token 总数（dailyCache 累计的 cached_input_tokens；「包含缓存读」展示用）
     func todayCacheReadTokens() -> Int {
         dailyCache[DateHelper.todayKey()] ?? 0
@@ -816,8 +844,9 @@ final class CodexUsageService: @unchecked Sendable {
             Self.threadsHasColumn(db, "title") ? "NULLIF(TRIM(title), '')" : nil,
         ].compactMap { $0 }
         let displayTitle = titleColumns.isEmpty ? "''" : "COALESCE(\(titleColumns.joined(separator: ", ")), '')"
+        let sourcePathColumn = Self.threadsHasColumn(db, "rollout_path") ? "NULLIF(rollout_path, '')" : "NULL"
         let query = """
-        SELECT id, updated_at_ms, cwd, \(displayTitle)
+        SELECT id, updated_at_ms, cwd, \(displayTitle), \(sourcePathColumn)
         FROM threads
         WHERE updated_at_ms >= ?
         ORDER BY updated_at_ms DESC
@@ -842,6 +871,9 @@ final class CodexUsageService: @unchecked Sendable {
             let updatedAtMs = sqlite3_column_int64(stmt, 1)
             let cwdPtr = sqlite3_column_text(stmt, 2)
             let titlePtr = sqlite3_column_text(stmt, 3)
+            let sourcePtr = sqlite3_column_text(stmt, 4)
+            let indexedPath = sourcePtr.map { String(cString: $0) }
+            let sourceLogPath = indexedPath.flatMap { ($0 as NSString).isAbsolutePath ? $0 : nil }
 
             let updatedDate = Date(timeIntervalSince1970: Double(updatedAtMs) / 1000.0)
             let dateKey = DateHelper.dateKey(from: updatedDate)
@@ -863,6 +895,12 @@ final class CodexUsageService: @unchecked Sendable {
 
             let matchedBuckets = sessionBucketsMatching(sessionId, in: sessionBuckets)
             let matchedRequests = sessionRequestsMatching(sessionId, in: sessionRequests)
+            let modelBreakdown = Dictionary(grouping: matchedRequests, by: { $0.model }).map { model, requests in
+                SessionModelUsage(model: model,
+                    tokens: requests.reduce(0) { $0 + $1.buckets.input + $1.buckets.output + $1.buckets.cacheWrite },
+                    messages: requests.count, cost: PricingService.shared.cost(of: requests),
+                    cacheReadTokens: requests.reduce(0) { $0 + $1.buckets.cacheRead })
+            }
             let sessionCacheRead = matchedBuckets.values.reduce(0) { $0 + $1.cacheRead }
             results.append(SessionInfo(
                 rawId: sessionId,
@@ -873,7 +911,9 @@ final class CodexUsageService: @unchecked Sendable {
                 isActive: true,
                 model: sessionModel(for: sessionId, in: sessionModels),
                 todayCost: PricingService.shared.cost(of: matchedRequests),
-                cacheReadTokens: sessionCacheRead
+                cacheReadTokens: sessionCacheRead,
+                modelBreakdown: modelBreakdown,
+                sourceLogPath: sourceLogPath
             ))
         }
 

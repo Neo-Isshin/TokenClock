@@ -7,7 +7,7 @@ enum SubscriptionProvider: String, CaseIterable, Codable, Identifiable, Sendable
     var displayName: String {
         switch self {
         case .codex: return "Codex"
-        case .claude: return "Claude Code"
+        case .claude: return "Claude"
         case .antigravity: return "Antigravity"
         case .cursor: return "Cursor"
         case .grokBot: return "Grok Bot"
@@ -36,8 +36,11 @@ struct DialQuotaIndicator: Identifiable, Equatable, Sendable {
     let provider: SubscriptionProvider
     let outerRemainingPercent: Double
     let innerRemainingPercent: Double?
+    var thirdRemainingPercent: Double? = nil
     let details: [DialQuotaDetail]
     var accountName: String? = nil
+    var subscriptionName: String? = nil
+    var displayName: String { subscriptionName ?? provider.displayName }
     var id: SubscriptionProvider { provider }
 }
 
@@ -80,7 +83,37 @@ enum DialQuotaResolver {
         provider: SubscriptionProvider,
         groups: [ProviderQuotaGroup]
     ) -> DialQuotaIndicator? {
+        if XSubscriptionQuota.contains(groups) {
+            guard let bucket = groups.first(where: { $0.id == XSubscriptionQuota.groupID })?.buckets.first,
+                  bucket.usedPercent.isFinite, bucket.windowMinutes == 10_080 else { return nil }
+            return DialQuotaIndicator(provider: provider, outerRemainingPercent: bucket.remainingPercent,
+                innerRemainingPercent: nil,
+                details: [DialQuotaDetail(labelKey: "quota.dial.weekly", remainingPercent: bucket.remainingPercent)],
+                subscriptionName: XSubscriptionQuota.title)
+        }
         switch provider {
+        case .claude:
+            // Overall subscription windows win over model-specific weekly
+            // caps (Opus/Sonnet/OAuth apps/extra usage are separate buckets).
+            let buckets = groups.flatMap(\.buckets)
+            if let weekly = minimumRemaining(buckets.filter { $0.id == "claude:seven_day" }) {
+                let short = minimumRemaining(buckets.filter { $0.id == "claude:five_hour" })
+                var details = [DialQuotaDetail(labelKey: "quota.dial.weekly", remainingPercent: weekly)]
+                if let short { details.append(DialQuotaDetail(labelKey: "quota.dial.fiveHour", remainingPercent: short)) }
+                return DialQuotaIndicator(provider: provider, outerRemainingPercent: weekly, innerRemainingPercent: short, details: details)
+            }
+            // Retain legacy generic IDs, but never promote a known model cap
+            // into the overall allowance when the aggregate window is absent.
+            if buckets.contains(where: { isWeekly($0) && !$0.id.hasPrefix("claude:") }) { break }
+            return nil
+        case .grokBot:
+            // The API's current billing/rate-limit period is not necessarily a
+            // week. Display its real remaining quota without relabeling it.
+            let buckets = groups.flatMap(\.buckets).filter { $0.usedPercent.isFinite }
+            guard let remaining = minimumRemaining(buckets) else { return nil }
+            return DialQuotaIndicator(provider: provider, outerRemainingPercent: remaining,
+                innerRemainingPercent: nil,
+                details: [DialQuotaDetail(labelKey: "quota.dial.currentPeriod", remainingPercent: remaining)])
         case .antigravity:
             if let indicator = antigravity(groups: groups) { return indicator }
         case .cursor:
@@ -111,29 +144,29 @@ enum DialQuotaResolver {
     }
 
     private static func antigravity(groups: [ProviderQuotaGroup]) -> DialQuotaIndicator? {
-        let geminiBuckets = groups.filter { $0.name.lowercased().contains("gemini") }.flatMap(\.buckets)
-        let otherBuckets = groups.filter {
-            let name = $0.name.lowercased()
-            return name.contains("claude") || name.contains("gpt")
-        }.flatMap(\.buckets)
-        guard let geminiWeekly = minimumRemaining(geminiBuckets.filter(isWeekly)) else { return nil }
-        let otherWeekly = minimumRemaining(otherBuckets.filter(isWeekly))
-        var details = [
-            DialQuotaDetail(labelKey: "quota.dial.geminiWeekly", remainingPercent: geminiWeekly),
+        let families: [(AntigravityQuotaFamilies.Family, String, String)] = [
+            (.gemini, "quota.dial.geminiWeekly", "quota.dial.geminiFiveHour"),
+            (.claudeGPT, "quota.dial.claudeGPTWeekly", "quota.dial.claudeGPTFiveHour"),
+            (.argon, "quota.dial.geminiArgonWeekly", "quota.dial.geminiArgonFiveHour"),
         ]
-        if let value = minimumRemaining(geminiBuckets.filter(isFiveHour)) {
-            details.append(DialQuotaDetail(labelKey: "quota.dial.geminiFiveHour", remainingPercent: value))
+        var weeklies: [Double] = [], details: [DialQuotaDetail] = []
+        for (family, weeklyKey, shortKey) in families {
+            let buckets = groups.flatMap { group in
+                group.buckets.filter { $0.usedPercent.isFinite && AntigravityQuotaFamilies.matches(family, group: group.name, bucket: $0) }
+            }
+            if let weekly = minimumRemaining(buckets.filter(isWeekly)) {
+                weeklies.append(weekly)
+                details.append(DialQuotaDetail(labelKey: weeklyKey, remainingPercent: weekly))
+            }
+            if let short = minimumRemaining(buckets.filter(isFiveHour)) {
+                details.append(DialQuotaDetail(labelKey: shortKey, remainingPercent: short))
+            }
         }
-        if let otherWeekly {
-            details.append(DialQuotaDetail(labelKey: "quota.dial.claudeGPTWeekly", remainingPercent: otherWeekly))
-        }
-        if let value = minimumRemaining(otherBuckets.filter(isFiveHour)) {
-            details.append(DialQuotaDetail(labelKey: "quota.dial.claudeGPTFiveHour", remainingPercent: value))
-        }
+        guard let primary = weeklies.first else { return nil }
         return DialQuotaIndicator(
-            provider: .antigravity,
-            outerRemainingPercent: geminiWeekly,
-            innerRemainingPercent: otherWeekly,
+            provider: .antigravity, outerRemainingPercent: primary,
+            innerRemainingPercent: weeklies.count > 1 ? weeklies[1] : nil,
+            thirdRemainingPercent: weeklies.count > 2 ? weeklies[2] : nil,
             details: details
         )
     }
@@ -216,7 +249,8 @@ struct SubscriptionAccountRecord: Identifiable, Equatable, Codable, Sendable {
     var detectedBilling: SubscriptionBillingInfo? = nil
     var manualBilling: SubscriptionBillingInfo? = nil
     var billingReminders: BillingReminderSettings? = nil
-    var effectiveBilling: SubscriptionBillingInfo? { manualBilling ?? detectedBilling }
+    var isUnifiedSubscription: Bool { XSubscriptionQuota.contains(groups) }
+    var effectiveBilling: SubscriptionBillingInfo? { manualBilling ?? (isUnifiedSubscription ? nil : detectedBilling) }
 
     var id: String { "\(provider.rawValue)::\(accountID)" }
 
@@ -231,7 +265,7 @@ struct SubscriptionAccountRecord: Identifiable, Equatable, Codable, Sendable {
     }
 
     var displayName: String {
-        trimmedNote ?? email?.nonEmpty ?? "Account"
+        trimmedNote ?? email?.nonEmpty ?? L10n.shared.tr("quota.accountFallbackName")
     }
 
     var revealsEmailOnDemand: Bool {
@@ -311,7 +345,7 @@ final class SubscriptionAccountStore: @unchecked Sendable {
                 }
             }
             if let existing = recordsByID[incoming.id] ?? sameEmail {
-                value.detectedBilling = incoming.detectedBilling ?? existing.detectedBilling
+                value.detectedBilling = incoming.isUnifiedSubscription ? nil : (incoming.detectedBilling ?? existing.detectedBilling)
                 value.manualBilling = existing.manualBilling
                 value.billingReminders = existing.billingReminders
                 value.note = existing.note
@@ -365,7 +399,7 @@ final class SubscriptionAccountStore: @unchecked Sendable {
         lock.withLock {
             guard let identity, let info,
                   var value = recordsByID[provider.rawValue + "::" + identity.id],
-                  value.hasVerifiedIdentity else { return visibleLocked() }
+                  value.hasVerifiedIdentity, !value.isUnifiedSubscription else { return visibleLocked() }
             if value.detectedBilling != info {
                 value.detectedBilling = info
                 recordsByID[value.id] = value

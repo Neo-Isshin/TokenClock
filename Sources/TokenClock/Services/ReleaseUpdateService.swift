@@ -1,15 +1,29 @@
 import Foundation
 
 /// Public release metadata only; never reads credentials or installs an update.
-/// The daily-report lifecycle calls this on startup/catch-up and at settlement.
+/// Background checks are claimed at most once every twelve hours.
 final class ReleaseUpdateService: @unchecked Sendable {
     static let shared = ReleaseUpdateService()
-    private static let checkKey = "TC_releaseCheckDay"
+    static let checkInterval: TimeInterval = 12 * 3600
+    private static let checkKey = "TC_releaseLastScheduledCheckAt"
     private static let noticeKey = "TC_releaseUpdateNotice"
     private let defaults: UserDefaults
     private let installedVersion: String
     private let fetch: @Sendable () -> Data?
     private let lock = NSLock()
+    enum CheckResult: Equatable, Sendable {
+        case current
+        case available(version: String, url: URL)
+        case unavailable
+    }
+
+    static let distributionRoot = "https://www.ailyre.com/tokenclock"
+    static let releasesURL = URL(string: distributionRoot + "/releases/")!
+    static let latestMetadataURL = URL(string: distributionRoot + "/releases/latest.json")!
+
+    static func releaseURL(tag: String) -> URL {
+        URL(string: distributionRoot + "/releases/" + tag + "/")!
+    }
 
     private struct Release: Decodable {
         let tag_name: String
@@ -25,8 +39,8 @@ final class ReleaseUpdateService: @unchecked Sendable {
 
     init(defaults: UserDefaults = .standard, installedVersion: String = AppConfig.version,
          fetch: @escaping @Sendable () -> Data? = {
-             BillingHTTP.read(URL(string: "https://api.github.com/repos/Neo-Isshin/TokenClock/releases/latest")!,
-                              headers: ["Accept": "application/vnd.github+json",
+             BillingHTTP.read(ReleaseUpdateService.latestMetadataURL,
+                              headers: ["Accept": "application/json",
                                         "User-Agent": "TokenClock/" + AppConfig.version])
          }) {
         self.defaults = defaults
@@ -52,16 +66,43 @@ final class ReleaseUpdateService: @unchecked Sendable {
         return rhs.lexicographicallyPrecedes(lhs)
     }
 
-    /// Claim today's attempt before starting I/O, including failures. Historical
-    /// catch-up and repeated scans cannot issue one request per old report.
+    /// A user-initiated check bypasses the scheduled throttle. A failed or malformed
+    /// response is never represented as "up to date" and never changes the app.
+    func checkNow(completion: @escaping @Sendable (CheckResult) -> Void) {
+        DispatchQueue.global(qos: .utility).async { [self] in
+            guard let data = fetch(), data.count <= 1_048_576,
+                  let release = try? JSONDecoder().decode(Release.self, from: data),
+                  !release.draft, !release.prerelease,
+                  let parts = Self.version(release.tag_name), Self.version(installedVersion) != nil else {
+                completion(.unavailable); return
+            }
+            guard Self.isNewer(release.tag_name, than: installedVersion) else { completion(.current); return }
+            lock.lock()
+            if load().map({ Self.isNewer(release.tag_name, than: $0.tag) }) ?? true {
+                save(Notice(id: UUID(), tag: release.tag_name, createdAt: Date(), isRead: false))
+            }
+            lock.unlock()
+            let version = parts.map(String.init).joined(separator: ".")
+            completion(.available(version: version,
+                url: Self.releaseURL(tag: release.tag_name)))
+        }
+    }
+
+    func nextCheckDate(now: Date = Date()) -> Date {
+        lock.lock(); defer { lock.unlock() }
+        guard let last = defaults.object(forKey: Self.checkKey) as? Date, now >= last else { return now }
+        return max(now, last.addingTimeInterval(Self.checkInterval))
+    }
+
+    /// Keep the existing call signature while using a rolling half-day interval.
+    /// Claim before I/O, including failures, so catch-up cannot create a burst.
     @discardableResult
     func checkDaily(now: Date = Date(), calendar: Calendar = .current,
                     completion: @escaping @Sendable () -> Void = {}) -> Bool {
-        let day = calendar.dateComponents([.era, .year, .month, .day], from: now)
-        let key = "\(day.era ?? 0)-\(day.year ?? 0)-\(day.month ?? 0)-\(day.day ?? 0)"
         lock.lock()
-        guard defaults.string(forKey: Self.checkKey) != key else { lock.unlock(); return false }
-        defaults.set(key, forKey: Self.checkKey)
+        if let last = defaults.object(forKey: Self.checkKey) as? Date, now >= last,
+           now.timeIntervalSince(last) < Self.checkInterval { lock.unlock(); return false }
+        defaults.set(now, forKey: Self.checkKey)
         lock.unlock()
         DispatchQueue.global(qos: .utility).async { [self] in
             defer { completion() }
@@ -83,14 +124,14 @@ final class ReleaseUpdateService: @unchecked Sendable {
               let parts = Self.version(notice.tag) else { return [] }
         let version = parts.map(String.init).joined(separator: ".")
         var notification = TokenClockNotification(
-            id: notice.id, kind: .system,
+            id: notice.id, kind: .releaseUpdate,
             title: BillingText.choose("TokenClock \(version) available", "TokenClock \(version) 可更新", "TokenClock \(version) 可更新"),
-            message: BillingText.choose("Current: \(installedVersion). Click to view the GitHub release.",
-                                        "当前版本：\(installedVersion)。点击查看 GitHub 发布页。",
-                                        "目前版本：\(installedVersion)。點擊查看 GitHub 發布頁。"),
+            message: BillingText.choose("Current: \(installedVersion). Click to view the release.",
+                                        "当前版本：\(installedVersion)。点击查看发布页。",
+                                        "目前版本：\(installedVersion)。點擊查看發布頁。"),
             createdAt: notice.createdAt, isRead: notice.isRead)
         // Never trust an arbitrary URL supplied in remote metadata or persisted data.
-        notification.releaseURL = URL(string: "https://github.com/Neo-Isshin/TokenClock/releases/tag/" + notice.tag)
+        notification.releaseURL = Self.releaseURL(tag: notice.tag)
         return [notification]
     }
 

@@ -127,20 +127,28 @@ final class CodexQuotaService: @unchecked Sendable {
     }
 
     private let fileManager = FileManager.default
-    private let codexHome: String
+    private let overrideHome: String?
+    private var codexHome: String { overrideHome ?? PathConfig.codexHome() }
 
-    init(codexHome: String = PathConfig.codexHome()) {
-        self.codexHome = codexHome
+    init(codexHome: String? = nil) {
+        self.overrideHome = codexHome
     }
 
     func fetch() -> CodexQuotaSnapshot {
         if let executable = codexExecutable(),
-           let response = fetchAppServerResponse(executable: executable, method: "account/rateLimits/read"),
+           let response = fetchAppServerResponse(
+               executable: executable, method: "account/rateLimits/read"
+           ),
            var snapshot = Self.decodeAppServerResponse(response) {
             if let accountResponse = fetchAppServerResponse(
-                executable: executable, method: "account/read", params: ["refreshToken": false]
+                executable: executable,
+                method: "account/read",
+                params: ["refreshToken": false]
             ), let account = Self.decodeAccountResponse(accountResponse) {
-                snapshot.account = SubscriptionAccountIdentity(id: snapshot.account?.id ?? account.id, email: account.email)
+                snapshot.account = SubscriptionAccountIdentity(
+                    id: snapshot.account?.id ?? account.id,
+                    email: account.email
+                )
                 if snapshot.planType?.isEmpty != false { snapshot.planType = account.planType }
             }
             if let account = snapshot.account {
@@ -231,7 +239,11 @@ final class CodexQuotaService: @unchecked Sendable {
         return candidates
     }
 
-    private func fetchAppServerResponse(executable: URL, method: String, params: [String: Any] = [:]) -> Data? {
+    private func fetchAppServerResponse(
+        executable: URL,
+        method: String,
+        params: [String: Any] = [:]
+    ) -> Data? {
         let process = Process()
         let input = Pipe()
         let output = Pipe()
@@ -367,17 +379,20 @@ final class CodexQuotaService: @unchecked Sendable {
     }
 
     static func decodeAccountResponse(_ data: Data) -> (id: String, email: String?, planType: String?)? {
-        guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any], object["error"] == nil,
-              let result = object["result"] as? [String: Any], let account = result["account"] as? [String: Any],
+        guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              object["error"] == nil,
+              let result = object["result"] as? [String: Any],
+              let account = result["account"] as? [String: Any],
               (account["type"] as? String) == "chatgpt" else { return nil }
         let email = (account["email"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let plan = account["planType"] as? String
         let candidate = (account["id"] as? String) ?? (account["accountId"] as? String) ?? email?.lowercased()
         guard let id = candidate?.trimmingCharacters(in: .whitespacesAndNewlines), !id.isEmpty else { return nil }
-        return (id, email?.isEmpty == false ? email : nil, account["planType"] as? String)
+        return (id, email?.isEmpty == false ? email : nil, plan)
     }
 
     private func fetchFromRecentSessionLogs() -> CodexQuotaSnapshot? {
-        let root = URL(fileURLWithPath: codexHome + "/sessions", isDirectory: true)
+        let root = URL(fileURLWithPath: codexHome + "/sessions", isDirectory: true).resolvingSymlinksInPath()
         let keys: Set<URLResourceKey> = [.isRegularFileKey, .contentModificationDateKey, .fileSizeKey]
         guard let enumerator = fileManager.enumerator(
             at: root,

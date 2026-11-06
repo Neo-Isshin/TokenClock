@@ -3,11 +3,11 @@ import Foundation
 /// 从 OpenClaw 本地 JSONL 日志读取 token 使用数据
 /// 日志位置: ~/.openclaw/agents/*/sessions/
 final class OpenClawUsageService: @unchecked Sendable {
-    private static let assistantLineNeedle = [Data("\"assistant\"".utf8)]
+    private static let assistantLineNeedle = [Data("\"assistant\"".utf8), Data("\"user\"".utf8)]
     private(set) var dailyData: [String: DayUsage] = [:]
     private(set) var hourlyData: [String: HourlyUsage] = [:]
     private(set) var dailyCache: [String: Int] = [:]
-    private var fileCache: [String: FileMeta] = [:]
+    private var fileCache: [String: IncrementalUsageLog.Stamp] = [:]
     private var fileDailyContrib: [String: [String: DayUsage]] = [:]
     private var fileHourlyContrib: [String: [String: HourlyUsage]] = [:]
     private var fileCacheContrib: [String: [String: Int]] = [:]
@@ -17,6 +17,9 @@ final class OpenClawUsageService: @unchecked Sendable {
     private var fileModelBucketContrib: [String: [String: [String: ModelBuckets]]] = [:]
     private var fileAgentNames: [String: String] = [:]
     private var recentEntries: [RecentEntry] = []
+    private let directoryIndex = UsageLogDirectoryIndex()
+    private var readers: [String: IncrementalUsageLog] = [:]
+    private var cronPaths = Set<String>()
 
     private let fm = FileManager.default
     private let openclawHome: String
@@ -34,10 +37,12 @@ final class OpenClawUsageService: @unchecked Sendable {
     // MARK: - 公开接口
 
     func fullScan() {
+        directoryIndex.reset()
         dailyData.removeAll()
         hourlyData.removeAll()
         dailyCache.removeAll()
         fileCache.removeAll()
+        readers.removeAll(); cronPaths.removeAll()
         fileDailyContrib.removeAll()
         fileHourlyContrib.removeAll()
         fileCacheContrib.removeAll()
@@ -88,7 +93,8 @@ final class OpenClawUsageService: @unchecked Sendable {
 
     private func scanAgentDirectories() {
         let agentsDir = openclawHome + "/agents"
-        guard let agentNames = try? fm.contentsOfDirectory(atPath: agentsDir) else {
+        directoryIndex.prepare(roots: [agentsDir])
+        guard fm.fileExists(atPath: agentsDir) else {
             evictFiles(notIn: [])
             rebuildRecentEntries()
             return
@@ -96,50 +102,26 @@ final class OpenClawUsageService: @unchecked Sendable {
 
         var livePaths = Set<String>()
 
-        for name in agentNames {
+        for agent in directoryIndex.children(in: agentsDir) {
+            let name = agent.lastPathComponent
             let sessionsDir = agentsDir + "/" + name + "/sessions"
             var isDir: ObjCBool = false
             guard fm.fileExists(atPath: sessionsDir, isDirectory: &isDir), isDir.boolValue else { continue }
-            guard let files = try? fm.contentsOfDirectory(atPath: sessionsDir) else { continue }
+            let files = directoryIndex.children(in: sessionsDir)
 
-            for file in files {
+            for url in files {
+                let file = url.lastPathComponent
                 if file.contains(".checkpoint.") || file.contains(".trajectory.") || file.hasSuffix(".lock") || file == "sessions.json" { continue }
                 guard file.hasSuffix(".jsonl") else { continue }
 
                 let fullPath = sessionsDir + "/" + file
                 livePaths.insert(fullPath)
                 fileAgentNames[fullPath] = name
-                guard let attrs = try? fm.attributesOfItem(atPath: fullPath),
-                      let modDate = attrs[.modificationDate] as? Date else { continue }
+                guard let stamp = IncrementalUsageLog.Stamp.read(fullPath) else { continue }
 
-                let cached = fileCache[fullPath]
-                if cached != nil && cached?.modDate == modDate { continue }
+                guard fileCache[fullPath] != stamp else { continue }
+                if parseFile(path: fullPath) { fileCache[fullPath] = stamp }
 
-                // 增量：减旧贡献
-                if let oldContrib = fileDailyContrib[fullPath] {
-                    subtractDailyContributions(oldContrib)
-                }
-                if let oldContrib = fileHourlyContrib[fullPath] {
-                    subtractHourlyContributions(oldContrib)
-                }
-                if let oldContrib = fileCacheContrib[fullPath] {
-                    subtractCacheContributions(oldContrib)
-                }
-
-                // 跳过 cron 触发的 session
-                if isCronSession(path: fullPath) {
-                    fileDailyContrib.removeValue(forKey: fullPath)
-                    fileHourlyContrib.removeValue(forKey: fullPath)
-                    fileCacheContrib.removeValue(forKey: fullPath)
-                    fileRecentContrib.removeValue(forKey: fullPath)
-                    fileModelContrib.removeValue(forKey: fullPath)
-                    fileModelBucketContrib.removeValue(forKey: fullPath)
-                    fileCache[fullPath] = FileMeta(path: fullPath, modDate: modDate)
-                    continue
-                }
-
-                parseFile(path: fullPath)
-                fileCache[fullPath] = FileMeta(path: fullPath, modDate: modDate)
             }
         }
         evictFiles(notIn: livePaths)
@@ -153,6 +135,7 @@ final class OpenClawUsageService: @unchecked Sendable {
             if let old = fileHourlyContrib[path] { subtractHourlyContributions(old) }
             if let old = fileCacheContrib[path] { subtractCacheContributions(old) }
             fileCache.removeValue(forKey: path)
+            readers.removeValue(forKey: path); cronPaths.remove(path)
             fileDailyContrib.removeValue(forKey: path)
             fileHourlyContrib.removeValue(forKey: path)
             fileCacheContrib.removeValue(forKey: path)
@@ -205,40 +188,46 @@ final class OpenClawUsageService: @unchecked Sendable {
         }
     }
 
-    private func parseFile(path: String) {
-        let today = DateHelper.todayKey()
-        var newDailyContrib: [String: DayUsage] = [:]
-        var newHourlyContrib: [String: HourlyUsage] = [:]
-        var newCacheContrib: [String: Int] = [:]
-        var newRecent: [RecentEntry] = []
-        var newModels: [String: [String: Int]] = [:]
-        var newModelBuckets: [String: [String: ModelBuckets]] = [:]
-
-        guard let readResult = JSONLLineReader.read(path: path, matchingAny: Self.assistantLineNeedle, onLine: { line in
-            if line.contains("\"assistant\""), let result = parseAssistantLine(line) {
-                accumulate(result, today: today,
-                           dailyContrib: &newDailyContrib,
-                           hourlyContrib: &newHourlyContrib,
-                           cacheContrib: &newCacheContrib, recent: &newRecent,
-                           models: &newModels, modelBuckets: &newModelBuckets)
+    private func parseFile(path: String) -> Bool {
+        var reader = readers[path] ?? IncrementalUsageLog()
+        var events: [ParseResult] = []
+        var sawCron = false
+        guard let read = reader.read(path: path, matchingAny: Self.assistantLineNeedle, onLine: { line in
+            if Self.isCronUserLine(line) { sawCron = true }
+            else if !sawCron, line.contains("\"assistant\""), let result = parseAssistantLine(line) {
+                events.append(result)
             }
-        }) else { return }
-        _ = JSONLLineReader.consumeCompleteTrailingLine(readResult.trailingData) { line in
-            if line.contains("\"assistant\""), let result = parseAssistantLine(line) {
-                accumulate(result, today: today,
-                           dailyContrib: &newDailyContrib,
-                           hourlyContrib: &newHourlyContrib,
-                           cacheContrib: &newCacheContrib, recent: &newRecent,
-                           models: &newModels, modelBuckets: &newModelBuckets)
-            }
+        }) else { return false }
+        let excluded = sawCron || (!read.reset && cronPaths.contains(path))
+        if read.reset || excluded {
+            if let old = fileDailyContrib[path] { subtractDailyContributions(old) }
+            if let old = fileHourlyContrib[path] { subtractHourlyContributions(old) }
+            if let old = fileCacheContrib[path] { subtractCacheContributions(old) }
         }
-
-        fileDailyContrib[path] = newDailyContrib
-        fileHourlyContrib[path] = newHourlyContrib
-        fileCacheContrib[path] = newCacheContrib
-        fileRecentContrib[path] = newRecent
-        fileModelContrib[path] = newModels
-        fileModelBucketContrib[path] = newModelBuckets
+        if excluded {
+            fileDailyContrib.removeValue(forKey: path); fileHourlyContrib.removeValue(forKey: path)
+            fileCacheContrib.removeValue(forKey: path); fileRecentContrib.removeValue(forKey: path)
+            fileModelContrib.removeValue(forKey: path); fileModelBucketContrib.removeValue(forKey: path)
+            cronPaths.insert(path); readers[path] = reader
+            return true
+        }
+        cronPaths.remove(path)
+        var daily = read.reset ? [:] : fileDailyContrib[path] ?? [:]
+        var hourly = read.reset ? [:] : fileHourlyContrib[path] ?? [:]
+        var cache = read.reset ? [:] : fileCacheContrib[path] ?? [:]
+        var recent = read.reset ? [] : fileRecentContrib[path] ?? []
+        var models = read.reset ? [:] : fileModelContrib[path] ?? [:]
+        var buckets = read.reset ? [:] : fileModelBucketContrib[path] ?? [:]
+        let today = DateHelper.todayKey()
+        for result in events {
+            accumulate(result, today: today, dailyContrib: &daily, hourlyContrib: &hourly,
+                       cacheContrib: &cache, recent: &recent, models: &models, modelBuckets: &buckets)
+        }
+        fileDailyContrib[path] = daily; fileHourlyContrib[path] = hourly
+        fileCacheContrib[path] = cache; fileRecentContrib[path] = recent
+        fileModelContrib[path] = models; fileModelBucketContrib[path] = buckets
+        readers[path] = reader
+        return true
     }
 
     private struct ParseResult {
@@ -456,40 +445,6 @@ final class OpenClawUsageService: @unchecked Sendable {
 
     /// 检测 session 是否由 cron 触发
     /// OpenClaw 的 cron 任务会在 session 开始时注入一条用户消息，text 以 `[cron:<UUID> <task_name>]` 开头
-    private func isCronSession(path: String) -> Bool {
-        guard let stream = InputStream(fileAtPath: path) else { return false }
-        stream.open()
-        defer { stream.close() }
-
-        let bufSize = AppConfig.Scan.jsonlBufferSize
-        let buf = UnsafeMutablePointer<UInt8>.allocate(capacity: bufSize)
-        defer { buf.deallocate() }
-        var lineBuf = Data()
-
-        while stream.hasBytesAvailable {
-            let n = stream.read(buf, maxLength: bufSize)
-            if n <= 0 { break }
-            lineBuf.append(buf, count: n)
-
-            while let nlRange = lineBuf.range(of: Data([0x0A])) {
-                let lineData = lineBuf[lineBuf.startIndex..<nlRange.lowerBound]
-                lineBuf = lineBuf[nlRange.upperBound...]
-                guard !lineData.isEmpty else { continue }
-                if let line = String(data: lineData, encoding: .utf8), Self.isCronUserLine(line) {
-                    return true
-                }
-            }
-        }
-
-        if !lineBuf.isEmpty,
-           let line = String(data: lineBuf, encoding: .utf8),
-           Self.isCronUserLine(line) {
-            return true
-        }
-
-        return false
-    }
-
     /// OpenClaw 2026.8 changed user `content` from an array of text blocks to a
     /// plain string. Accept both contracts so scheduled sessions never enter usage.
     static func isCronUserLine(_ line: String) -> Bool {

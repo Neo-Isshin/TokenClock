@@ -43,6 +43,7 @@ enum SettingsKey: String {
     // MARK: - 工具路径（每工具一个）
     case openclawPath = "TC_openclawPath"
     case claudeCodePath = "TC_claudeCodePath"
+    case claudeQuotaRequireProxy = "TC_claudeQuotaRequireProxy"
     case geminiPath = "TC_geminiPath"
     case codexPath = "TC_codexPath"
     case hermesPath = "TC_hermesPath"
@@ -53,6 +54,13 @@ enum SettingsKey: String {
     case aiderPath = "TC_aiderPath"
     case antigravityPath = "TC_antigravityPath"
     case clinePath = "TC_clinePath"
+    case kiloCodePath = "TC_kiloCodePath"
+    case piPath = "TC_piPath"
+    case dshPath = "TC_dshPath"
+    case pigPath = "TC_pigPath"
+    case ompPath = "TC_ompPath"
+    case freebuffPath = "TC_freebuffPath"
+    case commandCodePath = "TC_commandCodePath"
     case continuePath = "TC_continuePath"
     case cursorAgentPath = "TC_cursorAgentPath"
     case zcodePath = "TC_zcodePath"
@@ -100,8 +108,9 @@ enum SettingsKey: String {
     case subscriptionQuotaOrder = "TC_subscriptionQuotaOrder"
     /// 表盘额度环当前展示的 provider。
     case dialQuotaProvider = "TC_dialQuotaProvider"
-    /// Up to two providers shown on the dial; the singular key remains a compatibility fallback.
+    /// 表盘额度环展示的 provider 列表；最多两个。单数 key 保留用于旧版本兼容。
     case dialQuotaProviders = "TC_dialQuotaProviders"
+    /// Subscription Quota 已发现账号、用户备注、手动套餐与最近额度快照（不含凭据）。
     case subscriptionQuotaAccounts = "TC_subscriptionQuotaAccounts"
     /// One-time OpenClaw history rebuild after cron/content accounting fixes.
     case openclawHistoryRepairVersion = "TC_openclawHistoryRepairVersion"

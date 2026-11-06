@@ -85,6 +85,68 @@ enum PricingServiceTier: String, Sendable {
     case priority
 }
 
+/// Evidence describes recorded request settings, not the actual served tier.
+enum PricingTierEvidence: String, Sendable {
+    case recorded, configuration, unknown
+}
+
+enum CostMode: String, CaseIterable, Hashable, Sendable {
+    case standard, fast, unclassified
+    var labelKey: String { "quota.costMode." + rawValue }
+}
+
+struct CostModePart: Hashable, Sendable {
+    let mode: CostMode
+    var requests: Int
+    var cost: CostEstimate
+    var multipliers: [Double] = []
+    var formattedCost: String {
+        var displayed = cost
+        if mode == .unclassified && requests > 0 { displayed.complete = false }
+        return CostFormat.estimate(displayed)
+    }
+    var rateBadge: String {
+        guard mode == .fast, let first = multipliers.first, let last = multipliers.last else { return "" }
+        let lower = String(format: "%.3g", first)
+        return first == last ? "API ×" + lower : "API ×" + lower + "–" + String(format: "%.3g", last)
+    }
+}
+
+struct CostModeBreakdown: Hashable, Sendable {
+    var parts: [CostModePart]
+    let total: CostEstimate
+    var requestCount: Int { parts.reduce(0) { $0 + $1.requests } }
+
+    static func make(_ requests: [ModelUsageRequest], missingModels: Int = 0,
+                     pricing: PricingService = .shared) -> CostModeBreakdown {
+        let parts = CostMode.allCases.map { mode in
+            let selected = requests.filter {
+                let category: CostMode = $0.tierEvidence == .recorded
+                    ? ($0.serviceTier == .priority ? .fast : .standard) : .unclassified
+                return category == mode
+            }
+            let premiums = mode == .fast ? Set(selected.compactMap {
+                pricing.price(forModel: $0.model)?.priorityMultiplier
+            }.filter { $0.isFinite && $0 > 1 }).sorted() : []
+            var estimate = pricing.cost(of: selected)
+            if mode == .unclassified && missingModels > 0 {
+                if selected.isEmpty { estimate = .unavailable }
+                else { estimate.complete = false }
+            }
+            return CostModePart(mode: mode,
+                requests: selected.count + (mode == .unclassified ? max(0, missingModels) : 0),
+                cost: estimate, multipliers: premiums)
+        }
+        // Keep the existing estimator intact: a presentation split must never
+        // change the dial amount, reprice a request, or mutate a historical ledger.
+        return CostModeBreakdown(parts: parts, total: pricing.cost(of: requests))
+    }
+    static func unclassified(total: CostEstimate, requests: Int) -> CostModeBreakdown {
+        CostModeBreakdown(parts: [CostModePart(mode: .unclassified, requests: requests, cost: total)],
+                          total: total)
+    }
+}
+
 /// One billable model request. Request granularity is required for full-request
 /// long-context tiers and for service-tier changes inside a session.
 struct ModelUsageRequest: Sendable {
@@ -93,17 +155,20 @@ struct ModelUsageRequest: Sendable {
     /// Whole input context, including cached input, used only to choose a pricing tier.
     let contextInputTokens: Int
     let serviceTier: PricingServiceTier
+    let tierEvidence: PricingTierEvidence
 
     init(
         model: String,
         buckets: ModelBuckets,
         contextInputTokens: Int,
-        serviceTier: PricingServiceTier = .standard
+        serviceTier: PricingServiceTier = .standard,
+        tierEvidence: PricingTierEvidence = .recorded
     ) {
         self.model = model
         self.buckets = buckets
         self.contextInputTokens = max(0, contextInputTokens)
         self.serviceTier = serviceTier
+        self.tierEvidence = tierEvidence
     }
 }
 
@@ -153,7 +218,7 @@ enum CostFormat {
 ///
 /// - 内置快照：Resources/pricing-snapshot.json，随发版更新。
 /// - 刷新缓存：Application Support/TokenClock/pricing-catalog.json，内容格式与快照一致，
-///   拉取自 TokenClock 自有 GitHub 仓库的共享目录（与内置格式同构，坏数据不会替换缓存）。
+///   拉取自 TokenClock 自有 VPS 的共享目录（与内置格式同构，坏数据不会替换缓存）。
 /// - 自定义价格：UserDefaults JSON，优先级最高，覆盖代理/自定义模型（如 glm-5.3）。
 ///
 /// 目录查询发生在后台扫描线程，价格编辑/刷新发生在主线程 —— 用锁保护可变状态。
@@ -165,9 +230,9 @@ final class PricingService: @unchecked Sendable {
     /// 目录刷新后广播（ViewModel 收到后增量重扫，30 秒内的下一轮扫描也会自然重算）
     static let catalogUpdatedNotification = Notification.Name("PricingCatalogUpdated")
 
-    /// 四个平台共享的刷新源。统一发布线以 main 为价格目录的单一事实来源。
+    /// 四个平台共享的 VPS 刷新源；无需 Git 托管账号或登录。
     private static let refreshURL = URL(string:
-        "https://raw.githubusercontent.com/Neo-Isshin/TokenClock/main/Sources/TokenClock/Resources/pricing-snapshot.json")!
+        "https://www.ailyre.com/prices/tokenclock.json")!
 
     private var catalog: [String: ModelPrice] = [:]
     /// 带路由前缀的 key（如 dashscope/glm-5.2）→ 后缀索引；后缀唯一才收录，歧义即弃用
@@ -439,7 +504,7 @@ final class PricingService: @unchecked Sendable {
         let currentRevision = currentCatalogRevision()
 
         let stamp = Date()
-        // Never replace a newer bundled catalog with an older GitHub snapshot.
+        // Never replace a newer bundled catalog with an older remote snapshot.
         // ISO-8601 UTC revisions sort chronologically in their string form.
         if let remoteRevision, let currentRevision, remoteRevision <= currentRevision {
             recordRefresh(stamp)

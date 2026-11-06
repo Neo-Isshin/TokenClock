@@ -9,7 +9,8 @@ import Foundation
 /// 文件路径走 `PathConfig.swift`（已存在，不动）。
 enum AppConfig {
     /// Kept in sync with the release tag by scripts/release.sh validation.
-    static let version = "1.5.12"
+    static let version = "1.6.3"
+    static let macOSVariant = "normal"
 
     // MARK: - 外部 API endpoint
 
@@ -56,7 +57,7 @@ enum AppConfig {
         static let codexSessionLookbackDays = 2
         /// Gemini 面板同样只展示当日/最近用量；保留今天+昨天以覆盖跨日会话。
         static let geminiSessionLookbackDays = 2
-        /// Codex 额度仅在用户打开额度面板时请求；短缓存避免反复开 app-server。
+        /// Codex 额度在面板打开或选为表盘额度环时读取；短缓存避免反复开 app-server。
         static let codexQuotaCacheSeconds: TimeInterval = 60
         /// app-server 异常时必须及时回收子进程，不能让详情页点击产生常驻后台任务。
         static let codexQuotaTimeoutSeconds: TimeInterval = 8
@@ -64,7 +65,7 @@ enum AppConfig {
         static let codexQuotaFallbackTailBytes = 2_097_152
         static let codexQuotaFallbackFileLimit = 32
         /// Claude Code 额度端点限制较严；只在面板打开时请求，并缓存 5 分钟。
-        static let claudeQuotaCacheSeconds: TimeInterval = 300
+        static let claudeQuotaCacheSeconds: TimeInterval = 180
         static let claudeQuotaTimeoutSeconds: TimeInterval = 8
         /// "活跃工具" 判定窗口（10 分钟内有调用算活跃）
         static let activeThresholdSeconds: TimeInterval = 600
