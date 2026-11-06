@@ -61,6 +61,57 @@ fi
 warn() { printf '\n%b⚠ %s%b\n' "$C_YELLOW" "$*" "$C_RESET"; }
 die()  { printf '\n%b❌ %s%b\n' "$C_RED" "$*" "$C_RESET" >&2; exit 1; }
 
+# BEGIN MACOS SIGNATURE POLICY
+# Keep a stable certificate-backed identity across updates. Local signing is
+# explicitly enrolled by the developer; never generate a certificate on install.
+macos_prepare_signature() {
+  local staged="$1" installed="$2" variant="$3" profile identity schema expected details previous requirement
+  expected="com.tokenclock.app.$variant"
+  case "$variant" in glass|normal) ;; *) return 1 ;; esac
+  profile="$HOME_DIR/signing/local-identity.json"
+  previous=""
+  if [ -f "$installed" ]; then
+    previous=$(/usr/bin/codesign -dv --verbose=4 "$installed" 2>&1 || true)
+  fi
+  if [ -f "$profile" ]; then
+    schema=$(/usr/bin/plutil -extract schema raw -o - "$profile" 2>/dev/null) || return 1
+    identity=$(/usr/bin/plutil -extract identity_sha1 raw -o - "$profile" 2>/dev/null) || return 1
+    [ "$schema" = tokenclock-local-signing/v1 ] || return 1
+    [[ "$identity" =~ ^[[:xdigit:]]{40}$ ]] || return 1
+    # A missing/locked key is an error, not permission to revert to ad-hoc.
+    /usr/bin/codesign --force --sign "$identity" --identifier "$expected" --timestamp=none \
+      --requirements "=designated => identifier \"$expected\" and certificate leaf = H\"$identity\"" "$staged" || return 1
+    /usr/bin/codesign --verify --strict -R "=identifier \"$expected\" and certificate leaf = H\"$identity\"" "$staged" || return 1
+  else
+    /usr/bin/codesign --verify --strict "$staged" || return 1
+    details=$(/usr/bin/codesign -dv --verbose=4 "$staged" 2>&1) || return 1
+    case "$details" in
+      *Signature=adhoc*)
+        # Development/legacy packages remain supported, but are never described
+        # as preserving privacy grants. This legacy release format is ad-hoc signed.
+        warn "[$variant] Development/ad-hoc package: privacy access may be requested again after updates."
+        /usr/bin/codesign --force --sign - --identifier "$expected" "$staged" || return 1
+        ;;
+      *)
+        # Preserve the vendor's signed bytes, especially Developer ID signatures.
+        printf '%s\n' "$details" | grep -Fx "Identifier=$expected" >/dev/null || return 1
+        ;;
+    esac
+  fi
+  case "$previous" in
+    *Signature=adhoc*|'') ;; # One-time migration from an old development build.
+    *)
+      /usr/bin/codesign --verify --strict "$installed" || return 1
+      requirement=$(/usr/bin/codesign -d -r- "$installed" 2>&1 | sed -n 's/^[# ]*designated => //p')
+      [ -n "$requirement" ] || return 1
+      # Reject signer changes and signed-to-ad-hoc downgrades, even with --force.
+      /usr/bin/codesign --verify --strict -R "=$requirement" "$staged" || return 1
+      ;;
+  esac
+  /usr/bin/codesign --verify --strict "$staged"
+}
+# END MACOS SIGNATURE POLICY
+
 # Invoked by tokenclock update? (it sets TOKENCLOCK_STATUS_FILE) → skip the long summary at the end;
 # the wrapper prints a one-line conclusion itself. Distinguishes "fresh install" from "upgrade".
 UPDATE_MODE=0; [ -n "${TOKENCLOCK_STATUS_FILE:-}" ] && UPDATE_MODE=1
@@ -102,11 +153,10 @@ case "$KERNEL" in
     [ "$VARIANT" != glass ] || die "Linux supports the normal variant only; remove --glass."
     if [ "$(uname -m)" = x86_64 ] && [ "$BUILD_FROM_SOURCE" -eq 0 ]; then
       # x86_64 默认走预编译 AppImage：无需 Swift/GTK 工具链，下载即用。
-      # AppImage 运行期需要 libfuse2（多数桌面发行版自带；缺失时给一行安装提示）。
+      # 缺少 FUSE 2 时，CLI 与自启动项会自动使用 AppImage 的解包运行模式。
       LINUX_APPIMAGE=1
-      if ! ldconfig -p 2>/dev/null | grep -q 'libfuse.so.2'; then
-        say "  ⚠ 未检测到 libfuse2（AppImage 运行所需）。如启动失败请安装："
-        say "      Ubuntu/Debian: sudo apt install libfuse2    (24.04+ 为 libfuse2t64)"
+      if [ ! -e /dev/fuse ] || ! ldconfig -p 2>/dev/null | grep -q 'libfuse.so.2'; then
+        say "  ℹ 未检测到可用的 FUSE 2；将自动使用 AppImage 解包运行模式（无需 sudo 安装依赖）"
       fi
       say "  Linux $(uname -m) · 预编译 AppImage（--build-from-source 可改走源码编译）"
     else
@@ -150,6 +200,21 @@ case "$TC_TOOLCHAIN" in
 esac
 
 # ── 2. Select variant ──
+# v1.4.7 and older CLIs did not forward --glass/--normal to install.sh during an
+# update. Preserve those users' installed channel instead of interpreting an
+# empty variant as a request to add both macOS builds.
+if [ "$PLATFORM" = macos ] && [ "$UPDATE_MODE" -eq 1 ] && [ -z "$VARIANT" ]; then
+  has_glass=0
+  has_normal=0
+  [ ! -x "$HOME_DIR/glass/TokenClock" ] || has_glass=1
+  [ ! -x "$HOME_DIR/normal/TokenClock" ] || has_normal=1
+  if [ "$has_glass" -eq 1 ] && [ "$has_normal" -eq 0 ]; then
+    VARIANT=glass
+  elif [ "$has_normal" -eq 1 ] && [ "$has_glass" -eq 0 ]; then
+    VARIANT=normal
+  fi
+fi
+
 if [ "$PLATFORM" = linux ]; then
   VARIANTS=(normal)
   BRANCHES=(codex/linux-theme-parity)
@@ -230,9 +295,23 @@ ensure_source() {
 
 # ── 4. Obtain the binary (prefer the prebuilt download; fall back to building from source on failure / --build-from-source) ──
 # Prebuilt assets come from the public VPS (universal: arm64+x86_64); no Xcode, no compilation.
-# When cutting a new release, update RELEASE_TAG and both SHA256 hashes (done by scripts/release.sh).
-RELEASE_TAG="${TOKENCLOCK_RELEASE_TAG:-v1.5.13}"
-RELEASE_URL_BASE="${TOKENCLOCK_RELEASE_BASE:-https://www.ailyre.com/tokenclock/releases/download/$RELEASE_TAG}"
+# Each independently maintained channel may publish a patch without relabelling the unchanged
+# binaries from the other platforms. TOKENCLOCK_RELEASE_TAG remains a global testing override.
+release_tag_for_variant() {
+  if [ -n "${TOKENCLOCK_RELEASE_TAG:-}" ]; then
+    echo "$TOKENCLOCK_RELEASE_TAG"
+    return
+  fi
+  case "$1" in
+    glass)  echo "v1.6.0" ;;
+    normal) echo "v1.6.0" ;;
+    linux)  echo "v1.6.0" ;;
+  esac
+}
+release_base_for_tag() {
+  local tag="$1"
+  echo "${TOKENCLOCK_RELEASE_BASE:-https://www.ailyre.com/tokenclock/releases/download/$tag}"
+}
 
 # variant → tarball filename / expected SHA256 (bash 3.2 has no associative arrays, so use case)
 tarball_name() {
@@ -243,8 +322,8 @@ tarball_name() {
 }
 tarball_sha256() {
   case "$1" in
-    glass)  echo "8de5df9a157ce1fce8e7674f30e68583bc085919d9b6cb1979a331024fbaa64b" ;;
-    normal) echo "79956382f8072878e4c6a12b56c24708eb0f23b9662ee67523a22704dbe2c608" ;;
+    glass)  echo "06c5680a312db7bd547121357c829426528dd8fb44867883cb0014b1a24e8845" ;;
+    normal) echo "49e1dccb98d95734c547543e3f0afb81cd7c8f9f0051272dfbc8136c33d5497d" ;;
   esac
 }
 
@@ -255,12 +334,14 @@ DL_DIR=""
 DOWNLOAD_TMPDIRS=()
 trap '[ "${#DOWNLOAD_TMPDIRS[@]}" -gt 0 ] && rm -rf "${DOWNLOAD_TMPDIRS[@]}" 2>/dev/null; [ -n "${WRAPPER_TMP:-}" ] && rm -f "$WRAPPER_TMP" 2>/dev/null; true' EXIT
 download_variant() {
-  local variant="$1" name expect url tmp got
+  local variant="$1" name expect tag base url tmp got
   name="$(tarball_name "$variant")"
   expect="$(tarball_sha256 "$variant")"
+  tag="$(release_tag_for_variant "$variant")"
+  base="$(release_base_for_tag "$tag")"
   [ -n "$name" ] && [ -n "$expect" ] || return 1
-  url="$RELEASE_URL_BASE/$name"
-  step "Downloading prebuilt binary [$variant] ($RELEASE_TAG)"
+  url="$base/$name"
+  step "Downloading prebuilt binary [$variant] ($tag)"
   tmp="$(mktemp -d 2>/dev/null)" || return 1
   if ! curl -fL --retry 6 --retry-delay 2 --retry-all-errors --connect-timeout 15 -o "$tmp/$name" "$url" 2>/dev/null; then
     say "  ⚠ [$variant] prebuilt download failed ($url) → falling back to source build"
@@ -282,20 +363,22 @@ download_variant() {
   return 0
 }
 
-# Linux x86_64: 下载预编译 AppImage + sidecar SHA256（由 CI 在发版后产出，故不写死在脚本里），
+# Linux x86_64: 下载预编译 AppImage + sidecar SHA256（随本地验收后的发布资产提供，故不写死在脚本里），
 # 校验通过则把 AppImage 路径写入全局 APPIMAGE_PATH 并返回 0；失败返回 1（调用方回退源码编译）。
 APPIMAGE_PATH=""
 download_appimage() {
-  local name="TokenClock-x86_64.AppImage" sha_name url tmp got expect
+  local name="TokenClock-x86_64.AppImage" sha_name tag base url tmp got expect
   sha_name="$name.sha256"
-  url="$RELEASE_URL_BASE/$name"
-  step "Downloading prebuilt AppImage (Linux x86_64 · $RELEASE_TAG)"
+  tag="$(release_tag_for_variant linux)"
+  base="$(release_base_for_tag "$tag")"
+  url="$base/$name"
+  step "Downloading prebuilt AppImage (Linux x86_64 · $tag)"
   tmp="$(mktemp -d 2>/dev/null)" || return 1
   if ! curl -fL --retry 6 --retry-delay 2 --retry-all-errors --connect-timeout 15 -o "$tmp/$name" "$url" 2>/dev/null; then
     say "  ⚠ AppImage 下载失败（$url，可能 CI 尚未构建完成）→ 回退源码编译"
     rm -rf "$tmp"; return 1
   fi
-  if ! curl -fL --retry 6 --retry-delay 2 --retry-all-errors --connect-timeout 15 -o "$tmp/$sha_name" "$RELEASE_URL_BASE/$sha_name" 2>/dev/null; then
+  if ! curl -fL --retry 6 --retry-delay 2 --retry-all-errors --connect-timeout 15 -o "$tmp/$sha_name" "$base/$sha_name" 2>/dev/null; then
     say "  ⚠ AppImage 的 SHA256 sidecar 下载失败 → 回退源码编译"
     rm -rf "$tmp"; return 1
   fi
@@ -370,15 +453,19 @@ for entry in "${BUILT_BINS[@]}"; do
     bin_changed=1
   fi
   if [ "$bin_changed" -eq 1 ]; then
-    cp "$bin_path" "$dest_bin"
-    chmod +x "$dest_bin"
-    # Ad-hoc re-sign safety net: prebuilt downloads or source-fallback artifacts may still be
-    # linker-signed adhoc (flags=0x20002), which taskgated kills on macOS 27. `--force --sign -`
-    # produces a proper adhoc (0x2). release.sh already signs before packaging; this re-signs
-    # $dest_bin to cover the source-fallback path and self-heal any signing damage from transfer/extraction.
+    # Deploy through a sibling inode and atomically rename it into place. Linux returns
+    # ETXTBSY when cp truncates a running AppImage; rename keeps the old process on its
+    # existing inode while the next launch sees the complete, verified replacement.
+    dest_tmp="$HOME_DIR/$variant/.TokenClock.new.$$"
+    cp "$bin_path" "$dest_tmp" || { rm -f "$dest_tmp"; die "Failed to stage [$variant] binary"; }
+    chmod +x "$dest_tmp" || { rm -f "$dest_tmp"; die "Failed to make [$variant] binary executable"; }
     if [ "$PLATFORM" = macos ]; then
-      codesign --force --sign - "$dest_bin" >/dev/null 2>&1 || warn "[$variant] ad-hoc re-sign failed: $dest_bin (may crash on launch under macOS 27)"
+      macos_prepare_signature "$dest_tmp" "$dest_bin" "$variant" || {
+        rm -f "$dest_tmp"
+        die "[$variant] signing identity validation failed; the installed clock was not replaced."
+      }
     fi
+    mv -f "$dest_tmp" "$dest_bin" || { rm -f "$dest_tmp"; die "Failed to activate [$variant] binary"; }
     say "  ✓ $dest_bin"
     DEPLOYED_ANYTHING=1
   else
@@ -526,13 +613,17 @@ enable_linux_autostart() {
   local binary_path="$1"
   local autostart_dir="${XDG_CONFIG_HOME:-$HOME/.config}/autostart"
   local desktop_path="$autostart_dir/tokenclock.desktop"
+  local exec_line="$binary_path"
+  if [ ! -e /dev/fuse ] || ! ldconfig -p 2>/dev/null | grep -q 'libfuse\.so\.2'; then
+    exec_line="\"$BIN_DIR/tokenclock\" start --normal"
+  fi
   mkdir -p "$autostart_dir" || die "Failed to create $autostart_dir"
   cat > "$desktop_path" <<EOF || die "Failed to write $desktop_path"
 [Desktop Entry]
 Type=Application
 Name=TokenClock
 Comment=Local AI coding usage clock
-Exec=$binary_path
+Exec=$exec_line
 Terminal=false
 X-GNOME-Autostart-enabled=true
 EOF
@@ -692,11 +783,23 @@ else
 
   # API server smoke test (if enabled). The port only listens after TokenClock starts.
   if [ "${API_ENABLED:-0}" -eq 1 ] && [ -n "${API_CHOSEN_PORT:-}" ]; then
-    sleep 1
-    if out="$(curl -fsS --max-time 2 "http://127.0.0.1:${API_CHOSEN_PORT}/api/usage" 2>/dev/null | head -c 80)"; then
+    # FUSE-less AppImage startup includes a one-time extraction and can take longer than
+    # the ordinary launch. Poll rather than reporting a false failure after a fixed delay.
+    api_ready=0
+    api_attempt=0
+    out=""
+    while [ "$api_attempt" -lt 30 ]; do
+      if out="$(curl -fsS --connect-timeout 1 --max-time 2 "http://127.0.0.1:${API_CHOSEN_PORT}/api/usage" 2>/dev/null | head -c 80)"; then
+        api_ready=1
+        break
+      fi
+      api_attempt=$((api_attempt + 1))
+      sleep 1
+    done
+    if [ "$api_ready" -eq 1 ]; then
       say "  ✓ API smoke test: http://127.0.0.1:${API_CHOSEN_PORT}/api/usage → ${out}…"
     else
-      say "  ⚠ API smoke test failed (port ${API_CHOSEN_PORT} is not listening; check the firewall or retry later)"
+      say "  ⚠ API smoke test failed (port ${API_CHOSEN_PORT} did not become ready within 30 seconds; retry later)"
     fi
   fi
 fi

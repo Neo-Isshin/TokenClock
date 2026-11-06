@@ -9,12 +9,13 @@
 #
 set -u
 
-CLI_VERSION="1.5.13"
+CLI_VERSION="1.6.0"
 # Process name (comm) of the running clock. **The executable of every variant must be named TokenClock**
 # (placed in a glass/ or normal/ subdir to distinguish variants), so that no matter which variant is
 # launched the process name is TokenClock — the pgrep/pkill -x below hits it precisely and never
 # accidentally matches the shell or the script itself.
 APP_PROCESS="TokenClock"
+LINUX_APP_PROCESS="TokenClock.bin"
 
 # Constants shared across scripts (kept in sync with cli/install.sh)
 MIN_MACOS=12              # minimum supported macOS major version (Monterey)
@@ -57,14 +58,34 @@ validate_variant_compat() {
   esac
 }
 
-# PIDs of any running TokenClock (may be multiple lines).
+# PIDs of any TokenClock owned by the current user (may be multiple lines).
 # Double-matched, each as a fallback for the other:
 #   ① executable path lives under ~/.tokenclock/ — covers the current glass/normal subdir layout and
 #      the legacy tokenclock-glass/normal naming (where comm is not TokenClock);
-#   ② process name is TokenClock — covers dev .build builds and /Applications .app bundles.
+#   ② process name is TokenClock — covers dev .build builds and /Applications .app bundles;
+#   ③ on FUSE-less Linux, the AppImage runtime launches an extracted TokenClock.bin child.
 # The CLI itself lives in ~/.local/bin, so neither rule ever hits it or the shell.
 running_pids() {
-  { pgrep -f "${HOME}/.tokenclock/[^/]*/TokenClock( |$)" 2>/dev/null; pgrep -x "$APP_PROCESS" 2>/dev/null; } | sort -u
+  local uid; uid="$(id -u)"
+  {
+    pgrep -u "$uid" -f "${HOME}/.tokenclock/[^/]*/TokenClock( |$)" 2>/dev/null
+    pgrep -u "$uid" -x "$APP_PROCESS" 2>/dev/null
+    [ "$PLATFORM" != Linux ] || pgrep -u "$uid" -x "$LINUX_APP_PROCESS" 2>/dev/null
+  } | sort -u
+}
+
+terminate_running() {
+  local uid; uid="$(id -u)"
+  pkill -u "$uid" -f "${HOME}/.tokenclock/[^/]*/TokenClock( |$)" 2>/dev/null
+  pkill -u "$uid" -x "$APP_PROCESS" 2>/dev/null
+  [ "$PLATFORM" != Linux ] || pkill -u "$uid" -x "$LINUX_APP_PROCESS" 2>/dev/null
+}
+
+kill_running() {
+  local uid; uid="$(id -u)"
+  pkill -9 -u "$uid" -f "${HOME}/.tokenclock/[^/]*/TokenClock( |$)" 2>/dev/null
+  pkill -9 -u "$uid" -x "$APP_PROCESS" 2>/dev/null
+  [ "$PLATFORM" != Linux ] || pkill -9 -u "$uid" -x "$LINUX_APP_PROCESS" 2>/dev/null
 }
 
 # Print the first path that actually exists, or fail non-zero (no output).
@@ -113,11 +134,41 @@ find_normal() {
     ${repo:+"$repo"}
 }
 
+# FUSE-less AppImage fallback. Some current Type-2 runtimes return ENOEXEC from
+# APPIMAGE_EXTRACT_AND_RUN even when AppRun is a valid ELF. Explicit extraction is
+# deterministic; the private temp tree stays alive with the process and is removed on exit.
+launch_extracted_appimage() {
+  local image="$1" root
+  root="$(mktemp -d "${TMPDIR:-/tmp}/tokenclock-appimage.XXXXXX" 2>/dev/null)" || return 1
+  if ! (cd "$root" && "$image" --appimage-extract >/dev/null 2>&1); then
+    rm -rf "$root"
+    return 1
+  fi
+  nohup sh -c '
+    root="$1"
+    cd "$root/squashfs-root" || exit 1
+    APPDIR="$root/squashfs-root" ./usr/bin/TokenClock
+    status=$?
+    cd /
+    rm -rf "$root"
+    exit "$status"
+  ' sh "$root" >/dev/null 2>&1 &
+}
+
 # Launch a given path: .app via open (auto-dedupes/activates), bare binary via nohup in the background.
 launch_path() {
   case "$1" in
     *.app) open "$1" ;;
-    *) nohup "$1" >/dev/null 2>&1 & ;;
+    *)
+      if [ "$PLATFORM" = Linux ] \
+         && { [ ! -e /dev/fuse ] || ! ldconfig -p 2>/dev/null | grep -q 'libfuse\.so\.2'; }; then
+        # Explicit extraction keeps Debian/Ubuntu minimal desktops working without
+        # a root FUSE install, including runtimes whose extract-and-run mode is broken.
+        launch_extracted_appimage "$1" || die "failed to extract and launch AppImage: $1"
+      else
+        nohup "$1" >/dev/null 2>&1 &
+      fi
+      ;;
   esac
 }
 
@@ -164,9 +215,18 @@ cmd_start() {
     echo "Detected Linux → selecting the normal GTK3 build"
   elif [ -z "$variant" ]; then
     local m; m="$(os_major)"
+    local preferred; preferred="$(defaults read TokenClock TC_preferredMacVariant 2>/dev/null || true)"
+    case "$preferred" in
+      normal) variant=normal ;;
+      glass) [ "$m" -lt "$LIQUID_GLASS_MIN_MACOS" ] || variant=glass ;;
+    esac
+    if [ -n "$variant" ]; then
+      echo "Using preferred macOS edition: $variant"
+    else
     if   [ "$m" -ge "$LIQUID_GLASS_MIN_MACOS" ]; then variant=glass;  echo "Detected macOS $m → auto-selecting the liquid-glass build"
     elif [ "$m" -ge "$MIN_MACOS" ]; then variant=normal; echo "Detected macOS $m → auto-selecting the normal build"
     else die "macOS $MIN_MACOS or later is required (current major version ${m:-unknown})."
+    fi
     fi
   fi
 
@@ -196,12 +256,10 @@ cmd_stop() {
   # issue). Try unloading both variants' plists; ignore ones that don't exist.
   unload_launchagent glass
   unload_launchagent normal
-  pkill    -f "${HOME}/.tokenclock/[^/]*/TokenClock( |$)" 2>/dev/null
-  pkill    -x "$APP_PROCESS" 2>/dev/null
+  terminate_running
   sleep 2
   if [ -n "$(running_pids)" ]; then
-    pkill -9 -f "${HOME}/.tokenclock/[^/]*/TokenClock( |$)" 2>/dev/null
-    pkill -9 -x "$APP_PROCESS" 2>/dev/null
+    kill_running
     sleep 0.3
   fi
   if [ -n "$(running_pids)" ]; then
@@ -224,8 +282,7 @@ cmd_uninstall() {
   # 1. Stop the service: unload (prevents KeepAlive revival) + pkill fallback
   unload_launchagent glass
   unload_launchagent normal
-  pkill -f "${HOME}/.tokenclock/[^/]*/TokenClock( |$)" 2>/dev/null
-  pkill -x "$APP_PROCESS" 2>/dev/null
+  terminate_running
   sleep 1
   # 2. Remove both variants' plists
   if [ "$PLATFORM" = Darwin ]; then
@@ -322,17 +379,36 @@ cmd_update() {
     return 0
   fi
 
-  # Don't stop up front: install.sh's cp can overwrite the running binary (macOS unlink semantics
-  # allow it). Only restart when something was actually deployed (or --force) — restart does
-  # stop+start internally — so we avoid interrupting a running clock when nothing changed.
-  local status_file force_arg=""
+  # An old downloaded installer must not silently strip an enrolled/local or
+  # vendor certificate signature before the new installer policy is published.
+  if [ "$PLATFORM" = Darwin ]; then
+    local protected_signature=0 signature_info installed_variant
+    if [ -f "${TOKENCLOCK_HOME:-$HOME/.tokenclock}/signing/local-identity.json" ]; then
+      protected_signature=1
+    else
+      for installed_variant in glass normal; do
+        signature_info=$(/usr/bin/codesign -dv --verbose=4 "$HOME/.tokenclock/$installed_variant/TokenClock" 2>&1 || true)
+        case "$signature_info" in *Signature=adhoc*) ;; *Authority=*) protected_signature=1 ;; esac
+      done
+    fi
+    if [ "$protected_signature" = 1 ] && ! grep -q '^# BEGIN MACOS SIGNATURE POLICY$' "$tmp_script"; then
+      rm -f "$tmp_script"
+      die "The downloaded installer cannot preserve this signing identity. No files were replaced; use the signing-aware installer when available."
+    fi
+  fi
+
+  # Don't stop up front: install.sh stages a sibling file and atomically replaces the installed
+  # path, so a running process safely keeps its old inode on every platform. Only restart when
+  # something was actually deployed (or --force), avoiding interruption on a no-op update.
+  local status_file force_arg="" variant_arg=""
   status_file="$(umask 077; mktemp -t tokenclock-status.XXXXXX)" || die "Failed to create a status file"
   [ "$force" -eq 1 ] && force_arg="--force"
+  [ -z "$variant" ] || variant_arg="--$variant"
 
-  # Run the installer with --no-start: fetch + build + cp as needed; it reports DEPLOYED via the
+  # Run the installer with --no-start: fetch + build + atomically deploy as needed; it reports DEPLOYED via the
   # status file. --no-start skips the API prompt (preserves existing UserDefaults) and the first-launch
   # scan; detect_and_set_language is also guarded off on this path, respecting the user's chosen language.
-  if ! TOKENCLOCK_STATUS_FILE="$status_file" bash "$tmp_script" --no-start $force_arg; then
+  if ! TOKENCLOCK_STATUS_FILE="$status_file" bash "$tmp_script" --no-start $variant_arg $force_arg; then
     rm -f "$tmp_script" "$status_file"
     die "Upgrade failed (state restored, the old binary was not replaced)"
   fi

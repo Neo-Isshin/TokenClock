@@ -9,7 +9,7 @@ import Foundation
 /// 文件路径走 `PathConfig.swift`（已存在，不动）。
 enum AppConfig {
     /// Kept in sync with the release tag by scripts/release.sh validation.
-    static let version = "1.5.13"
+    static let version = "1.6.0"
 
     // MARK: - 外部 API endpoint
 
