@@ -1,5 +1,4 @@
 import Foundation
-import CoreFoundation
 
 /// Read-only Desktop support. Chat/cloud sessions without usage receipts are
 /// never turned into guessed tokens. Local Code/Cowork receipts remain separate
@@ -10,7 +9,7 @@ enum ClaudeDesktopData {
     static let historyMaximumAge: TimeInterval = 20 * 60
     private static func historySamples(_ data: Data) -> [[String: Any]]? {
         guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let version = root["version"] as? NSNumber, CFGetTypeID(version) != CFBooleanGetTypeID(),
+              let version = root["version"] as? NSNumber, !JSONNumber.isBoolean(version),
               [1.0, 2.0].contains(version.doubleValue) else { return nil }
         return root["samples"] as? [[String: Any]]
     }
@@ -62,7 +61,7 @@ enum ClaudeDesktopData {
               let organization = historyOrganization(samples, selected: organizationID) else { return nil }
         let valid = samples.compactMap { sample -> (Date, [String: Any])? in
             guard (sample["org"] as? String)?.lowercased() == organization,
-                  let t = sample["t"] as? NSNumber, CFGetTypeID(t) != CFBooleanGetTypeID(),
+                  let t = sample["t"] as? NSNumber, !JSONNumber.isBoolean(t),
                   t.doubleValue.isFinite, t.doubleValue > 0,
                   let usage = sample["u"] as? [String: Any] else { return nil }
             let timestamp = Date(timeIntervalSince1970: t.doubleValue / 1000)
@@ -72,7 +71,7 @@ enum ClaudeDesktopData {
         guard let (timestamp, usage) = valid.max(by: { $0.0 < $1.0 }) else { return nil }
         var buckets: [CodexQuotaBucket] = []
         for (key, id, minutes) in [("fh", "five_hour", 300), ("sd", "seven_day", 10_080)] {
-            guard let number = usage[key] as? NSNumber, CFGetTypeID(number) != CFBooleanGetTypeID(),
+            guard let number = usage[key] as? NSNumber, !JSONNumber.isBoolean(number),
                   number.doubleValue.isFinite, (0...100).contains(number.doubleValue) else { continue }
             buckets.append(CodexQuotaBucket(id: "claude:" + id, name: "Claude", usedPercent: number.doubleValue,
                                            windowMinutes: minutes, resetsAt: nil))

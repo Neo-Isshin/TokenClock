@@ -3,6 +3,7 @@ import PackageDescription
 
 #if os(Linux)
 let linuxSources = [
+    "Services/JSONNumber.swift",
     "Services/ReleaseUpdateService.swift",
     "Services/XSubscriptionQuota.swift",
     "Services/StatusSummaryQuotaResets.swift",

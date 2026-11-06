@@ -21,6 +21,7 @@ final class WindowsUsageModel: @unchecked Sendable {
     private var aiderService = AiderUsageService()
     private var antigravityService = AntigravityUsageService()
     private var clineService = ClineUsageService()
+    private let additionalHarnessServices = AdditionalHarness.allCases.map { HarnessUsageService($0) }
     private var continueService = ContinueUsageService()
     private var cursorAgentService = CursorAgentUsageService(onHourlyUpdate: HourlyHistoryStore.saveCursor)
     private var zcodeService = ZCodeUsageService()
@@ -39,7 +40,7 @@ final class WindowsUsageModel: @unchecked Sendable {
 
     init() {
         let saved = UserDefaults.standard.stringArray(for: .enabledTools)
-        _enabledTools = WindowsProviderCatalog.enabledDisplayNames(saved: saved)
+        _enabledTools = AdditionalHarness.enabled(saved: saved, defaults: Array(WindowsProviderCatalog.enabledDisplayNames(saved: nil)))
         if !UserDefaults.standard.bool(for: .zcodeSupportMigrated) {
             let database = PathConfig.defaultZCodeHome() + "\\cli\\db\\db.sqlite"
             if FileManager.default.fileExists(atPath: database) { _enabledTools.insert("ZCode") }
@@ -107,6 +108,7 @@ final class WindowsUsageModel: @unchecked Sendable {
         lock.unlock()
 
         if shouldReload { recreateServices() }
+        GenerationSpeedStore.shared.refreshIfDue(enabledTools: enabledTools)
 
         defer {
             lock.lock()
@@ -182,6 +184,14 @@ final class WindowsUsageModel: @unchecked Sendable {
             HourlyHistoryStore.shared.replace(tool: name, hours: hours, force: !incremental)
         }
         var results: [String: ScanSnapshot] = [:]
+        for service in additionalHarnessServices where enabledTools.contains(service.harness.name) {
+            incremental ? service.incrementalScan() : service.fullScan()
+            if !incremental { service.importHistoryIfNeeded() }
+            if service.harness.unit == .tokens { HourlyHistoryStore.shared.replace(tool: service.harness.name, hours: service.hourlyData, force: !incremental) }
+            let usage = service.todayUsage()
+            results[service.harness.name] = snapshot(usage, service.recentUsage(minutes: rateWindowMinutes).tokens, service.currentHourTokens(), service.isActive(), service.todaySessions(), measurementValue: nil, measurementScope: .today, service.todayCost(), service.todayCacheReadTokens())
+        }
+
         if enabledTools.contains("OpenClaw") {
             let usage = openclawService.todayUsage()
             results["OpenClaw"] = snapshot(usage, openclawService.recentUsage(minutes: rateWindowMinutes).tokens, openclawService.currentHourTokens(), openclawService.isActive(), openclawService.todaySessions(), measurementValue: nil, measurementScope: .today, openclawService.todayCost(), openclawService.todayCacheReadTokens())
@@ -280,7 +290,7 @@ final class WindowsUsageModel: @unchecked Sendable {
                 emoji: old.emoji,
                 measurementUnit: old.measurementUnit,
                 measurementScope: result.measurementScope,
-                measurementValue: result.measurementValue,
+                measurementValue: old.measurementUnit == .requests ? result.messages : result.measurementValue,
                 todayTokens: result.tokens,
                 todayMessages: result.messages,
                 isActive: result.active,
@@ -289,7 +299,8 @@ final class WindowsUsageModel: @unchecked Sendable {
                 hourlyTokens: result.hourly,
                 todayCost: result.cost,
                 todayCacheReadTokens: result.cacheRead,
-                sessions: result.sessions
+                sessions: result.sessions,
+                costModes: name == "Codex" ? codexService.todayCostModes() : nil
             )
         }
         let current = storedTools
@@ -585,6 +596,7 @@ final class WindowsUsageModel: @unchecked Sendable {
 
     private func saveDetectedPaths(_ results: [PathDetector.DetectionResult]) {
         for result in results where result.exists {
+            if AdditionalHarness(rawValue: result.service) != nil { continue }
             guard let entry = WindowsProviderCatalog.entry(serviceID: result.service) else { continue }
             WindowsProviderCatalog.setConfiguredSource(result.detectedPath, for: entry.id)
         }

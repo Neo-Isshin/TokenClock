@@ -1,5 +1,4 @@
 import Foundation
-import CoreFoundation
 #if os(macOS)
 import Darwin
 #endif
@@ -77,7 +76,7 @@ enum DSHReceiptReader {
         }.sorted()
     }
     static func count(_ raw:Any?)->Int? {
-        guard let n=raw as? NSNumber,CFGetTypeID(n) != CFBooleanGetTypeID(),n.doubleValue.isFinite,n.doubleValue>=0,n.doubleValue<=1_000_000_000,n.doubleValue.rounded(.down)==n.doubleValue else{return nil}
+        guard let n=raw as? NSNumber,!JSONNumber.isBoolean(n),n.doubleValue.isFinite,n.doubleValue>=0,n.doubleValue<=1_000_000_000,n.doubleValue.rounded(.down)==n.doubleValue else{return nil}
         return n.intValue
     }
     static func buckets(_ usage:[String:Any])->ModelBuckets? {
@@ -116,7 +115,7 @@ enum DSHReceiptReader {
                 }
             }
             guard let usage else{return}
-            guard let values=buckets(usage),let time=row["time"] as? NSNumber,CFGetTypeID(time) != CFBooleanGetTypeID(),time.doubleValue.isFinite,time.doubleValue>0 else{invalid=true;return}
+            guard let values=buckets(usage),let time=row["time"] as? NSNumber,!JSONNumber.isBoolean(time),time.doubleValue.isFinite,time.doubleValue>0 else{invalid=true;return}
             let key=group+":\(attempts[group] ?? 0)"
             slots[key]=DSHUsageReceipt(id:"dsh:\(session):\(key)",session:session,name:title,model:ModelNormalizer.normalize(source["model"] as? String ?? message["model"] as? String ?? models[group]),date:Date(timeIntervalSince1970:time.doubleValue/1000),buckets:values)
         }

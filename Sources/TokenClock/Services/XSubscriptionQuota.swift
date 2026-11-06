@@ -1,5 +1,4 @@
 import Foundation
-import CoreFoundation
 #if canImport(FoundationNetworking)
 import FoundationNetworking
 #endif
@@ -29,7 +28,7 @@ enum XSubscriptionQuota {
     }
 
     static func flag(_ value: Any?) -> Bool? {
-        guard let number = value as? NSNumber, CFGetTypeID(number) == CFBooleanGetTypeID() else { return nil }
+        guard let number = value as? NSNumber, JSONNumber.isBoolean(number) else { return nil }
         return number.boolValue
     }
 

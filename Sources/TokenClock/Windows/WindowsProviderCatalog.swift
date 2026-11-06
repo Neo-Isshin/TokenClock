@@ -12,6 +12,7 @@ enum WindowsProviderCatalog {
         case copilot, grok, aider, antigravity, cline, `continue`, cursorAgent
         case zcode
         case kiro, codeBuddy
+        case kiloCode, pi, omp, freebuff, commandCode
     }
 
     enum DataKind: String {
@@ -179,7 +180,14 @@ enum WindowsProviderCatalog {
                   dataKind: .loopbackStatsAPI, measurementUnit: .tokens, measurementScope: .currentSession,
                   statisticsSupport: .experimental, sourceKind: .loopbackAPI, defaultEnabled: false),
         ]
-        return Dictionary(uniqueKeysWithValues: values.map { ($0.id, $0) })
+        let additional = AdditionalHarness.allCases.map { harness in
+            Entry(id: ProviderID(rawValue: harness.rawValue)!, displayName: harness.name, abbreviation: harness.abbreviation,
+                emoji: harness.emoji, environmentOverrides: [], defaultPath: harness.roots().first ?? "",
+                alternatePaths: Array(harness.roots().dropFirst()), dataKind: harness == .kiloCode ? .sqliteDirectory : .jsonlDirectory,
+                measurementUnit: harness.unit, measurementScope: .today, statisticsSupport: .parsed,
+                sourceKind: .fileSystem, defaultEnabled: true)
+        }
+        return Dictionary(uniqueKeysWithValues: (values + additional).map { ($0.id, $0) })
     }()
 
     static func entry(_ id: ProviderID) -> Entry {
@@ -227,6 +235,7 @@ enum WindowsProviderCatalog {
         case .zcode: return PathConfig.zcodeHome()
         case .kiro: return PathConfig.kiroSessionsHome()
         case .codeBuddy: return PathConfig.codeBuddyEndpoint()
+        case .kiloCode, .pi, .omp, .freebuff, .commandCode: return AdditionalHarness(rawValue: id.rawValue)!.roots().first ?? ""
         }
     }
 
@@ -249,6 +258,11 @@ enum WindowsProviderCatalog {
         case .zcode: PathConfig.setZCodePath(value)
         case .kiro: PathConfig.setKiroSessionsPath(value)
         case .codeBuddy: PathConfig.setCodeBuddyEndpoint(value)
+        case .kiloCode, .pi, .omp, .freebuff, .commandCode:
+            let harness = AdditionalHarness(rawValue: id.rawValue)!
+            if value.isEmpty || value == harness.roots(includeCustom: false).first {
+                UserDefaults.standard.removeObject(forKey: harness.pathKey.rawValue)
+            } else { UserDefaults.standard.setString(value, for: harness.pathKey) }
         }
     }
 

@@ -185,6 +185,8 @@ final class WindowsApp: @unchecked Sendable {
     }
     private var pendingShareOutputPath = ProcessInfo.processInfo.environment["TC_SHARE_OUTPUT"]
     private var quotaOrderEditing = false
+    private var quotaCostModesExpanded = false
+    private var lastQuotaCostModes: CostModeBreakdown?
     private var dialQuotaProviders: [SubscriptionProvider] = {
         let defaults = UserDefaults.standard
         var providers: [SubscriptionProvider] = []
@@ -319,6 +321,13 @@ final class WindowsApp: @unchecked Sendable {
     /// 展开态额外在盘面下方列工具明细，并把窗口高度撑开。表盘配色/几何由 winrender.cpp 内置并按尺寸缩放。
     private var lastBillingFetch = Date.distantPast
     func render() {
+        if let dialog = quotaDlg {
+            let current = model.tools.first { $0.name == "Codex" }?.costModes
+            if current != lastQuotaCostModes {
+                lastQuotaCostModes = current
+                dlg_post_command(dialog, 980)
+            }
+        }
         if didStartup, Date().timeIntervalSince(lastBillingFetch) > 6 * 3600 {
             lastBillingFetch = Date()
             refreshSubscriptionQuotas(force: false, providers: [.codex, .cursor])
@@ -384,7 +393,7 @@ final class WindowsApp: @unchecked Sendable {
         let detailHeader = [L.tr(groupingMode == .model ? "detail.model" : "detail.instance"),
                             L.tr(valueMode == .tokens ? "detail.todayUsage" : "detail.cost"),
                             L.tr(valueMode == .tokens ? "detail.messages" : "detail.share"),
-                            groupingMode == .session ? L.tr("detail.cacheRate") : ""].joined(separator: "\t")
+                            groupingMode == .session ? L.tr("detail.cacheRate") : "t/s"].joined(separator: "\t")
         // The dial remains a compact per-pixel-alpha layered HWND. Win32Shim presents the
         // fixed 320×547 detail card in a separate non-layered Desktop Acrylic sibling, so
         // expanding never turns the round widget back into a tall rectangular host.
@@ -731,6 +740,7 @@ final class WindowsApp: @unchecked Sendable {
         let active = tools.filter {
             $0.measurementUnit == .tokens && $0.measurementScope == .today && $0.todayTokens > 0
         }
+        let responseOnly = tools.filter { $0.measurementUnit == .requests && $0.measurementScope == .today && $0.value > 0 }
         let currentSession = tools.filter {
             $0.measurementScope == .currentSession && $0.measurementValue != nil
         }
@@ -738,7 +748,7 @@ final class WindowsApp: @unchecked Sendable {
             $0.measurementScope == .contractOnly
                 || ($0.measurementScope == .currentSession && $0.measurementValue == nil)
         }
-        guard !active.isEmpty || !currentSession.isEmpty || !unavailable.isEmpty else {
+        guard !active.isEmpty || !currentSession.isEmpty || !unavailable.isEmpty || !responseOnly.isEmpty else {
             return [DetailRow(key: nil, label: L.language == .en ? "No AI usage today" : "今日暂无 AI 用量", value: "—", messages: "—", cache: "", isChild: true, expanded: false)]
         }
         let grand = active.reduce(0) {
@@ -749,6 +759,18 @@ final class WindowsApp: @unchecked Sendable {
                       value: TokenFormat.compact(tool.value), messages: "—", cache: "—",
                       isChild: false, expanded: false)
         }
+        for tool in responseOnly {
+            let key = "tool:\(tool.name)"
+            let open = expandedDetailKeys.contains(key)
+            rows.append(DetailRow(key: key, label: "\(tool.emoji) \(tool.name)",
+                value: "\(tool.value) \(L.tr("harness.responses"))", messages: "—", cache: "—", isChild: false, expanded: open))
+            if open {
+                for session in tool.sessions.prefix(5) {
+                    rows.append(DetailRow(key: nil, label: session.displayName,
+                        value: "\(session.todayMessages) \(L.tr("harness.responses"))", messages: "—", cache: "—", isChild: true, expanded: false))
+                }
+            }
+        }
         rows.append(contentsOf: unavailable.map { tool in
             DetailRow(key: nil, label: "\(tool.emoji) \(tool.name)", value: L.tr("detail.statisticsUnavailable"),
                       messages: "—", cache: "—", isChild: false, expanded: false)
@@ -758,10 +780,10 @@ final class WindowsApp: @unchecked Sendable {
             for group in groups.prefix(10) {
                 let key = "model:\(group.id)"
                 let open = expandedDetailKeys.contains(key)
-                rows.append(DetailRow(key: key, label: "\(group.emoji) \(group.name)", value: primaryValue(tokens: group.totalTokens, cacheRead: group.totalCacheReadTokens, cost: group.totalCost), messages: secondaryValue(tokens: group.totalTokens, cacheRead: group.totalCacheReadTokens, messages: group.totalMessages, grand: grand), cache: "", isChild: false, expanded: open))
+                rows.append(DetailRow(key: key, label: "\(group.emoji) \(group.name)", value: primaryValue(tokens: group.totalTokens, cacheRead: group.totalCacheReadTokens, cost: group.totalCost), messages: secondaryValue(tokens: group.totalTokens, cacheRead: group.totalCacheReadTokens, messages: group.totalMessages, grand: grand), cache: group.generationSpeed.formatted, isChild: false, expanded: open))
                 if open {
                     for contribution in group.contributions.prefix(5) {
-                        rows.append(DetailRow(key: nil, label: "\(contribution.emoji) \(contribution.tool)", value: primaryValue(tokens: contribution.tokens, cacheRead: contribution.cacheReadTokens, cost: contribution.cost), messages: secondaryValue(tokens: contribution.tokens, cacheRead: contribution.cacheReadTokens, messages: contribution.messages, grand: grand), cache: "", isChild: true, expanded: false))
+                        rows.append(DetailRow(key: nil, label: "\(contribution.emoji) \(contribution.tool)", value: primaryValue(tokens: contribution.tokens, cacheRead: contribution.cacheReadTokens, cost: contribution.cost), messages: secondaryValue(tokens: contribution.tokens, cacheRead: contribution.cacheReadTokens, messages: contribution.messages, grand: grand), cache: GenerationSpeedStore.shared.summary(model: group.name, providers: [contribution.tool]).formatted, isChild: true, expanded: false))
                     }
                 }
             }
@@ -1199,6 +1221,9 @@ final class WindowsApp: @unchecked Sendable {
         case 983:
             quotaOrderEditing.toggle()
             rebuildSubscriptionQuotaDialog()
+        case 984:
+            quotaCostModesExpanded.toggle()
+            rebuildSubscriptionQuotaDialog()
         case 1300...1305:
             let index = Int(id - 1300)
             guard SubscriptionProvider.allCases.indices.contains(index) else { return }
@@ -1269,16 +1294,18 @@ final class WindowsApp: @unchecked Sendable {
         let estimatedRows = cards.reduce(0) { total, card in
             total + card.accounts.reduce(0) { $0 + max(1, $1.groups.flatMap(\.buckets).count) + 3 }
         }
-        let contentHeight = max(720, 262 + (twoColumns ? (estimatedRows + 1) / 2 : estimatedRows) * 82)
+        let contentHeight = max(720, 294 + (quotaCostModesExpanded ? 160 : 0)
+            + (twoColumns ? (estimatedRows + 1) / 2 : estimatedRows) * 82)
         dlg_reset_content(dialog, Int32(contentHeight))
         brand_add_title(dialog, L10n.shared.tr("quota.windowTitle"), 24, 16, 270, 30)
         brand_add_subtitle(dialog, L10n.shared.tr("quota.windowSubtitle"), 24, 47, dialogWidth - 80, 22)
         dlg_add_push(dialog, 983, L10n.shared.tr(quotaOrderEditing ? "quota.finishOrder" : "quota.editOrder"), dialogWidth - 216, 16, 76, 30)
         dlg_add_push(dialog, 981, L10n.shared.tr("quota.retry"), dialogWidth - 132, 16, 98, 30)
         guard !cards.isEmpty else {
-            dlg_add_card(dialog, 22, 92, dialogWidth - 56, 92)
-            brand_add_subtitle(dialog, L10n.shared.tr(anyLoading ? "quota.loadingAll" : "quota.noActiveProviders"), 40, 122, dialogWidth - 92, 32)
-            dlg_add_push(dialog, 982, L10n.shared.language == .en ? "Close" : "关闭", dialogWidth - 134, 204, 100, 30)
+            let y = appendQuotaCostModes(dialog, y: 82, width: dialogWidth)
+            dlg_add_card(dialog, 22, y + 10, dialogWidth - 56, 92)
+            brand_add_subtitle(dialog, L10n.shared.tr(anyLoading ? "quota.loadingAll" : "quota.noActiveProviders"), 40, y + 40, dialogWidth - 92, 32)
+            dlg_add_push(dialog, 982, L10n.shared.language == .en ? "Close" : "关闭", dialogWidth - 134, y + 122, 100, 30)
             return
         }
         brand_add_section(dialog, L10n.shared.tr("quota.dialDisplay"), 24, 82, 54, 22)
@@ -1296,7 +1323,7 @@ final class WindowsApp: @unchecked Sendable {
                 x + 12, y, 112, 24, dialQuotaProviders.contains(provider) ? 1 : 0
             )
         }
-        let providerStartY: Int32 = twoColumns ? 116 : 146
+        let providerStartY = appendQuotaCostModes(dialog, y: twoColumns ? 116 : 146, width: dialogWidth)
         var columnY: [Int32] = [providerStartY, providerStartY]
         let cardWidth: Int32 = twoColumns ? 414 : dialogWidth - 56
         quotaDialAccountControls.removeAll()
@@ -1315,6 +1342,33 @@ final class WindowsApp: @unchecked Sendable {
         }
         let bottom = columnY.max() ?? 82
         dlg_add_push(dialog, 982, L10n.shared.language == .en ? "Close" : "关闭", dialogWidth - 134, bottom + 8, 100, 30)
+    }
+
+    private func appendQuotaCostModes(_ dialog: UnsafeMutableRawPointer, y: Int32, width: Int32) -> Int32 {
+        let L = L10n.shared
+        let tool = model.tools.first { $0.name == "Codex" }
+        let marker = quotaCostModesExpanded ? "▾ " : "▸ "
+        dlg_add_push(dialog, 984, marker + L.tr("quota.costMode.title") + "   " + (tool?.formattedCost ?? "—"),
+                     24, y, width - 56, 28)
+        guard quotaCostModesExpanded else { return y + 34 }
+        var cursor = y + 32
+        brand_add_subtitle(dialog, L.tr("quota.costMode.scope"), 28, cursor, width - 84, 30)
+        cursor += 34
+        if let split = tool?.costModes, split.requestCount > 0 {
+            for part in split.parts {
+                let title = L.tr(part.mode.labelKey) + (part.rateBadge.isEmpty ? "" : " · " + part.rateBadge)
+                brand_add_subtitle(dialog, title, 28, cursor, width - 262, 22)
+                brand_add_subtitle(dialog, L.tr("quota.costMode.calls", part.requests), width - 228, cursor, 106, 22)
+                brand_add_subtitle(dialog, part.formattedCost, width - 119, cursor, 86, 22)
+                cursor += 24
+            }
+            brand_add_subtitle(dialog, L.tr("quota.costMode.note"), 28, cursor, width - 84, 48)
+            cursor += 54
+        } else {
+            brand_add_subtitle(dialog, L.tr("quota.costMode.empty"), 28, cursor, width - 84, 22)
+            cursor += 26
+        }
+        return cursor + 8
     }
 
     private func appendQuotaDialogProvider(
@@ -1560,7 +1614,7 @@ final class WindowsApp: @unchecked Sendable {
             rememberSubscriptionAccount(
                 provider: .claude, identity: claude.account, plan: claude.planType,
                 groups: [ProviderQuotaGroup(id: "claude:subscription", name: "Subscription", buckets: claude.buckets)],
-                refreshedAt: claude.refreshedAt, source: "Claude OAuth API"
+                refreshedAt: claude.refreshedAt, source: claude.sourceDescription
             )
         } else if claude.status == .unavailable { activeSubscriptionAccountIDs[.claude] = nil }
         rememberProviderQuota(antigravity, provider: .antigravity)
@@ -2910,7 +2964,9 @@ final class WindowsApp: @unchecked Sendable {
             if var draft = settingsDraft {
                 for result in summary.results where result.exists {
                     if let entry = WindowsProviderCatalog.entry(serviceID: result.service) {
-                        draft.paths[entry.displayName] = result.detectedPath
+                        if AdditionalHarness(rawValue: result.service) == nil || result.source == .userDefaults {
+                            draft.paths[entry.displayName] = result.detectedPath
+                        }
                         draft.enabled.insert(entry.displayName)
                     }
                 }

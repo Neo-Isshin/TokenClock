@@ -1906,7 +1906,9 @@ void win_render_clock(int w, int h, int hh, int mm, int ss, const win_theme *t, 
             } else {
             // Column header.
             const double labelX = cardLeft + 14.0 * S;
-            const double cacheW = 42.0 * S, messagesW = 38.0 * S, usageW = 68.0 * S;
+            // Equal numeric right-edge spacing without expanding the columns.
+            const double cacheW = 38.0 * S;
+            const double messagesW = 38.0 * S, usageW = 68.0 * S;
             const double cacheX = cardRight - 12.0 * S - cacheW;
             const double messagesX = cacheX - messagesW;
             const double usageX = messagesX - usageW;

@@ -1,5 +1,4 @@
 import Foundation
-import CoreFoundation
 #if os(macOS)
 import SQLite3
 #else
@@ -385,7 +384,7 @@ final class HarnessUsageService: @unchecked Sendable {
     }
     static func date(_ raw: Any?) -> Date? {
         if let string = raw as? String { return DateHelper.parseISO8601(string) }
-        guard let number = raw as? NSNumber, CFGetTypeID(number) != CFBooleanGetTypeID() else { return nil }
+        guard let number = raw as? NSNumber, !JSONNumber.isBoolean(number) else { return nil }
         let value = number.doubleValue
         guard value.isFinite, value > 0 else { return nil }
         return Date(timeIntervalSince1970: value > 10_000_000_000 ? value / 1000 : value)
@@ -410,7 +409,7 @@ final class HarnessUsageService: @unchecked Sendable {
         return ModelBuckets(input: freshInput, output: output, cacheRead: read, cacheWrite: write)
     }
     private static func nonNegativeCount(_ raw: Any?) -> Int? {
-        guard let number = raw as? NSNumber, CFGetTypeID(number) != CFBooleanGetTypeID() else { return nil }
+        guard let number = raw as? NSNumber, !JSONNumber.isBoolean(number) else { return nil }
         let value = number.doubleValue
         // A request cannot contain billions of tokens. Bound corrupt receipts
         // before summing them, rather than letting a few near-Int.max counters crash the app.
